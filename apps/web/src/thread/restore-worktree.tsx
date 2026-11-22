@@ -13,11 +13,9 @@ const SOURCE_TEXT: Record<Extract<RestoreWorktreeResult, { _tag: "restored" }>["
     pr: "its pull request's head",
   };
 
-/** The toast for a restore that went through; it says plainly what didn't come back. */
 const restoredText = (result: Extract<RestoreWorktreeResult, { _tag: "restored" }>) =>
   `Restored ${result.branch} from ${SOURCE_TEXT[result.source]}. Work that wasn't committed couldn't be recovered.`;
 
-/** Why a branch gone everywhere can or can't come back. */
 const branchGoneText = (result: Extract<RestoreWorktreeResult, { _tag: "branchGone" }>) =>
   result.pr === undefined
     ? `${result.branch} is gone from the repository and from origin, and there is no pull request to recreate it from, so the worktree can't be restored.`

@@ -8,8 +8,6 @@ import { useCostShown } from "@/usage/cost";
 
 import { PHONE_HIT } from "./styles";
 
-// The fill is read against the composer's card, so it takes the title bar's usage meter's tokens
-// (`LimitBar`), which the contrast matrix holds above the UI floor on every surface.
 const FILL: Record<ContextLevel, string> = {
   normal: "bg-muted-foreground",
   warning: "bg-warning",
@@ -55,7 +53,6 @@ export function ContextRing({ threadId, countUp }: { threadId: ThreadId; countUp
           PHONE_HIT,
         )}
       >
-        {/* The bar alone; its words, "Context 36%", head the popover the pointer opens. */}
         <span
           aria-hidden
           data-testid="usage-ring-bar"

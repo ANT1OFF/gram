@@ -15,9 +15,7 @@ export type PeekTarget =
 
 interface PeekState {
   readonly open: boolean;
-  /** Kept after closing, so the sheet keeps its content while it slides away. */
   readonly target: PeekTarget | undefined;
-  /** The pane it opened from, which it covers the right side of; the window without one. */
   readonly container: HTMLElement | undefined;
   readonly show: (target: PeekTarget, from?: Element | null) => void;
   readonly close: () => void;

@@ -7,23 +7,13 @@ import type { SpeechSegment } from "./accurate.ts";
 import type { SpeechAccuratePaths, SpeechModelPaths } from "./protocol.ts";
 import type { AccuratePass, Recogniser, SpeechRuntime } from "./service.ts";
 
-/**
- * ONNX Runtime threads for the offline model, whatever the slider's stop: on an M5 Pro a 5 s clip
- * took 730 ms on one thread, 220 ms on two, and no less on four or six.
- */
 const OFFLINE_THREADS = 2;
 
-/** The detector's window, Silero v5's for 16 kHz audio, and its own buffer of what it heard. */
 const VAD_WINDOW_SAMPLES = 512;
 const VAD_BUFFER_SECONDS = 60;
 
-/** ONNX Runtime's library, by the names it ships under on each platform. */
 const ONNX_RUNTIME = /(?:^|[\\/])(?:lib)?onnxruntime(?:\.[\d.]+)?\.(?:dll|dylib|so(?:\.[\d.]+)?)$/i;
 
-/**
- * A Windows path without its extended-length prefix, which is how Windows reports a loaded module:
- * `\\?\D:\x` → `D:\x`, `\\?\UNC\host\x` → `\\host\x`.
- */
 const withoutLongPathPrefix = (p: string): string =>
   p.replace(/^\\\\\?\\UNC\\/i, "\\\\").replace(/^\\\\\?\\/, "");
 
@@ -40,8 +30,6 @@ export const foreignOnnxRuntimes = (
   const path = platform === "win32" ? win32 : posix;
   const fold = (p: string) =>
     platform === "win32" ? path.normalize(withoutLongPathPrefix(p)).toLowerCase() : p;
-  // In a packaged app the package resolves inside `app.asar`, but its libraries load from the
-  // unpacked copy beside it, which is the one the loader reports.
   const unpacked = path
     .join(packageDir, path.sep)
     .replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`);
@@ -96,7 +84,6 @@ export function loadSherpaRuntime(from: string): SpeechRuntime {
         sileroVad: {
           model: paths.vad,
           threshold: 0.5,
-          // Short enough to hear the pause between two sentences, which is where a cut goes.
           minSilenceDuration: 0.3,
           minSpeechDuration: 0.15,
           maxSpeechDuration: 30,
@@ -142,8 +129,6 @@ export function loadSherpaRuntime(from: string): SpeechRuntime {
           provider: "cpu",
           debug: 0,
         },
-        // sherpa's defaults: an utterance ends after 1.2 s of silence following speech, 2.4 s of
-        // silence with nothing heard, or 20 s of talking.
         enableEndpoint: 1,
         rule1MinTrailingSilence: 2.4,
         rule2MinTrailingSilence: 1.2,

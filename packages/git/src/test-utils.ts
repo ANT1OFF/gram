@@ -10,7 +10,6 @@ export const hasGit = spawnSync("git", ["--version"], { stdio: "ignore" }).statu
 export const tempDir = (): string =>
   realPathSync(fs.mkdtempSync(nodePath.join(os.tmpdir(), "gram-git-test-")));
 
-/** Codes Windows gives for a tree a just-exited git or watcher still holds. */
 const BUSY: ReadonlySet<string> = new Set(["EBUSY", "EPERM", "ENOTEMPTY", "EMFILE", "ENFILE"]);
 
 const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -81,7 +80,6 @@ export const makeRepo = (tmp: string, branch = "main"): string => {
   run(repo, "config", "user.email", "t@t");
   run(repo, "config", "user.name", "t");
   run(repo, "config", "commit.gpgsign", "false");
-  // Git for Windows' system config sets `autocrlf=true`, which checks LF files out as CRLF.
   run(repo, "config", "core.autocrlf", "false");
   write(nodePath.join(repo, "tracked.txt"), "tracked");
   run(repo, "add", "-A");

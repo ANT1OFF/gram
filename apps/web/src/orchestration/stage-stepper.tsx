@@ -18,7 +18,6 @@ const STEP_WORD: Record<StepStatus, string> = {
   upcoming: "upcoming",
 };
 
-/** A step as a button once somebody can set it, and as plain text until then. */
 function StepBody({
   step,
   onSelect,
@@ -119,7 +118,6 @@ export function StageStepper({
                   step={step}
                   onSelect={onSelect}
                   className={cn(
-                    // The pip is 6px tall; the padding around it is what a pointer can find.
                     "relative block w-full rounded-full py-1 after:block after:h-1.5 after:rounded-full",
                     step.status === "done" ? "after:bg-primary/45" : "after:bg-border-strong/60",
                   )}
@@ -266,7 +264,6 @@ export function StageChip({
       ) : (
         <Milestone aria-hidden className="size-icon-row shrink-0" />
       )}
-      {/* Keyed by the stage, so a new one fades in where the old one stood. */}
       <span
         key={model.current}
         className={cn(

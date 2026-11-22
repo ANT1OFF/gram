@@ -34,10 +34,8 @@ import { prDetailQuery, prDetailStamp } from "@/panels/pr-detail-query";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
-/** The most of a report's summary the outcome shows. */
 const SUMMARY_MAX = 600;
 
-/** The PR a thread ended with: the ledger's, which knows its state, else the one it was bound to. */
 interface OutcomePr {
   readonly number: number;
   readonly repo: string | undefined;
@@ -78,7 +76,6 @@ export const threadDidWork = (thread: Thread, entry: WorkerLedgerEntry | undefin
 
 const filesChanged = (n: number) => `${n} ${n === 1 ? "file" : "files"} changed`;
 
-/** A saved PR state in the outcome's words. */
 const PR_STATE: Readonly<Record<NonNullable<OutcomePr["state"]>, string>> = {
   open: "Open",
   merged: "Merged",
@@ -103,14 +100,12 @@ export const checksOutcome = (
   }
 };
 
-/** GitHub's review decision in words; undefined where none was read. */
 const REVIEW: Readonly<Record<string, string>> = {
   APPROVED: "Approved",
   CHANGES_REQUESTED: "Changes requested",
   REVIEW_REQUIRED: "Review required",
 };
 
-/** One labelled fact of the saved outcome: its term, then its value and the action beside it. */
 function Fact({ term, testId, children }: { term: string; testId: string; children: ReactNode }) {
   return (
     <div data-testid={testId} className="contents">
@@ -120,13 +115,8 @@ function Fact({ term, testId, children }: { term: string; testId: string; childr
   );
 }
 
-/** The most of a PR's files the outcome lists; "Review all" opens the rest in the PR panel. */
 const OUTCOME_FILES_MAX = 8;
 
-/**
- * What the thread's PR changed, file by file with its lines added and removed, each a click from
- * its diff in the PR panel; "Review in PR" opens them all there.
- */
 function OutcomeFiles({
   number,
   files,
@@ -245,8 +235,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   const worker = thread?.spawnedBy !== undefined;
   const { data: ledger } = useOrchestratorLedger(worker ? thread?.workspaceId : undefined);
   const entry = workerEntryOf(ledger?.features, threadId);
-  // The PR's files, from the same query (and cache) the PR panel reads: what a finished thread
-  // changed, after its worktree is gone.
   const prStamp = prDetailStamp(git, thread?.boundPr);
   const { data: prResult } = useQuery({
     ...prDetailQuery(api, threadId, prStamp),
@@ -255,8 +243,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   const prDetail = prResult?.detail;
 
   if (thread === undefined || !threadDidWork(thread, entry)) {
-    // The shared empty state, as the Board, the Inbox and the panel's tabs say theirs. An
-    // orchestrator's adds what to do here; any other thread's composer already says it.
     const orchestrator = thread?.role === "orchestrator";
     return (
       <EmptyState
@@ -288,8 +274,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
     useLayoutStore
       .getState()
       .requestPanel({ threadId, panel, ...(target === undefined ? {} : { target }) }, threadId);
-  // A new draft with the report as its brief, through the same New form and its Start as any other:
-  // a worker's to its workspace's orchestrator, anything else to a one-off thread.
   const resume = () => {
     carryDraft({
       text: resumeBrief(thread.title, report, pr),
@@ -303,7 +287,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
     }
   };
 
-  // When it happened, from what Gram kept: started, last reported, and how it ended.
   const times: readonly { term: string; at: number }[] = [
     { term: "Started", at: thread.createdAt },
     ...(report === undefined ? [] : [{ term: "Last report", at: report.at }]),
@@ -333,7 +316,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
           Gram saved about its work.
         </p>
       </header>
-      {/* The story, read first: its last report in full, what it was checked with, and what next. */}
       <div className="flex min-w-0 flex-col gap-4">
         {report === undefined ? (
           <p data-testid="thread-outcome-no-report" className="text-muted-foreground">
@@ -398,7 +380,6 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
           />
         )}
       </div>
-      {/* Beside it, the facts Gram saved of how it ended, and when each thing happened. */}
       <aside
         aria-label="What it left"
         className="flex min-w-0 flex-col gap-6 @3xl/outcome:border-s @3xl/outcome:border-border @3xl/outcome:ps-8"
@@ -493,7 +474,5 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
       </aside>
     </section>
   );
-  // Two columns where the view is wide enough for them, by its own width rather than the
-  // window's: in the pane beside the chat it is one.
   return <div className="@container/outcome w-full">{outcome}</div>;
 }

@@ -29,7 +29,6 @@ export interface LabelSwatch {
   readonly color: string;
 }
 
-/** The colours a new label can take: the active palette's seed hues, so swatches fit the theme. */
 function useLabelSwatches(): readonly LabelSwatch[] {
   const paletteId = useThemeStore((s) => s.palette);
   const modePref = useThemeStore((s) => s.mode);

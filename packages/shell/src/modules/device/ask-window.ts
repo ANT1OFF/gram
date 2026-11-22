@@ -19,7 +19,6 @@ const WIDTH = 520;
 const HEIGHT = 560;
 const MARGIN = 24;
 
-/** The corner of the screen farthest from the pointer, so the ask doesn't open under it. */
 const awayFromPointer = (width = WIDTH, height = HEIGHT): { x: number; y: number } => {
   const pointer = screen.getCursorScreenPoint();
   const area = screen.getDisplayNearestPoint(pointer).workArea;
@@ -35,10 +34,7 @@ const awayFromPointer = (width = WIDTH, height = HEIGHT): { x: number; y: number
 export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
   let win: BrowserWindow | undefined;
   let loaded: Promise<void> | undefined;
-  /** The show last drawn in each window, for when that window goes. */
   const drawn = new WeakMap<BrowserWindow, string>();
-  // Once the app quits, no ask opens a window: each is refused. (Nothing cancels a quit today;
-  // whatever does must clear this.)
   let quitting = false;
   app.once("before-quit", () => {
     quitting = true;
@@ -57,8 +53,6 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
-      // A click on the ask while another app has focus reaches it, as on other systems; the
-      // page still wants the pointer moved and pressed after its second.
       acceptFirstMouse: true,
       alwaysOnTop: true,
       skipTaskbar: false,
@@ -76,7 +70,6 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
         images: false,
         webgl: false,
         navigateOnDragDrop: false,
-        // The ask's own zoom, whatever the app's is.
         zoomFactor: 1,
       },
     });
@@ -84,7 +77,6 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
     markDecisionWindow(contents);
     contents.setVisualZoomLevelLimits(1, 1).catch(() => undefined);
     contents.on("before-input-event", (event, input) => {
-      // No zoom, no reload, no find: the page is drawn as it is.
       if (input.control || input.meta) event.preventDefault();
     });
     contents.on("will-navigate", (event) => event.preventDefault());
@@ -94,8 +86,6 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
       const answer = askAnswerOf(title);
       if (answer !== undefined) options.answered(answer.show, answer.answer);
     });
-    // A window that crashed, hung, reloaded or failed to load is closed whole, never reused:
-    // its ask goes with it, and the next ask opens a fresh one.
     let finished = false;
     const end = () => {
       if (!next.isDestroyed()) next.destroy();
@@ -122,7 +112,6 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
         failed(new Error("The ask didn't load."));
         end();
       });
-      // Gone before it loaded: what waited on it is refused, not left waiting.
       next.once("closed", () => failed(new Error("The ask window went.")));
     });
     void next.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(askPage(colors))}`);
@@ -134,13 +123,11 @@ export const makeAskWindow = (options: AskWindowOptions): AskSurface => {
   return {
     show: async (show, view: AskView) => {
       const opened = open();
-      // Set before the wait, so a window that goes while loading still says which ask it took.
       drawn.set(opened.win, show);
       await opened.loaded;
       await opened.win.webContents.executeJavaScript(
         `window.showAsk(${JSON.stringify(show)}, ${JSON.stringify(view)})`,
       );
-      // Shown without taking focus from what the person is typing in, away from their pointer.
       if (!opened.win.isVisible()) {
         const [width, height] = opened.win.getSize();
         const { x, y } = awayFromPointer(width, height);

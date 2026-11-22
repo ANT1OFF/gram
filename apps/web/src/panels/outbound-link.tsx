@@ -24,9 +24,6 @@ export function OutboundLink({
 }) {
   const bridge = typeof window === "undefined" ? undefined : window.gram;
   if (untrusted && !bridge?.openExternal) {
-    // A button, as Streamdown draws the links it guards: an anchor's middle-click and context menu
-    // would open the href without asking. A `mailto:` gets the question too, which opens only
-    // http(s).
     return (
       <button
         type="button"

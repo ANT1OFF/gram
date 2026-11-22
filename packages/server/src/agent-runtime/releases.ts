@@ -7,18 +7,8 @@ import * as Option from "effect/Option";
 import { npmFailure, refusedSignIn } from "./npm-registry.ts";
 import { compareVersions, NPM_PACKAGES, parseSemver } from "./policy.ts";
 
-/**
- * The newest stable release of each agent CLI, as the user's own npm sees it: `npm view <pkg>
- * dist-tags time --json` run through `Proc`, so npm applies its own registry, proxy and auth.
- * Gram never reads `.npmrc`, which
- * holds tokens, and never falls back to a registry npm wasn't configured with. Without npm there
- * is no signal, and the listing says why.
- */
-
-/** The latest stable release of one agent. */
 interface VendorRelease {
   readonly version: string;
-  /** Epoch ms the registry says it was published, or when we first saw it if it didn't say. */
   readonly publishedAt: number;
 }
 
@@ -46,8 +36,6 @@ export const npmView =
   (proc: Proc["Service"], cwd: string): NpmView =>
   (pkg) =>
     proc
-      // `npm view` fetches the whole packument whatever fields are asked for, and a cold one for
-      // a measured cold Codex lookup took three minutes; npm's cache revalidates it after that.
       .run("npm", ["view", pkg, "dist-tags", "time", "--json"], { cwd, timeoutMs: NPM_VIEW_MS })
       .pipe(
         Effect.mapError((error) =>
@@ -56,8 +44,6 @@ export const npmView =
             : new NpmViewError({ problem: "unreachable", message: "npm took too long to answer" }),
         ),
         Effect.flatMap((out) => {
-          // npm's own error text can name the registry it was configured with; it's read for the
-          // status code only, and never kept or logged.
           if (out.status !== 0)
             return Effect.fail(
               new NpmViewError({
@@ -120,7 +106,6 @@ export const makeVendorReleases = (config: VendorReleasesConfig) =>
     let current: VendorReleases = { releases: {} };
     let readAt: number | undefined;
     let inFlight: Fiber.Fiber<VendorReleases> | undefined;
-    /** When each version was first seen, the conservative stand-in for an unknown publish time. */
     const firstSeen = new Map<string, number>();
 
     const readOne = (agent: RuntimeAgent) =>
@@ -130,7 +115,6 @@ export const makeVendorReleases = (config: VendorReleasesConfig) =>
         if (version === undefined) return undefined;
         const key = `${agent}@${version}`;
         if (!firstSeen.has(key)) firstSeen.set(key, config.now());
-        // Without a publish time the wait runs from first sight, which can only be later.
         return {
           version,
           publishedAt: publishedAtOf(view, version) ?? firstSeen.get(key)!,
@@ -157,14 +141,11 @@ export const makeVendorReleases = (config: VendorReleasesConfig) =>
         if (release === undefined) continue;
         reached = true;
         const previous = releases[agent];
-        // A registry that briefly answers with an older `latest` doesn't take a release back.
         if (previous === undefined || !(compareVersions(release.version, previous.version) < 0))
           releases[agent] = release;
       }
       readAt = config.now();
       const checkedAt = reached ? readAt : current.checkedAt;
-      // A refused sign-in is the user's to fix whatever else was read; any other failure is said
-      // only when nothing could be read, as one agent's isn't a missing npm.
       const errors = results.flatMap((r) => (r.error === undefined ? [] : [r.error]));
       const failure =
         errors.find((error) => error.problem === "sign-in") ?? (reached ? undefined : errors[0]);
@@ -178,7 +159,6 @@ export const makeVendorReleases = (config: VendorReleasesConfig) =>
       return current;
     });
 
-    /** The releases, reading first when due; past `waitMs`, what's known now, marked `checking`. */
     const get = (refresh: boolean, waitMs?: number): Effect.Effect<VendorReleases> =>
       Effect.gen(function* () {
         const age = readAt === undefined ? Number.POSITIVE_INFINITY : config.now() - readAt;

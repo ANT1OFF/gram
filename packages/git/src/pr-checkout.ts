@@ -1,6 +1,3 @@
-// Checking a pull request out locally: the branch it lands on, and fetching its head from GitHub,
-// a fork's head included, through `refs/pull/<n>/head`.
-
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import { branchExists, gh, git, gitFailMsg } from "./exec.ts";
@@ -13,7 +10,6 @@ import { isValidGitRefCharset } from "./worktrees.ts";
 
 /** The repository clone URL from a PR URL, preserving the old suffix replacement semantics. */
 export const prCloneUrl = (url: string): string => {
-  // `.*$` could only consume the final line. Search there once, without overlapping digit/dot runs.
   const from =
     Math.max(...["\n", "\r", "\u2028", "\u2029"].map((mark) => url.lastIndexOf(mark))) + 1;
   const match = /\/pull\/\d/.exec(url.slice(from));
@@ -124,7 +120,6 @@ export const prHead = (
     };
   });
 
-/** The remote whose URL is `repo`, when the checkout has one. */
 const remoteFor = (repoTop: string, repo: string) =>
   git(repoTop, ["config", "--get-regexp", "^remote\\..*\\.url$"]).pipe(
     Effect.map((out) =>
@@ -174,8 +169,6 @@ export const fetchPrHead = (
       return branch;
     }
     const source = remote ?? prCloneUrl(head.url);
-    // A ref of its own rather than the shared `FETCH_HEAD`, which a sibling worktree's background
-    // fetch can overwrite between the fetch and the branch.
     const ref = `refs/gram/pr-checkout/pr-${head.number}-${process.pid}-${Date.now()}`;
     yield* Effect.gen(function* () {
       yield* fetch(["--quiet", source, `+refs/pull/${head.number}/head:${ref}`]);

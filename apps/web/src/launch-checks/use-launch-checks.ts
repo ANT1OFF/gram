@@ -25,8 +25,6 @@ export function useLaunchChecks(): {
   const recheck = useCallback(async () => {
     const next = await api.launchChecks(true);
     client.setQueryData(LAUNCH_CHECKS_KEY, next);
-    // Explicit recheck also recovers failed listings whose chooser is currently closed.
-    // Mounting that chooser itself does not retry a failed discovery.
     await Promise.all([
       client.invalidateQueries({ queryKey: ["models"], refetchType: "all" }),
       client.invalidateQueries({ queryKey: ["agents-available"] }),

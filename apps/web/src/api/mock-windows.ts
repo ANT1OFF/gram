@@ -50,8 +50,6 @@ export class MockWindows {
       window.addEventListener("pagehide", () => {
         if (!this.#self) return;
         this.#post({ type: "bye", windowId: this.#self.windowId });
-        // A closing tab still fires `visibilitychange` and `blur` after `pagehide`, and the report
-        // those trigger would re-announce this window to the others right after its goodbye.
         this.#self = undefined;
       });
     }

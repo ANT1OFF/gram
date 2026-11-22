@@ -91,7 +91,6 @@ export interface GatewayDeps {
   readonly listen?: () => Promise<CodeListener>;
 }
 
-/** The OpenRouter profile a sign-in makes when there is none. */
 const OPENROUTER_PROFILE_ID = "openrouter" as ProfileId;
 
 /**
@@ -114,15 +113,12 @@ export const vaultInfo = (
     case "darwin":
       return { kind: "keychain", persisted: true, label: "the macOS Keychain" };
     case "win32":
-      // DPAPI ciphertext in the app's data folder (`gateway-keys.json`), not Credential Manager.
       return {
         kind: "dpapi",
         persisted: true,
         label: "a file encrypted with Windows data protection for your account",
       };
     default:
-      // With no keyring `safeStorage` falls back to `basic_text`, which doesn't encrypt, so the
-      // desktop refuses to store keys there (`keyringBackendOk`) and Settings says why.
       return keyringBackendOk(backend)
         ? { kind: "libsecret", persisted: true, label: "the system keyring" }
         : {
@@ -133,7 +129,6 @@ export const vaultInfo = (
   }
 };
 
-/** Control characters, line breaks included, which would break a Windows `cmd.exe` shim call. */
 const hasControlCharacter = (text: string) =>
   [...text].some((char) => {
     const code = char.charCodeAt(0);
@@ -220,7 +215,6 @@ export const makeGateway = ({
   post = (url, init) => fetch(url, init),
   listen = () => listenForCode(),
 }: GatewayDeps) => {
-  /** Sign-ins with OpenRouter waiting for the person to come back, by attempt. */
   const signIns = new Map<string, { readonly verifier: string; readonly listener: CodeListener }>();
   const changed = publish({ type: "profiles.changed" });
 
@@ -234,7 +228,6 @@ export const makeGateway = ({
       }),
     );
 
-  /** The stored key, if any; `keyRef` is `""` until a key is set. */
   const keyFor = (profile: GatewayProfile) =>
     profile.keyRef === ""
       ? Effect.succeed(Option.none<Redacted.Redacted<string>>())
@@ -252,8 +245,6 @@ export const makeGateway = ({
         yield* store.upsertProfile({ ...profile, keyRef: ref });
       }
     }).pipe(
-      // Not the vault's own reason, which may quote what it was handed; only the fixed no-keyring
-      // text, which says what to do, comes through.
       Effect.catchTag("VaultError", (error) =>
         Effect.fail(
           new GatewayError({
@@ -267,11 +258,6 @@ export const makeGateway = ({
       ),
     );
 
-  /**
-   * After a key is stored or cleared: a saved key discovers models (a failure is reported, not
-   * thrown) and makes the profile the default when none is; either way live servers and sessions
-   * pick the change up, and clients are told.
-   */
   const afterKeyChange = (profileId: ProfileId, key: Option.Option<Redacted.Redacted<string>>) =>
     Effect.gen(function* () {
       let result: SetKeyResult = {};
@@ -297,7 +283,6 @@ export const makeGateway = ({
       return result;
     });
 
-  /** Imports OpenCode's key for the provider on the profile's base URL. Only after user consent. */
   const importOpenCodeKey = (profileId: ProfileId) =>
     Effect.gen(function* () {
       const profile = yield* findProfile(profileId);
@@ -308,7 +293,6 @@ export const makeGateway = ({
       return { imported: true };
     });
 
-  /** A profile and its key for an agent adapter; the key stays redacted until the child env. */
   const credentials = (profileId: ProfileId, agent: AgentKind) =>
     findProfile(profileId).pipe(
       Effect.mapError(
@@ -337,7 +321,6 @@ export const makeGateway = ({
       ),
     );
 
-  // `keyRef` is server-owned: it names the stored key, and a client can't point it elsewhere.
   const upsertProfile = ({ profile }: { readonly profile: GatewayProfile }) =>
     Effect.gen(function* () {
       const invalid = hasControlCharacter(profile.name)
@@ -361,7 +344,6 @@ export const makeGateway = ({
         );
       const profiles = yield* store.listProfiles;
       const existing = profiles.find((p) => p.id === profile.id);
-      // The first profile, or any profile while none is the default, becomes the default.
       const noOtherDefault = !profiles.some((p) => p.id !== profile.id && p.default === true);
       const kind = profile.kind ?? gatewayKindOf(profile.baseURL);
       const next: GatewayProfile = {
@@ -403,7 +385,6 @@ export const makeGateway = ({
         Effect.map((backend) => vaultInfo(vault.kind, platform, backend)),
       ),
 
-    // Only while none exist, so it never duplicates or overrides profiles the user edited.
     "profiles.seed": () =>
       Effect.gen(function* () {
         if ((yield* store.listProfiles).length > 0) return { added: 0 };
@@ -432,7 +413,6 @@ export const makeGateway = ({
         });
         const verifier = newVerifier();
         const attemptId = crypto.randomUUID();
-        // A newer attempt replaces any other: one sign-in at a time.
         for (const [id, other] of signIns) {
           other.listener.close();
           signIns.delete(id);
@@ -478,7 +458,6 @@ export const makeGateway = ({
         return { ...result, profileId: profile.id };
       }),
 
-    // Reads OpenCode's `auth.json` only here, after the user consented in the UI.
     "profiles.importKey": ({ profileId }) => importOpenCodeKey(profileId),
 
     "profiles.discoverModels": ({ profileId }) =>
@@ -498,8 +477,6 @@ export const makeGateway = ({
         }
         const models = yield* discoverModels(profile, key.value, fetcher);
         yield* store.upsertProfile({ ...profile, models });
-        // Codex reads a profile's model catalog as its server starts, so a changed list
-        // retires the servers as a changed key does.
         if (JSON.stringify(models) !== JSON.stringify(profile.models)) {
           yield* onKeyChanged(profileId);
         }
@@ -514,11 +491,9 @@ export const makeGateway = ({
         })),
       ),
 
-    // The agent's adapter must be registered even when the models come from a gateway profile.
     "models.list": ({ agent, profileId }) =>
       Effect.gen(function* () {
         const host = yield* hosts.get(agent);
-        // The user's own models follow either list: an id is the same id through a gateway.
         const custom = customModelsOf(yield* store.getSettings, agent);
         if (profileId === undefined) {
           return { models: withCustomModels(yield* host.listModels(), custom) };
@@ -555,12 +530,9 @@ export const gatewayHandlers = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const home = homedir();
 
-  // Under Electron the desktop app holds keys in safeStorage; outside it (`pnpm dev`) keys live only
-  // in memory, and Settings says they aren't saved.
   const parentPort = (process as { parentPort?: VaultPort }).parentPort;
   const vault = parentPort === undefined ? makeMemoryVault() : makeBridgeVault(parentPort);
 
-  /** Retires the agents' per-profile servers, then reopens sessions on the profile once idle. */
   const onKeyChanged = (profileId: ProfileId) =>
     Effect.gen(function* () {
       for (const kind of ["codex", "claude"] as const) {
@@ -587,13 +559,10 @@ export const gatewayHandlers = Effect.gen(function* () {
     codexModel: codexModelFor(home),
   });
 
-  // Agent adapters are built before this layer; hand them the profile + key lookup now.
   const credentials = yield* Effect.serviceOption(GatewayCredentials);
   if (Option.isSome(credentials)) yield* credentials.value.install(gateway.credentials);
 
   const helper = schedulerTitles(yield* HelperScheduler);
-  // Kept from the same stream the moments come from, so a session's commands are on record by the
-  // time a status after its `thread.identity` is looked at.
   const sessionCommands = new Map<ThreadId, ReadonlyArray<SlashCommand>>();
   yield* runTitleWatcher({
     helper,
@@ -616,7 +585,6 @@ export const gatewayHandlers = Effect.gen(function* () {
             : Stream.make({ threadId: event.threadId, phase });
         }),
       ),
-      // Every removal, none dropped, so the watcher lets go of each thread it kept.
       hub
         .internalEvents(isThreadRemoved, "thread titles")
         .pipe(Stream.map((event) => ({ threadId: event.threadId, phase: "removed" as const }))),

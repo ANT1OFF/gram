@@ -1,6 +1,3 @@
-// Test helpers for routines, which live in a workspace's charter while their runs live in its
-// outbox: a routine flattened back into one record (its charter entry and its run state), and the
-// ways a test makes, changes, runs and stages one.
 import {
   type ProjectId,
   type RoutineId,
@@ -23,7 +20,6 @@ export type Flat = WorkspaceRoutine &
     readonly enabled: boolean;
   };
 
-/** Each routine's workspace, so a test can name a routine by its id alone, across a restart. */
 const workspaces = new Map<string, WorkspaceId>();
 
 const flat = (workspaceId: WorkspaceId, status: RoutineStatus): Flat => ({
@@ -80,7 +76,6 @@ export const addRoutine = (workspaceId: WorkspaceId, routine: WorkspaceRoutine) 
     const id = saved.charter.routines?.find((each) => each.name === routine.name.trim())?.id;
     if (id === undefined) return yield* Effect.die(new Error(`${routine.name} wasn't saved`));
     workspaces.set(id, workspaceId);
-    // The engine hears of the charter change and reckons its next run.
     return yield* waitReal(
       `routine ${routine.name} reckoned`,
       routineNow(id).pipe(Effect.map((each) => (each.nextRunAt === undefined ? undefined : each))),

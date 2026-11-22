@@ -1,14 +1,3 @@
-// The agent browser on a server with no desktop app: a Node process the server forks, which runs
-// the same pane module (`pane.ts`) over a headless Chromium (`headless.ts`) and answers the
-// server's `pane.request` messages on its IPC channel, as the desktop shell answers them on
-// Electron's port.
-//
-//   GRAM_BROWSER_EXECUTABLE  the Chromium (or Chrome) to start; required
-//   GRAM_BROWSER_SANDBOX     `0` starts it without Chromium's sandbox, as root in a container needs
-//
-// The browser starts on the first request and reaches loopback only: the server's own addresses,
-// where an agent's dev server runs. A navigation anywhere else is refused before it asks anyone.
-
 import { lookup } from "node:dns/promises";
 import { pathToFileURL } from "node:url";
 
@@ -98,15 +87,10 @@ export const headlessPanes = (options: {
   readonly idleMs?: number;
 }): { readonly panes: AgentPanes; readonly view: Views["message"]; close(): Promise<void> } => {
   const log = options.log ?? stderrLog;
-  /** When each thread's latest command is answered. */
   const tails = new Map<string, Promise<void>>();
-  /** The commands running on each thread's page. */
   const running = new Map<string, number>();
-  /** Why a thread has no page yet: its first command is making one, or couldn't. */
   const phases = new Map<string, ViewStatus>();
-  /** Where each thread's loopback is, as its latest request said, when not this machine's. */
   const loopbackProxies = new Map<string, string>();
-  /** A thread's page being closed for another loopback, which its next command waits for. */
   const reopening = new Map<string, Promise<void>>();
   let browser: HeadlessBrowser | undefined;
   let views: ReturnType<typeof headlessViews> | undefined;
@@ -131,7 +115,6 @@ export const headlessPanes = (options: {
     });
     return made;
   };
-  // Approvals hold for this process only; off loopback nothing loads here whatever the list says.
   const hosts = createBrowseHostList({ load: () => [], save: () => {}, changed: () => {} });
   const panes: AgentPanes = createAgentPanes({
     hosts,
@@ -162,9 +145,6 @@ export const headlessPanes = (options: {
       };
       const thread = typeof threadId === "string" ? threadId : undefined;
       if (thread !== undefined) {
-        // A page made for another machine's loopback, or for this one's, isn't the thread's now:
-        // the thread moved, or its machine's host came or went. It is closed once no command runs
-        // on it, and the next command makes another; a command arriving meanwhile waits for that.
         await reopening.get(thread);
         const proxy =
           typeof loopbackProxy === "string" && isLoopbackProxy(loopbackProxy)
@@ -189,8 +169,6 @@ export const headlessPanes = (options: {
           watching.changed(thread);
         }
       }
-      // The clock starts when the thread's earlier commands are done, so one waiting its turn
-      // behind a long command isn't taken for a page that stopped answering.
       const before = (thread === undefined ? undefined : tails.get(thread)) ?? Promise.resolve();
       let deadline: ReturnType<typeof setTimeout> | undefined;
       let finished = false;
@@ -198,9 +176,6 @@ export const headlessPanes = (options: {
         void before.then(() => {
           if (finished) return;
           deadline = setTimeout(() => {
-            // A page whose script never yields answers nothing, and would hold the thread's
-            // commands for good: it is closed, and the next command opens a fresh one. The page
-            // ends before the pane hears, so the pane sends nothing more to it.
             if (requestId !== undefined) panes.cancel(requestId);
             const closing = thread === undefined ? undefined : views?.close(thread);
             void Promise.resolve(closing)
@@ -257,7 +232,6 @@ export const headlessPanes = (options: {
   };
 };
 
-/** Serves `pane.request` messages on this process's IPC channel until the server goes away. */
 const main = () => {
   const executable = process.env["GRAM_BROWSER_EXECUTABLE"];
   const send = process.send?.bind(process);
@@ -285,7 +259,6 @@ const main = () => {
     servePaneMessage(message, panes, reply);
   });
   const stop = () => {
-    // The browser gets a few seconds to stop, so its profile goes with it.
     const deadline = setTimeout(() => process.exit(0), 5_000);
     void close().finally(() => {
       clearTimeout(deadline);

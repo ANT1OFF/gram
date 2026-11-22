@@ -57,7 +57,6 @@ type Changes = ReturnType<typeof useWorkspaceChanges>;
 
 const LABEL = "text-meta font-medium text-foreground";
 
-/** No runs yet: a routine just saved, before the server has reckoned its next run. */
 const NO_STATE: RoutineState = {};
 
 /**
@@ -167,7 +166,6 @@ function targetText(
   return `Worker in ${project}${model}`;
 }
 
-/** "Every day at 09:00", "When CI fails on main": when it runs, with a capital to start a line. */
 const scheduleLine = (routine: WorkspaceRoutine) => {
   const words = routineWhenText(routine);
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -359,11 +357,6 @@ const SOURCE_ITEMS = [
   { value: "github", label: "GitHub" },
 ];
 
-/**
- * An event routine's event and its few fields: a repository to narrow review requests to, a
- * branch for CI, a package and how old its release must be. A PR or CI routine watches the
- * repository its worker runs in, which the form picks below.
- */
 function EventFields({
   form,
   set,
@@ -491,21 +484,14 @@ function EventFields({
   );
 }
 
-/** The weekdays the Day picker lists, Monday first, as the week reads. */
 const DAY_ITEMS = [1, 2, 3, 4, 5, 6, 0].map((day) => ({
   value: String(day),
   label: ROUTINE_DAYS[day]!,
 }));
 
-/** The form keeps "" for the home repository and the workspace's default model; a pick needs a name. */
 const HOME = "home";
 const DEFAULT_MODEL = "default";
 
-/**
- * A routine's form, a new one's or a saved one's to edit, in a dialog of its own: its header says
- * which workspace it runs in and stays put while the body scrolls, and Save and Cancel stay in view
- * below it. Save stores it in the charter.
- */
 function RoutineEditor({
   state,
   charter,
@@ -540,7 +526,6 @@ function RoutineEditor({
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<RoutineForm>) => setForm((current) => ({ ...current, ...patch }));
   const repos = state.workspace.projectIds;
-  // A routine records a concrete model, so it names a pinned entry, as the server takes it.
   const roster = (charter.workerModels ?? []).filter(
     (entry): entry is PinnedWorkerModel => !("tier" in entry),
   );
@@ -553,7 +538,6 @@ function RoutineEditor({
       .filter((id) => id !== state.workspace.homeProjectId)
       .map((id) => ({ value: id as string, label: projectNameOf(projects, id) })),
   ];
-  // One row per model, the routine's own kept while the roster no longer lists it, so it shows.
   const modelNames = [...new Set(roster.map(modelLabel))];
   if (form.model !== "" && !modelNames.includes(form.model)) modelNames.push(form.model);
   const modelItems = [
@@ -612,7 +596,6 @@ function RoutineEditor({
           submit();
         }}
       >
-        {/* The body scrolls; the header above and the actions below stay in view. */}
         <div className="-m-1 flex min-h-0 flex-col gap-4 overflow-y-auto overscroll-contain p-1">
           <div className="flex flex-col gap-1">
             <label htmlFor={ids.name} className={LABEL}>

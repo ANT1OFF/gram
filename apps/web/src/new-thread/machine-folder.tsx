@@ -31,7 +31,6 @@ const FOCUS = "focus-visible:border-ring focus-visible:ring-3 focus-visible:ring
 const ROW =
   "flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent";
 
-/** How many of a machine's recent folders, and of this Mac's repositories, its menu lists. */
 const LISTED = 5;
 
 /**
@@ -254,10 +253,6 @@ export function MachineFolderField({
   );
 }
 
-/**
- * What to do while the field is empty. Its check (checking, why not, where it runs) is said once,
- * under Where it runs (`machineFolderLine`).
- */
 function MachineFolderLine({
   machine,
   status,
@@ -272,7 +267,6 @@ function MachineFolderLine({
   ) : null;
 }
 
-/** Inline: it sits in the line under Where it runs, itself a paragraph. */
 function FolderProblemLine({ message }: { message: string }) {
   return (
     <span

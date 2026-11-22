@@ -37,7 +37,6 @@ export function FolderBrowser({
   const { key, browse } = useBrowsing(hostId);
   const storedPath = useProjectPickerStore((s) => s.browsePath);
   const storeBrowseTo = useProjectPickerStore((s) => s.browseTo);
-  // Another machine's place is this browser's own: the picker's remembers this Mac's.
   const [machinePath, setMachinePath] = useState(startAt);
   const browsePath = withTrailingSlash(hostId === undefined ? storedPath : machinePath);
   const browseTo = hostId === undefined ? storeBrowseTo : setMachinePath;

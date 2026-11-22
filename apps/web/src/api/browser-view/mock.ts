@@ -84,7 +84,6 @@ export const createBrowserViewMock = (): BrowserViewApi & BrowserViewMockControl
       return channel;
     },
     browserViewInput: async (threadId, inputs) => {
-      // A pointer passing over the agent's page takes nothing over.
       if (inputs.some((input) => input.type !== "pointer" || input.action !== "move"))
         drive(threadId, "user");
     },

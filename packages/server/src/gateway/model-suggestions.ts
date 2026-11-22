@@ -6,7 +6,6 @@ import { join } from "node:path";
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** A model id as an agent would take it: something, with no whitespace in it. */
 const isModelId = (value: unknown): value is string =>
   typeof value === "string" && value !== "" && !/\s/.test(value);
 
@@ -38,7 +37,6 @@ export const threadModelSuggestions = (
   return [...new Set(ids)].map((id) => ({ agent: "claude", id, source: "a thread's model" }));
 };
 
-/** `$CLAUDE_CONFIG_DIR`, else `~/.claude`, as the CLI resolves it. */
 const claudeConfigDir = (home: string, env: NodeJS.ProcessEnv): string => {
   const configured = env["CLAUDE_CONFIG_DIR"];
   return configured === undefined || configured === "" ? join(home, ".claude") : configured;
@@ -62,7 +60,6 @@ export const modelSuggestions = (
         source: "Claude Code settings",
       })),
     ),
-    // `JSON.parse` throwing inside `map` is a defect, not a failure, so catch both.
     Effect.catchCause(() => Effect.succeed([])),
   );
 };

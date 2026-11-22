@@ -37,15 +37,10 @@ export const makeSettingsWriter = Effect.gen(function* () {
   const log = yield* ServerLog;
   const config = yield* ServerConfig;
   const mirrorUpdates = mirrorUpdatePrefs(config.dataDir, log.logger);
-  // Absent in handler tests that build no orchestration.
   const dreams = Option.getOrUndefined(yield* Effect.serviceOption(Dreams));
   const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
   const turnActivity = Option.getOrUndefined(yield* Effect.serviceOption(TurnActivity));
 
-  /**
-   * What a stored change sets off, by the groups it touched: the log level, the update prefs
-   * mirror and automatic Dreams; `announce` tells every window.
-   */
   const afterCommit = (
     settings: Settings,
     groups: ReadonlySet<string>,
@@ -67,12 +62,6 @@ export const makeSettingsWriter = Effect.gen(function* () {
       .updateSettings((settings) => applySettingsPatch(settings, patch), settingsPatchPaths(patch))
       .pipe(Effect.tap((settings) => afterCommit(settings, new Set(Object.keys(patch)), options)));
 
-  /**
-   * An approved change by chat: `writes` applied only while each field still holds the value the
-   * card showed, and its audit in the same transaction, so a stored change always has one. The
-   * write and what it sets off aren't interrupted once begun. `undefined` when a field has moved:
-   * nothing was written.
-   */
   const commit = (
     writes: ReadonlyArray<SettingsWrite>,
     audit: SettingsAuditEntry,

@@ -24,9 +24,6 @@ import {
 } from "./recommended-setup-model";
 import { useSaveSettings } from "./use-save-settings";
 
-// The Recommended setup row of Settings → Agents & models, its Details fold, and the two sheets it
-// opens: the one-time turn-on sheet and the turn-off question (mock: recommended-setup v1).
-
 const OFF_TEXT = "A model per kind of work, kept current by Gram. Models you pick stay yours.";
 
 const SHEET_CLASS =
@@ -34,7 +31,6 @@ const SHEET_CLASS =
 const BACKDROP_CLASS =
   "fixed inset-0 z-40 scrim transition-opacity duration-(--dur-fast) data-[ending-style]:opacity-0 data-[starting-style]:opacity-0";
 
-/** Writes a sheet's settings patch and each workspace charter it changes. */
 function useApply() {
   const api = useApi();
   const save = useSaveSettings();
@@ -47,7 +43,6 @@ function useApply() {
   };
 }
 
-/** Each tier as it stands on this machine, folded under the row. */
 function TierDetails() {
   const available = useAvailableModels();
   const rows = tierRows(available);
@@ -89,14 +84,11 @@ function TierDetails() {
   );
 }
 
-/** The one-time sheet for an install turning the mode on: every slot, past defaults pre-ticked. */
 function TurnOnSheet({ onClose }: { onClose: () => void }) {
   const settings = useServerSettings((s) => s.settings)!;
   const { workspaces, settled } = useWorkspacesQuery();
   const available = useAvailableModels();
   const rows = turnOnRows(settings, workspaces, available);
-  // Only what the user changed is kept: rows arrive as the workspaces and models load, and each
-  // starts at its own default (ticked for a past Gram default).
   const [changed, setChanged] = useState<ReadonlyMap<string, boolean>>(new Map());
   const ticked: ReadonlySet<string> = new Set(
     rows
@@ -187,7 +179,6 @@ function TurnOnSheet({ onClose }: { onClose: () => void }) {
   );
 }
 
-/** Turning the mode off asks once: keep the current models as the user's own, or keep following. */
 function TurnOffSheet({ onClose }: { onClose: () => void }) {
   const settings = useServerSettings((s) => s.settings)!;
   const { workspaces } = useWorkspacesQuery();
@@ -262,7 +253,6 @@ export function RecommendedSetupRow() {
   const settings = useServerSettings((s) => s.settings);
   const save = useSaveSettings();
   const [sheet, setSheet] = useState<"on" | "off">();
-  // Lists the harnesses only for the summary while on: an off row probes nothing.
   const available = useAvailableModels(settings?.agents.recommendedSetup?.enabled === true);
   const [error, setError] = useState<string>();
   const id = useId();

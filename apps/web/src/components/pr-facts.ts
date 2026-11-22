@@ -12,10 +12,6 @@ import { reviewStatusOf } from "@/components/review-glyph";
 
 import type { MergeIntentSource, PrFacts } from "./pr-marks-model";
 
-// What each place that knows a PR knows of it, as the vocabulary's `PrFacts`: a badge with its
-// binding, a ledger row with its worker, or a card's chip.
-
-/** A binding's `merge_when_ready`, its refusal only while the head it was refused on is current. */
 const intentOf = (
   bound: Pick<BoundPr, "mergeWhenReady"> | undefined,
   head: string | undefined,

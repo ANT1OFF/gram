@@ -10,7 +10,6 @@ interface RevealRequest {
 interface RevealState {
   request: RevealRequest | undefined;
   reveal(threadId: ThreadId, messageId: string): void;
-  /** Clears the request once a thread view has scrolled to it; a newer request is kept. */
   done(nonce: number): void;
 }
 

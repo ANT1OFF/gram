@@ -7,17 +7,12 @@ import { useLayoutStore } from "@/stores/layout";
 interface ThreadFiles {
   expanded: readonly string[];
   selected: string | undefined;
-  /** The files open as tabs, in the order they were opened; `selected` is the one shown. */
   open?: readonly string[] | undefined;
-  /** The line the preview highlights, when a search result or a file link opened the file. */
   line: number | undefined;
-  /** With `line`, the last line of the highlighted range. */
   end?: number | undefined;
-  /** Bumped by every open at a line, so opening the same line again scrolls back to it. */
   reveals?: number | undefined;
 }
 
-/** How the Files panel finds files: filtering the tree by name, or searching their contents. */
 type FilesMode = "names" | "contents";
 
 export interface FilesSearch {
@@ -31,13 +26,11 @@ const EMPTY_SEARCH: FilesSearch = { query: "", regex: false, caseSensitive: fals
 /** The file tree's part of the Files panel's height while a file is previewed. */
 export const TREE_SHARE = { min: 0.15, max: 0.85, default: 0.4 } as const;
 
-/** Threads whose tree size is kept; the least recently resized go first. */
 const SHARE_LIMIT = 100;
 
 /** Open tabs per thread; past it the oldest closes. */
 export const OPEN_LIMIT = 12;
 
-/** `open` with `path` added last, unless it's there already; the oldest go past the limit. */
 const withOpen = (open: readonly string[] | undefined, path: string | undefined) => {
   const current = open ?? [];
   if (path === undefined || current.includes(path)) return current;
@@ -51,7 +44,6 @@ export const clampShare = (share: number): number =>
 
 interface FilesState {
   byThread: Readonly<Record<string, ThreadFiles>>;
-  /** Per thread, when resized; others use `TREE_SHARE.default`. */
   treeShare: Readonly<Record<string, number>>;
   showHidden: boolean;
   filter: string;
@@ -59,9 +51,7 @@ interface FilesState {
   search: FilesSearch;
   toggle: (threadId: string, path: string) => void;
   select: (threadId: string, path: string | undefined) => void;
-  /** Closes `path`'s tab; the tab beside it is shown, or nothing once the last one closes. */
   closeFile: (threadId: string, path: string) => void;
-  /** Previews `path` with `line` highlighted. */
   openAt: (threadId: string, path: string, line: number) => void;
   setTreeShare: (threadId: string, share: number) => void;
   setShowHidden: (showHidden: boolean) => void;
@@ -72,7 +62,6 @@ interface FilesState {
 
 const EMPTY: ThreadFiles = { expanded: [], selected: undefined, line: undefined };
 
-/** Persisted tree sizes, clamped, keeping the most recently resized threads. */
 const sanitizeShares = (raw: unknown): Record<string, number> => {
   const entries = Object.entries((raw ?? {}) as Record<string, unknown>).flatMap(
     ([threadId, share]) =>
@@ -155,7 +144,6 @@ export const useFilesStore = create<FilesState>()(
         set((s) => {
           const { [threadId]: _previous, ...others } = s.treeShare;
           const next = clampShare(share);
-          // The default isn't stored, so a reset forgets the thread; re-adding moves it last.
           return {
             treeShare:
               next === TREE_SHARE.default
@@ -171,8 +159,6 @@ export const useFilesStore = create<FilesState>()(
     {
       name: "gram.files",
       version: 1,
-      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
-      // backing file, while a missing `window` throws, which zustand takes as no storage.
       storage: createJSONStorage(() => window.localStorage),
       partialize: ({ treeShare }) => ({ treeShare }),
       merge: (persisted, current) => ({

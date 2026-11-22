@@ -36,7 +36,6 @@ export class McpTokens extends Context.Service<
     const authorizationFor = (token: string) =>
       Effect.sync(() => {
         let found: { threadId: ThreadId; signal: AbortSignal } | undefined;
-        // As with threadFor, no early exit reveals which entry matched.
         for (const [threadId, candidate] of byThread) {
           if (tokensEqual(candidate.token, token))
             found = { threadId, signal: candidate.controller.signal };

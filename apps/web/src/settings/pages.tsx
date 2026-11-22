@@ -79,7 +79,6 @@ export type SettingsGroupId =
   | "keyboard"
   | "voice-input"
   | "about"
-  // An embedding app's own page, each a group of its own (`shell.settings.pages`).
   | `host:${string}`;
 
 export interface SettingsNavGroup {
@@ -153,13 +152,8 @@ export type SettingsPath =
   | "/settings/about"
   | "/settings/diagnostics"
   | "/settings/help"
-  // An embedding app's own page, at `/settings/<id>` (routes/settings.$page.tsx).
   | "/settings/$page";
 
-/**
- * A page's settings as Settings search shows them, fetched when a search first needs them: the page
- * list is loaded by the nav and by every Settings route, and held every section before.
- */
 const GeneralSearch = lazy(async () => ({
   default: (await import("./general-page")).GeneralPage,
 }));
@@ -239,7 +233,6 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "privacy",
       "titles",
       "summaries",
-      // "advanced": where this and the other pages it held lived, so the old way there finds them.
       "advanced",
     ],
     search: AiHelpersSearch,
@@ -315,7 +308,6 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     path: "/settings/workspaces",
     group: "workspaces",
     description: "Repositories one orchestrator works on together, and how far it goes unasked.",
-    // "experimental": where this lived until 0.7, so the old way there still finds it.
     keywords: [
       "experimental",
       "orchestrator",
@@ -458,7 +450,6 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
     path: "/settings/appearance",
     group: "appearance",
     description: "Mode, palette, density, motion, transcript size and width, and fonts.",
-    // Not "dark" or "light": the Mode row answers those itself, and a page word shows every row.
     keywords: ["theme", "colours", "colors", "look"],
     search: AppearanceSearch,
     wide: true,
@@ -521,7 +512,6 @@ export const ALL_SETTINGS_PAGES: readonly SettingsPage[] = [
       "hotkey",
       "nemotron",
       "parakeet",
-      // Where its switch lived until 1.5, so the old way there still finds it.
       "experimental",
     ],
     search: VoiceInputSearch,
@@ -589,16 +579,10 @@ export const SETTINGS_PAGES = settingsPagesFor(
   typeof window === "undefined" ? undefined : window.gram?.platform,
 );
 
-/** Gram's page ids, which an embedding app's own page may not take. */
 const GRAM_IDS = new Set(ALL_SETTINGS_PAGES.map((page) => page.id));
 
-/**
- * Where an embedding app's page opens. A link takes the path whole, so it is the page's own
- * address, not the route's pattern that the type names.
- */
 const hostPath = (id: string) => `/settings/${id}` as SettingsPath;
 
-/** An embedding app's own page as Settings lists it: a group of its own, found by its words. */
 const hostPage = (page: ShellSettingsPage): SettingsPage => ({
   id: page.id,
   label: page.label,
@@ -609,7 +593,6 @@ const hostPage = (page: ShellSettingsPage): SettingsPage => ({
   search: null,
 });
 
-/** The embedding app's pages Settings may show: well named, none of Gram's, none twice. */
 const hostPages = (settings: ShellSettings): readonly ShellSettingsPage[] => {
   const seen = new Set<string>();
   return (settings.pages ?? []).filter((page) => {
@@ -667,7 +650,6 @@ export function advancedRedirect(pathname: string): SettingsPath {
 
 const LAST_PAGE_KEY = "gram.settings.page";
 
-/** Pages that were renamed, by their old id, so a remembered one still opens. */
 const RENAMED_PAGES: Readonly<Record<string, string>> = { updates: "about" };
 
 /** The page among `pages` an id names. */
@@ -685,16 +667,12 @@ export function lastSettingsPage(): SettingsPage {
   let id: string | null = null;
   try {
     id = localStorage.getItem(LAST_PAGE_KEY);
-  } catch {
-    // Storage can be off (a locked-down browser); Settings then always opens on General.
-  }
+  } catch (_storageCanBeOffALockedDownBrowserSettings) {}
   return settingsPageById(id) ?? shownSettingsPages()[0]!;
 }
 
 export function rememberSettingsPage(id: string): void {
   try {
     localStorage.setItem(LAST_PAGE_KEY, id);
-  } catch {
-    // As above: without storage, nothing is remembered.
-  }
+  } catch (_asAboveWithoutStorageNothingIsRemembered) {}
 }

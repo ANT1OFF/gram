@@ -15,7 +15,6 @@ import { useLayoutStore } from "@/stores/layout";
 export const isSettingsPath = (pathname: string) =>
   pathname === "/settings" || pathname.startsWith("/settings/");
 
-/** Where Back returns to, kept for the window's session so a reload in Settings still knows it. */
 const RETURN_KEY = "gram.settings-return";
 
 const storedReturn = (): string | undefined => {
@@ -26,7 +25,6 @@ const storedReturn = (): string | undefined => {
   }
 };
 
-/** The last location outside Settings; the grid until there has been one. */
 let returnTo = storedReturn() ?? "/";
 
 /** The location Back and Esc leave Settings for. */
@@ -40,9 +38,7 @@ export function useRememberSettingsReturn() {
     returnTo = href;
     try {
       sessionStorage.setItem(RETURN_KEY, href);
-    } catch {
-      // Without session storage, Back still knows it until a reload.
-    }
+    } catch (_withoutSessionStorageBackStillKnowsItUntilA) {}
   }, [pathname, href]);
   useHoldReadingPlaces();
 }
@@ -83,30 +79,17 @@ export interface ReadingPlace {
   readonly offset: number;
 }
 
-/** Each thread's reading place, held from opening Settings until the window comes back from it. */
 const held = new Map<ThreadId, ReadingPlace>();
-/**
- * The path the window is on, as the history says it before anything renders for it. Read when first
- * needed: an app that serves this one under a path sets that path after this module has loaded.
- */
 let path: string | undefined;
 const pathNow = (): string => (path ??= typeof window === "undefined" ? "/" : appPathname());
 
-/**
- * Keeps the reading places only across a trip to Settings: a step out of Settings keeps them for
- * the transcripts it brings back, and any other step lets them go. The history says where the
- * window goes before the transcripts leaving or coming back render. Mounted with the return.
- */
 function useHoldReadingPlaces() {
   const router = useRouter();
   useEffect(() => {
-    // Where the window is before its first step, which the history then reports as already taken.
     pathNow();
     return router.history.subscribe(() => {
       const from = pathNow();
-      // The history's paths are the browser's, with the path the app is served under.
       path = withoutBasePath(router.history.location.pathname);
-      // The history can say the same step twice; only a step to another path counts.
       if (path !== from && !isSettingsPath(path) && !isSettingsPath(from)) held.clear();
     });
   }, [router]);

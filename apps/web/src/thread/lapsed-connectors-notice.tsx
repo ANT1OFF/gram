@@ -32,7 +32,6 @@ export function LapsedConnectorsNotice({ threadId }: { threadId: ThreadId }) {
   const signIns = useThreadSignIns(threadId);
   const shown = lapsed.filter((name) => !dismissed.includes(name));
   const signingIn = shown.some((name) => signIns[name] !== undefined);
-  // The panel's query: whichever of the two is mounted reads the list while a sign-in lasts.
   useQuery({
     queryKey: ["connectors", threadId, cold],
     queryFn: async () => (await listConnectorsSettling(api, threadId)).list,

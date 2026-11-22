@@ -2,8 +2,6 @@ import * as Schema from "effect/Schema";
 import { Thread } from "./domain.ts";
 import { ThreadId } from "./ids.ts";
 
-// Reopening closed threads: the server keeps the last closed threads across restarts.
-
 /** How many closed threads the server keeps. */
 export const CLOSED_THREADS_LIMIT = 20;
 

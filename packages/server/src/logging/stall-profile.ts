@@ -1,15 +1,9 @@
-// Names the code behind an event-loop stall. After a long one the server samples its own stack
-// for a while, through V8's profiler on an inspector session to itself, and each later stall gets
-// the call path that ran through it. Only function names and `file:line` are kept, never values.
-
 import * as Effect from "effect/Effect";
 import { basename } from "node:path";
 import type { Profiler } from "node:inspector";
 
-/** How often the profiler samples the stack while armed, in microseconds. */
 const SAMPLE_INTERVAL_US = 10_000;
 
-/** The most frames a stall's call path keeps, nearest the work first. */
 const PATH_FRAMES = 12;
 
 const IDLE = "(idle)";
@@ -40,7 +34,6 @@ export const blockingStack = (profile: Profiler.Profile): BlockingStack | undefi
   for (const node of profile.nodes)
     for (const child of node.children ?? []) parents.set(child, node.id);
 
-  // Each sample's delta is the time since the one before, so a sample stands for the delta after it.
   let best = { from: 0, to: 0, us: 0 };
   let from = 0;
   let us = 0;
@@ -56,8 +49,6 @@ export const blockingStack = (profile: Profiler.Profile): BlockingStack | undefi
   }
   if (best.to <= best.from) return undefined;
 
-  // Weighted by the time each sample stands for, like the stretch itself: one sample can stand
-  // for a whole second the sampler was held off, and five beside it for 10 ms each.
   const inclusive = new Map<number, number>();
   const self = new Map<number, number>();
   for (let index = best.from; index < best.to; index += 1) {
@@ -69,7 +60,6 @@ export const blockingStack = (profile: Profiler.Profile): BlockingStack | undefi
     }
   }
   const path: Array<string> = [];
-  // The frames held through most of the stretch form one chain from the root; follow it down.
   for (let id: number | undefined = profile.nodes[0]?.id; id !== undefined;) {
     const node: Profiler.ProfileNode | undefined = nodes.get(id);
     if (node === undefined) break;
@@ -85,10 +75,8 @@ export const blockingStack = (profile: Profiler.Profile): BlockingStack | undefi
   };
 };
 
-/** The server's own sampling profiler, started and stopped a window at a time. */
 interface StallProfiler {
   readonly start: Effect.Effect<void>;
-  /** The samples since `start`, and the profiler stopped; `undefined` when it wasn't running. */
   readonly stop: Effect.Effect<Profiler.Profile | undefined>;
 }
 

@@ -1,6 +1,3 @@
-// Pull request writes over `gh pr`, and the repository's merge settings, run in the thread's checkout
-// so `gh` picks up its host and auth. Every write is the user's explicit action from the PR panel.
-
 import type { MergeStrategy } from "@gram/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -32,7 +29,6 @@ const run = (
     return out.stdout;
   });
 
-/** A write: the badges read before it are stale, even when `gh` fails part-way through. */
 const write = (
   workTree: string,
   args: ReadonlyArray<string>,
@@ -121,8 +117,6 @@ export const repoMergeSettings = (
     }
     const settings =
       typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
-    // `autoMergeAllowed` is a GraphQL field, but not a `gh repo view --json` field.
-    // REST exposes it separately; a permission, version or network failure must not block merging.
     const autoMerge = yield* ghApi(workTree, [`repos/${repo}`, "--jq", ".allow_auto_merge"]).pipe(
       Effect.map((out) => out.status === 0 && !out.truncated && out.stdout.trim() === "true"),
       Effect.orElseSucceed(() => false),

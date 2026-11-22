@@ -11,9 +11,6 @@ import {
 
 import type { MockScenes } from "./mock-orchestration";
 
-// The README's scene: an ordinary morning in one workspace, for the screenshots at the top of the
-// repository. Synthetic; nothing here reaches a provider.
-
 /** What `simulateReadme` made, for a shot to navigate by. */
 export interface MockReadmeSimulation {
   readonly workspaceId: WorkspaceId;
@@ -141,7 +138,6 @@ export async function simulateReadme(
     });
   };
 
-  // Short titles: the Board's line takes its first worker's, and the README shows it narrow.
   const addressesApi = await spawn(api, "saved-addresses", "Addresses API", "addresses-api");
   const addressForm = await spawn(web, "saved-addresses", "Address picker", "address-picker");
   const cart = await spawn(web, "saved-addresses", "Cart summary", "cart-address");
@@ -156,7 +152,6 @@ export async function simulateReadme(
       at: now - minutesAgo * MINUTE,
     });
 
-  // The API merged first; the picker builds on it and is with the review bot.
   merged(addressesApi, api, 418, 2);
   reports.set(addressesApi.id, {
     threadId: addressesApi.id,

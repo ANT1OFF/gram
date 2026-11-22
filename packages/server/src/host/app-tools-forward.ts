@@ -1,9 +1,3 @@
-// This Gram's answer to an app-tool call a machine carried over its own connection
-// (`app-tools-tunnel`, `host/app-tools-tunnel.ts`). The call is let through as one over the
-// tailnet is (`placedOnMachine`): only with a token issued for a thread whose session is placed on
-// that machine, so a machine can use no token but its own threads'. It is then made to this Gram's
-// own app-tools endpoint on loopback, as a session here makes it, and its answer goes back.
-
 import { request as httpRequest } from "node:http";
 
 import {
@@ -20,7 +14,6 @@ import type { ThreadStore } from "../persistence/thread-store.ts";
 
 type Answer = Omit<HostAppToolsAnswer, "id">;
 
-/** The headers a carried call is made with here: MCP over HTTP's, and its token. */
 const SENT = [
   "authorization",
   "content-type",
@@ -29,7 +22,6 @@ const SENT = [
   "mcp-session-id",
   "last-event-id",
 ] as const;
-/** The most of an answer carried back, as the host's side takes it. */
 const ANSWER_MOST_BYTES = 8 * 1024 * 1024;
 
 const refused = (status: number, text: string): Answer => ({
@@ -102,7 +94,6 @@ export const forwardAppTools =
       const threadId = token === undefined ? undefined : yield* deps.tokens.threadFor(token);
       if (threadId === undefined) return refused(401, "unauthorized: bearer token required");
       const thread = yield* deps.store.getThread(threadId).pipe(Effect.option);
-      // Only a thread whose session is on the machine that carried the call.
       if (thread._tag === "None" || sessionHostOf(thread.value) !== machine)
         return refused(401, "unauthorized: not a thread on this machine");
       const port = deps.port();

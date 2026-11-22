@@ -80,7 +80,6 @@ export function makeLocalLimitCollector() {
       const at = timeOf(raw.timestamp),
         limits = object(payload.rate_limits);
       if (at !== undefined && (at < from || at >= to)) return;
-      // Per-model buckets and credits/spend controls are not subscription-wide quota readings.
       if (limits.limit_id != null && limits.limit_id !== "codex") return;
       if (at === undefined || Object.keys(limits).length === 0) {
         invalidReadings++;

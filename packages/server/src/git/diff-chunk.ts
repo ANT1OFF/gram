@@ -1,7 +1,3 @@
-// `git.diffChunk`: one file of a thread's diff, read again on its own up to a larger cap than the
-// listing's, and served a bounded chunk of hunks at a time, or summarized. Reads only: git diffs and
-// the untracked file itself, never a write to the checkout.
-
 import {
   chunkLimits,
   chunkPatch,
@@ -68,7 +64,6 @@ const checked = (out: ProcOutput) =>
         new GitError({ message: out.stderr.trim() || "git diff failed", command: "git diff" }),
       );
 
-/** `git diff <range> -- <paths>` in `top`, read up to the per-file cap. */
 const diffPaths = (
   top: string,
   range: ReadonlyArray<string>,
@@ -94,7 +89,6 @@ const fromOutput = (out: ProcOutput, path: string): Source => ({
   partial: out.truncated,
 });
 
-/** `path` in the branch-vs-`base` diff, when there is a base. */
 const branchSource = (
   top: string,
   base: string | undefined,
@@ -108,10 +102,6 @@ const branchSource = (
         Effect.map((out) => fromOutput(out, path)),
       );
 
-/**
- * The working tree's change to `path`: tracked against HEAD, else the untracked file whole. A clean
- * tree diffs the branch against its base instead, as `git.diff` falls back to.
- */
 const uncommittedSource = (top: string, paths: Array<string>, path: string, ws: boolean) =>
   Effect.gen(function* () {
     const hasHead = yield* branchExists(top, "HEAD").pipe(Effect.mapError(toGitError));
@@ -137,7 +127,6 @@ const uncommittedSource = (top: string, paths: Array<string>, path: string, ws: 
         partial: file.note === "too large",
       } satisfies Source;
     }
-    // Only a clean tree falls back: any change or untracked file means the diff was the tree's.
     if (!hasHead || others.stdout !== "") return { file: undefined, partial: false };
     const dirty = yield* git(top, ["diff", "--quiet", "HEAD"]).pipe(Effect.mapError(toGitError));
     if (dirty.status !== 0) return { file: undefined, partial: false };
@@ -145,7 +134,6 @@ const uncommittedSource = (top: string, paths: Array<string>, path: string, ws: 
     return yield* branchSource(top, base, paths, path, ws);
   });
 
-/** A turn's change to `path`: its start checkpoint against its end, or the live tree while it runs. */
 const turnSource = (
   threadId: ThreadId,
   top: string,

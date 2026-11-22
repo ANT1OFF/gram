@@ -150,7 +150,6 @@ interface TaskRecord {
   readonly task: TaskChipData;
 }
 
-/** A worker's report with the sequence number a digest acknowledges it by. */
 interface WorkerReportRecord {
   readonly seq: number;
   readonly report: WorkerReport;
@@ -194,20 +193,14 @@ export interface MovedWorkspace {
   readonly outbox: string;
 }
 
-/** A worker's latest report, with the interface its reports last stated. */
 interface LatestWorkerReport {
   readonly report: WorkerReport;
-  /** The latest report's own, or an earlier one's when the latest left it out. */
   readonly interface?: string | undefined;
 }
 
-/** One entry to append to a workspace's orchestration audit. */
 interface OrchestrationEventEntry {
-  /** Epoch ms. */
   readonly at: number;
-  /** `spawn`, `message`, `wake`, `pause`, `drift`…; the service owns the vocabulary. */
   readonly kind: string;
-  /** Anything JSON can carry. */
   readonly data: unknown;
 }
 
@@ -252,11 +245,8 @@ interface SettingsAuditRecord extends SettingsAuditEntry {
   readonly seq: number;
 }
 
-/** Where a thread's feed stands, for resuming it (`thread.subscribe`'s `afterRev`). */
 interface FeedRevision {
-  /** The revision of the thread's latest message write. */
   readonly rev: number;
-  /** The revision its messages were last removed or replaced at; nothing older can resume. */
   readonly resetRev: number;
 }
 
@@ -379,7 +369,6 @@ export interface WaitResolution {
   readonly note?: string | undefined;
 }
 
-/** How long a resolved Waiting on you item is kept, for the tray's Resolved line. */
 const RESOLVED_WAITS_KEPT_MS = 30 * DAY_MS;
 
 /** A thread's plan and the agent's latest todo list, as `thread_plans` keeps them. */
@@ -390,17 +379,11 @@ export interface ThreadPlanRecord {
 
 const TurnPlanJson = Schema.Array(PlanItem);
 
-/** Whether `a` and `b` name one PR: GitHub compares `owner/repo` case-insensitively. */
 const samePrRef = (
   a: { readonly repo: string; readonly number: number },
   b: { readonly repo: string; readonly number: number },
 ) => a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
 
-/**
- * Whether `thread`'s record claims the PR `pending` reserved: it binds it as its main PR, or a
- * folder it holds, or a branch recorded for one, is the PR's head branch. A branch name alone
- * counts, whichever repository: this can't read a folder's origin, so a doubt is a claim.
- */
 const recordClaims = (thread: Thread, pending: PendingMerge) =>
   (thread.boundPr !== undefined && samePrRef(thread.boundPr, pending.pr)) ||
   (pending.branch !== undefined &&
@@ -505,11 +488,6 @@ export interface ThreadStoreShape {
     fence: MergeFence,
     pr: { readonly repo: string; readonly number: number },
     excluding: ThreadId,
-    /**
-     * The launch's authority, decided in the reservation's own transaction against the reserving
-     * thread (`excluding`) and its caller's facts (`authorityCaller`, else the thread's own): a
-     * delegation, scope or intent revoked before the reservation commits refuses it (`false`).
-     */
     authorized?: (thread: Thread | undefined, context: ThreadUpdateContext | undefined) => boolean,
     authorityCaller?: ThreadId,
   ): Effect.Effect<boolean>;
@@ -532,13 +510,7 @@ export interface ThreadStoreShape {
   updateThread(
     id: ThreadId,
     f: (thread: Thread, context?: ThreadUpdateContext) => Thread,
-    /** Ask for caller/workspace/settings facts atomically with the write. */
     authorityCaller?: ThreadId,
-    /**
-     * Ask whether another unparked thread binds this PR, in the write's own transaction, and hand it
-     * to `f` as `context.prClaimedByOther`: the autonomy arm refuses when a sibling's `pr_bind`
-     * raced its ownership check. A context is always provided when this is set.
-     */
     claimScan?: { readonly pr: { readonly repo: string; readonly number: number } },
   ): Effect.Effect<Thread, ThreadNotFound>;
   /** Sets `completedAt` with its reason, or clears both. */
@@ -1047,7 +1019,6 @@ export interface ThreadStoreShape {
     id: WorkspaceId,
     f: (state: WorkspaceState) => WorkspaceState | undefined,
     audit: SettingsAuditEntry,
-    /** Read against the app settings in the same transaction; `false` writes nothing. */
     holds?: (settings: Settings) => boolean,
   ): Effect.Effect<
     { readonly state: WorkspaceState; readonly auditSeq: number } | undefined,
@@ -1169,10 +1140,6 @@ export interface ThreadStoreShape {
   takeStash(threadId: ThreadId, stashId: StashId): Effect.Effect<DraftStash, NotFound>;
 }
 
-/**
- * A thread wake's `pr` column: the PR it waits on, its events, and what it saw when set; or, for a
- * wake on a condition instead, that condition with what its source saw and found.
- */
 const ThreadWakePr = Schema.Struct({
   onPr: ThreadWake.fields.onPr,
   on: ThreadWake.fields.on,
@@ -1181,7 +1148,6 @@ const ThreadWakePr = Schema.Struct({
   conditionState: ThreadWake.fields.conditionState,
 });
 
-/** The `pr` column of `wake`, or `null` for a wake on a time alone. */
 const threadWakePrJson = (wake: ThreadWake): string | null =>
   wake.onPr === undefined && wake.conditionState === undefined
     ? null
@@ -1193,7 +1159,6 @@ const threadWakePrJson = (wake: ThreadWake): string | null =>
         ...(wake.conditionState === undefined ? {} : { conditionState: wake.conditionState }),
       });
 
-/** Why a moved workspace is refused: nothing already on this server is ever replaced. */
 const alreadyHere = (message: string) => new InvalidState({ message });
 
 const toJson = <S extends Schema.Top>(schema: S, value: S["Type"]): string =>
@@ -1203,21 +1168,8 @@ const ENCODED_DEFAULT_SETTINGS = Schema.encodeSync(Settings)(DEFAULT_SETTINGS);
 
 const bool = (n: number | bigint | null | undefined) => Number(n ?? 0) !== 0;
 
-/**
- * SQLite's page cache, per connection: 16 MiB, up from its 2 MB default (~500 pages). One 380 KB
- * reply is ~95 pages, and an open transcript's window of turns several hundred, so the default holds
- * barely one thread's; the rest is read back from the OS on every page and resume. It grows only as
- * pages are read, and 16 MiB is a tenth of the server's resident memory.
- */
 const CACHE_SIZE_KIB = 16_384;
 
-/**
- * Reads of the database file's first 64 MiB map the OS page cache instead of copying it into the
- * process: the same pages, read without a syscall each. Writes, and pages still in the WAL, go
- * through the usual calls. Kept small: a mapped page counts in resident memory while mapped, and an
- * I/O error on one would end the process rather than fail its query, which only a local disk makes
- * rare enough. A build without memory-mapped I/O ignores it.
- */
 const MMAP_SIZE_BYTES = 64 * 1024 * 1024;
 
 const configurePageCache = (sql: SqlClient.SqlClient) =>
@@ -1226,17 +1178,11 @@ const configurePageCache = (sql: SqlClient.SqlClient) =>
     yield* sql.unsafe(`PRAGMA mmap_size = ${MMAP_SIZE_BYTES}`);
   });
 
-/** What rolls back a workspace change by chat whose workspace moved; never leaves the store. */
 const WORKSPACE_MOVED = { _tag: "WorkspaceMoved" } as const;
 
-/**
- * `next` with the reader `before` had (`Thread.readableBy`) and the person it worked for
- * (`Thread.startedBy`): once set neither changes or clears, whatever a write says.
- */
 const keepReader = (before: Thread, next: Thread): Thread =>
   keepReaders(before, keepPerson(before, keepReaderOnly(before, next)));
 
-/** `next` with the readers `before` had (`Thread.readers`): only `setThreadReaders` changes them. */
 const keepReaders = (before: Thread, next: Thread): Thread => {
   if (next.readers === before.readers) return next;
   if (before.readers === undefined) {
@@ -1255,7 +1201,6 @@ const keepReaderOnly = (before: Thread, next: Thread): Thread => {
   return { ...next, readableBy: before.readableBy };
 };
 
-/** `next` with the person `before` worked for (`Thread.startedBy`), which no write changes. */
 const keepPerson = (before: Thread, next: Thread): Thread => {
   if (next.startedBy === before.startedBy) return next;
   if (before.startedBy === undefined) {
@@ -1268,7 +1213,6 @@ const keepPerson = (before: Thread, next: Thread): Thread => {
 /** The most people one `personNames` call looks up. */
 export const PERSON_NAMES_MAX = 200;
 
-/** A broken database is a defect, not something callers can handle. */
 const run = <A, E, R>(
   effect: Effect.Effect<A, E | SqlError, R>,
 ): Effect.Effect<A, Exclude<E, SqlError>, R> =>
@@ -1290,8 +1234,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       yield* notePrivateThreads(sql);
       yield* run(backfillProjectOrigins(sql));
       const receiptScope = yield* Effect.scope;
-      // The data methods below use one statement or one top-level transaction; nothing nests.
-      // Message receipts own separate reservation/outcome transactions around the runtime action.
       const tx = <A, E, R>(effect: Effect.Effect<A, E, R>) => run(sql.withTransaction(effect));
       const commitReservation = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         durableCommit(sql, effect);
@@ -1303,7 +1245,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         VALUES (${fence.key}, ${toJson(MergeFence, fence)})
         ON CONFLICT (key) DO UPDATE SET data = excluded.data`.pipe(Effect.asVoid);
 
-      /** A settings-by-chat audit row, and a workspace's own `settings` event; inside a `tx`. */
       const insertSettingsAudit = (entry: SettingsAuditEntry) =>
         Effect.gen(function* () {
           const [row] = yield* sql<{ seq: number }>`INSERT INTO settings_audit (at, thread_id,
@@ -1329,7 +1270,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           return auditSeq;
         });
 
-      /** The conversation `closeThread` kept for a thread. */
       const purgeHistory = (id: string) =>
         Effect.gen(function* () {
           yield* sql`DELETE FROM closed_messages WHERE thread_id = ${id}`;
@@ -1343,11 +1283,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             AND thread_id NOT IN (SELECT id FROM threads)`;
         });
 
-      /** Puts a thread on the closed list, dropping the oldest past the limit with what was kept. */
-      /**
-       * Which of a moved thread's ids is already here, as the sentence that refuses it: `whose`
-       * names the thread in it ("This workspace's orchestrator", "This thread").
-       */
       const movedThreadConflictOf = (
         threadId: string,
         turnIds: ReadonlyArray<string>,
@@ -1371,7 +1306,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           return undefined;
         });
 
-      /** Which of a moved workspace's ids is already here, as the sentence that refuses it. */
       const movedConflictOf = (
         workspaceId: string,
         threadId: string | undefined,
@@ -1386,11 +1320,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           return yield* movedThreadConflictOf(threadId, turnIds, "This workspace's orchestrator");
         });
 
-      /**
-       * A moved thread's record and conversation on the closed list, for a reopen to open. Not
-       * `keepClosed`, whose cap would push this server's oldest closed thread out for an entry
-       * that is taken off the list again as soon as it is opened.
-       */
       const writeMovedClosed = (moved: MovedThread) =>
         Effect.gen(function* () {
           const threadId = moved.thread.id;
@@ -1443,8 +1372,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }
         });
 
-      // Conversations kept for closed threads that left the list without coming back (a reopen that
-      // found its folder gone): nothing can reach them any more.
       yield* tx(
         Effect.gen(function* () {
           yield* sql`DELETE FROM closed_messages
@@ -1475,7 +1402,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         readonly message: string;
       }
 
-      /** A thread's messages in the order given, without those that don't decode. */
       const messageRows = (
         table: "messages" | "closed_messages",
         threadId: string,
@@ -1509,7 +1435,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         );
 
-      /** `toldAt`: `null` for news to the agent, `undefined` to leave what was stored. */
       const writeWait = (threadId: ThreadId, item: WaitItem, toldAt: number | null | undefined) =>
         (toldAt === undefined
           ? sql`INSERT INTO wait_items
@@ -1534,7 +1459,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           Effect.map((rows) => rows[0]?.told_at ?? null),
         );
 
-      /** The plan record, with the stored text of a column that doesn't decode, to write back. */
       const readPlan = (threadId: string) =>
         Effect.gen(function* () {
           const [row] = yield* sql<{ plan: string | null; turn_plan: string | null }>`
@@ -1605,8 +1529,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         origin_identity?: string | null;
       }
       const toProject = (r: ProjectRow): Project => {
-        // A recipe with a key this build doesn't know is unreadable, never a check without it: the
-        // gate then reads unavailable rather than off.
         const decoded =
           r.local_check == null
             ? undefined
@@ -1628,8 +1550,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               }
             : {}),
           bookmarked: bool(r.bookmarked),
-          // Anything but the two answers reads as never asked, which a folder with settings
-          // treats as untrusted.
           ...(r.folder_trust === "trusted" || r.folder_trust === "untrusted"
             ? { folderTrust: r.folder_trust }
             : {}),
@@ -1637,7 +1557,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         });
       };
 
-      /** The row whose root is the folder `root` names, however either of them is spelled. */
       const projectAt = (root: string) =>
         sql<ProjectRow>`SELECT * FROM projects`.pipe(
           Effect.map((rows) => {
@@ -1647,7 +1566,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         );
 
       type Registering = Parameters<ThreadStoreShape["registerProject"]>[0];
-      /** The origin a project being added records, read before its transaction opens. */
       const originFor = (input: Registering) =>
         run(projectAt(projectRoot(input.root))).pipe(
           Effect.flatMap((row) =>
@@ -1655,11 +1573,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         );
 
-      /**
-       * `registerProject` inside a transaction of the caller's, with the origin `originFor` read.
-       * A known project keeps the origin it was added with, or its lack of one: a later read is of
-       * a git config an agent may have rewritten since.
-       */
       const registerIn = (input: Registering, originIdentity: string | null) =>
         Effect.gen(function* () {
           const root = projectRoot(input.root);
@@ -1749,11 +1662,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }),
         );
 
-      /** The `feed_revision` counter's next value, inside the caller's transaction. */
       const nextRevision = sql<{ rev: number }>`UPDATE feed_revision SET rev = rev + 1
         WHERE id = 0 RETURNING rev`.pipe(Effect.map(([row]) => Number(row!.rev)));
 
-      /** Writes the thread under a new `revision`, and returns it as stamped. */
       const writeThread = (unstamped: Thread) =>
         Effect.gen(function* () {
           if (unstamped.labels.length > 1)
@@ -1778,13 +1689,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           return thread;
         });
 
-      /**
-       * `listThreads`' last result and the `threads_version` token it was read under. Every caller
-       * shares the decoded threads, which nothing mutates: they are read-only values.
-       */
       let listedThreads: { token: string; threads: ReadonlyArray<Thread> } | undefined;
 
-      /** A row that doesn't decode is a thread this build can't open, so it isn't found. */
       const readThread = (id: ThreadId) =>
         sql<{ data: string }>`SELECT data FROM threads WHERE id = ${id}`.pipe(
           Effect.flatMap((rows) =>
@@ -1809,12 +1715,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const updateThread: ThreadStoreShape["updateThread"] = (id, f, authorityCaller, claimScan) =>
         tx(
           Effect.gen(function* () {
-            // The one door every thread edit takes, so the one-row-per-PR invariant holds whoever
-            // wrote `boundPr`.
             const thread = yield* readThread(id);
-            // A `claimScan` always gets a context; its authority facts are the caller's, else this
-            // thread's own. Both the facts and the competing-binding scan are read in this one
-            // transaction, so the write sees exactly the store the reducer decides against.
             const base =
               authorityCaller === undefined && claimScan === undefined
                 ? undefined
@@ -1831,10 +1732,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           }),
         );
 
-      /**
-       * Takes the next feed revision for a write to `threadId`'s messages, inside the write's
-       * transaction; `reset` when the write removed or replaced some, which no resume can express.
-       */
       const takeRev = (threadId: string, reset = false) =>
         Effect.gen(function* () {
           const rev = yield* nextRevision;
@@ -1870,7 +1767,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         tx(
           Effect.gen(function* () {
             const rev = yield* takeRev(threadId);
-            // The revision marks a streaming save: unique, so the search triggers see it move.
             const pending = options?.streaming === true ? rev : null;
             yield* sql`INSERT INTO messages
                 (thread_id, id, seq, role, turn_id, message, rev, search_pending)
@@ -1935,9 +1831,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const storedSettings = sql<{
         value: string;
       }>`SELECT value FROM settings WHERE key = 'app'`.pipe(Effect.map((rows) => rows[0]?.value));
-      /** Beside the settings, in the same table under its own key (`getSuppliedSettings`). */
       const SUPPLIED_KEY = "supplied";
-      /** What is supplied, read once and kept: every read of the settings applies it. */
       let supplied: { readonly patch: SettingsPatch | undefined } | undefined;
       const readSupplied = Effect.gen(function* () {
         if (supplied !== undefined) return supplied.patch;
@@ -1951,15 +1845,12 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ? undefined
               : Schema.decodeUnknownSync(SettingsPatch)(JSON.parse(rows[0].value));
         } catch {
-          // Written by a build that knew other settings: nothing is supplied until it is again.
           yield* Effect.logWarning("supplied settings unreadable; ignored");
           patch = undefined;
         }
-        // A replacement that landed while this read was out is the newer of the two.
         supplied ??= { patch };
         return supplied.patch;
       });
-      /** `settings` as they read with what is supplied over them, while the hosted features are on. */
       const withSupplied = (settings: Settings) =>
         Effect.map(readSupplied, (patch) =>
           patch === undefined || !embeddingOn(settings)
@@ -1969,7 +1860,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const readSettings = Effect.gen(function* () {
         return yield* withSupplied(yield* readStoredSettings);
       });
-      /** `person`'s own settings, a patch for each; a value this build can't read is left out. */
       const readPersonPatches = (person: string) =>
         Effect.gen(function* () {
           const rows = yield* sql<{
@@ -1988,7 +1878,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 }),
               );
             } catch {
-              // Written by a build that knew another shape: absent until it is set again.
               yield* Effect.logWarning("a person's setting is unreadable; ignored").pipe(
                 Effect.annotateLogs({ key: personalSettingKey(path) }),
               );
@@ -2003,7 +1892,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             (yield* readPersonPatches(person)).reduce(applySettingsPatch, shared),
           );
         });
-      /** Field by field: a part that doesn't decode reads as its default, and the rest is kept. */
       const readStoredSettings = Effect.gen(function* () {
         const stored = yield* storedSettings;
         if (stored === undefined) return DEFAULT_SETTINGS;
@@ -2016,15 +1904,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         if (mended.length > 0) yield* unreadable("settings", "app", mended);
         return value;
       });
-      /**
-       * Writes `settings` over the stored row, keeping what the read couldn't decode wherever the
-       * caller didn't set it (`touched`, or without it, wherever `settings` still has the default
-       * read in its place), and the keys this build doesn't know. A row with nothing to keep is set
-       * aside under its own key before it is replaced.
-       */
       const writeSettings = (given: Settings, givenTouched?: ReadonlyArray<FieldPath>) =>
         Effect.gen(function* () {
-          // What is supplied is written with every change, so the stored row never drifts from it.
           const settings = yield* withSupplied(given);
           const patch = yield* readSupplied;
           const touched =
@@ -2056,7 +1937,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             ON CONFLICT (key) DO UPDATE SET value = excluded.value`;
         });
 
-      /** Beside the settings, in the same table under its own key: it isn't one of them. */
       const SEEN_CONNECTORS_KEY = "claudeai.connectors";
       const readSeenConnectors = Effect.gen(function* () {
         const rows = yield* sql<{
@@ -2132,8 +2012,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const decoded = decodeStored(Thread, row.data);
               return decoded.ok ? [decoded.value] : [];
             });
-            // Associate only a currently running owning-workspace run with the new
-            // count epoch. Completed history must never become an enable/edit trigger.
             const dreamRows = yield* sql<{
               data: string;
             }>`SELECT data FROM dreams WHERE workspace_id = ${id}`;
@@ -2164,7 +2042,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             data = excluded.data`;
         });
 
-      /** As with threads, a row that doesn't decode is a workspace that isn't found. */
       const readWorkspace = (id: WorkspaceId) =>
         sql<{ data: string }>`SELECT data FROM workspaces WHERE id = ${id}`.pipe(
           Effect.flatMap((rows) =>
@@ -2204,12 +2081,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           };
         });
 
-      /**
-       * Every thread row as a claim check must read it, failing closed: the rows that decode, and
-       * the ids of those that don't and aren't parked by their own `parked` column. A display list
-       * drops an undecodable row; a safety check can't take that as no claim, since the row may
-       * still bind the PR or hold its branch. A parked row never claims, so its column rules it out.
-       */
       const claimRows = sql<{
         id: string;
         data: string;
@@ -2233,13 +2104,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         ),
       );
 
-      /**
-       * Whether a thread other than `excludeId` binds `pr` as its own, read in the caller's
-       * transaction: an unparked thread whose `boundPr` names it (a closed thread's row is gone, so
-       * it never counts), or an unparked row that doesn't decode, which can't be ruled out. The
-       * arming write and the launch reservation run this scan atomically with their own commit, so
-       * a competing `pr_bind` that landed since the last ownership check is seen, never missed.
-       */
       const otherThreadBindsPr = (
         excludeId: ThreadId,
         pr: { readonly repo: string; readonly number: number },
@@ -2258,11 +2122,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         );
 
-      /**
-       * The outstanding launch reservations (pending merge fences) of threads other than
-       * `excludeId`, read in the caller's transaction. A fence row that doesn't decode fails the
-       * read, as every merge-fence read does: a safety record is never skipped.
-       */
       const reservationsOfOthers = (excludeId: ThreadId) =>
         sql<{ data: string }>`SELECT data FROM merge_fences`.pipe(
           Effect.map((rows) =>
@@ -2273,22 +2132,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         );
 
-      /**
-       * `next` as it may be stored while another thread's launch has reserved a PR (a pending merge
-       * fence), decided in the write's own transaction, so a reservation and a claim of one PR are
-       * ordered: whichever commits first, the other gives way.
-       *
-       * - Coming back from the archive (unparked, or inserted unparked, as a closed thread's
-       *   restoration is) defers: the thread stays archived until the launch settles when its record
-       *   claims the PR (`recordClaims`), or, on an unpark, when it is in the reserving thread's
-       *   project, since its folder's live HEAD can't be read here and may hold the branch.
-       * - A live thread that would newly bind the reserved PR as its main one keeps its bindings as
-       *   they were before the edit, followed PRs and all; the tool that asked says why.
-       *
-       * An edit that keeps an existing claim, or touches nothing reserved, is untouched. A live
-       * thread's recorded or checked-out branch changing to a reserved one isn't held back: that
-       * records what git already did, and the reservation was the merge's decision point.
-       */
       const holdForReservations = (before: Thread | undefined, next: Thread) =>
         Effect.gen(function* () {
           if (next.parked) return next;
@@ -2337,7 +2180,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           };
         });
 
-      /** The thread's messages whose stored text holds any of `needles` as written, in order. */
       const messagesHolding = (
         threadId: ThreadId,
         needles: ReadonlyArray<string>,
@@ -2346,8 +2188,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         needles.length === 0
           ? Effect.succeed([])
           : run(
-              // One pass over the thread's rows, however many needles; with `role`, over the user
-              // rows `messages_thread_user` lists, written out so the partial index serves it.
               sql<{ id: string; message: string }>`SELECT id, message FROM messages
                 WHERE thread_id = ${threadId}
                   AND ${role === undefined ? sql`1` : sql`role = 'user'`}
@@ -2359,7 +2199,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ),
             );
       const messagesWith: ThreadStoreShape["messagesWith"] = (threadId, needles, role) =>
-        // As `upsertMessage` stored it: a needle's quotes and backslashes are escaped there.
         messagesHolding(
           threadId,
           needles.map((needle) => JSON.stringify(needle).slice(1, -1)),
@@ -2388,7 +2227,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   (r) => `${threadId}/${r.id}`,
                   (r) =>
                     mapDecoded(decodeStored(UserInput, r.input), (input): StoredQueuedInput => {
-                      // One that won't decode is no one's in particular, as an old row is.
                       const actor =
                         r.actor === null ? undefined : decodeStored(StoredActorJson, r.actor);
                       return {
@@ -2406,7 +2244,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         putQueue: (threadId, queue) =>
           tx(
             Effect.gen(function* () {
-              // `listQueue` left out the items that don't decode, so they stay as they are.
               const stored = yield* sql<{ id: string; input: string }>`SELECT id, input
                 FROM queue_items WHERE thread_id = ${threadId}`;
               for (const row of stored) {
@@ -2512,8 +2349,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 void codexHome;
                 yield* writeThread(rest);
               }
-              // The transaction holds its writer snapshot through the checkpoint effect: a checkpoint
-              // error, defect or interruption rolls back all SQL.
               yield* restoreFiles;
               return yield* readThread(threadId);
             }),
@@ -2558,7 +2393,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           tx(
             Effect.gen(function* () {
               yield* writeSettings(f(yield* readSettings), touched);
-              // Read back: what was kept of the stored row can make it read more than `f` returned.
               return yield* readSettings;
             }),
           ),
@@ -2578,8 +2412,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const row = (yield* sql<ProjectRow>`SELECT * FROM projects WHERE id = ${id}`)[0];
               if (row === undefined) return undefined;
               const before = toProject(row);
-              // Pin the COMPLETE raw value, including malformed A -> malformed B, inside this
-              // same transaction. A stale approval writes neither configuration nor audit.
               if (before.localCheckRevision !== expectedRevision) return undefined;
               const next = applyProjectSettingsWrites(before, writes);
               if (next === undefined) return undefined;
@@ -2647,7 +2479,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               return { thread, context: yield* readThreadAuthority(thread, callerId) };
             }),
           ),
-        // Safety records must fail closed if corrupt; silently skipping one permits a duplicate.
         listMergeFences: run(
           sql<{ data: string }>`SELECT data FROM merge_fences`.pipe(
             Effect.map((rows) =>
@@ -2696,8 +2527,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         listThreads: run(
           Effect.gen(function* () {
-            // The token first: a write landing between the two reads leaves the list under the
-            // older token, which the next call no longer matches.
             const [version] = yield* sql<{
               token: string;
             }>`SELECT hex(token) AS token FROM threads_version`;
@@ -2725,7 +2554,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         ),
         listThreadsForClaims: run(claimRows),
         updateThread,
-        // SQLite doesn't enforce foreign keys unless asked, so child rows go explicitly.
         removeThread: (id) =>
           tx(
             Effect.gen(function* () {
@@ -2757,7 +2585,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             Effect.gen(function* () {
               const live = yield* sql<{ data: string }>`SELECT data FROM threads WHERE id = ${id}`;
               if (live.length === 0) return;
-              // Read before `unlinkOrchestration` cuts the link below, which is the only record.
               const linked = yield* sql<{ data: string }>`SELECT data FROM threads
                 WHERE CASE WHEN json_valid(data)
                   THEN json_extract(data, '$.spawnedBy.threadId') = ${id} ELSE 0 END`;
@@ -2776,8 +2603,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 (id, thread_id, started_at, ended_at, reason, usage, cost_usd, checkpoint_ref)
                 SELECT id, thread_id, started_at, ended_at, reason, usage, cost_usd, checkpoint_ref
                 FROM turns WHERE thread_id = ${id}`;
-              // Stashes go with the thread: its attachments folder is deleted on close too. So do its
-              // wakes: a reopened thread starts with none.
               for (const table of [
                 "queue_items",
                 "requests",
@@ -2841,7 +2666,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               Effect.map((rows) => {
                 const text = rows[0]?.workers;
                 if (text === undefined || text === null) return [];
-                // Only a link back is lost to a list that doesn't read: the workers stay detached.
                 const decoded = decodeStored(ClosedWorkers, text);
                 return decoded.ok ? decoded.value : [];
               }),
@@ -2859,7 +2683,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             }>`SELECT thread_id, data, closed_at, workers FROM closed_threads
               ORDER BY closed_at DESC, rowid DESC`;
             for (const row of rows) {
-              // One that doesn't read is left where it is, as `listClosed` leaves it out.
               const decoded = decodeStored(Thread, row.data);
               if (!decoded.ok) continue;
               yield* sql`DELETE FROM closed_threads WHERE thread_id = ${row.thread_id}`;
@@ -2913,7 +2736,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         userMessagePage: (threadId, { from, limit, after }) => {
           const take = Math.max(1, Math.floor(Math.min(limit, Number.MAX_SAFE_INTEGER)));
-          // `role = 'user'` is written out so the partial index `messages_thread_user` serves it.
           const rows =
             from === "newest"
               ? after === undefined
@@ -2944,7 +2766,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       message,
                     })),
                 ).pipe(
-                  // From the rows read, not the ones that decoded: an unreadable page still moves on.
                   Effect.map((messages): UserMessagesRead => ({
                     messages,
                     next: page.length < take ? undefined : Number(page.at(-1)!.seq),
@@ -2959,7 +2780,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           types.length === 0
             ? Effect.succeed([])
             : run(
-                // `message_parts` (migration 0006) names the rows; only those are read and decoded.
                 sql<{ id: string; message: string }>`SELECT id, message FROM messages
                   WHERE rowid IN (SELECT message_rowid FROM message_parts
                     WHERE thread_id = ${threadId} AND ${sql.or(
@@ -2967,7 +2787,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                     )})
                   ORDER BY seq`.pipe(
                   Effect.flatMap((rows) => messageRows("messages", threadId, rows)),
-                  // The stored types name the rows; the decoded parts still decide.
                   Effect.map((messages) =>
                     messages.filter((message) =>
                       message.parts.some((part) => types.includes(part.type)),
@@ -3146,12 +2965,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 if (row === undefined) return undefined;
                 from = Number(row.seq);
               }
-              // Counted on the index first, so a resume too far behind reads no message bodies.
               const [count] = yield* sql<{ n: number }>`SELECT COUNT(*) AS n FROM messages
                 WHERE thread_id = ${threadId} AND rev > ${afterRev} AND seq >= ${from}`;
               if (Number(count?.n ?? 0) > limit) return undefined;
-              // The count bounded this set. Seek changed revisions, then sort those few rows;
-              // satisfying ORDER BY with messages_thread_seq scans the thread's entire history.
               const rows = yield* sql<{ id: string; message: string }>`SELECT id, message
                 FROM messages INDEXED BY messages_thread_rev
                 WHERE thread_id = ${threadId} AND rev > ${afterRev} AND seq >= ${from}
@@ -3269,7 +3085,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
         closeOpenTurns: (endedAt, except) =>
           run(
-            // A clock set back since the turn started mustn't end it before it began.
             sql<{
               id: string;
               thread_id: string;
@@ -3404,7 +3219,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const [wake] = yield* wakeRows([row]);
               if (wake?.onPr === undefined) return;
               const seen = change.seen ?? wake.seen;
-              // The first event kept stands: a concurrent look's later one doesn't replace it.
               const fired = wake.fired ?? change.fired;
               const pr = threadWakePrJson({
                 ...wake,
@@ -3422,7 +3236,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               if (row === undefined) return false;
               const [wake] = yield* wakeRows([row]);
               const state = wake?.conditionState;
-              // Found met already: that finding stands, and nothing it saw since matters.
               if (wake === undefined || state === undefined || state.fired !== undefined)
                 return false;
               const pr = threadWakePrJson({
@@ -3457,7 +3270,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const { record: current, unreadPlan, unreadTurnPlan } = yield* readPlan(threadId);
               const next = f(current);
               if (next === current) return current;
-              // A column that didn't decode read as absent; left absent, it is kept as stored.
               const plan =
                 next.plan === undefined ? (unreadPlan ?? null) : toJson(ThreadPlan, next.plan);
               const turnPlan =
@@ -3549,7 +3361,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             Effect.gen(function* () {
               const item = yield* readWait(threadId, id);
               if (resolution !== undefined && item.resolvedAt !== undefined) {
-                // The agent resolving one the user got to first learns so from its answer.
                 if (resolution.by === "agent") {
                   yield* sql`UPDATE wait_items SET told_at = ${resolution.at}
                     WHERE thread_id = ${threadId} AND id = ${id}`;
@@ -3557,7 +3368,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 return item;
               }
               const { resolvedAt: _at, resolvedBy: _by, note: _note, ...rest } = item;
-              // Done and Undo are changes too: an answer about the item as it was no longer holds.
               const open: WaitItem =
                 item.resolvedAt === undefined && resolution === undefined
                   ? rest
@@ -3609,8 +3419,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 Effect.forEach(
                   items,
                   (item) =>
-                    // Never before the resolution it heard of, so a clock that steps back leaves it
-                    // heard; a row that changed since is news again.
                     sql`UPDATE wait_items SET told_at = CASE
                         WHEN resolved_at IS ${item.resolvedAt ?? null}
                           THEN MAX(${at}, COALESCE(resolved_at, ${at}))
@@ -3661,8 +3469,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               return yield* readSettings;
             }),
           ).pipe(
-            // Outside the transaction: a write that rolled back, at its commit or by an interrupt,
-            // leaves what was supplied before, read again from the row.
             Effect.onExit((exit) =>
               Effect.sync(() => {
                 if (exit._tag === "Failure") supplied = undefined;
@@ -3722,8 +3528,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   threadId: holder.id as ThreadId,
                 });
               }
-              // Its row is about to go, whatever its status, and a dream thread left open would have
-              // no review to end in.
               const [dreaming] = yield* sql<{ id: string }>`SELECT id FROM threads WHERE id IN (
                 SELECT thread_id FROM dreams WHERE workspace_id = ${id})`;
               if (dreaming !== undefined) {
@@ -3780,7 +3584,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 }),
               )
               .pipe(
-                // A row another write got to first, such as a message id given twice.
                 Effect.catch((e) =>
                   e instanceof SqlError
                     ? Effect.fail(
@@ -3846,8 +3649,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                     if (other !== undefined)
                       return yield* alreadyHere("A turn of this thread is already on this server.");
                   }
-                  // The copy's messages stay as they are here, unscrubbed and with their usage;
-                  // only what the bundle adds, the turns taken there, goes after them.
                   const before = yield* sql<{ id: string }>`SELECT id FROM closed_messages
                     WHERE thread_id = ${threadId}`;
                   const [last] = yield* sql<{ seq: number | null }>`SELECT MAX(seq) AS seq
@@ -3896,8 +3697,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 ),
               ),
           ),
-        // One UPDATE decides the race: SQLite serialises writers, so the second claim's WHERE sees
-        // the first one's slot. A read followed by a write would let both see it empty.
         claimOrchestratorSlot: (workspaceId, threadId) =>
           run(
             sql<{ id: string }>`UPDATE workspaces SET orchestrator_thread_id = ${threadId},
@@ -3946,8 +3745,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               ),
             ),
           ),
-        // Each subquery is a seek on its own index, the second's holding only the reports that
-        // state an interface, so a worker that never stated one costs no scan of its history.
         latestWorkerReports: (workspaceId, threadIds) =>
           run(
             sql<{ thread_id: string; data: string | null; stated: string | null }>`SELECT
@@ -4156,9 +3953,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   let data: Record<string, unknown> = {};
                   try {
                     data = JSON.parse(r.data) as Record<string, unknown>;
-                  } catch {
-                    // A row whose detail doesn't parse still says who did what.
-                  }
+                  } catch (_aRowWhoseDetailDoesntParseStillSaysWho) {}
                   return {
                     seq: Number(r.seq),
                     at: Number(r.at),
@@ -4314,8 +4109,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       new Error(`workspace ${change.id} cannot change its id`),
                     );
                   }
-                  // Every project it names still exists, read in this transaction: one forgotten
-                  // while the card waited fails the whole change.
                   for (const id of next.workspace.projectIds) {
                     const [row] = yield* sql<{
                       root: string;
@@ -4337,7 +4130,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   return { state: next, auditSeq, projects };
                 }),
               ).pipe(
-                // A failure rolls the transaction back, the projects it registered included.
                 Effect.catchIf(
                   (e): e is typeof WORKSPACE_MOVED => e === WORKSPACE_MOVED,
                   () => Effect.succeed(undefined),
@@ -4424,14 +4216,12 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         putStash: (stash) =>
           tx(
             Effect.gen(function* () {
-              // A retried add carries the same id: the first stored row wins.
               yield* sql`INSERT INTO draft_stashes (id, thread_id, created_at, data)
                 VALUES (${stash.id}, ${stash.threadId}, ${stash.createdAt}, ${toJson(DraftStash, stash)})
                 ON CONFLICT (id) DO NOTHING`;
               const dropped = yield* sql<{ id: string; data: string }>`SELECT id, data
                 FROM draft_stashes WHERE thread_id = ${stash.threadId}
                 ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ${DRAFT_STASH_LIMIT}`;
-              // One that doesn't decode stays: the caller couldn't clear up its attachments.
               const gone = yield* readableRows(
                 unreadable,
                 "draft_stashes",
@@ -4496,15 +4286,12 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
         | undefined;
     } = {},
   ): Layer.Layer<ThreadStore | SqlClient.SqlClient, unknown> => {
-    // The server's own file only: an update seals it before main kills the rest (`update-seal.ts`).
     const seal = options.checkpointOffLoop === true ? UpdateSeal.layers(filename) : undefined;
     return Layer.suspend(() => {
       const policy = WalCheckpointer.makeConnectionPolicy();
       const initialize = (sql: SqlClient.SqlClient) =>
         configurePageCache(sql).pipe(Effect.andThen(policy.apply(sql)));
       return ThreadStore.layerNoDeps.pipe(
-        // Above the client: its worker's connection is closed before the client's, whose close
-        // then checkpoints the whole WAL with no other reader on the file.
         Layer.provideMerge(
           options.checkpointOffLoop === true ? readWorkerLayer(filename) : Layer.empty,
         ),

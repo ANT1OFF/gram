@@ -1,7 +1,3 @@
-// Features: a workspace's features with their stages and groups,
-// set by the orchestrator (`set_stage`, `set_group`) or the user, and the user's archive, pause and
-// rename of one.
-
 import {
   InvalidState,
   cardShown,
@@ -37,7 +33,6 @@ import {
   type WorkspaceStage,
 } from "./shape.ts";
 
-/** Why a stage or a group wasn't set, for a tool's refusal or an RPC's `InvalidState`. */
 type Refused = { readonly code: RefusalCode; readonly reason: string };
 
 const unknownFeature = (slug: string): Refused => ({
@@ -45,7 +40,6 @@ const unknownFeature = (slug: string): Refused => ({
   reason: `No feature is called ${slug} here: it has no worker, no stage and no group. Spawn a worker for it first.`,
 });
 
-/** The workspace with `from` called `to` wherever it keys: its stage, its groups, its pause. */
 const workspaceWithFeatureRenamed = (
   state: WorkspaceState,
   from: string,
@@ -109,11 +103,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
   } = kit;
   const { wake, armAlarms, armLimitResume } = deps;
 
-  /**
-   * A workspace whose orchestration runs on a machine started for one person keeps no stages or
-   * groups in this version: refused outright, for the user and the orchestrator alike, rather
-   * than checked for each worker a stage or a group reaches (`host/ownership.ts`).
-   */
   const onPersonsMachine = (state: WorkspaceState) =>
     Effect.gen(function* () {
       const threads = yield* store.listThreads;
@@ -127,11 +116,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
     reason: "A workspace on a person's own machine keeps no stages or groups yet.",
   };
 
-  // ---------------------------------------------------------------------------------------
-  // Stages and groups
-  // ---------------------------------------------------------------------------------------
-
-  /** Whether the workspace knows the feature: it has a worker, a stage, or a place in a group. */
   const knownFeature = (state: WorkspaceState, slug: string) =>
     Effect.gen(function* () {
       if (state.stages?.[slug] !== undefined) return true;
@@ -143,10 +127,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
       );
     });
 
-  /**
-   * Sets a stage, or says why not. The check that needs the threads runs first; the stage itself
-   * is decided inside `updateWorkspace`, against the plan that is there at that moment.
-   */
   const applyStage = (
     workspaceId: WorkspaceId,
     input: StageInput,
@@ -187,7 +167,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
       let stored: WorkspaceStage | undefined;
       const next = yield* store.updateWorkspace(workspaceId, (current) => {
         const group = current.groups?.[slug];
-        // The group went while this call was checking it: nothing to put a stage on.
         if (onGroup && group === undefined) return current;
         const verdict = stageUpdate({
           current: onGroup ? group?.stage : current.stages?.[slug],
@@ -272,7 +251,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
       return { state: next, feature, moved, ...(group === undefined ? {} : { group }) };
     });
 
-  /** One line for the next digest, without sending one: what the user did is news, not an alarm. */
   const noteForNextDigest = (workspaceId: WorkspaceId, note: string) =>
     updateOutbox(workspaceId, (outbox) => [withNotes(outbox, [note]), undefined]);
 
@@ -337,9 +315,7 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
           .updateThread(worker.id, (thread) => ({ ...thread, parked: true }))
           .pipe(Effect.catchTag("ThreadNotFound", () => Effect.void));
       }
-      // Parked threads leave the git watchers, as the thread menu's Park does.
       yield* publisher.sync;
-      // A pause on it goes with it: nothing would be left to show Resume on.
       yield* store.updateWorkspace(workspaceId, (current) => {
         if (current.pausedFeatures?.includes(feature) !== true) return current;
         const kept = current.pausedFeatures.filter((each) => each !== feature);
@@ -419,14 +395,11 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
       yield* workspacesChanged;
       yield* orchestrationChanged(workspaceId);
       if (!paused) {
-        // What its workers' queues held while it was paused goes now.
         const workers = workersOf(yield* store.listThreads, next).filter(
           (worker) => worker.spawnedBy?.feature === feature && !worker.parked,
         );
         for (const worker of workers) yield* runtimes.releaseQueue(worker.id);
         yield* wake(workspaceId, `the user resumed feature ${feature}`, true);
-        // A worker's wake that fell due during the pause, and a held brief whose limit reset
-        // meanwhile, waited for this.
         yield* armAlarms(workspaceId);
         yield* armLimitResume(workspaceId);
       }
@@ -457,10 +430,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
           }
           return cards.some((card) => card.feature === slug && cardShown(card));
         });
-      // One rename at a time beside the card reconcile and every outbox write, so neither puts
-      // the old name back over the new one.
-      // Behind a release run and a spawn under way (in their order: held, spawn, cards, outbox),
-      // so neither lands a worker under the old name after the rename.
       const renamed = yield* heldLock.withLock(
         workspaceId,
         spawnLock.withLock(
@@ -492,8 +461,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
                   });
                 }
                 const now = yield* Clock.currentTimeMillis;
-                // The card goes under its new name, its sentence with it; the old name's card stays
-                // with no worker at a newer version, so a client holding it lets it go.
                 const card = cards.find((each) => each.feature === from);
                 const taken = cards.find((each) => each.feature === to);
                 const moved: Array<FeatureCard> = [];
@@ -528,7 +495,6 @@ export const makeFeatures = (kit: OrchestrationKit, deps: FeaturesDeps) => {
           ),
         ),
       );
-      // Every view of the workers hears of their new feature as of any other edit.
       for (const thread of renamed) {
         yield* runtimes
           .updateThread(thread.id, (current) => current)

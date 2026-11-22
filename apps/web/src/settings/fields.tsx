@@ -60,7 +60,6 @@ export function Field({
   );
 }
 
-/** Wins over the card's own padding and hairline for its rows, which a child selector sets. */
 const NESTED_ROW = "border-t-0! ps-9! pt-0!";
 
 /**
@@ -144,8 +143,6 @@ export function SettingRow({
         {children !== undefined && (
           <div className="ms-auto flex max-w-full min-w-0 flex-col items-end gap-1">
             <div className="relative flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
-              {/* Hung off the control's leading edge, out of the flow, so it neither moves the
-                  control nor wraps it under the name as it comes and goes. */}
               <span className="pointer-events-none absolute end-full top-1/2 me-2 -translate-y-1/2 *:pointer-events-auto">
                 <SaveReceipt row={row} undoKey={undoKey} />
               </span>
@@ -161,10 +158,6 @@ export function SettingRow({
   );
 }
 
-/**
- * "✓ Saved" and, for a typed setting, its Undo: on the control's side of the row, where the eye is
- * as the change is made, rather than beside the name across the row.
- */
 function SaveReceipt({ row, undoKey }: { row: string; undoKey: string | undefined }) {
   return (
     <span data-testid="setting-receipt" className="flex items-center gap-1 whitespace-nowrap">
@@ -174,7 +167,6 @@ function SaveReceipt({ row, undoKey }: { row: string; undoKey: string | undefine
   );
 }
 
-/** The ↺ beside a changed setting's name. */
 function ResetButton({ label, onReset }: { label: string; onReset: () => void }) {
   return (
     <Hint
@@ -186,7 +178,6 @@ function ResetButton({ label, onReset }: { label: string; onReset: () => void })
           aria-label={`Reset ${label} to default`}
           data-testid="setting-reset"
           className="size-5 text-muted-foreground hover:text-foreground"
-          // Keeps focus in a text field the click would otherwise blur, which saves its draft.
           onMouseDown={(event) => event.preventDefault()}
           onClick={onReset}
         />
@@ -323,8 +314,6 @@ export function OptionGroup<T extends string>({
   const radios = useRovingRadios(options, value, onChange);
   if (cards)
     return (
-      // Side by side once the column the group sits in has room, not the window: an embedding
-      // app's side panel is narrow in a wide window.
       <div className={cn("@container/options w-full", className)}>
         <div
           role="radiogroup"
@@ -393,7 +382,6 @@ export function OptionGroup<T extends string>({
   );
 }
 
-/** The arrow keys that move a radio group's pick, and which way. */
 const STEP: Readonly<Record<string, number>> = {
   ArrowRight: 1,
   ArrowDown: 1,
@@ -401,11 +389,6 @@ const STEP: Readonly<Record<string, number>> = {
   ArrowUp: -1,
 };
 
-/**
- * A group of `role="radio"` buttons that behaves as radios do: one Tab stop, on the picked choice
- * (the first while none is), and the arrow keys, Home and End move to the next choice and pick
- * it, wrapping at the ends.
- */
 function useRovingRadios<T extends string>(
   options: readonly { readonly value: T }[],
   value: T | undefined,
@@ -482,8 +465,6 @@ export function Toggle({
   learnMore?: ReactNode;
 }) {
   const id = useId();
-  // Toggle's own props hold the pairing (a name that isn't words brings its words); destructuring
-  // loses it for the compiler, so it is put back together for the row.
   const name = { label, labelText, description } as RichLabel;
   return (
     <SettingRow
@@ -582,7 +563,6 @@ export function NumberField({
           }}
           onBlur={commit}
           onKeyDown={(event) => {
-            // The enclosing form or Create shortcut reads the committed value in this same event.
             if (event.key === "Enter" && !event.nativeEvent.isComposing) flushSync(commit);
             if (event.key === "Escape") setDraft(undefined);
           }}

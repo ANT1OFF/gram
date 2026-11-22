@@ -1,9 +1,3 @@
-// A workspace's docs: reports, plans and analyses its threads publish with `publish_doc`, kept as
-// Markdown in Gram's own state (`<dataDir>/docs/<workspaceId>/`), never in a repo and never
-// uploaded. Each is one `<id>.doc` record: a line of its metadata (title, the thread that wrote it,
-// when, and a revision that every save moves on, so an agent's update can't overwrite an edit the
-// user made since it last read the doc), then its Markdown. Not claude.ai's Artifacts, which are
-// pages uploaded to claude.ai: these stay on this machine.
 import * as Schema from "effect/Schema";
 import { ThreadId, WorkspaceId } from "./ids.ts";
 
@@ -108,11 +102,6 @@ export const DocCardData = Schema.Struct({
 });
 export type DocCardData = typeof DocCardData.Type;
 
-/**
- * Whether a line is a label and one bare value ("Reviewed head: a0e7383ac9b6", "PR: #348", "Date:
- * 2026-11-10"): a report's header field, which says nothing of what the report found. A label of
- * at most four words, then a value with no space in it. Split, never matched, so it is linear.
- */
 const metadataLine = (plain: string): boolean => {
   const at = plain.indexOf(": ");
   if (at <= 0 || at > 32) return false;
@@ -138,17 +127,14 @@ export const docExcerpt = (markdown: string, max = DOC_EXCERPT_MAX): string => {
   const fields: string[] = [];
   let fenced = false;
   for (const raw of markdown.split(/\r?\n/)) {
-    // Only a line's start can reach the excerpt, which bounds the work on a long one too.
     const line = raw.slice(0, max * 4).trim();
     if (line.startsWith("```") || line.startsWith("~~~")) {
       fenced = !fenced;
       continue;
     }
     if (fenced || line === "" || /^#{1,6}\s/.test(line)) continue;
-    // A rule (`---`, `* * *`) or a table's frame (`| --- | :-: |`) says nothing.
     const bare = line.replace(/\s+/g, "");
     if (/^(-{3,}|\*{3,}|_{3,})$/.test(bare) || /^\|?:?-{2,}/.test(bare)) continue;
-    // A table row's cells, split rather than matched, so no pattern backtracks over its spaces.
     const cells = line.includes("|")
       ? line
           .split("|")

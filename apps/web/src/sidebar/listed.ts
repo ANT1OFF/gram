@@ -4,12 +4,6 @@ import { useThreadsStore, type ThreadsState } from "@/stores/threads";
 
 import { attentionOf } from "./attention";
 
-/**
- * What the lists derive from a thread's git themselves, rather than show on its row: its attention
- * (sections, roll-ups, Needs you), its PR's number and state and its followed PRs' states (a worker
- * folding into Done, a merged worktree to clean up, a badge row coming or going), `origin` (the
- * cleanup's repo) and whether it has a PR elsewhere (that chip coming or going).
- */
 const listedGit = (summary: ThreadSummary): string => {
   const { git } = summary;
   return [
@@ -21,7 +15,6 @@ const listedGit = (summary: ThreadSummary): string => {
   ].join("|");
 };
 
-/** Whether `next` lists as `shown` does: the same summary but for git no list reads. */
 const listsAs = (shown: ThreadSummary, next: ThreadSummary): boolean => {
   if (shown === next) return true;
   const keys = Object.keys(next) as Array<keyof ThreadSummary>;

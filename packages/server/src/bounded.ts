@@ -1,7 +1,3 @@
-// Gram's bounded buffers and retention: what a process's output, a log or a folder of records may
-// hold. Every cap here counts what is kept, never what arrived, so a single huge line or chunk can't
-// grow a buffer past it before the cap is applied.
-
 /** The longest line kept by default, in characters. */
 export const LINE_CHARS = 16_384;
 /** Ends a line cut at its cap. */

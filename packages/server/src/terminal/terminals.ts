@@ -119,9 +119,7 @@ type ExitEvent = Extract<TerminalEvent, { type: "exit" }>;
 interface Terminal {
   readonly info: Omit<TerminalInfo, "alive">;
   readonly pty: IPty;
-  /** The PATH its shell started with. */
   readonly path: string;
-  /** A keep of its tail waiting to be written. */
   keepTimer: ReturnType<typeof setTimeout> | undefined;
   readonly scrollback: Scrollback;
   readonly listeners: Set<(event: TerminalEvent) => void>;
@@ -129,24 +127,19 @@ interface Terminal {
   readonly exited: Promise<void>;
 }
 
-/** How long a hung-up shell gets to exit before SIGKILL, and then to be reaped. */
 const REAP_TIMEOUT_MS = 3_000;
 
-/** How long after output a terminal's tail is kept, by default. */
 const KEEP_DELAY_MS = 1_000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** Runs `f`, failing with its error's message as an `InvalidState` if it throws. */
 const attempt = (f: () => void) =>
   Effect.try({ try: f, catch: (error) => new InvalidState({ message: message(error) }) });
 
 const kill = (pty: IPty, signal?: string) => {
   try {
     pty.kill(signal);
-  } catch {
-    // Already gone, or Windows, which takes no signal names.
-  }
+  } catch (_alreadyGoneOrWindowsWhichTakesNoSignalNames) {}
 };
 
 /**
@@ -159,10 +152,8 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
     const limit = deps.scrollbackLimit ?? SCROLLBACK_LIMIT;
     const batchWindow = deps.batchWindowMs ?? BATCH_WINDOW_MS;
     const keepDelay = deps.keepDelayMs ?? KEEP_DELAY_MS;
-    /** Set as the scope closes: what runs now is kept for the next start, not forgotten. */
     let shuttingDown = false;
 
-    /** Writes `terminal`'s tail now, while a thread's shell still runs in it. */
     const keep = (terminal: Terminal) => {
       clearTimeout(terminal.keepTimer);
       terminal.keepTimer = undefined;
@@ -180,24 +171,19 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
           tail: terminal.scrollback.toReplay(),
           cut: terminal.scrollback.cut,
         });
-      } catch {
-        // A full or read-only disk: the terminal works on, and only its tail goes unkept.
-      }
+      } catch (_aFullOrReadOnlyDiskTheTerminalWorks) {}
     };
     const keepSoon = (terminal: Terminal) => {
       if (deps.kept === undefined || terminal.keepTimer !== undefined || shuttingDown) return;
       terminal.keepTimer = setTimeout(() => keep(terminal), keepDelay);
     };
-    /** Drops what was kept of a terminal that ended or was closed: it doesn't come back. */
     const forget = (terminal: Terminal) => {
       clearTimeout(terminal.keepTimer);
       terminal.keepTimer = undefined;
       if (deps.kept === undefined || shuttingDown) return;
       try {
         deps.kept.remove(terminal.info.terminalId);
-      } catch {
-        // Gone already.
-      }
+      } catch (_goneAlready) {}
     };
 
     const find = (terminalId: TerminalId): Effect.Effect<Terminal, NotFound> =>
@@ -225,10 +211,6 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
         return yield* resolveFolder(folder);
       });
 
-    /**
-     * Opens a terminal; with `restore`, under a kept terminal's id with its old screen above the
-     * new shell.
-     */
     const spawnTerminal = (
       request: OpenTerminal,
       settings: OpenSettings | undefined,
@@ -251,7 +233,6 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             ? shell.args
             : scriptShellArgs(shell, request.command, process.platform);
         const invocation = ptyInvocation(resolved.file, args, process.platform, process.env);
-        // Checked after the awaits above, right before the spawn, so a hold taken meanwhile counts.
         if (request.threadId !== undefined && deps.held?.(request.threadId) === true) {
           return yield* new InvalidState({ message: HELD });
         }
@@ -289,7 +270,6 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
           exited: exited.promise,
         };
         if (restore !== undefined) terminal.scrollback.append(restore.seed);
-        // The line a script runs, dimmed, so its output reads under the command that made it.
         if (request.command !== undefined)
           terminal.scrollback.append(`\x1b[2m$ ${request.command}\x1b[0m\r\n`);
         pty.onData((data) => {
@@ -305,7 +285,6 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             ...(name === undefined ? {} : { signal: name }),
           };
           for (const listener of terminal.listeners) listener(terminal.exit);
-          // Its program ended while the host ran: nothing was lost, so nothing comes back.
           forget(terminal);
           deps.roots?.remove(pty.pid);
           exited.resolve();
@@ -356,8 +335,6 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             Stream.callback<TerminalEvent>(
               (queue) =>
                 Effect.acquireRelease(
-                  // Snapshot and registration happen in one synchronous block, so no output can land
-                  // between the replay and the first live chunk.
                   Effect.sync(() => {
                     Queue.offerUnsafe(queue, {
                       type: "replay",
@@ -380,7 +357,6 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
                       if (listener !== undefined) terminal.listeners.delete(listener);
                     }),
                 ),
-              // Unbounded: `offerUnsafe` drops on a full buffer, and dropped output corrupts the screen.
               { bufferSize: Number.POSITIVE_INFINITY },
             ).pipe(
               Stream.groupedWithin(1024, batchWindow),
@@ -431,16 +407,12 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
     );
     yield* Effect.addFinalizer(() =>
       Effect.suspend(() => {
-        // Kept as they stand before their shells are hung up, which the next start shows again.
         for (const terminal of terminals.values()) keep(terminal);
         shuttingDown = true;
         return closeAll(() => true);
       }),
     );
 
-    // What the last run of this host kept: each thread's terminal that was open when it ended comes
-    // back under its id, in its folder, with a fresh shell below its old screen. The command it
-    // ran is never run again. One whose thread or folder is gone stays gone.
     if (deps.kept !== undefined) {
       for (const kept of deps.kept.takeAll()) {
         const restored = yield* Effect.gen(function* () {

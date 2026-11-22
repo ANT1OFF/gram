@@ -8,21 +8,6 @@ import {
   type VocabularyEntry,
 } from "@gram/contracts";
 
-/**
- * Spells the names a speaker means the way they're written, after an utterance commits: "use
- * dictation" → `useDictation`, "dictation dot TS" → `dictation.ts`, a "sounds like" of the user's
- * list → its term. Pure and synchronous; nothing here logs text or terms.
- *
- * A wrong replacement is worse than none, so it holds back:
- * - A run of only common words ("set state", "list file names") is never a project name unless
- *   the speaker said "dot" or "slash" in it. The user's own list is taken at its word, except a
- *   single common word ("Effect"), which only its "sounds like" spellings replace.
- * - Two names of the same kind that sound the same cancel each other out.
- * - A near miss is only taken for long names, by one or two letters, when no other name is as
- *   near, and never when the difference is an ending ("Parakeets" stays plural).
- */
-
-/** What a match found; lower ranks win a tie on the same spoken words. */
 const RANK: Readonly<Record<"alias" | "user" | ProjectTermKind, number>> = {
   alias: 0,
   user: 1,
@@ -36,11 +21,9 @@ const RANK: Readonly<Record<"alias" | "user" | ProjectTermKind, number>> = {
 interface Candidate {
   readonly term: string;
   readonly rank: number;
-  /** Subject to the common-word rule; a "sounds like" the user wrote isn't. */
   readonly guarded: boolean;
 }
 
-/** A name to spell, or, when two of the same rank sound alike, neither. */
 interface Slot extends Candidate {
   readonly ambiguous?: boolean;
 }
@@ -61,11 +44,8 @@ export const EMPTY_VOCABULARY: VocabularyIndex = {
   size: 0,
 };
 
-/** Keys shorter than this are only ever matched exactly. */
 const NEAR_MIN_KEY = 8;
-/** At this length and over, a near miss may be two letters off; below it, one. */
 const NEAR_TWO_KEY = 12;
-/** Spoken pieces in the longest span tried, whatever the names. */
 const SPAN_CAP = 12;
 
 const nearAllowance = (length: number) => (length >= NEAR_TWO_KEY ? 2 : 1);
@@ -96,7 +76,6 @@ export const buildVocabularyIndex = (
   for (const entry of user) {
     const term = entry.term.trim();
     if (term === "") continue;
-    // A name of two words or more the user listed is meant whatever words it is made of.
     add(term, { term, rank: RANK.user, guarded: termWords(termParts(term)).length < 2 });
     for (const alias of entry.soundsLike ?? []) {
       if (alias.trim() !== "") add(alias, { term, rank: RANK.alias, guarded: false });
@@ -104,7 +83,6 @@ export const buildVocabularyIndex = (
   }
   for (const { term, kind } of project) add(term, { term, rank: RANK[kind], guarded: true });
 
-  // One name per key for near misses, the one an exact match would pick.
   for (const [key, slot] of exact) {
     if (slot.ambiguous === true || slot.rank === RANK.alias || key.length < NEAR_MIN_KEY) continue;
     const bucket = near.get(key[0]!) ?? [];
@@ -115,7 +93,6 @@ export const buildVocabularyIndex = (
   return { exact, near, longest, size: exact.size };
 };
 
-/** Spoken separators, as the piece of a name they stand for. */
 const SPOKEN_SEPARATORS: Readonly<Record<string, string>> = {
   dot: ".",
   slash: "/",
@@ -127,15 +104,10 @@ const SPOKEN_SEPARATORS: Readonly<Record<string, string>> = {
 interface Unit {
   readonly start: number;
   readonly end: number;
-  /** The word as heard, or a separator: a spoken one or a glued `.`, `/`, `_` or `-`. */
   readonly word?: string | undefined;
   readonly separator?: string | undefined;
 }
 
-/**
- * The words of `text` and the separators between them. A `.` or `-` only counts when glued
- * between two words, as in `dictation.ts`; one followed by a space ends a sentence or a clause.
- */
 const unitsOf = (text: string): Unit[] => {
   const units: Unit[] = [];
   const pattern = /[\p{L}\p{N}]+(?:['’][\p{L}]+)*|[./_-]/gu;
@@ -165,7 +137,6 @@ const unitsOf = (text: string): Unit[] => {
   return units;
 };
 
-/** Levenshtein distance, giving up past `max`. */
 const distance = (a: string, b: string, max: number): number => {
   if (Math.abs(a.length - b.length) > max) return max + 1;
   let previous = Uint16Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -185,7 +156,6 @@ const distance = (a: string, b: string, max: number): number => {
   return previous[b.length]!;
 };
 
-/** The one long name `key` is a near miss of, if exactly one is nearest. */
 const nearMatch = (index: VocabularyIndex, key: string): Candidate | undefined => {
   if (key.length < NEAR_MIN_KEY) return undefined;
   const bucket = index.near.get(key[0]!);
@@ -194,7 +164,6 @@ const nearMatch = (index: VocabularyIndex, key: string): Candidate | undefined =
   let bestDistance = Number.POSITIVE_INFINITY;
   let tied = false;
   for (const { key: other, candidate } of bucket) {
-    // An ending is a different word form, not a mishearing: "Parakeets", "useDictation's".
     if (key.startsWith(other) || other.startsWith(key)) continue;
     const allowed = nearAllowance(other.length);
     const d = distance(key, other, allowed);
@@ -210,7 +179,6 @@ const nearMatch = (index: VocabularyIndex, key: string): Candidate | undefined =
   return tied ? undefined : best;
 };
 
-/** A span `start`..`end` (inclusive) of units that reads as one name, with its key. */
 const spanOf = (units: readonly Unit[], text: string, start: number, end: number) => {
   const first = units[start]!;
   const last = units[end]!;
@@ -222,7 +190,6 @@ const spanOf = (units: readonly Unit[], text: string, start: number, end: number
     const unit = units[i]!;
     if (i > start) {
       const gap = text.slice(units[i - 1]!.end, unit.start);
-      // Words run on across spaces or a glued separator, never across punctuation or a line.
       if (gap !== "" && !/^[ \t]+$/.test(gap)) return undefined;
     }
     if (unit.word !== undefined) {
@@ -238,7 +205,6 @@ const spanOf = (units: readonly Unit[], text: string, start: number, end: number
   return { key, words, hard };
 };
 
-/** Whether the common-word rule lets `candidate` replace a span of `words`. */
 const allowed = (candidate: Candidate, words: readonly string[], hard: boolean) =>
   !candidate.guarded || hard || words.some((word) => !isCommonWord(word));
 
@@ -252,7 +218,6 @@ export const applyVocabulary = (text: string, index: VocabularyIndex): string =>
   let i = 0;
   while (i < units.length) {
     let replaced: { end: number; term: string } | undefined;
-    // Exact first, longest first; then a near miss, longest first.
     for (const pass of ["exact", "near"] as const) {
       for (let end = Math.min(units.length - 1, i + longest - 1); end >= i; end--) {
         const span = spanOf(units, text, i, end);

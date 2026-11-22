@@ -1,7 +1,3 @@
-// The worktree workflow: list, create (reusing an existing checkout for the branch), remove with the
-// dirty guard and fs fallback, and the permission checklist. The caller owns thread state, so the
-// one-thread-per-checkout guard takes the open checkouts as an argument.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import type { Checkout, WorktreeEntry } from "@gram/contracts";
@@ -49,9 +45,6 @@ const conflict = (message: string) =>
 const failed = (message: string) => new WorktreeError({ reason: "failed", message, dirty: false });
 const toFailed = (error: { readonly message: string }) => failed(error.message);
 
-// ---------------------------------------------------------------------------------------------
-// Pure decisions
-
 /** One checkout from `git worktree list --porcelain`. Bare entries never appear. */
 export interface ParsedWorktree {
   readonly path: string;
@@ -87,7 +80,6 @@ export const parseWorktrees = (stdout: string): Array<ParsedWorktree> => {
   return out;
 };
 
-/** `parseWorktrees` with paths in the platform's spelling (git prints `C:/…` on Windows). */
 const parseWorktreesNative = (stdout: string): Array<ParsedWorktree> =>
   parseWorktrees(stdout).map((w) => ({ ...w, path: fromGitPath(w.path) }));
 
@@ -105,7 +97,6 @@ export const sanitizeBranch = (raw: string): string | undefined =>
     ? raw
     : undefined;
 
-/** Names Windows reserves for devices, alone or before an extension (`con`, `aux.x`, `com1`). */
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 /**
@@ -180,9 +171,6 @@ export const matchesDirtyStderr = (error: string): boolean => {
   );
 };
 
-// ---------------------------------------------------------------------------------------------
-// Effects
-
 const resolveRepoPath = (repoPath: string | undefined) => {
   const path = expandHome(repoPath ?? "");
   return path !== "" && fs.existsSync(path)
@@ -217,7 +205,6 @@ export interface WorktreeList {
   readonly worktrees: ReadonlyArray<WorktreeEntry>;
 }
 
-/** Each worktree's HEAD commit, keyed by native path; an unborn HEAD has none. */
 const parseWorktreeHeads = (stdout: string): Map<string, string> => {
   const heads = new Map<string, string>();
   for (const block of stdout.replaceAll("\r\n", "\n").split("\n\n")) {
@@ -231,7 +218,6 @@ const parseWorktreeHeads = (stdout: string): Map<string, string> => {
   return heads;
 };
 
-/** Committer time in epoch ms per commit, in one spawn; missing entries mean "unknown". */
 const commitTimes = (repoTop: string, shas: ReadonlyArray<string>) =>
   shas.length === 0
     ? Effect.succeed(new Map<string, number>())
@@ -306,10 +292,6 @@ export const sanitizeBase = (
   return branchExists(repoTop, base).pipe(Effect.map((ok) => (ok ? base : undefined)));
 };
 
-/**
- * Marks a worktree just added as untrusted. A marker that can't be written fails the step: the
- * worktree would otherwise read as the user's own the next time it is opened or restored.
- */
 const markUntrusted = (worktreeDir: string) =>
   Effect.try({
     try: () => markUntrustedWorktree(worktreeDir),
@@ -317,7 +299,6 @@ const markUntrusted = (worktreeDir: string) =>
       failed(`couldn't mark ${worktreeDir} as someone else's code: ${String(error)}`),
   });
 
-/** The commit `rev` names in `cwd`, or `undefined`. */
 const commitOf = (cwd: string, rev: string) =>
   git(cwd, ["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]).pipe(
     Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
@@ -341,8 +322,6 @@ export const fromUntrustedHead = (repoTop: string, branch: string, commit: strin
     if (heads.length === 0) return false;
     if (heads.some((head) => head.branch === branch)) return true;
     if (commit === undefined) return true;
-    // Each recorded head, and where its branch points now: a fork that force-pushed, or an agent in
-    // that checkout that moved the branch, leaves a tip the first head isn't in.
     const oids = new Set(heads.map((head) => head.oid));
     for (const head of heads) {
       const tip = yield* commitOf(repoTop, `refs/heads/${head.branch}`);
@@ -364,7 +343,6 @@ export const fromUntrustedHead = (repoTop: string, branch: string, commit: strin
     return false;
   });
 
-/** Marks a worktree just added as someone else's, and records its branch and head for later ones. */
 const markUntrustedHead = (repoTop: string, worktreeDir: string, branch: string) =>
   Effect.gen(function* () {
     yield* markUntrusted(worktreeDir);
@@ -393,14 +371,11 @@ export const addWorktree = (
   untrusted = false,
 ) =>
   Effect.gen(function* () {
-    // A checkout under `.worktrees/<branch>` can pass Windows' 260-character path limit, as removal can.
     const args = ["-c", "core.longpaths=true", "worktree", "add"];
     let startPoint: string | undefined;
     if (yield* branchExists(repoTop, safeBranch)) {
       startPoint = safeBranch;
     } else {
-      // A new branch doesn't track its base: with `origin/main` as its upstream, a plain `git push`
-      // refuses the name mismatch and the base reads as the branch's own pushed tip. Publishing sets it.
       args.push("--no-track", "-b", safeBranch);
       startPoint = baseOverride ?? (yield* originBaseRef(repoTop));
     }
@@ -410,8 +385,6 @@ export const addWorktree = (
     if (out.status !== 0) {
       return yield* Effect.fail(invalid(`git worktree failed: ${gitFailMsg(out, "")}`));
     }
-    // A worktree whose trust couldn't be settled doesn't stay: unmarked, it would read as the
-    // user's own when next opened.
     const theirs = yield* (
       untrusted
         ? Effect.succeed(true)
@@ -444,7 +417,6 @@ export interface CreateWorktreeRequest {
   readonly openCheckouts: ReadonlyArray<string>;
 }
 
-/** A line that already keeps the worktrees folder out of `git status`. */
 const EXCLUDES_WORKTREES = /^\/?\.worktrees\/?\s*$/;
 
 /**
@@ -485,14 +457,12 @@ export const createWorktree = (request: CreateWorktreeRequest) =>
     const baseOverride =
       request.base === undefined ? undefined : yield* sanitizeBase(repoTop, request.base);
 
-    // Prune first so a manually deleted worktree can't be "found" and handed out as a missing cwd.
     yield* Effect.ignore(git(repoTop, ["worktree", "prune"]));
     const worktrees = yield* listParsed(repoTop);
     const plan = planPlacement(worktrees, repoTop, rawBranch, safeBranch);
     if (plan.reuse && checkoutInUse(request.openCheckouts, plan.worktreeDir)) {
       return yield* Effect.fail(conflict("a thread is already open in that checkout"));
     }
-    // Someone else's code never lands in a checkout of the user's own, with its copied secrets.
     if (
       request.untrusted === true &&
       plan.reuse &&
@@ -521,11 +491,8 @@ export const createWorktree = (request: CreateWorktreeRequest) =>
     const untrusted =
       !plan.isMainCheckout &&
       (request.untrusted === true || added.untrusted || isUntrustedWorktree(plan.worktreeDir));
-    // A reused checkout of someone else's may have moved on: what it holds now is recorded too.
     if (plan.reuse && untrusted && rawBranch !== "")
       yield* markUntrustedHead(repoTop, plan.worktreeDir, rawBranch);
-    // Reused checkouts too, so repos whose worktrees predate this get the line on their next open.
-    // A git dir that can't be written doesn't block the checkout.
     if (!plan.isMainCheckout) {
       const roots = yield* tryRepoRoots(repoTop).pipe(Effect.orElseSucceed(() => undefined));
       if (roots !== undefined) {
@@ -550,10 +517,6 @@ export const createWorktree = (request: CreateWorktreeRequest) =>
     } satisfies CreatedWorktree;
   });
 
-/**
- * Whether `origin` has `branch`, asked of origin itself (`ls-remote`): `absent` also when the repo
- * has no `origin`, while a network or sign-in failure fails, since it says nothing of the branch.
- */
 const originBranch = (repoTop: string, branch: string) =>
   Effect.gen(function* () {
     const url = yield* git(repoTop, ["remote", "get-url", "origin"]).pipe(
@@ -572,7 +535,6 @@ const originBranch = (repoTop: string, branch: string) =>
       ],
       { tier: "network" },
     ).pipe(Effect.mapError(toFailed));
-    // `--exit-code`: 2 when origin answered and has no such ref.
     if (out.status === 0) return "present" as const;
     if (out.status === 2) return "absent" as const;
     return yield* Effect.fail(
@@ -619,7 +581,6 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
     if (checkoutInUse(request.openCheckouts, request.worktreeDir)) {
       return yield* Effect.fail(conflict("A thread is open on this worktree — close it first."));
     }
-    // The deleted folder is still registered until pruned, and git refuses to add over it.
     yield* git(repoTop, ["worktree", "prune"]).pipe(Effect.mapError(toFailed));
     const holder = (yield* listParsed(repoTop)).find((w) => w.branch === branch);
     if (holder !== undefined) {
@@ -639,8 +600,6 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
       yield* add([request.worktreeDir, branch]);
       source = "local";
     } else {
-      // Only the remote may still have it, e.g. once the local branch was deleted after a merge.
-      // Asked of origin itself: a remote-tracking ref can outlive the branch GitHub deleted.
       const remote = yield* originBranch(repoTop, branch);
       if (remote === "present") {
         const fetched = yield* remoteGit(
@@ -656,8 +615,6 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
         yield* add(["-b", branch, request.worktreeDir, `origin/${branch}`]);
         source = "origin";
       } else if (request.fromPr !== undefined) {
-        // A ref of its own rather than the shared `FETCH_HEAD`, which a sibling worktree's
-        // background fetch can overwrite between the fetch and the read.
         const ref = `refs/gram/restore/pr-${request.fromPr}-${process.pid}-${Date.now()}`;
         const fetched = yield* remoteGit(
           repoTop,
@@ -669,7 +626,6 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
             failed(`couldn't fetch the PR's head: ${gitFailMsg(fetched, "git fetch failed")}`),
           );
         }
-        // No upstream: `origin/<branch>` is gone, and publishing sets one.
         yield* add(["--no-track", "-b", branch, request.worktreeDir, ref]).pipe(
           Effect.ensuring(Effect.ignore(git(repoTop, ["update-ref", "-d", ref]))),
         );
@@ -812,10 +768,6 @@ export const removeWorktree = (request: RemoveWorktreeRequest) =>
     }
   });
 
-/**
- * The rules the worktree's branch tracks in its settings file at `HEAD`: its author's, which are
- * never offered or merged back into the main checkout. Empty when the file isn't tracked.
- */
 const trackedRules = (worktreeDir: string): Effect.Effect<Buckets, never, Proc> =>
   git(worktreeDir, ["show", `HEAD:${SETTINGS_TRACKED_PATH}`]).pipe(
     Effect.map((out) => (out.status === 0 ? parseTrackedRules(out.stdout) : emptyBuckets)),
@@ -838,9 +790,6 @@ export const pendingPermissions = (repoPath: string, worktreeDir: string) =>
     );
     return newRules(approved, readPermissionRules(repoTop));
   });
-
-// ---------------------------------------------------------------------------------------------
-// Service
 
 export class Worktrees extends Context.Service<
   Worktrees,

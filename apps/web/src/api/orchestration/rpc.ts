@@ -22,7 +22,6 @@ export const orchestrationRpc = ({ client, connection }: RpcContext): Orchestrat
       }),
     ),
   removeWorkspace: (workspaceId) => run(client["workspace.remove"]({ workspaceId })),
-  // A workspace on a machine of its own starts it first, where it isn't running.
   openOrchestrator: (target) =>
     onItsMachine(workspaceOf(target), () => run(client["orchestrator.open"](target))),
   startTask: (input) =>

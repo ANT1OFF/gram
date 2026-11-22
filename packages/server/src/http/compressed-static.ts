@@ -6,15 +6,9 @@ import { promisify } from "node:util";
 import { brotliCompress, constants, gzip } from "node:zlib";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 
-// The web app's files are text that compresses to about a quarter, and a phone or a browser on
-// another machine downloads all of it before the first paint. The static server sends files as they
-// are on disk, so this compresses its answers: each file once per encoding, kept in memory, since
-// the built files never change under a running server.
-
 const gzipAsync = promisify(gzip);
 const brotliAsync = promisify(brotliCompress);
 
-/** Extensions worth compressing: text, and the binaries that still shrink. Images and fonts in `woff2` already are. */
 const COMPRESSIBLE = new Set([
   ".html",
   ".js",
@@ -29,9 +23,7 @@ const COMPRESSIBLE = new Set([
   ".otf",
   ".webmanifest",
 ]);
-/** Below this a file fits in a packet or two either way. */
 const MIN_BYTES = 1024;
-/** Hashed in their names by the build, so a name's content never changes. */
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
 type Encoding = "br" | "gzip";
@@ -48,7 +40,6 @@ export const chooseEncoding = (acceptEncoding: string | undefined): Encoding | u
   return allowed.has("br") ? "br" : allowed.has("gzip") ? "gzip" : undefined;
 };
 
-/** The file under `root` that `url` names, or `undefined` for one outside it. */
 const fileOf = (root: string, url: string): string | undefined => {
   let pathname: string;
   try {
@@ -77,7 +68,6 @@ export const compressedStatic = (webRoot: string) => {
         encoding === "br"
           ? brotliAsync(bytes, {
               params: {
-                // Close to the best ratio at a few times gzip's cost, paid once per file.
                 [constants.BROTLI_PARAM_QUALITY]: 9,
                 [constants.BROTLI_PARAM_SIZE_HINT]: bytes.byteLength,
               },
@@ -113,7 +103,6 @@ export const compressedStatic = (webRoot: string) => {
       ) {
         return cached;
       }
-      // An address with no file is the app's page, which the static server answered with.
       const named = fileOf(root, request.url);
       const isPage = (response.headers["content-type"] ?? "").startsWith("text/html");
       const candidates = [named, isPage ? join(root, "index.html") : undefined];

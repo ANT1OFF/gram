@@ -6,11 +6,8 @@ import type { NewEntry } from "./new-entry";
 import type { TaskTarget } from "./task-model";
 
 interface TaskDraftState {
-  /** The target the last task went to, which a later draft starts on when nothing nearer says. */
   readonly last?: TaskTarget | undefined;
-  /** What the sidebar's New menu was last used for, which it highlights when it opens. */
   readonly entry?: NewEntry | undefined;
-  /** The workspace an open New task draft is aimed at, which the window shows while it is open. */
   readonly showing?: WorkspaceId | undefined;
   remember: (target: TaskTarget) => void;
   rememberEntry: (entry: NewEntry) => void;

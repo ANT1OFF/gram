@@ -1,20 +1,3 @@
-// Gram's one shape for work that must survive a quit or a crash: save the intent, perform it, mark
-// it done, and on the next start perform whatever is still saved. Each site keeps its own storage
-// (an outbox field, a table row); this holds the order and the rules that make it safe.
-//
-// - The intent is saved before `attempt` is called, with whatever decided it, so a crash after the
-//   decision never loses the work.
-// - One attempt at a time per key, and the intent is re-read under that key's lock: a retry never
-//   races the attempt it retries, and work already done is never done again.
-// - `perform` is told when it is a `retry` (after a restart or an interruption), when it may already
-//   have happened before the crash; it checks for that and reports the work done without redoing it.
-// - The intent is marked done only once `perform` says so. A failure or `undefined` leaves it saved
-//   for the next attempt.
-// - The intent is saved with who it is for (`recordActor` in `host/ownership.ts`, read back by
-//   `actor`), and every attempt, a retry after a restart included, runs as them: a person's work
-//   reaches only what they may (a machine started for someone else, never), and is never made the
-//   server's own because the retry has no caller of its own.
-
 import * as Effect from "effect/Effect";
 import { makeKeyedLock } from "./git/keyed-lock.ts";
 import { asRecorded, type RecordedActor } from "./host/ownership.ts";

@@ -51,13 +51,8 @@ import { StatusDot } from "./status-dot";
 import { useFeatureSummary } from "./use-feature-cards";
 import { quietCard } from "./stream-model";
 
-// A feature's live card and the stream's one-line events (contracts `feature-cards.ts`). A card is
-// drawn once per feature and redrawn in place as its versions arrive; nothing in it animates while
-// it sits still.
-
 const stationIndex = (station: FeatureStation) => FEATURE_STATIONS.indexOf(station);
 
-/** ⌘/Ctrl- or Shift-click: straight through, past the peek. */
 const throughKey = (event: MouseEvent) => event.metaKey || event.ctrlKey || event.shiftKey;
 
 /**
@@ -85,7 +80,6 @@ export function WorkerLink({
         className,
       )}
       onClick={(event) => {
-        // In its orchestrator's chat, beside it; elsewhere a peek.
         beside(event);
         if (event.defaultPrevented) return;
         event.preventDefault();
@@ -116,7 +110,6 @@ export function PrChip({ pr, threadId }: { pr: FeatureCardPr; threadId?: ThreadI
   const marks = prMarksOf(facts);
   const label = prRefText(pr, { compact: true });
   const title = prTooltipOf(facts, marks);
-  // Its name is the ref then what its marks say, so a screen reader hears the glyphs too.
   const name = [label, ...title.split("\n").slice(1)].join(", ");
   const body = (
     <>
@@ -182,11 +175,6 @@ export function PrChip({ pr, threadId }: { pr: FeatureCardPr; threadId?: ThreadI
   );
 }
 
-/**
- * The five stations as a short line, only the card's own named: the stream stays a few words per
- * card, and Board names them all.
- * The others carry their name in a tooltip; a count where more than one worker stands.
- */
 function StageLine({ card }: { card: FeatureCard }) {
   const at = stationIndex(card.station);
   return (
@@ -215,7 +203,6 @@ function StageLine({ card }: { card: FeatureCard }) {
             <span
               title={state === "current" ? undefined : STATION_LABELS[station]}
               aria-label={state === "current" ? undefined : STATION_LABELS[station]}
-              // A named span needs a role to be read: the dot stands for the station's word.
               role={state === "current" ? undefined : "img"}
               className={cn(
                 "inline-flex items-center gap-0.5",
@@ -243,11 +230,9 @@ function StageLine({ card }: { card: FeatureCard }) {
   );
 }
 
-/** Whether the worker waits on the person: its question, or something only they can do. */
 const asksYou = (worker: Pick<FeatureCardWorker, "state">) =>
   worker.state === "question" || worker.state === "needsUser";
 
-/** The model a worker runs, named as the picker names it ("Sonnet 5.5"); the card has its id only. */
 const workerModelName = (model: string): string =>
   modelDisplayName(
     undefined,
@@ -258,10 +243,7 @@ const workerModelName = (model: string): string =>
 function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
   const failed = worker.flag === "error";
   const open = useOpenThread();
-  // Its state's dot, the one its sidebar row, the Board and Workers draw: amber beside "asks
-  // you", never the running blue of the station it stands at, which the stage line above says.
   const tone = useCardWorkerTone(worker);
-  // A lost machine is said as one, rather than as an error; its save is on the line under it.
   const lostAt = useThreadsStore((s) => {
     const summary = s.byId[worker.threadId];
     const error = summary?.thread.lastError;
@@ -277,12 +259,10 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
       data-dot={tone}
       className="flex min-w-0 items-center gap-2 text-meta"
     >
-      {/* Still: a card sits in the transcript, where nothing moves while it stands. */}
       <StatusDot state={tone} still />
       <span className="flex w-36 min-w-0 shrink-0" title={worker.model}>
         <WorkerLink threadId={worker.threadId}>{worker.title}</WorkerLink>
       </span>
-      {/* Which model does the work, on the task itself rather than only in the worker's thread. */}
       {worker.model !== undefined && (
         <span
           data-testid="feature-card-model"
@@ -300,7 +280,6 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
       >
         <span data-testid="feature-card-now">{now}</span>
       </Swap>
-      {/* What it needs from the person, where the task is followed: one click to answer it. */}
       {asksYou(worker) && (
         <Button
           size="xs"
@@ -312,7 +291,6 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
           Answer
         </Button>
       )}
-      {/* The other machine it runs on, if any, before its pull requests. */}
       <ThreadMachineMarker threadId={worker.threadId} testId="feature-card-machine" />
       <span className="flex shrink-0 items-center gap-1">
         {worker.prs.map((pr) => (
@@ -323,14 +301,12 @@ function WorkerLine({ worker }: { worker: FeatureCardWorker }) {
   );
 }
 
-/** A worker whose work is over: its saved work says nothing its PR doesn't. */
 const SAVED_DONE: ReadonlySet<FeatureCardWorker["state"]> = new Set([
   "merged",
   "delivered",
   "archived",
 ]);
 
-/** "Queue worker and Rate limit: queue/retry.py": each pair of workers that touch the same files, once. */
 const overlapsOf = (card: FeatureCard) => {
   const titles = new Map(card.workers.map((worker) => [worker.threadId, worker]));
   const seen = new Set<string>();
@@ -352,7 +328,6 @@ const overlapsOf = (card: FeatureCard) => {
   return out;
 };
 
-/** A worker in another feature that touches the same files, named by id; the card has its title only when it is its own. */
 const foreignOverlaps = (card: FeatureCard) => {
   const mine = new Set(card.workers.map((worker) => worker.threadId));
   return card.workers.flatMap((worker) =>
@@ -408,13 +383,7 @@ export const workerEndWord = (
 export const endWordOf = (card: Pick<FeatureCard, "workers">): "merged" | "delivered" =>
   card.workers.some((worker) => workerEndWord(worker) === "merged") ? "merged" : "delivered";
 
-/**
- * A finished feature, flat (merged, or delivered where nothing merged): one line of quiet meta like the stream's other quiet lines, with no box,
- * "history-sort · Stable sort in History merged gram#141". Its PR chip carries the merged glyph,
- * the line's one coloured mark; the name still opens the feature's sheet.
- */
 function MergedFeatureLine({ card }: { card: FeatureCard }) {
-  // The last station holds delivered work too (`stationOf`): say merged only when something merged.
   const word = endWordOf(card);
   return (
     <div
@@ -455,10 +424,6 @@ function MergedFeatureLine({ card }: { card: FeatureCard }) {
   );
 }
 
-/**
- * A feature with nothing to report (`calmCard`), flat: its name, its one worker's dot and name,
- * and what the worker does. The same parts as the card's header and worker line, on one line.
- */
 function CalmFeatureLine({ card, worker }: { card: FeatureCard; worker: FeatureCardWorker }) {
   return (
     <div
@@ -517,14 +482,11 @@ function LiveFeatureCard({
   const summary = useFeatureSummary(card, !calm);
   const overlaps = overlapsOf(card);
   const foreign = foreignOverlaps(card);
-  // Merged, or every worker parked: nothing on it moves any more. A held brief still will.
   const finished =
     card.held === undefined &&
     (card.station === "merged" || card.workers.every((worker) => worker.state === "archived"));
-  // A minute's clock is enough to notice a card going quiet; a finished one needs none.
   const now = useNow(!finished, undefined, 60_000);
   const stale = featureCardStale(card, finished, now);
-  // Nothing to report and not gone quiet: one line, no box. A stale card keeps its box and time.
   if (calm && !stale) return <CalmFeatureLine card={card} worker={card.workers[0]!} />;
   return (
     <article
@@ -543,7 +505,6 @@ function LiveFeatureCard({
           className="min-w-0"
         >
           <h3 className="truncate font-medium">
-            {/* The name opens the feature's sheet. */}
             <button
               type="button"
               data-testid="feature-card-open"
@@ -581,13 +542,11 @@ function LiveFeatureCard({
           {summary}
         </p>
       )}
-      {/* Only where it says more than the worker lines under it do. */}
       {stageLineShown(card) && <StageLine card={card} />}
       <ul className="flex flex-col gap-0.5">
         {card.workers.map((worker) => (
           <Fragment key={worker.threadId}>
             <WorkerLine worker={worker} />
-            {/* What its last save held, and Resume worker once its machine was lost. */}
             {!SAVED_DONE.has(worker.state) && <SavedWorkLine threadId={worker.threadId} />}
           </Fragment>
         ))}

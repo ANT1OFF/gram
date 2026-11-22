@@ -1,5 +1,3 @@
-// What New workspace's Start will do (new-workspace.tsx), in order.
-
 /**
  * What Start will do, in order, so nothing it starts is a surprise: the machine where one is
  * needed, the survey where it is on, then the first task, or a wait for one with nothing run.

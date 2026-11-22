@@ -18,7 +18,6 @@ export interface ToolRow {
   readonly installUrl?: string;
 }
 
-/** The agents Gram runs; one of them signed in is enough. */
 const AGENTS: ReadonlySet<LaunchTool> = new Set(["claude", "codex"]);
 
 const TOOLS: ReadonlyArray<Pick<ToolRow, "tool" | "name"> & { optional?: true }> = [
@@ -35,13 +34,11 @@ const CLAUDE_ATTENTION: Partial<Record<LaunchChecks["claudeSignIn"], string>> = 
   unknown: "Couldn't verify your login. Run `claude auth status --json`, then re-check.",
 };
 
-/** How a stranger gets each agent, when the checks name no install command, and signs in after. */
 const AGENT_INSTALL: Partial<Record<LaunchTool, { install: string; signIn: string }>> = {
   claude: { install: "npm i -g @anthropic-ai/claude-code", signIn: "claude" },
   codex: { install: "npm i -g @openai/codex", signIn: "codex login" },
 };
 
-/** Each tool's own install instructions, which the first run links to while it is missing. */
 const INSTALL_DOCS: Readonly<Record<LaunchTool, string>> = {
   claude: "https://docs.claude.com/en/docs/claude-code/setup",
   codex: "https://github.com/openai/codex",

@@ -24,7 +24,6 @@ export const closeAtRest = (
   Effect.acquireUseRelease(
     gate === undefined ? Effect.succeed(Effect.void) : gate.hold(threadId),
     () => scanThenClose(runtimes, ports, threadId, options),
-    // Not before the close is over, though its caller's wait for it can end sooner.
     (release) => runtimes.releaseAfterClose(threadId, release),
   );
 

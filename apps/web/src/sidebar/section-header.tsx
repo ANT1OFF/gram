@@ -3,32 +3,12 @@ import type { ComponentProps, CSSProperties, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-// Every section of the sidebar draws its head here, the GitHub lists' included, so they read as one
-// tier: a label in the foreground carrying the structure, and one hue carrying the meaning, in the
-// icon and the count. A row's status glyph and its coloured line under the title use the same hue.
-
 /**
  * What a section means, as the one hue it shows in. Red is left out: it only ever means failure, and
  * a section is never one.
  */
-export type SectionHue =
-  /** Waits on the user: Needs you, Waiting on you, Review requests. */
-  | "needs"
-  | "working"
-  | "idle"
-  | "settled"
-  /** The user's own open pull requests: Open PRs, and the threads In review. */
-  | "info"
-  /** Curated by the user, so it carries the foreground: Pinned. */
-  | "pinned"
-  /** Set aside, a step quieter than the rest: Parked, a project, an empty list. */
-  | "quiet";
+export type SectionHue = "needs" | "working" | "idle" | "settled" | "info" | "pinned" | "quiet";
 
-/**
- * The icon's colour and the count's. A count is drawn on a tint of its own colour, so it takes a
- * token derived to hold its contrast there (`@gram/themes` SECTION_TINT), which neither `fg`
- * nor `fg-muted` is: the neutral hues count in `status-idle`.
- */
 const HUE_TOKENS: Record<SectionHue, { icon: string; count: string }> = {
   needs: { icon: "var(--status-needs-mark)", count: "var(--status-needs)" },
   working: { icon: "var(--status-working)", count: "var(--status-working)" },
@@ -66,7 +46,6 @@ export function SectionToggle({
   /** Between the label and the count. */
   children?: ReactNode;
 }) {
-  // Nothing in it is nothing to look at: the head goes quiet rather than hold a coloured zero.
   const tokens = HUE_TOKENS[count === 0 ? "quiet" : hue];
   return (
     <button

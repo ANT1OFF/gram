@@ -6,9 +6,6 @@ import { useViewStore } from "@/views/view-store";
 
 import { focusPaneComposer, gridShown } from "./pane-focus";
 
-// ⌘N, File → New Task and the desktop menu's New Task: a new task is a message. With an orchestrator on screen in the Orchestrator
-// layout, they put the caret in its composer; anywhere else they open the New task draft as before.
-
 /**
  * The pane showing an orchestrator, the focused pane first, then the others on screen. `undefined`
  * when none does; a maximized grid shows only its focused pane.

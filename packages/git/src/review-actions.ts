@@ -1,6 +1,3 @@
-// Review-bot reads and writes over `gh api`, run in the thread's checkout so `gh` picks up its host
-// and auth. Writes are the caller's explicit action: reply, resolve, re-review, or a local patch.
-
 import * as fs from "node:fs";
 import {
   repoFromPrUrl,
@@ -49,7 +46,6 @@ export class ReviewActionError extends Data.TaggedError("ReviewActionError")<{
   }
 }
 
-// Moved to contracts, where the PR context the web app builds reads it too.
 export { repoFromPrUrl } from "@gram/contracts";
 
 /** The PR a thread acts on: its bound PR, else its branch's badge; `undefined` without either. */
@@ -67,7 +63,6 @@ const splitRepo = (repo: string) => {
   return slash > 0 ? { owner: repo.slice(0, slash), name: repo.slice(slash + 1) } : undefined;
 };
 
-/** Runs `gh api graphql` and returns `data`; GraphQL `errors` without data fail with their message. */
 const graphql = (
   workTree: string,
   query: string,
@@ -108,7 +103,6 @@ interface PrReviewRequest {
   readonly repo: string;
   readonly number: number;
   readonly bots: ReadonlyArray<ReviewBot>;
-  /** The checkout's HEAD, so a commit is a new entry rather than a warm hit. */
   readonly head: string;
 }
 
@@ -124,7 +118,6 @@ const reviewCache = makeTtlCache<PrReviewRequest, PrReview, ReviewActionError, P
  */
 export const invalidatePrReviews = (): void => reviewCache.clear();
 
-/** A reply, resolve or comment went through: the badge counts the same threads the review lists. */
 const reviewWritten = (): void => {
   invalidatePrReviews();
   invalidatePrBadges();

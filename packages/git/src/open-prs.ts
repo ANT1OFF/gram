@@ -1,7 +1,3 @@
-// A repo's open PRs by head branch, in one request. The badge lookup answers "which PR is this
-// branch's" with review and CI state, at some five GraphQL points a branch; a caller that only needs
-// to know whether a branch has an open PR at all asks here instead, at one point for the whole repo.
-
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import { ghApi } from "./exec.ts";

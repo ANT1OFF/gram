@@ -38,18 +38,14 @@ export interface LineDiffOptions {
 /** The default `maxLines`. */
 export const DIFF_MAX_LINES = 5000;
 
-/** Pairs of lines compared past the ends both texts share; past it a change is drawn whole. */
 const MAX_CELLS = 4_000_000;
-/** Words compared within one pair of lines. */
 const MAX_WORD_CELLS = 40_000;
-/** Pairs of lines given words, in one diff. */
 const MAX_WORD_PAIRS = 1000;
 
 const linesOf = (text: string) => (text === "" ? [] : text.split("\n"));
 
 type Op = "same" | "add" | "del";
 
-/** The longest common subsequence of `a` and `b` as operations, or undefined past `limit` cells. */
 function ops<T>(a: readonly T[], b: readonly T[], limit: number): Op[] | undefined {
   let head = 0;
   while (head < a.length && head < b.length && a[head] === b[head]) head++;
@@ -159,7 +155,6 @@ export function lineDiff(
   return options.words ? withWords(lines) : lines;
 }
 
-/** `ops` for a change past the cell limit: the shared ends kept, the middle replaced whole. */
 function wholeChange(a: readonly string[], b: readonly string[]): Op[] {
   let head = 0;
   while (head < a.length && head < b.length && a[head] === b[head]) head++;
@@ -178,7 +173,6 @@ function wholeChange(a: readonly string[], b: readonly string[]): Op[] {
   ];
 }
 
-/** Each block of removed then added lines, paired in order, given the words that differ. */
 function withWords(lines: DiffLine[]): DiffLine[] {
   const out = [...lines];
   let pairs = 0;

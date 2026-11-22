@@ -18,19 +18,11 @@ import { redactText } from "../logging/redact.ts";
 import { fenceConversation } from "./material.ts";
 import { basisHash, type HelperScheduler } from "./scheduler.ts";
 
-// "Why is it stuck?" on a worker that hasn't moved for `STUCK_AFTER_MS`: the facts it stands on
-// (how long it has sat, its last report, error and tool call, its PRs) and the helper's one sentence
-// on them. The `stuck` kind has its own switch, consent and ledger line, and the stored sentence is
-// keyed by the worker's last movement and those facts: asking again before it moves is free. The
-// sentence only reads; the nudges the view offers are the user's to pick and send.
-
 /** Bumped whenever the prompt or the output shape changes, so stored sentences are made again. */
 export const STUCK_PROMPT_VERSION = 1;
 
-/** The worker's last turns it reads. */
 const STUCK_TURNS = 2;
 const CONVERSATION_MAX_CHARS = 8_000;
-/** The most characters of the last tool call the facts quote. */
 const TOOL_MAX_CHARS = 80;
 
 export const STUCK_SYSTEM = [
@@ -131,7 +123,6 @@ export interface Stucks {
   readonly onAsk: (threadId: ThreadId) => Effect.Effect<StuckView | undefined>;
 }
 
-/** Statuses that are an ask, not a stall: the worker waits on the user, who has the request card. */
 const ASKING: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 
 export const makeStucks = (deps: StuckDeps): Stucks => ({
@@ -163,8 +154,6 @@ export const makeStucks = (deps: StuckDeps): Stucks => ({
         kind: "stuck",
         threadId,
         lane: "interactive",
-        // Keyed by the last movement and what the facts say: the same stall, asked again, is the
-        // stored answer.
         basis: basisHash(
           "stuck",
           idleSince,

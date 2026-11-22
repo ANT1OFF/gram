@@ -4,12 +4,10 @@ import { cn } from "@/lib/utils";
 
 import { clockPhase, onClock } from "./spin";
 
-/** How long the band takes to cross a label once. */
 const SWEEP_MS = 1600;
 
 const easeInOut = (t: number) => t * t * (3 - 2 * t);
 
-/** Moves the band from past the left edge (100 %) to past the right (0 %) of a 300 % wide image. */
 const sweep = onClock({
   step: (element, now) => {
     element.style.backgroundPositionX = `${100 - 100 * easeInOut(clockPhase(now, SWEEP_MS))}%`;

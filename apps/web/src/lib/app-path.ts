@@ -1,7 +1,3 @@
-/**
- * The path the app's routes sit under: none on its own, where it is served from the origin's root.
- * An app in front of Gram that serves it under a path sets it once, before the router starts.
- */
 let basePath = "";
 
 /** `input` as the router takes it: `/w/acme`, with no trailing slash; the root is `""`. */

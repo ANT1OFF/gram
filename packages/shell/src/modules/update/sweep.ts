@@ -35,9 +35,7 @@ export async function sweepStaleUpdateDirs(
       if (!stat.isDirectory() || now - stat.mtimeMs < minAgeMs) continue;
       await rm(path, { recursive: true, force: true, maxRetries: 3 });
       removed++;
-    } catch {
-      // Left for a later sweep.
-    }
+    } catch (_leftForALaterSweep) {}
   }
   return removed;
 }

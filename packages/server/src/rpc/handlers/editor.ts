@@ -34,11 +34,6 @@ export const editorHandlers = Effect.gen(function* () {
     ? probe.value.path
     : Effect.sync(() => process.env["PATH"] ?? "");
 
-  /**
-   * A relative path is the checkout's; an absolute one may be in any folder of the thread's. A
-   * thread on another machine has its folders there, which an editor or file manager started on
-   * this one can't open: refused before anything is looked up on this disk.
-   */
   const scopeRoots = (threadId: ThreadId) =>
     store.getThread(threadId).pipe(
       Effect.catchTag("ThreadNotFound", () =>

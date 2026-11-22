@@ -9,7 +9,6 @@ import type { ThreadsApi } from "./types";
 
 /** `ThreadsApi` over the RPC client. Feeds resubscribe through `connection` when the socket drops. */
 export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
-  /** Whether this server has said answers go over HTTP; it doesn't change while it runs. */
   const answers = { overHttp: false };
   return {
     events: (signal) =>
@@ -65,7 +64,6 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
       ),
     startSession: (threadId) => run(client["thread.startSession"]({ threadId })),
     stopTask: (threadId, taskId) => run(client["thread.stopTask"]({ threadId, taskId })),
-    // Behind a fronting proxy the server takes answers only over HTTP, and says so the first time.
     respond: async (threadId, requestId, answer, shown) => {
       if (answers.overHttp) return postAnswer(threadId, requestId, answer, shown);
       try {

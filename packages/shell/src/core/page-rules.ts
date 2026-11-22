@@ -1,10 +1,5 @@
-// What a pinned page may load (`modules/pages/main.ts` applies it). A pinned page is untrusted code
-// the user chose to keep: it runs in a session of its own (`gram-pages`), which loads its own files
-// from the page listener and nothing else. No other page, origin, network, socket or app channel.
-
 import { pinnedPageOn } from "@gram/contracts/link-trust";
 
-/** One page's view: its id, which names it on the bridge. */
 const PAGE_KEY = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 export const isPageKey = (value: unknown): value is string =>
@@ -28,7 +23,6 @@ export function pagePrefixOf(origin: string | undefined, url: unknown): string |
   return pinnedPageOn(origin, url)?.prefix;
 }
 
-/** Schemes that never reach the network: the page's own data and blobs. */
 const LOCAL = /^(data|blob):/i;
 
 /**
@@ -50,7 +44,6 @@ export function pageRequest(
 export const pageNavigation = (prefix: string | undefined, url: string): "load" | "block" =>
   prefix !== undefined && withinPrefix(prefix, url) ? "load" : "block";
 
-/** `url`, parsed again, on `prefix`'s origin under its path, with no query, user or dot segment. */
 const withinPrefix = (prefix: string, url: string): boolean => {
   let parsed: URL;
   try {

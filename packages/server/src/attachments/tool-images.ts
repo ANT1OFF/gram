@@ -7,7 +7,6 @@ import { openOutside, readUpTo, type OpenRace } from "../fs/files.ts";
 import { IMAGE_MAX_BYTES } from "../fs/images.ts";
 import { realPath } from "@gram/git";
 
-/** Extensions `readImage` serves back, by the media type an agent reports. */
 const EXTENSIONS: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -49,7 +48,6 @@ export const storeToolImage = (
   Effect.gen(function* () {
     const mediaType = image.mediaType.toLowerCase();
     const extension = EXTENSIONS[mediaType];
-    // Base64 inflates by a third, so an oversized payload is sized without decoding it.
     const padding = image.data.endsWith("==") ? 2 : image.data.endsWith("=") ? 1 : 0;
     const encodedSize = Math.floor((image.data.length * 3) / 4) - padding;
     const bytes = encodedSize > maxBytes ? undefined : Buffer.from(image.data, "base64");
@@ -68,7 +66,6 @@ export const storeToolImage = (
     const storage = resolve(attachmentsDir);
     const dir = join(storage, threadId);
     const path = join(dir, `tool-${hash}.${extension}`);
-    // Thread IDs must name one child, never another owner or the storage root itself.
     if (basename(threadId) !== threadId || threadId === "." || threadId === "..") {
       return { id, data: described };
     }
@@ -118,8 +115,6 @@ export const storeToolImage = (
         }
       });
       yield* checkParents();
-      // EEXIST is not evidence of content. Refuse links (including hard links), special files,
-      // foreign owners and parent aliases, then compare bounded bytes through the checked fd.
       const named = yield* Effect.tryPromise(() => lstat(path, { bigint: true }));
       if (!named.isFile() || named.nlink !== 1n || named.uid !== parents.owner.uid) return false;
       const handle = yield* openOutside(

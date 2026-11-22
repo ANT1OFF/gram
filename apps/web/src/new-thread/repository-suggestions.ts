@@ -1,6 +1,3 @@
-// The repositories "Add repository" offers as `owner/repo` is typed: from the embedding app's
-// source when it gave one (searched as the person types, a page at a time), else the server's own
-// `gh` listing, matched here. Either way they are grouped by owner.
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { useApi } from "@/api/context";
@@ -9,9 +6,7 @@ import type { ShellRepositoryPage } from "@/embed/contract";
 import { useEmbedShell } from "@/embed/store";
 import { useDebounced } from "@/lib/timers";
 
-/** How many of the server's own listing are offered at once. */
 const SUGGESTION_LIMIT = 8;
-/** How long typing rests before the embedding app's source is asked again. */
 const SEARCH_DEBOUNCE_MS = 250;
 
 /** Suggested `owner/repo` names containing `text`, prefix matches first. */
@@ -77,8 +72,6 @@ export function useRepoSuggestions(text: string, active: boolean): RepoSuggestio
   const source = useEmbedShell((s) => s.repositories);
   const query = useDebounced(text.trim(), SEARCH_DEBOUNCE_MS);
 
-  // Asked for on mount, not on focus: a large organisation's first list takes seconds, and the
-  // new-workspace sheet mounts this before its repository list is opened.
   const own = useQuery({
     queryKey: ["clone-suggestions"],
     queryFn: () => api.cloneSuggestions(),

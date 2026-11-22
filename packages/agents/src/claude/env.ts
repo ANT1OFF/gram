@@ -8,10 +8,8 @@ const STRIP_EXACT = new Set([
   "CLAUDE_PID",
   "CLAUDE_EFFORT",
   "CLAUDE_CODE_CHILD_SESSION",
-  // Set below: a parent's own entrypoint, such as `claude-desktop`, mustn't name Gram's children.
   "CLAUDE_CODE_ENTRYPOINT",
   "CLAUDE_CODE_EXECPATH",
-  // Set below: a user's own value mustn't turn peer messaging back on for every Gram session.
   "CLAUDE_CODE_HARBOR_KITE",
 ]);
 
@@ -27,16 +25,10 @@ const STRIP_PREFIXES = [
  * cross-session messaging back on.
  */
 export const isStrippedEnvVar = (name: string): boolean => {
-  // Windows env names are case-insensitive.
   const key = name.toUpperCase();
   return STRIP_EXACT.has(key) || STRIP_PREFIXES.some((prefix) => key.startsWith(prefix));
 };
 
-/**
- * Claude Code's opt-in for its Artifact tool under the Agent SDK, where it is off by default
- * (Claude Code 2.1.301 reports `sdk_default_off` without it). Claude Code still publishes only on
- * a claude.ai login with Anthropic as the provider, so a gateway profile's thread gets no tool.
- */
 const ARTIFACT_OPT_IN = "CLAUDE_CODE_ARTIFACT";
 
 /**
@@ -81,7 +73,6 @@ export const buildChildEnv = (
   env["CLAUDE_CODE_ENTRYPOINT"] = GRAM_ENTRYPOINT;
   env["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1";
   env[PEER_MESSAGING_SWITCH] = "0";
-  // Windows env names are case-insensitive, and the inherited name keeps its own spelling.
   if (!Object.keys(env).some((name) => name.toUpperCase() === ARTIFACT_OPT_IN)) {
     env[ARTIFACT_OPT_IN] = "1";
   }
@@ -97,10 +88,6 @@ export const withPeerMessaging = (env: Readonly<Record<string, string>>): Record
     Object.entries(env).filter(([name]) => name.toUpperCase() !== PEER_MESSAGING_SWITCH),
   );
 
-/**
- * A variable as Claude Code reads it, trimmed; empty when unset. Windows env names are
- * case-insensitive, and `buildChildEnv` keeps an inherited name's own spelling.
- */
 const envWord = (
   env: Readonly<Record<string, string | undefined>>,
   name: string,
@@ -112,16 +99,13 @@ const envWord = (
   return (key === undefined ? "" : (env[key] ?? "")).trim();
 };
 
-/** Claude Code's spellings of a boolean variable's on and off, case aside. */
 const ON_WORDS = new Set(["1", "true", "yes", "on"]);
 const OFF_WORDS = new Set(["0", "false", "no", "off"]);
 
-/** Whether `url` is Anthropic's own API, the one host Claude Code trusts with `tool_reference`. */
 const anthropicHost = (url: string): boolean => {
   try {
     return new URL(url).hostname === "api.anthropic.com";
   } catch {
-    // Claude Code can't reach an address that doesn't parse; it gets no search either way.
     return false;
   }
 };
@@ -145,7 +129,6 @@ export const toolSearchOn = (
   const setting = read("ENABLE_TOOL_SEARCH").toLowerCase();
   if (setting !== "") {
     if (OFF_WORDS.has(setting)) return false;
-    // `auto:N` defers once schemas reach N% of the context window, so 100 or more never does.
     const threshold = /^auto:(.*)$/.exec(setting)?.[1];
     return threshold === undefined || !(Number.parseFloat(threshold) >= 100);
   }
@@ -153,14 +136,6 @@ export const toolSearchOn = (
   return base === "" || anthropicHost(base);
 };
 
-/**
- * What a process that holds a `claude setup-token` token must not inherit: anything that could
- * attach a debugger or inspector (`NODE_OPTIONS`, `--inspect`, Bun's inspector), preload code into
- * it (`LD_PRELOAD`, `DYLD_*`, `BASH_ENV`), log its requests and their headers (`NODE_DEBUG`,
- * `DEBUG`, `ANTHROPIC_LOG`), or let its TLS be read or bypassed (`SSLKEYLOGFILE`,
- * `NODE_TLS_REJECT_UNAUTHORIZED`). Proxies and extra CA certificates stay: the CLI may need them,
- * and they see only TLS it verified.
- */
 const TOKEN_CHILD_STRIP_EXACT = new Set([
   "NODE_OPTIONS",
   "NODE_DEBUG",
@@ -179,8 +154,6 @@ const TOKEN_CHILD_STRIP_EXACT = new Set([
   "LD_PRELOAD",
   "LD_AUDIT",
   "LD_LIBRARY_PATH",
-  // The Agent SDK's and Claude Code's own debug, recording and raw-logging switches: the SDK turns
-  // `DEBUG_CLAUDE_AGENT_SDK` into `DEBUG=1` for the child after Gram builds its env.
   "CLAUDE_DEBUG",
   "CLAUDE_CODE_TEE_SDK_STDOUT",
   "CLAUDE_CODE_TERMINAL_RECORDING",

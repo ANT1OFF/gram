@@ -47,7 +47,6 @@ export function useRestoreDefaults(defaults: readonly DefaultSetting[] | undefin
     setConfirming(false);
     for (const setting of changed) setting.afterRestore?.();
     if (!changed.some((setting) => setting.refreshesReviewRequests === true)) return;
-    // The defaults are saved by now; only the list behind them is late.
     try {
       await api.refreshReviewRequests({ force: true });
       await queryClient.invalidateQueries({ queryKey: ["reviewRequests"] });

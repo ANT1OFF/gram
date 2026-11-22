@@ -1,10 +1,3 @@
-// `gram-host local`: this machine's own host as a login service that outlives the app, when the
-// user turns on "Keep agents running after Gram quits". The app starts it through the service
-// manager (a systemd user unit, a launchd agent) and connects to it over a Unix socket in Gram's
-// data folder, which only this user can reach. It serves one app at a time, keeps its sessions and
-// terminals across connections, and ends on its own once no app is connected and nothing of a
-// thread runs there, so it never lingers. It listens on nothing else.
-
 import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { createConnection, createServer, type Server, type Socket as NetSocket } from "node:net";
 import { dirname } from "node:path";
@@ -29,7 +22,6 @@ export const LOCAL_SERVICE_IDLE_EXIT_MS = 10 * 60_000;
  * files, which Gram resumes from, but not in Gram's transcript.
  */
 export const LOCAL_SERVICE_ABANDON_MS = 3 * DAY_MS;
-/** How often it looks. */
 const IDLE_CHECK_MS = 30_000;
 
 /** Whether anything of a thread runs in the host now, by its own count (`HostBusy`). */
@@ -51,7 +43,6 @@ export const privateSocketFolder = (socketPath: string): void => {
   assertPrivate(folder, 0o700);
 };
 
-/** Whether a host already answers on `socketPath`. */
 const answering = (socketPath: string): Promise<boolean> =>
   new Promise((resolve) => {
     const probe = createConnection(socketPath);
@@ -89,7 +80,6 @@ export const serveLocal = <R>(
   options: LocalServiceOptions,
 ): Effect.Effect<void, Error, R | Scope.Scope> =>
   Effect.gen(function* () {
-    // Refused, not fixed up: a folder or secret anyone else could read or swap isn't trusted.
     privateSocketFolder(socketPath);
     assertPrivate(dirname(options.secretFile), 0o700);
     assertPrivate(options.secretFile, 0o600);
@@ -97,15 +87,12 @@ export const serveLocal = <R>(
       return yield* Effect.fail(
         new Error(`Another host already serves ${socketPath}; this one stops.`),
       );
-    // Nothing answers on it: a socket file left by a host that ended without removing it.
     rmSync(socketPath, { force: true });
 
     const host = yield* service;
     const idleExitMs = options.idleExitMs ?? LOCAL_SERVICE_IDLE_EXIT_MS;
     const done = yield* Deferred.make<void>();
-    /** The connection served now, and the fiber serving it. */
     let current: { readonly socket: NetSocket; readonly fiber: Fiber.Fiber<void> } | undefined;
-    /** Since when no app has been connected; `undefined` while one is. */
     let aloneSince: number | undefined = Date.now();
     const scope = yield* Effect.scope;
 
@@ -120,8 +107,6 @@ export const serveLocal = <R>(
         }
         aloneSince = undefined;
         options.connected?.(true);
-        // Every frame after the handshake carries this connection's MAC: a process that relayed
-        // the handshake can't add one of its own.
         const framed = macFramed(socket, key, "host");
         framed.on("error", (error) =>
           run(
@@ -163,13 +148,10 @@ export const serveLocal = <R>(
           );
         });
         listening.once("error", (error) => resume(Effect.fail(error)));
-        // Made with this user's access only: the folder is already theirs alone.
         listening.listen({ path: socketPath, readableAll: false, writableAll: false }, () => {
           try {
             chmodSync(socketPath, 0o600);
-          } catch {
-            // The folder's own permissions still keep everyone else out.
-          }
+          } catch (_theFoldersOwnPermissionsStillKeepEveryoneElseOut) {}
           resume(Effect.succeed(listening));
         });
       }),
@@ -184,11 +166,7 @@ export const serveLocal = <R>(
     );
 
     const abandonMs = options.abandonMs ?? LOCAL_SERVICE_ABANDON_MS;
-    /** Since when no app has been connected and nothing ran: what it waits on is unseen work. */
     let quietSince: number | undefined;
-    // Ends once no app has been connected for `idleExitMs` while nothing of a thread ran and no
-    // session holds events an app hasn't seen, or for `abandonMs` with only those left.
-    /** Since when the install's secret has been gone: its data folder was moved or removed. */
     let orphanedSince: number | undefined;
     yield* Effect.gen(function* () {
       if (aloneSince === undefined) {
@@ -196,8 +174,6 @@ export const serveLocal = <R>(
         orphanedSince = undefined;
         return;
       }
-      // With its secret gone, no Gram can ever connect again, so nothing it holds, an approval
-      // included, can be answered: it ends after the idle wait whatever runs, rather than for good.
       if (readLocalSecret(options.secretFile) === undefined) {
         orphanedSince ??= Date.now();
         if (Date.now() - orphanedSince >= idleExitMs) {

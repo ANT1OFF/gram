@@ -1,7 +1,5 @@
 import type { AgentKind } from "@gram/contracts";
 
-// e2e specs set these sessionStorage flags to make MockApi behave like an unhappy server.
-
 /** `"1"`: the session is rejected, as after the server's launch token changed. */
 export const MOCK_SESSION_EXPIRED_KEY = "gram.mock.sessionExpired";
 

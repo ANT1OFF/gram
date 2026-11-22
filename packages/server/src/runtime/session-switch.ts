@@ -1,6 +1,3 @@
-// A switch of a thread's agent or model, the orchestrator's or any thread's (`agent-switch.ts`),
-// which claims the session, reopens it on the new model and releases it, or is cancelled.
-
 import * as Effect from "effect/Effect";
 import { randomUUID } from "node:crypto";
 import * as Deferred from "effect/Deferred";
@@ -28,7 +25,6 @@ export const sessionIdentity = (
   ...(t.forkedFrom === undefined ? {} : { forkedFrom: t.forkedFrom }),
 });
 
-/** The thread put back on the session a switch's `source` kept, the switch gone. */
 const backToSource = (t: Thread, change: NonNullable<Thread["sessionSwitch"]>): Thread => {
   const {
     sessionSwitch: _switch,
@@ -52,12 +48,6 @@ const backToSource = (t: Thread, change: NonNullable<Thread["sessionSwitch"]>): 
   };
 };
 
-/**
- * The mode a switch's confirmed `session` moves to from `thread.mode`, as it reported it, applied
- * to the session; `undefined` to keep the report. Asked under the runtime lock, before any input
- * can reach the session: a turn keeps the mode it was sent in, so a policy's move (`auto` reported
- * as `default`) can't wait for a later one. A refused move keeps the report.
- */
 const settleSwitchMode = (
   modeAfterSwitch: SessionPolicies["modeAfterSwitch"],
   session: AgentSession,
@@ -115,12 +105,6 @@ export const makeSessionSwitch = ({
   modeAfterSwitch,
   openSession,
 }: SessionSwitchDeps) => {
-  /**
-   * The target's startup, confirmed: its identity awaited, then under the runtime lock its final
-   * mode settled in the very write that marks the switch `ready`, before anything can be delivered
-   * to it, and the startup acknowledged. Shared by the switch and a restart's reopen of its target,
-   * so both keep the one order.
-   */
   const confirmStartup = (
     rt: Runtime,
     threadId: ThreadId,
@@ -158,8 +142,6 @@ export const makeSessionSwitch = ({
               threadId,
               message: "A stale startup cannot complete this switch.",
             });
-          // Before `ready`, which lets system deliveries in (the orchestrator's boot digest, any
-          // thread's handoff): nothing reaches the target before its final mode.
           const mode = yield* settleSwitchMode(modeAfterSwitch, target, current);
           const ready = yield* store.updateThread(threadId, (t) => ({
             ...t,
@@ -172,7 +154,6 @@ export const makeSessionSwitch = ({
               agent,
               message: "The selected harness cannot acknowledge this switch startup.",
             });
-          // The exact attempt and installed owner are checked under the same runtime lock as disposal.
           yield* target.acceptSwitchStartup(attemptId);
           rt.switchOpening = undefined;
           rt.reopening = false;
@@ -181,22 +162,11 @@ export const makeSessionSwitch = ({
       );
     });
 
-  /**
-   * A plain thread's or worker's switch still owing its handoff whose target has no session (a
-   * restart, or an archive that evicted it): the target reopens under a fresh attempt id, since a
-   * startup id is single use, back through `starting`, and is confirmed as the switch confirmed it,
-   * its mode settled before `ready` lets the handoff go. The divider stays under the first attempt
-   * (`handoff.divider`). An archived thread, or one whose session is there, is left as it is.
-   * Every failure once the claim is `starting`, at once or late, leaves the switch `failed`, its
-   * queue held, to be tried again. Returns the attempt id the claim has after.
-   */
   const reopenSwitchTarget = (threadId: ThreadId, attemptId: string) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const ack = yield* Deferred.make<AgentSession, AgentUnavailable>();
       const fresh = randomUUID();
-      // Set once this reopen has moved the claim to `starting`: from then on every way out but
-      // success, at once or late, takes the cleanup below.
       let started = false;
       return yield* Effect.gen(function* () {
         const opening = yield* locked(
@@ -213,7 +183,6 @@ export const makeSessionSwitch = ({
                 threadId,
                 message: "This switch is no longer waiting to give its handoff.",
               });
-            // Archived, it opens nothing: the handoff waits for it to come back, as its queue does.
             if (thread.parked || rt.session !== undefined || hasSessionFiber(threadId))
               return undefined;
             const next = yield* store.updateThread(threadId, (t) => ({
@@ -283,10 +252,7 @@ export const makeSessionSwitch = ({
               threadId,
               message: "This switch attempt is no longer waiting for its checkpoint.",
             });
-          // Any thread's switch takes one whose last turn failed too: limit mode.
           const errored = rt.status === "error" && change.handoff !== undefined;
-          // A cold thread has no process to stop: no session, none starting, none left from a
-          // switch. Its next session is the target's.
           const cold =
             change.phase === "checkpoint" &&
             !change.oldExited &&
@@ -332,11 +298,7 @@ export const makeSessionSwitch = ({
               message:
                 "This session cannot safely prove a graceful exit. Start a fresh session with the existing recovery action, then try again.",
             });
-          // Arm no-force protection under the runtime lock, before shutdown intent can be
-          // persisted or a disposal/close can reach ordinary scope cleanup.
           if (!change.oldExited && !cold) yield* session!.prepareForSwitch!;
-          // A switch that can roll back keeps the session as it is now, at the last moment the
-          // thread is still on it. A retry's thread was already stripped, so it keeps its own.
           const kept =
             change.source === undefined || change.phase === "retry"
               ? change
@@ -347,7 +309,6 @@ export const makeSessionSwitch = ({
           }));
           yield* publishUpsert(marked);
           if (session !== undefined) rt.switchSource = session;
-          // The stop runs outside the lock: what the old session sends meanwhile is fenced.
           rt.switchFence = { id: attemptId };
           rt.reopening = true;
           rt.stopping = "rewind";
@@ -360,10 +321,8 @@ export const makeSessionSwitch = ({
           };
         }),
       );
-      // Whether a target session was asked for: until then none can exist, whatever its host says.
       let targetOpened = false;
       return yield* Effect.gen(function* () {
-        // Scope closure alone is not owner release. The adapter must observe actual owning-child EXIT.
         yield* before.stop;
         yield* stopSession(rt, "rewind");
         const ack = yield* Deferred.make<AgentSession, AgentUnavailable>();
@@ -388,8 +347,6 @@ export const makeSessionSwitch = ({
                 threadId,
                 message: "The switch owner changed while the old session stopped.",
               });
-            // The old session asked something or began work while it stopped (`startedDuringStop`):
-            // it can't move to the target, so the switch goes no further.
             const arrived = rt.switchFence?.id === attemptId ? rt.switchFence.arrived : undefined;
             rt.switchFence = undefined;
             if (arrived !== undefined)
@@ -405,8 +362,6 @@ export const makeSessionSwitch = ({
                 forkedFrom,
                 ...rest
               } = t;
-              // A fork keeps naming its source thread, but no longer its session: with no session
-              // of its own, `resumeOptions` would fork the old agent's.
               return {
                 ...rest,
                 ...(forkedFrom?.threadId === undefined
@@ -458,10 +413,6 @@ export const makeSessionSwitch = ({
                         targetHost.value.switchAttemptReceipt !== undefined
                       ? yield* targetHost.value.switchAttemptReceipt(attemptId)
                       : undefined;
-                  // Roll back when nothing can own either session: the old one's exit proved, no
-                  // target process (none asked for, or its exit proved), none in the runtime. The
-                  // thread is then its source again, cold, and resumes that session on its next
-                  // send. Any doubt about ownership stays `failed`, holding input.
                   if (
                     change.source !== undefined &&
                     change.oldExited &&
@@ -599,7 +550,6 @@ export const makeSwitchMethods = ({
               threadId,
               message: "This switch is not ready to release its queued input.",
             });
-          // Settled at `ready`; asked again for a report that came since, before the queue goes.
           const mode = yield* settleSwitchMode(modeAfterSwitch, rt.session, thread);
           const released = yield* store.updateThread(
             threadId,

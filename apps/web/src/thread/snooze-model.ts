@@ -1,10 +1,5 @@
 import { formatStamp, formatWeekdayTime } from "@/lib/time";
 
-// When a snooze ends, worked out on the wall clock of a time zone (the viewer's, or a pinned one
-// in tests): "tomorrow 09:00" is 09:00 on the next calendar day there, however long that night is
-// across a daylight-saving change.
-
-/** A calendar date, its month 0-based. */
 interface Wall {
   readonly year: number;
   readonly month: number;
@@ -39,7 +34,6 @@ const formatOf = (timeZone: string | undefined): Intl.DateTimeFormat => {
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** The wall clock at `at` in the zone, read as if it were UTC, and its weekday (0 is Sunday). */
 const wallOf = (at: number, zone: SnoozeZone) => {
   const parts = formatOf(zone.timeZone).formatToParts(at);
   const num = (type: Intl.DateTimeFormatPartTypes) =>
@@ -81,7 +75,6 @@ export interface SnoozePreset {
   readonly at: number;
 }
 
-/** The evening snooze's hour, and the morning one's. */
 const EVENING = 18;
 const MORNING = 9;
 
@@ -93,7 +86,6 @@ export const snoozePresets = (now: number, zone: SnoozeZone = {}): SnoozePreset[
   const today = dateOf(now, zone);
   const evening = wallTime(today, EVENING, 0, zone);
   const { weekday } = wallOf(now, zone);
-  // Days to the coming Monday: a Monday's next week is seven days on.
   const toMonday = (8 - weekday) % 7 || 7;
   return [
     { id: "hour", label: "1 hour", at: now + 3_600_000 },
@@ -151,7 +143,6 @@ export const customSnooze = (
   return { at };
 };
 
-/** The weekdays a typed snooze takes, Sunday first: the whole name, or any start of it from three letters. */
 const DAY_WORDS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 /**

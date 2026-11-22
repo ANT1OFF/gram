@@ -4,13 +4,8 @@ import { fitShell, useLayoutStore } from "@/stores/layout";
 
 import type { OpenCommand } from "./command-view-model";
 
-// Which command the right panel's Command tab shows, opened from its line above the composer. Each
-// window keeps its own, in memory only: a reload or another machine starts without one.
-
 interface CommandViewState {
-  /** The command the Command tab shows. */
   readonly open: OpenCommand | undefined;
-  /** The right panel shows the Command tab, rather than another tab with the command kept in reach. */
   readonly shown: boolean;
   show: (open: OpenCommand) => void;
   setShown: (shown: boolean) => void;
@@ -44,7 +39,6 @@ export function toggleCommandView(open: OpenCommand) {
   }
   state.show(open);
   const layout = useLayoutStore.getState();
-  // A review in focus would cover the chat whose command this is.
   if (layout.reviewFocus) layout.setReviewFocus(false);
   if (fitShell(layout).panel === "none") layout.revealPanel(undefined, { thread: true });
 }

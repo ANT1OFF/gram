@@ -1,9 +1,3 @@
-// Supervises the speech process (`speech-process/`): forks it on the first session or prewarm, hands each
-// session one end of a fresh MessageChannelMain while the page gets the other, tells the page when
-// the process dies under it, and shuts it down once it has been idle a while, which is the only
-// way the models' memory goes back to the OS. A crash is reported and never restarts anything by
-// itself; the next session forks a fresh process. Nothing here can take the app down.
-
 import {
   DEFAULT_SPEECH_PERFORMANCE,
   isSpeechPerformance,
@@ -23,7 +17,6 @@ import type { SpeechModelResolution } from "./model.ts";
 
 /** How long the process outlives its last session. */
 export const SPEECH_IDLE_MS = 5 * 60_000;
-/** How long `shutdown` waits for the process to exit by itself before killing it. */
 const SHUTDOWN_GRACE_MS = 2_000;
 
 /** The slice of Electron's `UtilityProcess` the host uses. */
@@ -54,11 +47,9 @@ export interface SpeechHostOptions {
   readonly idleMs?: number;
 }
 
-/** A session id is the page's UUID; anything else is refused before it reaches the process. */
 const isSessionId = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9-]{1,64}$/.test(value);
 
-/** ONNX Runtime threads for the slider stop `performance`, the default stop's for anything else. */
 const threadsFor = (performance: unknown): number =>
   SPEECH_PERFORMANCE_STOPS[
     isSpeechPerformance(performance) ? performance : DEFAULT_SPEECH_PERFORMANCE
@@ -79,17 +70,11 @@ const STOPPED: SpeechOpenResult = {
 export function createSpeechHost(options: SpeechHostOptions) {
   const idleMs = options.idleMs ?? SPEECH_IDLE_MS;
   let child: SpeechChild | null = null;
-  /** Open sessions by id: who to tell if the process dies. */
   const sessions = new Map<string, SpeechSender>();
   const prewarms = new Map<number, (result: SpeechOpenResult) => void>();
   let nextRequest = 1;
   let idleTimer: unknown;
-  /** Processes the host has let go of that haven't exited yet; `shutdown` waits for them all. */
   const exiting = new Set<Promise<void>>();
-  /**
-   * Bumped by `shutdown`, so an open or prewarm that was still resolving its model when it began
-   * doesn't start a process again after it.
-   */
   let generation = 0;
   let updating = false;
   let nativeFault = false;
@@ -158,7 +143,6 @@ export function createSpeechHost(options: SpeechHostOptions) {
     forked.on("message", onMessage);
     forked.on("exit", (code) => {
       options.log({ source: "speech", code }, "speech process exited");
-      // One the host stopped was detached from it then; this is a process dying by itself.
       if (child !== forked) return;
       child = null;
       clearIdle();
@@ -174,10 +158,6 @@ export function createSpeechHost(options: SpeechHostOptions) {
     return forked;
   };
 
-  /**
-   * Detaches the process before it exits, so a request in the meantime forks a fresh one rather
-   * than going to this one, and fails what was waiting on it.
-   */
   const detach = (): SpeechChild | null => {
     clearIdle();
     const dying = child;

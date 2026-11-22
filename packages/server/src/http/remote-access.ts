@@ -44,11 +44,9 @@ export const LOCAL_ONLY_PATHS: ReadonlySet<string> = new Set([
   THREAD_IMPORT_PATH,
   THREAD_SETTLE_PATH,
   THREAD_SETTLED_THERE_PATH,
-  // Work sent from here to a server, with the person's sign-in the desktop app holds.
   THREAD_SEND_CHECK_PATH,
   THREAD_SEND_PATH,
   THREAD_SEND_MACHINE_PATH,
-  // A thread started from a profile, by the platform in front or the local app, and moved.
   PROFILE_START_PATH,
   PROFILE_MOVE_PATH,
   PROFILE_WAIT_PATH,
@@ -68,16 +66,12 @@ export const remoteOrigin = (value: string | undefined): string | undefined => {
       )
     )
       return value;
-  } catch {
-    /* Refuse malformed input without echoing it into logs. */
-  }
+  } catch (_refuseMalformedInputWithoutEchoingItIntoLogs) {}
   throw new Error("GRAM_REMOTE_ORIGIN must be one canonical HTTPS device.tailnet.ts.net origin");
 };
 
 export const remoteCookieName = (port: number): string => `__Host-gram_remote_${port}`;
 
-// This bridge is deliberately self-contained. The fragment never goes to HTTP/proxy logs; clear
-// it before any request, and exchange using same-origin POST. Do not add analytics or assets here.
 const bridgeScript = `"use strict";
 const secret = new URLSearchParams(location.hash.slice(1)).get("pair");
 history.replaceState(null, "", location.pathname);
@@ -189,14 +183,9 @@ export const createRemoteAccess = (
   const cookieName = remoteCookieName(cookiePort);
   let invitation: { code: string; expiresAt: number } | undefined;
   let lastPairing: PairingState | undefined;
-  /**
-   * Set when this access is closed (turned off, or Tailscale went away): a request that began on
-   * it, such as a claim still reading its body, gets nothing from it after.
-   */
   let closed = false;
   const shared = "connections" in pairings ? pairings : remotePairings(pairings);
   const { store, connections } = shared;
-  /** This access's own connections, which closing it closes; the others' stay open. */
   const mine = new Set<() => void>();
   const live = () => shared.sessions.filter((session) => now() < session.expiresAt);
   const sessionOf = (request: AuthRequest): RemoteSession | undefined => {
@@ -212,7 +201,6 @@ export const createRemoteAccess = (
     store?.write(next);
     shared.sessions = next;
   };
-  /** Closes the connections of `hashes`, on every access of this address. */
   const disconnect = (hashes: ReadonlyArray<string>) => {
     for (const hash of hashes) {
       const closers = connections.get(hash);
@@ -223,7 +211,6 @@ export const createRemoteAccess = (
       }
     }
   };
-  /** Closes the connections that came in on this access alone. */
   const disconnectMine = () => {
     for (const close of mine) {
       mine.delete(close);
@@ -248,9 +235,7 @@ export const createRemoteAccess = (
           existing === session ? { ...existing, lastSeenAt: seen } : existing,
         ),
       );
-    } catch {
-      /* Last seen is a hint; a failed write must not refuse an authorized request. */
-    }
+    } catch (_lastSeenIsAHintAFailedWriteMust) {}
   };
   return {
     origin,
@@ -338,7 +323,6 @@ export const createRemoteAccess = (
     },
     /** Registers `close` for as long as a connection of `session` stays open. */
     onDisconnect: (session: RemoteSession, close: () => void): (() => void) => {
-      // A connection that arrives after this access closed is closed at once.
       if (closed) {
         close();
         return () => {};

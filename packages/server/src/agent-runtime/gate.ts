@@ -1,9 +1,3 @@
-/**
- * What a managed runtime may install: the compatibility gate. Pure, so every rule is a unit test.
- * It sits below the RPC handlers, and the transaction re-checks it at the moment it downloads, so
- * no caller (the UI, a retry, a rollback that has to re-download) can skip it.
- */
-
 import { DAY_MS } from "../zone-time.ts";
 
 /**
@@ -40,7 +34,6 @@ export interface RuntimeArtifact {
 /** Releases wait at least this long before anything installs them, whatever the channel. */
 export const RELEASE_AGE_MS = DAY_MS;
 
-/** The npm platform suffix Codex publishes `target` under, e.g. `darwin-arm64`. */
 const npmPlatformOf = (target: string): string | undefined => {
   const match = /^(aarch64|x86_64)-(apple-darwin|pc-windows-msvc)$/.exec(target);
   if (match === null) return undefined;
@@ -162,13 +155,11 @@ export const gate = (artifact: RuntimeArtifact, context: GateContext): GateRefus
     artifact.npm.package !== coordinates.package ||
     artifact.npm.version !== coordinates.version
   ) {
-    // Anything else could be a package a registry serves under a name Codex doesn't publish.
     return {
       reason: "malformed",
       message: `The Codex ${artifact.version} entry names ${artifact.npm.package}@${artifact.npm.version}, not Codex's own package.`,
     };
   }
-  // A beta (`0.8.0-rc.2`) is qualified as the release it becomes.
   const appVersion = context.appVersion.replace(/-.*$/, "");
   const qualified =
     artifact.qualifiedFor === undefined || satisfies(appVersion, artifact.qualifiedFor);

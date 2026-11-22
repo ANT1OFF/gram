@@ -1,6 +1,3 @@
-// `add_worker_repo`: a worker gets a worktree in another
-// repository of its workspace, after the approval an outside one needs.
-
 import { AppToolError, isLocalHost, MAX_EXTRA_PRS } from "@gram/contracts";
 import { samePath } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -66,8 +63,6 @@ export const makeWorkerRepos = (kit: OrchestrationKit, deps: WorkerReposDeps) =>
   const addRepoNeedsApproval: OrchestrationShape["addRepoNeedsApproval"] = (callerId, input) =>
     Effect.gen(function* () {
       const authority = yield* authorityOf(callerId);
-      // Somebody else's thread, or no authority: the handler refuses, and a card first would
-      // only ask the user for something that then doesn't happen.
       if (authority === undefined || !(yield* delegated(callerId, input.threadId))) return false;
       const outside = yield* outsideWorkspace("add_worker_repo", [input.project], authority.state);
       return outside.length > 0;
@@ -117,8 +112,6 @@ export const makeWorkerRepos = (kit: OrchestrationKit, deps: WorkerReposDeps) =>
               ),
             );
           }
-          // It ends in a message to the worker, so it is held to what any such message is: not
-          // while paused, and not to a worker the user has taken over.
           yield* guardSend(tool, callerId, target.id);
           const project = yield* resolveProject(tool, input.project, state, call);
           const projects = yield* store.listProjects;
@@ -150,13 +143,10 @@ export const makeWorkerRepos = (kit: OrchestrationKit, deps: WorkerReposDeps) =>
               `“${target.title}” has no branch to follow into ${project.name}.`,
             );
           }
-          // From git's check to the worker holding it, beside a spawn in another workspace that
-          // shares this repo.
           const { checkout, updated } = yield* checkoutLock.withLock(
             yield* checkoutKey(project.root),
             Effect.gen(function* () {
               const made = yield* creator
-                // On the worker's own machine, beside its first worktree.
                 .prepare(
                   {
                     kind: "newWorktree",
@@ -207,13 +197,9 @@ export const makeWorkerRepos = (kit: OrchestrationKit, deps: WorkerReposDeps) =>
           );
           yield* sampleExtras(updated);
           yield* joinWorkspace(state, caller.id, [project]);
-          // The folder is granted live where the agent can take it; the reload, once the worker is
-          // idle, is for its role prompt, which lists the worktrees it holds.
           yield* runtimes.addDirectories(target.id, [checkout.path]).pipe(Effect.ignore);
           yield* reload(target.id);
           const [named] = worktreesOf(projects, [checkout]);
-          // Steered into a running turn, as an orchestrator's message to its worker is, so the
-          // worker hears of its new folder before it edits in the wrong one.
           const sent = yield* steerOrSend(runtimes, target.id, {
             text: `You now also have a worktree in ${project.name}: ${checkout.path}${
               checkout.branch === undefined ? "" : ` (branch ${checkout.branch})`

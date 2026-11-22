@@ -1,7 +1,3 @@
-// The service that computes and pushes git state: the local tier on demand, a full snapshot with the
-// network tier (PR badge, throttled background fetch, rebase signal against the PR base), and the
-// watcher stream.
-
 import { currentBaseOf, type GitState, type PrStatus } from "@gram/contracts";
 import * as fs from "node:fs";
 import * as Clock from "effect/Clock";
@@ -94,15 +90,10 @@ export const checkoutPresent = (cwd: string): Effect.Effect<boolean> =>
     try {
       return fs.statSync(cwd, { throwIfNoEntry: false }) !== undefined;
     } catch {
-      // EACCES and the like: there, but unreadable.
       return true;
     }
   });
 
-/**
- * Refresh the refs the rebase signal reads: the branch and its base only, throttled per repo, and
- * skipped when GraphQL already proved both local tips current. Never pops a credential UI.
- */
 const maybeFetch = (
   cwd: string,
   branch: string | undefined,
@@ -144,11 +135,6 @@ export const GitStateRuntimeLive = Layer.effect(
     const pr = yield* Pr;
     const provide = Effect.provideService(Proc, proc);
     const lastFetch = new Map<string, number>();
-    /**
-     * Per checkout, by `samePathKey`: its latest local read, from a snapshot or its watcher, for
-     * `reuseLocal`. Keyed as the publisher keys its watchers, so threads that spell one checkout two
-     * ways share the read its one watcher keeps current.
-     */
     const lastLocal = new Map<string, GitState>();
 
     const readLocal = (cwd: string) =>
@@ -167,7 +153,6 @@ export const GitStateRuntimeLive = Layer.effect(
           const origin = yield* originOwnerRepo(cwd);
           const state: GitState = origin === undefined ? local : { ...local, origin };
           const carriedPr = options.previous?.pr;
-          // A failed lookup keeps the carried badge, marked stale from the first failure on.
           const nextPr = options.remote
             ? yield* pr.status(cwd, undefined, { branch: local.branch, head: local.head }).pipe(
                 Effect.catchTag("PrLookupError", (error) =>
@@ -191,12 +176,10 @@ export const GitStateRuntimeLive = Layer.effect(
           const next = measure
             ? yield* withPr(cwd, state, nextPr, previous)
             : carryRebaseTier(nextPr === undefined ? state : { ...state, pr: nextPr }, previous);
-          // The cue for a PR on another worktree is found by the sweep; keep it while there's no own PR.
           const badged: GitState =
             next.pr === undefined && previous?.prElsewhere !== undefined
               ? { ...next, prElsewhere: previous.prElsewhere }
               : next;
-          // Between scans the last answer is kept while this checkout stays clean on its branch.
           const carried = previous?.workElsewhere;
           const elsewhere =
             (options.scanElsewhere ?? options.remote)

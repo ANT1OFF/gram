@@ -49,17 +49,10 @@ import {
   type TransactionDeps,
 } from "./transaction.ts";
 
-/** What the RPC layer hands the managed store once it exists; see `ManagedRuntimesShape.connect`. */
 interface ManagedRuntimeHooks {
-  /** The persisted "Use Gram-managed Codex" choice. */
   readonly readSource: Effect.Effect<RuntimeSourceChoice>;
   readonly writeSource: (source: RuntimeSourceChoice) => Effect.Effect<void>;
-  /** Codex sessions with a turn (or background work) under way. */
   readonly busySessions: Effect.Effect<number>;
-  /**
-   * The executable changed: retire Codex's app-servers and reopen each live Codex session once it
-   * is idle, so new turns run on the new one and no running turn is touched.
-   */
   readonly switched: Effect.Effect<void>;
 }
 
@@ -135,7 +128,6 @@ export interface ManagedRuntimesOptions {
   readonly idlePollMs?: number;
 }
 
-/** Variables the smoke test's Codex gets: enough to run, and none of the user's credentials. */
 const SMOKE_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -220,7 +212,6 @@ export const makeManagedRuntimes = (
     const scope = yield* Effect.scope;
     const run = yield* FiberSet.makeRuntime();
     let hooks: ManagedRuntimeHooks | undefined;
-    /** Writes to `active.json` take turns: an install's activation, a rollback, a first start. */
     const writes = yield* Semaphore.make(1);
     let record: ActiveRecord = {};
     const recovered = yield* Deferred.make<void>();
@@ -238,14 +229,12 @@ export const makeManagedRuntimes = (
         }),
       ),
     );
-    /** Republishes the settled part of the state, keeping an in-flight or outcome state's kind. */
     const refreshSettled = Effect.gen(function* () {
       const next = yield* reload;
       const current = yield* SubscriptionRef.get(ref);
       yield* publish(settledReplace(current, settled(next)));
     });
 
-    /** An install's staged version, from before its smoke test until it is selected or dropped. */
     const staging = new Set<string>();
     const prune = Effect.promise(() =>
       store.prune(new Set([...keepSet(record, leases), ...staging])),
@@ -261,7 +250,6 @@ export const makeManagedRuntimes = (
       (stop) => Effect.sync(stop),
     );
 
-    // Startup recovery runs beside the server's own start; the first resolve waits for it.
     yield* Effect.forkIn(
       Effect.promise(() => store.recover()).pipe(
         Effect.flatMap(() => reload),
@@ -276,7 +264,6 @@ export const makeManagedRuntimes = (
 
     const artifacts = options.baseline ?? CODEX_BASELINE;
 
-    /** Whether going back to `receipt` is still allowed: approved here, and through the gate. */
     const stillApproved = (receipt: RuntimeReceipt) =>
       artifacts.some(
         (a) =>
@@ -288,14 +275,12 @@ export const makeManagedRuntimes = (
 
     const sourceOf = Effect.suspend(() => hooks?.readSource ?? Effect.succeed("path" as const));
 
-    /** What may be installed now, newest first: what passes the gate. */
     const allowedArtifacts = Effect.sync(() =>
       artifacts
         .filter((artifact) => gate(artifact, context()) === undefined)
         .toSorted((a, b) => compareVersions(b.version, a.version)),
     );
 
-    /** The install under way; `installing` is set before it forks, so two can't start. */
     let job: Fiber.Fiber<void, never> | undefined;
     let installing = false;
 
@@ -317,7 +302,6 @@ export const makeManagedRuntimes = (
       }
     };
 
-    /** Waits until no Codex session the switch would affect is mid-turn, showing how many are. */
     const untilIdle = (version: string) =>
       Effect.gen(function* () {
         while (true) {
@@ -350,8 +334,6 @@ export const makeManagedRuntimes = (
         });
         if (!staged.selected) {
           yield* untilIdle(artifact.version);
-          // Selected and handed over together: once `active.json` changes, the app-servers are
-          // retired and sessions reopen, whatever a Cancel says.
           yield* Effect.uninterruptible(
             Effect.gen(function* () {
               yield* writes.withPermits(1)(
@@ -368,9 +350,7 @@ export const makeManagedRuntimes = (
           reload.pipe(
             Effect.andThen(
               error._tag === "RuntimeRefused" && error.reason === "too-new"
-                ? // The registry is holding it back for a day, as we would: nothing went wrong, and
-                  // Update comes back once it is offered.
-                  Effect.logInfo(`managed Codex ${artifact.version}: ${error.message}`).pipe(
+                ? Effect.logInfo(`managed Codex ${artifact.version}: ${error.message}`).pipe(
                     Effect.andThen(publish({ state: "idle", ...settled(record) })),
                   )
                 : publish({
@@ -383,7 +363,6 @@ export const makeManagedRuntimes = (
           ),
         ),
         Effect.onInterrupt(() =>
-          // Cancelled: what was staged but never selected goes, and the state is as it was.
           reload.pipe(
             Effect.andThen(Effect.sync(() => staging.clear())),
             Effect.andThen(writes.withPermits(1)(prune)),
@@ -399,7 +378,6 @@ export const makeManagedRuntimes = (
         ),
       );
 
-    /** The rest of `install`, once the store is reserved for it. */
     const admit = (version: string) =>
       Effect.gen(function* () {
         const candidates = artifacts.filter((a) => a.version === version && a.target === target);
@@ -436,8 +414,6 @@ export const makeManagedRuntimes = (
           );
         }
         if (staging.has(current.id)) {
-          // Its files are being reinstalled; nothing may start from them until that is verified,
-          // and no lease taken now could keep them from being replaced.
           return yield* unavailable(
             `Gram-managed Codex ${current.version} is being repaired; try again once Settings → Agents shows it done.`,
           );
@@ -447,8 +423,6 @@ export const makeManagedRuntimes = (
             `Gram-managed Codex ${current.version} changed on disk since it was verified, so it won't be run. Install it again in Settings → Agents.`,
           );
         }
-        // Checked again with no yield before the lease: a repair that began while this resolve
-        // awaited the checks above must not find a lease appear after its own in-use check.
         if (staging.has(current.id)) {
           return yield* unavailable(
             `Gram-managed Codex ${current.version} is being repaired; try again once Settings → Agents shows it done.`,
@@ -475,10 +449,8 @@ export const makeManagedRuntimes = (
               .withPermits(1)(
                 Effect.gen(function* () {
                   const latest = yield* reload;
-                  // Only a version that has never started a session is blamed for not starting.
                   if (latest.unproven !== true || latest.current?.id !== current.id) return false;
                   if (latest.previous === undefined) return false;
-                  // Going back only to what may still run: a predecessor the gate refuses stays put.
                   if (!stillApproved(latest.previous)) return false;
                   yield* rollbackTransaction(deps, message).pipe(Effect.ensuring(reload));
                   yield* publish({
@@ -532,7 +504,6 @@ export const makeManagedRuntimes = (
           if (installing) {
             return yield* refused("busy", "An install of Codex is already under way.");
           }
-          // Reserved before anything yields, so a second request can't also pass the check.
           installing = true;
           return yield* admit(version).pipe(
             Effect.onError(() =>
@@ -546,7 +517,6 @@ export const makeManagedRuntimes = (
         Effect.gen(function* () {
           yield* onlyCodex(agent);
           const running = job;
-          // Activation is uninterruptible, so a cancel that arrives then waits for it to finish.
           if (running !== undefined) yield* Fiber.interrupt(running);
           return yield* SubscriptionRef.get(ref);
         }),
@@ -557,9 +527,6 @@ export const makeManagedRuntimes = (
           if (installing) {
             return yield* refused("busy", "Wait for the Codex install under way, or cancel it.");
           }
-          // Checked and switched under the write lock, on the record as it is then, so the version
-          // checked is the one selected; and with its handoff, so a dropped request can't leave
-          // the app-servers on the version `active.json` no longer selects.
           yield* Effect.uninterruptible(
             writes
               .withPermits(1)(
@@ -572,7 +539,6 @@ export const makeManagedRuntimes = (
                       "There's no earlier Codex to go back to.",
                     );
                   }
-                  // A version this build no longer approves isn't run again.
                   if (!stillApproved(previous)) {
                     return yield* refused(
                       "not-qualified",
@@ -609,8 +575,6 @@ export const makeManagedRuntimes = (
           }
           if (hooks === undefined) return;
           const { readSource, writeSource, switched: handOver } = hooks;
-          // Both directions change the executable new sessions start from; the choice and the
-          // handoff go together, so a dropped request can't persist one without the other.
           yield* Effect.uninterruptible(
             Effect.gen(function* () {
               if ((yield* readSource) === source) return;
@@ -626,7 +590,6 @@ export const makeManagedRuntimes = (
     } satisfies ManagedRuntimesShape;
   });
 
-/** `next`'s `active`/`previous` in place of `current`'s, dropping keys `next` no longer has. */
 const settledReplace = (
   current: RuntimeInstallState,
   next: { readonly active?: ManagedInstall; readonly previous?: ManagedInstall },

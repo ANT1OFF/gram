@@ -15,11 +15,6 @@ import {
   type PrFacts,
 } from "./pr-marks-model";
 
-// One glyph per pull request, for places with room for one mark: the sidebar's thread rows and its
-// review-request and open-PR lists, the overview's chips, the PR strip's rows and the badge. It
-// folds the PR vocabulary's marks (`pr-marks-model.ts`) into the one that matters most, so it can't
-// disagree with them. Its colour says how the PR stands; the words are its card's and its name's.
-
 export type PrGlyphKind =
   | "failing"
   | "changes"
@@ -59,13 +54,11 @@ export interface PrGlyphState {
   word: string;
 }
 
-/** The checks that gate the merge, as `requiredChecksOf` reads them; absent until looked up. */
 const gatingChecks = (pr: PrGlyphSource): ChecksRollup | undefined =>
   pr.checks === undefined ? undefined : (pr.requiredChecks ?? pr.checks);
 
 const CHANGES_WORD = reviewMarkOf({ reviewDecision: "CHANGES_REQUESTED" })!.word;
 
-/** The merge marks that leave the glyph open but say what its merge waits on, worst first. */
 const MERGE_WAITS: ReadonlySet<MergeMarkKind> = new Set([
   "refused",
   "held",
@@ -118,7 +111,6 @@ export const PR_GLYPH_DISPLAY: Record<PrGlyphKind, PrGlyphDisplay> = {
   failing: CHECKS_DISPLAY.failing,
   changes: REVIEW_DISPLAY.changes,
   conflicts: MERGE_DISPLAY.conflicts,
-  // Checks that gate the merge still running: the checks' own running mark.
   pending: CHECKS_DISPLAY.pending,
   open: PR_STATE_DISPLAY.open,
   ready: PR_STATE_DISPLAY.open,
@@ -128,7 +120,6 @@ export const PR_GLYPH_DISPLAY: Record<PrGlyphKind, PrGlyphDisplay> = {
   unknown: { icon: PR_STATE_DISPLAY.open.icon, tone: "text-muted-foreground" },
 };
 
-/** Which PR a row with several shows: the one most in need of the user. */
 const PRIORITY: readonly PrGlyphKind[] = [
   "failing",
   "changes",

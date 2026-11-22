@@ -1,8 +1,3 @@
-// One call to an outside service an embedding deployment configured (`config.ts`): the scheduler,
-// the object store. Its bearer token goes in the header and nowhere else; a redirect is refused,
-// so the token never follows one to another host; and a failure names the service and the status,
-// never the URL's path or anything the service answered.
-
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import type { OutsideService } from "./config.ts";
@@ -65,7 +60,6 @@ export const callOutside = (
       new OutsideCallFailed({
         service: name,
         status: undefined,
-        // A fetch failure's message can carry the URL; its name (`TimeoutError`, `TypeError`) can't.
         message: `The ${name} didn't answer (${error instanceof Error ? error.name : "error"})`,
       }),
   }).pipe(

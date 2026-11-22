@@ -1,11 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-/** How many destinations the palette remembers going to. */
 const KEPT = 5;
 
 interface RecentDestinationsState {
-  /** Destination ids (`go:…`), the most recent first. */
   readonly ids: readonly string[];
   visit: (id: string) => void;
 }

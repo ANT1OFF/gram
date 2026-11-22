@@ -65,10 +65,6 @@ export const McpCli = Context.Reference<McpCliShape>("@gram/server/McpCli", {
 
 const CLI_TIMEOUT_MS = 30_000;
 
-/**
- * How long `claude mcp login` may run. It gives up by itself after five minutes ("Authentication
- * timeout"), so this only stops one that has wedged.
- */
 const LOGIN_TIMEOUT_MS = 6 * 60_000;
 
 /**
@@ -104,9 +100,7 @@ export const McpCliLive: Layer.Layer<never, never, Proc> = Layer.effect(
       );
     };
     return {
-      // Other platforms have no `script` to lend it a terminal; a running Claude thread signs in.
       ...(process.platform === "darwin" ? { login } : {}),
-      // A fetch of the account's connector list, and nothing to wait for after it.
       connectorLogin: (name) =>
         proc.run("claude", connectorLoginArgs(name), { cwd: homedir(), tier: "network" }).pipe(
           Effect.mapError(
@@ -122,7 +116,6 @@ export const McpCliLive: Layer.Layer<never, never, Proc> = Layer.effect(
       everConnected: Effect.promise(() => readClaudeEverConnected(process.env)),
       run: (args, cwd) =>
         proc.run("claude", args, { cwd, timeoutMs: CLI_TIMEOUT_MS }).pipe(
-          // The arguments carry the server's secrets, so the error names neither them nor the command.
           Effect.mapError(
             (error) =>
               new InvalidState({
@@ -167,7 +160,6 @@ export const secretsOf = (config: McpServerConfig): ReadonlyArray<string> =>
 export const redact = (text: string, secrets: ReadonlyArray<string>): string =>
   secrets.reduce((out, secret) => out.replaceAll(secret, "••••"), text);
 
-/** Terminal escapes and other control characters, which `script`'s output is full of. */
 const ESCAPES = new RegExp(
   [
     String.raw`\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)`,

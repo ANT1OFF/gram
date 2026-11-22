@@ -10,8 +10,6 @@ import { DialogShell } from "./dialog-shell";
 import { SavedFiles } from "./saved-work";
 import { linesWord, savedWhat } from "./saved-work-words";
 
-// View diff's dialog, loaded when it first opens: the diff panel's rows stay out of the first paint.
-
 /**
  * The saved diff, as the machine last sent it: each file in the diff panel's own rows. Once this Gram
  * restarted since the save it has only the record, so it lists the files and says so.

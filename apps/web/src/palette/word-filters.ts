@@ -50,7 +50,6 @@ export function parseWordFilters(raw: string, workspaces: readonly NamedWorkspac
   take(/\bthis week\b/, { field: "time", value: "thisWeek" });
   take(/\btoday\b/, { field: "time", value: "today" });
   take(/\byesterday\b/, { field: "time", value: "yesterday" });
-  // Filler is ignored only after an actual filter was found. Unrecognized words remain searchable.
   if (filters.length)
     text = text.replace(/\b(?:show|find|me|the|all|in|from|what's|what is)\b/g, " ");
   return { filters, text: text.replace(/\s+/g, " ").trim() };
@@ -112,8 +111,6 @@ export function matchesWordFilters(
       return kind === "pr"
         ? pr?.checks === "failing"
         : summary.status === "error" || pr?.checks === "failing";
-    // Waiting is what the sidebar puts under Needs you, or a Waiting on you item still kept;
-    // working and idle are what its glyph says, work running under a resting thread included.
     if (value === "waiting")
       return (
         needsYou(summary) ||

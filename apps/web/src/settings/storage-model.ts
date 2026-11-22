@@ -47,7 +47,6 @@ export const rowState = (entry: StorageWorktree): string | undefined => {
   const risk = workAtRisk(entry);
   if (risk !== undefined) return risk;
   if (entry.pr !== undefined) {
-    // The server sends no draft flag for a worktree's PR, so a draft reads as open here.
     return `#${entry.pr.number} ${prStateMarkOf(entry.pr).word.toLowerCase()}`;
   }
   return entry.settled ? "In base branch" : undefined;

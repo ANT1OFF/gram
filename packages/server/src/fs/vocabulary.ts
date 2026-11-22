@@ -10,17 +10,10 @@ import * as Effect from "effect/Effect";
 import { stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
-/**
- * The names in a project that dictation should spell its way: exported symbols, tracked file and
- * folder names, branches and the words of thread titles. Read from git, kept in memory, never sent
- * anywhere; a log line about it carries counts only.
- */
-
 const GIT_TIMEOUT_MS = 5_000;
 const LIST_MAX_BYTES = 16 * 1024 * 1024;
 const GREP_MAX_BYTES = 2 * 1024 * 1024;
 
-/** How many of each kind are kept before the whole is capped, so no kind crowds out the rest. */
 const KIND_LIMITS: Readonly<Record<ProjectTermKind, number>> = {
   symbol: 1_500,
   file: 1_200,
@@ -30,14 +23,12 @@ const KIND_LIMITS: Readonly<Record<ProjectTermKind, number>> = {
 };
 const ORDER: readonly ProjectTermKind[] = ["symbol", "file", "folder", "branch", "title"];
 
-/** Top-level exports in TypeScript/JavaScript, Rust and Python, by a line regex and no parser. */
 const EXPORT_PATTERNS = [
   String.raw`^export +(default +)?(declare +)?(abstract +)?(async +)?(const|let|var|function\*?|class|interface|type|enum|namespace) +[A-Za-z_$][A-Za-z0-9_$]*`,
   String.raw`^pub(\([a-z]+\))? +(async +)?(fn|struct|enum|trait|type|const|static|mod) +[A-Za-z_][A-Za-z0-9_]*`,
   String.raw`^(async +)?(def|class) +[A-Za-z_][A-Za-z0-9_]*`,
 ];
 const SOURCE_FILES = ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.rs", "*.py"];
-/** Commits whose files count as the ones being worked on. */
 const RECENT_COMMITS = 200;
 const SKIPPED_FILES = [":(exclude)*.d.ts", ":(exclude)*.min.js", ":(exclude)**/vendor/**"];
 
@@ -76,7 +67,6 @@ export interface VocabularySources {
   readonly titles: readonly string[];
 }
 
-/** A title's words that look like names: `sherpa-onnx`, `useDictation`, `v1.4.0`. */
 const titleWords = (title: string): string[] =>
   title
     .split(/\s+/)
@@ -127,10 +117,8 @@ export const projectTerms = (
   return { terms, truncated };
 };
 
-/** Stdout of `git args` in `root`, or "" when git fails or times out. */
 const gitText = (root: string, args: readonly string[], maxOutputBytes = LIST_MAX_BYTES) =>
   git(root, args, { timeoutMs: GIT_TIMEOUT_MS, maxOutputBytes }).pipe(
-    // `git grep` exits 1 when nothing matched, which is an empty answer, not a failure.
     Effect.map((out) => (out.status === 0 || out.status === 1 ? out.stdout : "")),
     Effect.orElseSucceed(() => ""),
   );
@@ -181,10 +169,6 @@ export const readVocabularySources = (
     };
   });
 
-/**
- * What changes when the names might have: the commit checked out and the index. A branch made
- * elsewhere shows on the next commit or after `VOCABULARY_MAX_AGE_MS`.
- */
 const signatureOf = (root: string) =>
   Effect.gen(function* () {
     const [head = "", indexPath = ""] = (yield* gitText(root, [
@@ -208,7 +192,6 @@ const signatureOf = (root: string) =>
 
 /** How long a project's names are kept without looking at git again. */
 export const VOCABULARY_MAX_AGE_MS = 10 * 60_000;
-/** Projects whose names are kept at once. */
 const CACHED_ROOTS = 8;
 
 /**

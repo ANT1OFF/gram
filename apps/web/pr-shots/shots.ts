@@ -4659,6 +4659,41 @@ export const SHOTS: readonly Shot[] = [
       await page.waitForTimeout(800);
     },
   },
+  ...(["link", "select"] as const).map((variant) => ({
+    name: `inbox-wait-${variant}`,
+    title:
+      variant === "link"
+        ? "The Inbox on a step to take with a link: Open github.com in the header, and on the row"
+        : "The same step with its body selected by a drag, to copy (before, the drag folded the row)",
+    open: async (page: Page) => {
+      await openNeedsYouSeeded(page);
+      await page.evaluate(() =>
+        window.gramMock!.simulateWaitOnUser("t-deps" as never, {
+          kind: "action",
+          title: "Merge example/api#431 by hand",
+          body: "The PR changes .github/workflows, so the merge queue refuses it. Its checks are green on 06b03c2.",
+          link: "https://github.com/example/api/pull/431",
+        }),
+      );
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.getByTestId("overview-needs-you").click();
+      await page.getByTestId("inbox").waitFor();
+      await page.getByTestId("inbox-item").filter({ hasText: "Merge example/api#431" }).click();
+      const body = page.getByTestId("inbox-detail-body").getByText("merge queue refuses it");
+      await body.waitFor();
+      if (variant === "select") {
+        const box = (await body.boundingBox())!;
+        await page.mouse.move(box.x + 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width * 0.7, box.y + box.height / 2, { steps: 8 });
+        await page.mouse.up();
+        await expect.poll(() => page.evaluate(() => getSelection()?.toString() ?? "")).not.toBe("");
+      } else {
+        await page.mouse.move(0, 0);
+      }
+      await expect(page.getByTestId("inbox-detail")).toContainText("merge queue refuses it");
+    },
+  })),
   {
     name: "needs-you-landed",
     title: "Needs you: a row opens its thread at the card that asks, ringed for a moment",

@@ -1,15 +1,3 @@
-// The only door through which a pinned page (`pages.ts`) reaches the shell: a loopback listener of
-// its own, apart from the app's and from the Preview tab's file listener (`preview/files.ts`), whose
-// serving it shares. Each pinned version's folder gets an unguessable token under contracts'
-// `PAGES_SEGMENT`, and only files under that folder answer, read-only, with no dotfiles.
-//
-// What every answer carries keeps the page to itself (`pagePolicyHeaders`): a sandbox with scripts
-// and nothing else, so the page runs at an opaque origin with no cookies, storage, popups, forms,
-// downloads, modals or navigation of the top frame; no connection of its own, no frame, worker or
-// form; and loads only from this listener. The shell's `gram-pages` session puts the same policy on
-// every response and holds every request to the page's own files (`modules/pages`), so neither half
-// alone is what keeps the page in.
-
 import {
   InvalidState,
   pagePolicyHeaders,
@@ -44,7 +32,6 @@ export const pageHeaders =
   (requestOrigin) => ({
     ...pagePolicyHeaders(origin),
     "cache-control": "no-store",
-    // The opaque-origin page loads its own files cross-origin; the shell's session holds who may.
     "cross-origin-resource-policy": "cross-origin",
     "cross-origin-opener-policy": "same-origin",
     ...(requestOrigin === "null" ? { "access-control-allow-origin": "null" } : {}),
@@ -76,7 +63,6 @@ export class PageFiles extends Context.Service<PageFiles, PageFilesShape>()(
         }),
       );
       origin = `http://127.0.0.1:${port}`;
-      // The desktop shell loads pinned pages from this origin alone (`PAGES_ORIGIN_MESSAGE`).
       (process as { parentPort?: { postMessage(message: unknown): void } }).parentPort?.postMessage(
         { type: PAGES_ORIGIN_MESSAGE, origin },
       );

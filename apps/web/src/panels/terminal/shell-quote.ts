@@ -21,7 +21,6 @@ export function shellKind(shell: string): ShellKind {
 const posix = (path: string) =>
   /^[\w@%+=:,./-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
 
-/** `C:\Users\me\a b` → `/c/Users/me/a b`, as MSYS tools expect. */
 const toMsysPath = (path: string) =>
   path
     .replace(/^([A-Za-z]):[\\/]/, (_, drive: string) => `/${drive.toLowerCase()}/`)
@@ -39,8 +38,6 @@ export function quoteShellPath(path: string, kind: ShellKind): string {
     case "git-bash":
       return posix(toMsysPath(path));
     case "powershell":
-      // PowerShell ends a single-quoted string at ' and at the curly quotes ‘ ’ ‚ ‛ too, so each is
-      // doubled; leaving one would let a dropped file's name close the quote and run the rest.
       return /^[\w:./\\-]+$/.test(path)
         ? path
         : `'${path.replace(/['\u2018\u2019\u201A\u201B]/g, (quote) => quote + quote)}'`;
@@ -54,11 +51,6 @@ export function quoteShellPath(path: string, kind: ShellKind): string {
   }
 }
 
-/**
- * A C0 or C1 control character, or DEL. The terminal and the shell's line editor act on these
- * before any quoting does (Enter, Ctrl-C, Escape, the end of a bracketed paste), so a file name
- * holding one could run a command of its author's choosing.
- */
 // oxlint-disable-next-line no-control-regex -- matching control characters is the point.
 const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 

@@ -13,18 +13,10 @@ import * as Effect from "effect/Effect";
 import { fenceConversation } from "./material.ts";
 import { basisHash, type HelperScheduler } from "./scheduler.ts";
 
-// "Catch me up" for a worker you open after a report you hadn't seen: one or two sentences on what
-// changed since you last looked. It is the helper's `recap` kind, so the Recaps switch, the
-// provider's conversation consent and the usage ledger all apply as they do to a recap, and the
-// stored output is keyed by the worker's last report: opening it again before another report comes
-// in is served from `helper_outputs` with no call.
-
 /** Bumped whenever the prompt or the output shape changes, so stored catch-ups are made again. */
 export const CATCH_UP_PROMPT_VERSION = 1;
 
-/** The reports since you last looked that it reads, newest last. */
 const CATCH_UP_REPORTS = 5;
-/** The worker's last turns it reads beside them. */
 const CATCH_UP_TURNS = 2;
 const CONVERSATION_MAX_CHARS = 12_000;
 
@@ -36,11 +28,8 @@ export const CATCH_UP_SYSTEM = [
   '- catchUp: one or two sentences, past tense, "the worker" for the agent. Lead with what matters most: a question it asked, what blocks it, or what it finished. Name concrete things (files, tests, PR numbers). No greeting, no advice, no markdown.',
 ].join("\n");
 
-/** What a catch-up is made from. */
 interface CatchUpMaterial {
-  /** The worker's reports filed since you last looked, oldest first. */
   readonly reports: ReadonlyArray<Pick<WorkerReport, "state" | "summary" | "at">>;
-  /** Its last turns, already fenced by `fenceConversation`. */
   readonly conversation: string;
 }
 
@@ -93,11 +82,9 @@ export const makeCatchUps = (deps: CatchUpDeps): CatchUps => ({
         kind: "recap",
         threadId,
         lane: "interactive",
-        // Keyed by the last event: the same report, opened again, is the stored answer.
         basis: basisHash("catchUp", last.at, last.state, last.summary),
         promptVersion: CATCH_UP_PROMPT_VERSION,
         system: CATCH_UP_SYSTEM,
-        // Read only when the call is really made.
         prompt: Effect.map(deps.recentMessages(threadId, CATCH_UP_TURNS), (recent) =>
           catchUpPrompt({
             reports: since,

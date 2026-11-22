@@ -33,7 +33,6 @@ export const runtimeInstallHandlers = Effect.gen(function* () {
   const threads = yield* ThreadRuntimes;
   const hosts = yield* AgentHosts;
 
-  /** The live Codex threads among `ids`. */
   const codexThreads = (ids: ReadonlyArray<ThreadId>) =>
     Effect.forEach(ids, (id) =>
       store.getThread(id).pipe(
@@ -69,8 +68,6 @@ export const runtimeInstallHandlers = Effect.gen(function* () {
       if (Option.isSome(host) && host.value.invalidateRuntime !== undefined) {
         yield* host.value.invalidateRuntime;
       }
-      // As for a gateway key change: each live Codex session reopens on the new executable once
-      // it is idle, so a turn under way finishes on the one it started with.
       for (const summary of yield* threads.snapshot) {
         if (summary.thread.model.agent === "codex") {
           yield* threads.reloadSession(summary.thread.id).pipe(Effect.ignore);

@@ -10,7 +10,6 @@ export const terminalFont = (family: string): string => `${family}, "${SYMBOLS_F
 
 const loadSymbols = (): Promise<FontFace> => {
   if (symbols !== undefined) return symbols;
-  // Vite emits the complete notices alongside the font, including in packaged web assets.
   if (document.head.querySelector("link[data-terminal-font-license]") === null) {
     const notice = document.createElement("link");
     notice.rel = "license";

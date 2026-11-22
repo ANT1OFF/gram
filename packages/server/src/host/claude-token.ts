@@ -4,10 +4,6 @@ import * as Redacted from "effect/Redacted";
 import { forgetClaudeToken, NOT_A_CLAUDE_TOKEN, writeClaudeToken } from "./host-config.ts";
 import type { HostClaudeToken } from "./protocol.ts";
 
-/**
- * A failed step as the main machine reads it: a refused shape as `NOT_A_CLAUDE_TOKEN`, a file
- * error by its code only. Never the token, nor a message that could quote it.
- */
 const failed = (step: string) => (error: unknown) =>
   new HostFailed({
     message:

@@ -1,15 +1,9 @@
 import type { ThreadId, ThreadSummary } from "@gram/contracts";
 import { create } from "zustand";
 
-// Per window: each window keeps its own focus order, in memory. Closed threads live on the server
-// (`threads.closed.*`), so ⌘⇧T reaches them across reloads and restarts.
-
 interface ThreadHistoryState {
-  /** Thread ids, most recently focused first. */
   readonly recent: readonly ThreadId[];
-  /** Moves `threadId` to the front of `recent`. */
   touch(threadId: ThreadId): void;
-  /** Drops a thread that left the list from the focus order. */
   forget(threadId: ThreadId): void;
 }
 

@@ -38,3 +38,7 @@ export const localCheckFailedText = (bound: BoundPr, check: LocalCheck) => {
 /** What the thread is told when the check it asked for passed. */
 export const localCheckPassedText = (bound: BoundPr, check: LocalCheck) =>
   `Gram's full check of ${prName(bound)} passed on ${check.head.slice(0, 7)} merged onto ${check.base.slice(0, 7)}. merge_when_ready uses this pass instead of running it again, while the PR's head and its base stay at these commits; a push or a move of the base needs a new check.`;
+
+/** What the thread is told when Gram cancelled the check it asked for: nothing of it counts. */
+export const localCheckCancelledText = (bound: BoundPr, check: LocalCheck) =>
+  `Gram cancelled its full check of ${prName(bound)} at ${check.head.slice(0, 7)} merged onto ${check.base.slice(0, 7)}: ${check.cancelled ?? "it no longer counted"}. Run local_check again if you still want one.`;

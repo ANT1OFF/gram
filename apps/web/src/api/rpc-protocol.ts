@@ -38,7 +38,6 @@ export const backInTouch: WakeSource = (back) => {
   };
 };
 
-/** Waits `ms`, or until `wake` says the window is back, whichever is first; true when woken. */
 const redialWait = (ms: number, wake: WakeSource) =>
   Effect.callback<boolean>((resume) => {
     let stop: (() => void) | undefined;
@@ -71,24 +70,15 @@ export const rpcProtocolLayer = (
     Effect.gen(function* () {
       let attempt = 0;
       const unsubscribe = connection.subscribe(() => {
-        // A completed upgrade alone can still be a stalled server. Reset after feeds answer so a sustained
-        // outage keeps its backoff instead of restarting the quick retries.
         if (connection.get().status === "open") attempt = 0;
       });
       const scope = yield* Effect.scope;
       yield* Scope.addFinalizer(scope, Effect.sync(unsubscribe));
-      // The heartbeat allows 5 s for an answer. A hidden tab may handle a Pong only at its next
-      // wake-up, a minute on, and would close a healthy socket each minute: hidden time is not
-      // counted, and a server that went quiet meanwhile is found within 10 s of the tab returning.
       const visible = page === undefined ? undefined : visibleTimeClock(yield* Clock.Clock, page);
       if (visible !== undefined) yield* Scope.addFinalizer(scope, Effect.sync(visible.stop));
-      // A Ping timeout closes the reader scope (and its socket) before failing old feeds.
-      // retryTransientErrors would keep those feeds subscribed to the socket that was closed.
       return yield* RpcClient.makeProtocolSocket({
         retryPolicy: Schedule.fromStep(
           Effect.succeed(() =>
-            // All but the last millisecond of the wait is here and not in the schedule's own
-            // delay, so `wake` can end it; the schedule sleeps the rest, or nothing once woken.
             Effect.suspend(() => {
               const delay = transportRetryDelay(++attempt);
               return Effect.map(

@@ -57,14 +57,12 @@ export class MockSpeechBridge implements DesktopSpeech {
         return;
       }
       this.#send = undefined;
-      // The page closes its end once the last `final` is in; closing here could drop it.
       if (message.type === "stop")
         send({ type: "final", text: words.slice(0, heard).join(" "), reason: "stop" });
       else ours.close();
     });
     ours.start();
     send({ type: "ready", loadMs: 0 });
-    // As the preload does: the port arrives as a window message carrying the session id.
     window.postMessage(
       { type: SPEECH_PORT_MESSAGE, sessionId: request.sessionId },
       location.origin,

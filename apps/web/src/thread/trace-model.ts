@@ -4,11 +4,6 @@ import { isToolPart, toolNameOf, type AnyToolPart, type ToolPhase } from "./part
 import { toolInputField } from "./tool-group-model";
 import { TONE, covered, labelOf, phaseOf, tookLabel, type StepTone } from "./turn-timeline-model";
 
-// A turn's trace: everything one send caused, as a tree of steps on one time axis. A tool call is
-// a step from the `toolTimes` the server stamps; a subagent's own calls nest under the call that
-// started it; the time no call was running is the model thinking and writing, which no clock
-// times call by call, so it is drawn as the gaps. No React.
-
 export type TraceKind = "model" | "tool" | "worker" | "wait";
 
 export interface TraceStep {
@@ -85,10 +80,6 @@ const KIND: Readonly<Record<ToolPhase, TraceKind>> = {
   cancelled: "tool",
 };
 
-/**
- * The steps of one lane (the turn's own replies, or one subagent's transcript) from `from` to
- * `to`, each worker followed by its own lane. `to` is absent while the lane runs.
- */
 function laneSteps(
   lane: string,
   messages: readonly GramUIMessage[],
@@ -125,7 +116,6 @@ function laneSteps(
     lastMessage = message.id;
     for (const part of message.parts) {
       if (!isToolPart(part)) continue;
-      // A call held at its approval card waits on the person, though the agent reports it started.
       const own = phaseOf(part);
       const phase: ToolPhase =
         (own === "running" || own === "pending") && awaiting.has(part.toolCallId)
@@ -178,7 +168,6 @@ function laneSteps(
       steps.push(...inner);
     }
   }
-  // What follows the last call: the model writing its reply, or still at work.
   if (cursor !== undefined) {
     const end = running ? undefined : to;
     if ((end ?? now) - cursor >= MODEL_STEP_MIN_MS) modelStep(cursor, end, lastMessage);
@@ -200,7 +189,6 @@ export const offsetLabel = (ms: number): string => {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
 };
 
-/** Round ticks, at most six, the first at the start. */
 const ticksOf = (span: number) => {
   const step =
     TICK_STEPS_MS.find((size) => span / size <= 6) ?? Math.ceil(span / 6 / 3_600_000) * 3_600_000;
@@ -224,7 +212,6 @@ export function turnTrace(
   startedAt: number | undefined,
   endedAt: number | undefined,
   now: number,
-  /** The calls held at an approval card: they wait on the person. */
   awaiting: ReadonlySet<string> = NO_CALLS,
 ): Trace | undefined {
   const running = endedAt === undefined;
@@ -324,7 +311,6 @@ export function traceTurns(messages: readonly GramUIMessage[]): TraceTurn[] {
       });
     }
     const turn = turns.at(-1)!;
-    // A reply's own turn id names the turn its prompt had none for.
     if (message.metadata?.turnId !== undefined) turn.id = message.metadata.turnId;
     turn.tools += message.parts.filter(isToolPart).length;
     ended = message.metadata?.turnEnd !== undefined;

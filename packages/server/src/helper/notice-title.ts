@@ -10,15 +10,9 @@ import * as Schema from "effect/Schema";
 
 import { basisHash, type HelperScheduler } from "./scheduler.ts";
 
-// A short title for a pending request's desktop notification. Only ever a title: the page shows
-// the exact command under it and acts on the request, never on these words. Governed by the
-// Notification titles switch and its consent ("notice"); with helpers off the page's template
-// stands.
-
 /** Bumped whenever the prompt or the output shape changes, so stored titles are made again. */
 export const NOTICE_TITLE_PROMPT_VERSION = 1;
 
-/** A title longer than these is dropped, never cut. */
 const NOTICE_TITLE_MAX_CHARS = 40;
 const NOTICE_TITLE_MAX_WORDS = 6;
 
@@ -46,7 +40,6 @@ export interface NoticeTitleMaterial {
 
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
-/** What the request asks, as the prompt shows it. */
 const asked = (request: PendingRequest): ReadonlyArray<string> => {
   if (request.kind === "approval")
     return [
@@ -104,7 +97,6 @@ export const makeNoticeTitles = (deps: NoticeTitleDeps): NoticeTitles => ({
       const result = yield* deps.schedule({
         kind: "notice",
         threadId,
-        // Its own queue and cache row per request, checked as still pending before a call.
         requestId,
         lane: "interactive",
         basis: basisHash("notice", requestId, count),

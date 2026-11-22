@@ -24,7 +24,6 @@ export function WorkerBriefFooterField({
   const saved = charter.workerBriefFooter ?? "";
   const [draft, setDraft] = useState(saved);
   const [was, setWas] = useState(saved);
-  // A footer saved elsewhere, by chat or a refused save, replaces a draft nobody is typing.
   if (saved !== was) {
     setWas(saved);
     setDraft(saved);

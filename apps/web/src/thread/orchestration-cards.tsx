@@ -84,7 +84,6 @@ import {
 } from "./orchestration-model";
 import { ThreadLinkedText } from "./thread-ref-link";
 
-/** Each tone has its own icon shape, so a state never reads by colour alone. */
 const TONE: Record<StateTone, { icon: LucideIcon; className: string }> = {
   muted: { icon: CircleDashed, className: "text-muted-foreground" },
   working: { icon: CircleDot, className: "text-status-working" },
@@ -94,7 +93,6 @@ const TONE: Record<StateTone, { icon: LucideIcon; className: string }> = {
   danger: { icon: CircleX, className: "text-destructive" },
 };
 
-/** A tone's icon and colour; a tone this build doesn't know draws as the neutral one (`known`). */
 const toneOf = (tone: string) => known(TONE, tone) ?? TONE.muted;
 
 /** A state as its tone's icon and its label; `iconOnly` keeps the label for a tooltip and screen readers. */
@@ -167,7 +165,6 @@ export function ThreadLink({ threadId, children }: { threadId: ThreadId; childre
   );
 }
 
-/** A worker's PR: a link only when the address is one a browser should open. */
 function PrLink({ url, children }: { url: string | undefined; children: ReactNode }) {
   const href = safeLink(url);
   if (href === undefined) return <span className="font-mono text-meta">{children}</span>;
@@ -198,10 +195,6 @@ export function WorkerText({ text, className }: { text: string; className?: stri
   );
 }
 
-/**
- * "the orchestrator", linking to the one that spawned `worker` when the app knows it; plain words
- * when it doesn't.
- */
 function OrchestratorOf({ worker, capital = false }: { worker: ThreadId; capital?: boolean }) {
   const words = capital ? "The orchestrator" : "the orchestrator";
   const orchestrator = useThreadsStore((s) => s.byId[worker]?.thread.spawnedBy?.threadId);
@@ -379,7 +372,6 @@ function LedgerTable({
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-/** A digest counts as just delivered for this long, which is when it animates in. */
 const ARRIVAL_MS = 3000;
 
 /**
@@ -396,8 +388,6 @@ export function OrchestrationDigestCard({
   /** When the digest was delivered, epoch ms. */
   createdAt?: number | undefined;
 }) {
-  // Decided once, at mount: a digest that wakes the orchestrator while you watch arrives, and the
-  // ones already in the transcript, or scrolled back into view, stay still.
   const [arriving] = useState(() => createdAt !== undefined && Date.now() - createdAt < ARRIVAL_MS);
   const title = digestTitle(digest);
   return (
@@ -694,10 +684,6 @@ export function HandoffDivider({ handoff }: { handoff: Handoff }) {
   );
 }
 
-/**
- * A fresh session onto another model: "Fresh session on Claude Code · Opus 5.5 · 14:02", the model
- * it left on hover.
- */
 function FreshOnDivider({
   handoff,
   agent,
@@ -737,11 +723,9 @@ function FreshOnDivider({
   );
 }
 
-/** A model's name as the picker shows it, when the handoff recorded one. */
 const nameOf = (models: Parameters<typeof modelDisplayName>[0], agent: AgentKind, id?: string) =>
   id === undefined ? undefined : modelDisplayName(models, agent, id);
 
-/** "Continued in Codex · GPT-6.1-Sol · 14:02", and under its chevron "What Codex was given". */
 function SwitchDivider({ handoff }: { handoff: Handoff }) {
   const from = handoff.previousAgent ?? "claude";
   const to = otherAgent(from);
@@ -785,14 +769,9 @@ function SwitchDivider({ handoff }: { handoff: Handoff }) {
   );
 }
 
-/**
- * The note's and facts' Markdown at the fold's own size: lists indented inside the box, little gap
- * between lines. Headings are sized in `globals.css`, where the transcript's are.
- */
 const GIVEN_PROSE =
   "text-reading [&_ol]:my-0.5 [&_ol]:pl-5 [&_ul]:my-0.5 [&_ul]:pl-5 [&_li]:my-0 [&_li]:py-0 [&_p]:my-1";
 
-/** What the new agent was given, read only: the note and who wrote it, then Gram's facts. */
 function HandoffGiven({ handoff, to }: { handoff: Handoff; to: AgentKind }) {
   const name = AGENT_SHORT[to];
   return (

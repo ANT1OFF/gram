@@ -8,7 +8,6 @@ import { cn } from "@/lib/utils";
 import type { WidthBounds } from "@/stores/layout";
 
 const KEYBOARD_STEP = 16;
-/** How long after the window's last resize event it still counts as being resized. */
 const WINDOW_SETTLE_MS = 150;
 
 export interface WindowWidth {
@@ -52,7 +51,6 @@ export function useWindowWidth(): WindowWidth {
   );
 }
 
-/** How far the pointer moves before a press counts as a drag, so a double-click's jitter doesn't. */
 const DRAG_THRESHOLD = 3;
 
 /** A drag handle on a side panel's inner edge; double-click restores the default width. */
@@ -79,7 +77,6 @@ export function SideResizeHandle({
   /** Its test id where another handle shares its side; `${side}-resize` by default. */
   testId?: string;
 }) {
-  // Dragging the left panel's edge right widens it; the right panel's edge widens to the left.
   const direction = side === "left" ? 1 : -1;
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -124,15 +121,12 @@ export function SideResizeHandle({
       data-testid={testId ?? `${side}-resize`}
       className={cn(
         "group/resize absolute inset-y-0 z-40 flex w-1.5 cursor-col-resize items-center justify-center outline-none hover:bg-ring/40 focus-visible:bg-ring/50",
-        // Inside the column: the column clips overflow while it animates.
         side === "left" ? "right-0" : "left-0",
       )}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick ?? (() => onResize(bounds.default))}
       onKeyDown={onKeyDown}
     >
-      {/* The grip: shown while the pointer is over the column it sizes (`group/side`), so the edge
-          says it can be dragged before the pointer finds it. */}
       <span
         aria-hidden
         data-testid={`${testId ?? `${side}-resize`}-grip`}

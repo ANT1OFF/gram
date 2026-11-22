@@ -52,7 +52,6 @@ type OnScreen =
       readonly state: "asking";
       readonly show: string;
       readonly item: Waiting;
-      /** Taken before the page is told, so the page's second always ends after this one. */
       readonly shownAt: number;
     }
   | { readonly state: "withdrawn"; readonly show: string };
@@ -88,18 +87,14 @@ export const makeAskQueue = (options: AskQueueOptions): AskQueue => {
     onScreen = { state: "asking", show, item, shownAt: options.elapsed() };
     try {
       options.notify(view);
-    } catch {
-      // Telling the person is a courtesy: the ask is on screen either way.
-    }
+    } catch (_tellingThePersonIsACourtesyTheAskIs) {}
     options.surface
       .show(show, view)
       .then(() => {
-        // Taken back while it was being drawn: the page didn't have it to mark until now.
         if (onScreen?.show === show && onScreen.state === "withdrawn")
           options.surface.withdraw(show, "Withdrawn");
       })
       .catch(() => {
-        // A window that can't draw the ask can't be answered: it is refused, or let go.
         if (onScreen?.show !== show) return;
         if (onScreen.state === "asking") item.done(NO);
         onScreen = undefined;
@@ -130,9 +125,7 @@ export const makeAskQueue = (options: AskQueueOptions): AskQueue => {
               done(NO);
               try {
                 options.surface.withdraw(show, "Withdrawn");
-              } catch {
-                // The window is going: it says so itself.
-              }
+              } catch (_theWindowIsGoingItSaysSoItself) {}
             }
           },
           { once: true },
@@ -144,8 +137,6 @@ export const makeAskQueue = (options: AskQueueOptions): AskQueue => {
       const current = onScreen;
       if (current === undefined || current.show !== show) return;
       if (current.state === "withdrawn") {
-        // A refusal lets it go as a dismissal does: a page that missed the withdrawal shows
-        // Refuse, not Dismiss. An allow has nothing left to allow, and moves nothing in.
         if (answer === "allow") return;
         onScreen = undefined;
         next();
@@ -153,7 +144,6 @@ export const makeAskQueue = (options: AskQueueOptions): AskQueue => {
       }
       if (answer === "dismiss") return;
       if (answer === "allow") {
-        // On screen a full second by this clock too, or the click doesn't count.
         if (options.elapsed() - current.shownAt < ASK_ARM_MS) return;
         onScreen = undefined;
         current.item.done({ allowed: true, hash: current.item.request.hash });
@@ -166,7 +156,6 @@ export const makeAskQueue = (options: AskQueueOptions): AskQueue => {
     },
     gone: (show) => {
       const current = onScreen;
-      // A window closing late, after the queue moved on, says nothing about the ask now shown.
       if (current === undefined || current.show !== show) return;
       onScreen = undefined;
       if (current.state === "asking") current.item.done(NO);

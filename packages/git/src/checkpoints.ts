@@ -1,7 +1,3 @@
-// Per-turn checkpoints: the working tree (tracked + untracked, gitignore honoured) snapshotted into a
-// hidden ref `refs/gram/checkpoints/<thread>/<turn>`. Every index write goes to a temporary index file
-// (`GIT_INDEX_FILE`), so the user's index — staged changes included — is never touched.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import * as Context from "effect/Context";
@@ -39,11 +35,6 @@ export const isValidCheckpointId = (id: string): boolean =>
 export const checkpointRef = (threadId: string, turnId: string): string =>
   `${CHECKPOINT_REF_PREFIX}/${threadId}/${turnId}`;
 
-/**
- * `for-each-ref` under `prefix`, as `[oid, refname, symbolic]`; git matches the prefix itself.
- * Gram only writes checkpoint refs holding a commit: a symbolic one (pointing at a branch, say)
- * was made by something else and is never read, moved or deleted through.
- */
 const refsUnder = (top: string, prefix: string) =>
   run(top, ["for-each-ref", "--format=%(objectname) %(refname) %(symref)", `${prefix}/`]).pipe(
     Effect.map((out) =>
@@ -73,8 +64,6 @@ export const writeWorktreeTree = (top: string) =>
       ])).stdout.trim();
       if (fs.existsSync(userIndex)) {
         fs.copyFileSync(userIndex, indexFile);
-        // The copy keeps the index's own times: git rehashes an entry written in the same second as
-        // its index ("racily clean"), and a fresh copy would hide that and trust the stat match.
         const { atime, mtime } = fs.statSync(userIndex);
         fs.utimesSync(indexFile, atime, mtime);
       } else yield* run(top, ["read-tree", "--empty"], env);
@@ -104,7 +93,6 @@ export const snapshotCheckpoint = (repo: string, threadId: string, turnId: strin
       IDENTITY_ENV,
     )).stdout.trim();
     const ref = checkpointRef(threadId, turnId);
-    // `--no-deref`: should the name be a symbolic ref, replace it rather than move its target.
     yield* run(top, ["update-ref", "--no-deref", ref, commit]);
     return ref;
   });
@@ -203,7 +191,6 @@ export const restoreFiles = (repo: string, wanted: string) =>
     );
   });
 
-/** A thread's checkpoint refs, as `[turnId, refname, symbolic]`. */
 const threadRefs = (top: string, threadId: string) =>
   refsUnder(top, `${CHECKPOINT_REF_PREFIX}/${threadId}`).pipe(
     Effect.map((refs) =>

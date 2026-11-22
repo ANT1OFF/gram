@@ -1,6 +1,4 @@
-/** The strokes of an icon, one after another, at most this far apart. */
 const STAGGER_MS = 40;
-/** Strokes after this many start with the last, so a busy icon is drawn as soon as a simple one. */
 const MAX_STAGGERED = 4;
 
 const SHAPES = "path, line, polyline, polygon, circle, rect, ellipse";

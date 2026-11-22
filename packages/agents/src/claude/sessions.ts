@@ -56,12 +56,10 @@ export const toSessionPreview = (messages: ReadonlyArray<SessionMessage>): Sessi
       })),
   );
 
-/** A tool's input or result as text: strings as they are, text blocks joined, anything else as JSON. */
 const toolText = (value: unknown): string | undefined => {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "string") return value === "" ? undefined : cutToolText(value);
   if (Array.isArray(value)) {
-    // A result's blocks; an image block is named rather than inlined as base64.
     const parts = value.map((block: unknown) => {
       if (typeof block !== "object" || block === null) return String(block);
       const type = Reflect.get(block, "type");
@@ -73,7 +71,6 @@ const toolText = (value: unknown): string | undefined => {
   try {
     return cutToolText(JSON.stringify(value));
   } catch {
-    // A cyclic value can't come off a JSONL transcript; this keeps a fake SDK from throwing here.
     return undefined;
   }
 };
@@ -156,8 +153,6 @@ export const savedSessionCost = async (
     },
     load: async () => null,
   };
-  // A fork can open in another worktree than the session it forks, whose transcript then sits
-  // under the other checkout's project, which only the unscoped lookup finds.
   await readTranscript(sessionId, store, { dir }).catch(() => readTranscript(sessionId, store));
   return saved;
 };

@@ -1,8 +1,3 @@
-// A personal device: a person's own machine, lent to a hosted workspace while they work in the
-// desktop app. The design, its trust model and its threat model are in
-// `docs/design/personal-device.md`. Everything here is data: the shapes both ends agree on, the
-// bytes a signature or an approval covers, and how a command is drawn before anyone allows it.
-
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
 import { hostedLogoFromData } from "./hosted-logo.ts";
@@ -36,7 +31,6 @@ export const DEVICE_GRANT_TTL_MS = 10 * 60_000;
 export const DEVICE_CLOCK_SKEW_MS = 2 * 60_000;
 
 const Text = (max: number) => Schema.String.check(Schema.isMaxLength(max));
-/** An id: printable ASCII without spaces, so two ids never differ only in what can't be seen. */
 const Id = Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,128}$/));
 
 /** A device's id, derived from its public key so no other key can claim it. */
@@ -50,31 +44,18 @@ export type DeviceId = typeof DeviceId.Type;
  * the device describing its disk.
  */
 export const DeviceRefusalReason = Schema.Literals([
-  /** The person chose Don't run or Don't read. */
   "not-allowed-by-person",
-  /** Nobody answered the ask in time. */
   "not-answered",
-  /** No turn grant, or one that is forged, expired, withdrawn or for another thread. */
   "no-grant",
-  /** The screen locked, the person stepped away or lending stopped. */
   "away",
-  /** The folder isn't lent, or the path leaves it. */
   "outside-folders",
-  /** The path names a credential or lies in `.git`. */
   "credential-path",
-  /** Not a regular file with one link: a folder, a FIFO, a device, a hard-linked file. */
   "not-a-file",
-  /** Too many asks waiting, or too many in the last minutes. */
   "too-many-requests",
-  /** Lending to this server is paused until the person lifts it. */
   "paused",
-  /** This workspace's lending allows reading only. */
   "read-only",
-  /** The command or the file is over its limit. */
   "too-large",
-  /** The request names an acting person who isn't the one signed in here. */
   "not-for-this-person",
-  /** A request id seen before, with a different payload. */
   "changed-request",
 ]);
 export type DeviceRefusalReason = typeof DeviceRefusalReason.Type;
@@ -271,7 +252,6 @@ export type DeviceRefused = typeof DeviceRefused.Type;
 
 /** `device.exec`, as it goes: asked, then refused, or started, its output and how it ended. */
 export const DeviceExecEvent = Schema.Union([
-  /** The ask is on screen, or waiting behind another. */
   Schema.Struct({ kind: Schema.Literal("asked") }),
   DeviceRefused,
   Schema.Struct({ kind: Schema.Literal("started") }),
@@ -324,10 +304,8 @@ export type DeviceReadResult = typeof DeviceReadResult.Type;
 
 /** Why a command can't be asked for at all, before anything else is looked at. */
 export const deviceCommandProblem = (command: string): "too-large" | undefined => {
-  // UTF-8 is never shorter than UTF-16, so a command this long is over without being encoded.
   if (command.length > DEVICE_COMMAND_MAX_BYTES) return "too-large";
   if (command.trim().length === 0 || command.includes("\0")) return "too-large";
-  // A lone surrogate isn't text, and would be re-encoded as something else on the way to a shell.
   if (!command.isWellFormed()) return "too-large";
   return new TextEncoder().encode(command).length > DEVICE_COMMAND_MAX_BYTES
     ? "too-large"
@@ -336,7 +314,6 @@ export const deviceCommandProblem = (command: string): "too-large" | undefined =
 
 /** A command's timeout within the device's own bounds, whatever the request asked for. */
 export const deviceTimeout = (asked: number | undefined): number => {
-  // Floored before it is judged: half a millisecond must not become zero, which means no limit.
   const whole = asked === undefined || !Number.isFinite(asked) ? 0 : Math.floor(asked);
   return whole <= 0 ? DEVICE_TIMEOUT_DEFAULT_MS : Math.min(whole, DEVICE_TIMEOUT_MOST_MS);
 };
@@ -344,7 +321,6 @@ export const deviceTimeout = (asked: number | undefined): number => {
 /** A piece of a command as the ask draws it. */
 export type CommandPiece =
   | { readonly kind: "text"; readonly text: string }
-  /** A code point nobody could see, drawn as its code. */
   | { readonly kind: "escape"; readonly text: string }
   | { readonly kind: "newline" };
 
@@ -359,12 +335,6 @@ export interface CommandDisplay {
   readonly nonAscii: boolean;
 }
 
-/**
- * Code points a person can't see or can't tell from a space, by their Unicode properties: every
- * kind of white space but the space itself, controls, format characters, private use, unassigned
- * and noncharacters, lone surrogates, and everything a renderer is told to ignore. The three named
- * ones draw as blanks or as nothing though their properties say otherwise.
- */
 const INVISIBLE =
   /[\p{White_Space}\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Default_Ignorable_Code_Point}\p{Noncharacter_Code_Point}\u2800\ufffc\u{1d159}]/u;
 
@@ -712,7 +682,6 @@ export const HostedThreadStarted = Schema.Struct({
 });
 export type HostedThreadStarted = typeof HostedThreadStarted.Type;
 
-/** A message's id there: what a wait starts after. */
 const MessageRef = Schema.String.check(Schema.isPattern(/^[\x21-\x7e]{1,200}$/));
 
 /**
@@ -816,10 +785,6 @@ export const HostedTokenAnswer = Schema.Struct({
 });
 export type HostedTokenAnswer = typeof HostedTokenAnswer.Type;
 
-// ---------------------------------------------------------------------------------------------
-// Work sent from this machine's server to a hosted server, through the desktop app, which holds
-// the sign-in. The server asks over its parent port; the app answers by id.
-
 /** A hosted workspace this machine may send work to: signed in, not paused, and its server runs it. */
 export interface SentWorkTarget {
   readonly origin: string;
@@ -920,7 +885,6 @@ export type SentWorkResult =
   | { readonly ok: true; readonly threadId: string; readonly branch?: string }
   | { readonly ok: true; readonly waited: HostedThreadWaited }
   | { readonly ok: true; readonly queued: boolean; readonly after?: string }
-  /** `unoffered`: the server starts no machine from here. */
   | { readonly ok: true; readonly machine: HostedMachine | "unoffered" }
   | { readonly ok: true }
   | { readonly ok: false; readonly why: string; readonly unknown?: true };
@@ -930,12 +894,6 @@ export interface SentWorkResponseMessage {
   readonly id: string;
   readonly result: SentWorkResult;
 }
-
-// ---------------------------------------------------------------------------------------------
-// Machines of a worker's own, which this machine's orchestrators ask a hosted server for, through
-// the desktop app, which holds the sign-in (`docs/design/desktop-worker-machines.md`). The server
-// asks over its parent port and the app answers by id; the app carries each machine's connection
-// to the server as frames over the same port.
 
 /** The calls a worker machine is asked for and looked after with, under `worker_machines_endpoint`. */
 export const WORKER_MACHINE_CALLS = ["choices", "start", "status", "release", "stop"] as const;
@@ -974,11 +932,8 @@ export interface WorkerMachineMarks {
 }
 
 export type WorkerMachineOp =
-  /** Which server, if any, worker machines may be asked of now. */
   | { readonly op: "server" }
-  /** The mark of every sign-in the app holds, paused or not, with its former marks. */
   | { readonly op: "marks" }
-  /** One call to the server, answered with its status and JSON body as received. */
   | {
       readonly op: "call";
       readonly origin: string;
@@ -996,23 +951,13 @@ export type WorkerMachineOp =
        */
       readonly account?: string;
     }
-  /**
-   * Keep carrying this machine's connection, dialling the relay again whenever it ends: under
-   * the sign-in `account` alone, where one is given (`WorkerMachineServer.account`).
-   */
   | {
       readonly op: "relay";
       readonly origin: string;
       readonly name: string;
       readonly account?: string;
     }
-  /** Stop carrying it. */
   | { readonly op: "unrelay"; readonly name: string }
-  /**
-   * Carry exactly these, and no others: what the server has registered. `fresh` from a server that
-   * has just started, which knows none of the connections carried for the one before it, so each
-   * is dialled again.
-   */
   | {
       readonly op: "relays";
       readonly machines: ReadonlyArray<{

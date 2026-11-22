@@ -34,7 +34,6 @@ const restartTitle = (restart: SessionRestartData): string =>
 
 /** Where the agent session was restarted to reload its config, as a quiet divider like a compaction's. */
 export function SessionRestartMarker({ restart }: { restart: SessionRestartData }) {
-  // Only to tell today from another day, so read once rather than on a clock.
   const now = useNow(false);
   const label = sessionRestartLabel(restart, now);
   return (

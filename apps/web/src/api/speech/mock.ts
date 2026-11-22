@@ -7,9 +7,7 @@ import type { SpeechApi } from "./types";
  * process a browser lacks.
  */
 export function createSpeechMock() {
-  /** The speech model store; specs reach it through `window.gramMock`. */
   const speech = new MockSpeechStore();
-  /** The desktop shell's speech process, which a browser lacks; dictation finds it here. */
   const speechBridge = new MockSpeechBridge();
   return {
     speech,

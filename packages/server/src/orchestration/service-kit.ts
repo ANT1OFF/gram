@@ -1,4 +1,3 @@
-// Shared fixtures for the orchestration service tests, which are split across files so they run side by side.
 import { type PrStatus, type ServerEvent, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";

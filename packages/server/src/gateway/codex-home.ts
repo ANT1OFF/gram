@@ -10,7 +10,6 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { assertOwnedCodexPath } from "./codex-owned-path.ts";
 import { normaliseUrl } from "./seed.ts";
 
-/** The user's own Codex home: `CODEX_HOME`, else `~/.codex`. */
 const userCodexHome = (home: string, env: Readonly<Record<string, string | undefined>>) =>
   env["CODEX_HOME"] ?? join(home, ".codex");
 
@@ -81,7 +80,6 @@ export interface CodexInheritance {
   readonly instructions?: string;
 }
 
-/** Codex's global instruction files in a home, in the order it tries them (0.159.2). */
 const INSTRUCTION_FILES = ["AGENTS.override.md", "AGENTS.md"] as const;
 
 const isDirectory = async (path: string): Promise<boolean> => {
@@ -92,10 +90,6 @@ const isDirectory = async (path: string): Promise<boolean> => {
   }
 };
 
-/**
- * The global instructions Codex would read from `codexHome`: the first of `INSTRUCTION_FILES` that
- * is a file with more than whitespace in it, as Codex picks them.
- */
 const effectiveInstructions = async (
   codexHome: string,
 ): Promise<{ readonly path: string; readonly text: string } | undefined> => {
@@ -105,9 +99,7 @@ const effectiveInstructions = async (
       if (!(await stat(path)).isFile()) continue;
       const text = await readFile(path, "utf8");
       if (text.trim() !== "") return { path, text };
-    } catch {
-      // Missing or unreadable: Codex moves on to the next name too.
-    }
+    } catch (_missingOrUnreadableCodexMovesOnToTheNext) {}
   }
   return undefined;
 };
@@ -175,7 +167,6 @@ export const syncCodexInstructions = (
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): Effect.Effect<string | undefined> =>
   Effect.tryPromise(() => syncInstructions(dataDir, home, env)).pipe(
-    // A thread still opens, on the copy it had; the error names a path, never the file's text.
     Effect.catch((error) =>
       Effect.logWarning(
         `couldn't copy Codex instructions to the gateway home: ${error.message}`,
@@ -237,10 +228,8 @@ export const prepareCodexHome = (
     const target = join(dataDir, "codex-home");
     await mkdir(target, { recursive: true, mode: 0o700 });
     await chmod(target, 0o700);
-    // A shell snapshot captures the app-server env, key included: none may stay in this home.
     await rm(join(target, "shell_snapshots"), { recursive: true, force: true });
     let servers: Record<string, unknown> | undefined;
-    // Which skills are turned off, and whether bundled ones load: preferences with no command in them.
     let skills: Record<string, unknown> | undefined;
     try {
       const config = parseToml(

@@ -31,12 +31,10 @@ import { mockPlans } from "./mock-plans";
 export type Step =
   | { kind: "chunk"; messageId: string; chunk: GramUIMessageChunk }
   | { kind: "wait"; ms: number }
-  /** Holds the script until `MockApi.release(name)`, when the page opted in; otherwise a no-op. */
   | { kind: "gate"; name: string }
   | { kind: "status"; status: ThreadStatus; detail?: string; compaction?: CompactionActivity }
   | { kind: "plan"; items: PlanItem[] }
   | { kind: "usage"; usage: UsageSummary }
-  /** The agent's background tasks from here on, as its `backgroundTasks` level; stamped when run. */
   | { kind: "background"; tasks: Array<Omit<BackgroundTask, "startedAt">> }
   | { kind: "request"; request: PendingRequest; onAnswer: (answer: RequestAnswer) => Step[] };
 
@@ -153,9 +151,6 @@ export const tool = (
   toolResult(messageId, toolCallId, output),
 ];
 
-// ---------------------------------------------------------------------------------------------
-// Seed data
-
 const now = Date.now();
 const minutes = (n: number) => now - n * 60_000;
 
@@ -197,9 +192,7 @@ interface SeedThread {
   flags?: Partial<
     Pick<Thread, "pinned" | "parked" | "unread" | "completedAt" | "labels" | "forkedFrom">
   >;
-  /** The last turn's usage, as the server restores it for a thread that isn't running. */
   usage?: UsageSummary;
-  /** Claude unless given. */
   model?: Thread["model"];
 }
 
@@ -428,10 +421,8 @@ const seedRequests: Record<string, PendingRequest[]> = {
   "t-plan": [PLAN_REQUEST],
 };
 
-/** t-question's reply once its question is answered, with what was picked. */
 const questionAnsweredText = (picked: string) => `Got it (${picked}). Wiring up the picker now.`;
 
-/** t-plan's reply once its plan is approved, in the mode it was approved in. */
 const planApprovedText = (mode: string) =>
   `Plan approved. Starting with step 1 in \`${mode}\` mode.`;
 
@@ -480,8 +471,6 @@ export function seedMessages(threadId: string): GramUIMessage[] {
       ];
     case "t-dark":
       return [
-        // Sent by the planning thread through `send_message`, so the transcript names it. Its
-        // thread links are one to a thread the app has and one to a thread since closed.
         userMessage(
           "m-k1",
           "Add a dark mode toggle to settings.\n\nReuse the palette from [Release checklist](#t-release); [Theme spike](#0d4f6b2a-8c1e-4f3a-9b7d-2e5c6a1f8b90) was closed.",
@@ -509,9 +498,6 @@ export const AUTOPLAY: Record<string, string> = {
   "t-background":
     "Use the Task tool with subagent_type Explore to list the files in this repo, then reply DONE.",
 };
-
-// ---------------------------------------------------------------------------------------------
-// Scripts
 
 const RETRY_PATCH = {
   filePath: "/Users/dev/code/api/src/retry.test.ts",
@@ -559,9 +545,6 @@ export const flakyScript: Script = (_input, ids) => {
       ],
     },
     ...start(m, { agent: "claude", model: "opus" }),
-    // Live usage only ever grows from what the thread was seeded with. Autoplay stops at the approval
-    // below, so this is the reading a spec that opens the thread sees; one below the seed made the
-    // meter drop from 31% to 3% a moment after arrival.
     {
       kind: "usage",
       usage: {
@@ -584,7 +567,6 @@ export const flakyScript: Script = (_input, ids) => {
     }),
     ...text(m, "t1", "I'll start by reading the test and running it a few times."),
     status("running", "Reading retry.test.ts…"),
-    // An e2e spec holds the turn running here, to queue and steer into it, until it releases this.
     gate("flaky-read"),
     ...tool(
       m,
@@ -694,8 +676,6 @@ export const flakyScript: Script = (_input, ids) => {
       },
       100,
     ),
-    // Claude's `task_started`, which the server hangs on the reply until the subagent's own
-    // transcript opens. The mock stamps `startedAt` on it, as the adapter does.
     chunk(m, {
       type: "data-subagent-usage",
       id: task,
@@ -822,8 +802,6 @@ export const docsScript: Script = (_input, ids) => {
   ];
 };
 
-/** The default reply to a sent message. */
-/** What `show_widget` would draw: theme variables only, so it follows the palette and mode. */
 const MOCK_CHART = [
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="480" height="240">',
   '<rect width="240" height="120" rx="6" fill="var(--surface)" stroke="var(--border)"/>',
@@ -861,7 +839,6 @@ const MOCK_ISSUE = {
   ].join("\n"),
 };
 
-/** A `report_issue` call and its card, as the server raises it: the issue as it would be posted. */
 const reportIssueSteps = (m: string, callId: string): Step[] => [
   ...toolCall(
     m,
@@ -896,7 +873,6 @@ const reportIssueSteps = (m: string, callId: string): Step[] => [
   },
 ];
 
-/** A `settings_propose` card as the server raises it: the change set as before → after rows. */
 const MOCK_SETTINGS_CHANGE = {
   scope: "workspace",
   workspace: { id: "w-api", name: "[Workspace name]" },
@@ -951,7 +927,6 @@ const settingsChangeSteps = (m: string, callId: string): Step[] => [
   },
 ];
 
-/** A `workspace_create` card as the server raises it: the projects, then what it will have. */
 const MOCK_WORKSPACE_CREATE = {
   action: "create",
   workspace: { name: "[Workspace name]" },
@@ -1001,7 +976,6 @@ const MOCK_WORKSPACE_CREATE = {
   ],
 };
 
-/** A `workspace_update` card as the server raises it: the projects, then before → after. */
 const MOCK_WORKSPACE_UPDATE = {
   action: "update",
   workspace: { id: "w-api", name: "[Workspace name]" },
@@ -1058,17 +1032,11 @@ const workspaceSteps = (m: string, callId: string, create: boolean): Step[] => {
 
 export const echoScript: Script = (input, ids) => {
   const m = ids();
-  // A prompt that asks for a chart gets one, so the widget card can be seen without a real agent.
   const chart = /\bchart\b/i.test(input.text);
-  // And one that mentions a screenshot reads an image, the way the server reports it: the stored
-  // file as a `data-tool-image` part, and a `Read` output with no bytes in it.
   const screenshot = /\bscreenshot\b/i.test(input.text);
   const readId = screenshot ? ids() : "";
-  // And one that asks to report an issue files one, card and all.
   const issueId = /\breport\b.*\bissue\b/i.test(input.text) ? ids() : "";
-  // And one that asks to change settings proposes a change, card and all.
   const settingsId = /\bchange\b.*\bsettings\b/i.test(input.text) ? ids() : "";
-  // And one that asks to create or change a workspace proposes it, card and all.
   const workspaceMatch = /\b(create|change)\b.*\bworkspace\b/i.exec(input.text);
   const workspaceId = workspaceMatch === null ? "" : ids();
   const { base64: _, ...stored } = MOCK_TOOL_IMAGE;
@@ -1176,7 +1144,6 @@ export const compactScript = (usage: UsageSummary | undefined, ids: () => string
       },
     }),
     status("running"),
-    // A `/compact` ends with the usage report of any turn, which the meter reads.
     {
       kind: "usage",
       usage: {
@@ -1258,7 +1225,6 @@ export const backgroundSubagentScript: Script = (_input, ids) => {
     }),
     ...text(m, "t1", "Background file scan started. The Explore agent will report its findings."),
     ...finish(m),
-    // The turn is over, but the subagent works on.
     status("idle", "Explore: Thinking"),
     wait(1000),
     ...text(sub, "s1", "I will list the fixture files using glob patterns."),
@@ -1287,8 +1253,6 @@ export const backgroundSubagentScript: Script = (_input, ids) => {
     status("idle", "Explore: Writing a reply"),
     wait(1000),
     ...text(sub, "s2", FILE_TREE_REPORT, 10),
-    // An e2e spec holds here, idle with the subagent still working, until it releases the gate; the
-    // report is already written, so the subagent finishes in one step, however loaded the machine.
     gate("subagent-report"),
     chunk(sub, {
       type: "data-subagent-usage",
@@ -1304,7 +1268,6 @@ export const backgroundSubagentScript: Script = (_input, ids) => {
     }),
     ...finish(sub),
     background(),
-    // The report comes back as a turn the agent starts on its own.
     status("running", "Thinking…"),
     ...start(reply, { agent: "claude", model: "haiku", initiator: "agent" }),
     wait(400),

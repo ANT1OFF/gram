@@ -122,7 +122,6 @@ export function ReplyField({
 }) {
   const api = useApi();
   const id = replyId(ask);
-  // Kept outside the ask, so stepping away or undoing doesn't lose what was typed.
   const text = useAskStackStore((s) => s.replies[id] ?? "");
   const setText = (value: string) => useAskStackStore.getState().setReply(id, value);
   const own = useRef<HTMLInputElement | null>(null);
@@ -132,8 +131,6 @@ export function ReplyField({
       : undefined,
   );
   const request = ask.freeForm?.request;
-  // Off or not allowed, there is nothing to show: no chips and no placeholder for them. Asked
-  // again once the helpers' settings change, as with a consent given since.
   const { data: replies = [] } = useQuery({
     queryKey: [
       "request-replies",
@@ -205,7 +202,6 @@ export function ReplyField({
 const DETAIL_TEXT =
   "overflow-x-auto rounded-(--radius-sm) bg-muted/50 p-2 font-mono text-meta break-words whitespace-pre-wrap";
 
-/** Everything an Allow covers that the ask's lines don't: where each member runs, the whole input. */
 function AskDetailsBody({ ask, where }: { ask: Ask; where: readonly AskMember[] }) {
   return (
     <div className="mt-1 grid gap-1.5 text-meta">
@@ -283,16 +279,13 @@ export function AskDetails({ ask, open = false }: { ask: Ask; open?: boolean }) 
   );
 }
 
-/** Which keys answer now: plain ones, the composer's modifiers, or none while focus types elsewhere. */
 type KeyHints = "plain" | "composer" | undefined;
 
 const hintOf = (hints: KeyHints, options: readonly AskOption[], index: number) => {
   if (hints === undefined || index > 8) return undefined;
-  // An approval's verbs show their own keys, the thread card's, which act on the press.
   return hints === "plain" ? optionHint(options[index], index) : formatKeys(`alt+${index + 1}`);
 };
 
-/** What sends the picked choice: ⌘⏎, in the open and in an empty composer alike. */
 const SEND_KEYS = "mod+enter";
 
 export function AskItem({
@@ -340,10 +333,7 @@ export function AskItem({
       data-testid="ask-item"
       data-ask-key={ask.key}
       data-current={current || undefined}
-      // Focusable from a jump (the overview's "asks you"), where the stack's plain keys answer it.
       tabIndex={-1}
-      // In a narrow chat (a worker kept beside it), the answers wrap under the question rather than
-      // squeeze it to a letter a line.
       className="flex flex-wrap items-start gap-2.5 px-3.5 pt-1 pb-2.5 outline-none"
     >
       <Icon aria-hidden className="mt-0.5 size-icon-row shrink-0 text-status-needs-mark" />
@@ -404,7 +394,6 @@ export function AskItem({
           </p>
         )}
       </div>
-      {/* Each option's screenshot and "Open mock", above the options they show. */}
       {ask.visuals !== undefined && (
         <OptionGallery
           threadId={ask.visuals.threadId}
@@ -420,8 +409,7 @@ export function AskItem({
           hintOf={(index) =>
             !current
               ? undefined
-              : // A verb picked by its key is sent by ⌘⏎: its hint says so.
-                !pick && index === picked && sendHint !== undefined
+              : !pick && index === picked && sendHint !== undefined
                 ? sendHint
                 : hintOf(hints, ask.options, index)
           }
@@ -441,8 +429,6 @@ export function AskItem({
           }
           testId="ask-option"
           rest="ghost"
-          // Choices go under the question, with Send answer after them; a row of verbs sits to
-          // the right of the question while it fits.
           className={
             pick || choiceLayout(ask.options) === "list"
               ? "basis-full pl-6.5"

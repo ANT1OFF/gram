@@ -24,7 +24,6 @@ const machine = () => (window.gram?.platform === "darwin" ? "this Mac" : "this c
 
 const ignore = () => {};
 
-/** The thread's bundle and when it was made, once it is here: what settling the copy there names. */
 interface Brought {
   readonly notes: readonly string[];
   readonly exportedAt: number;
@@ -47,7 +46,6 @@ export function BringThreadDialog({
   const { view } = useThreadMove();
   const bridge = typeof window === "undefined" ? undefined : window.gram?.hostedDevice;
   const live = useThreadsStore((s) => s.byId[threadId]);
-  // Held as last seen: the copy here steps aside while the thread comes back, and the sheet stays.
   const [seen, setSeen] = useState(live);
   if (live !== undefined && live !== seen) setSeen(live);
   const summary = live ?? seen;
@@ -60,10 +58,8 @@ export function BringThreadDialog({
   const [error, setError] = useState<string>();
   const [back, setBack] = useState<Brought & { readonly unsettled?: string }>();
   const started = useRef(false);
-  // Here already, its copy there not yet settled: a try again settles, and brings nothing twice.
   const unsettled = useRef<Brought>(undefined);
 
-  // Held from the start: once the thread is back, it no longer says where it was.
   const [held, setHeld] = useState<BringBackSource>();
   const from = held ?? (summary === undefined ? undefined : bringBackFrom(summary.thread, view));
   const project = projects.find((each) => each.id === summary?.thread.projectId);
@@ -86,7 +82,6 @@ export function BringThreadDialog({
     setPhase("bringing");
     try {
       let brought = unsettled.current;
-      // Already back, its answer lost on the way: only the copy there is left to settle.
       const here = summary?.thread;
       const backAt =
         here?.transferredTo === undefined && here?.transferredFrom?.leftOpen?.origin === from.origin
@@ -118,7 +113,6 @@ export function BringThreadDialog({
         () => ({ ok: false as const, why: "The server didn't answer." }),
       );
       unsettled.current = settled.ok ? undefined : brought;
-      // Noted here too; if that fails, the thread offers to settle again, which is harmless.
       if (settled.ok) await settledThere(threadId).catch(ignore);
       setBack({ ...brought, ...(settled.ok ? {} : { unsettled: settled.why }) });
       setPhase("back");
@@ -181,12 +175,7 @@ export function BringThreadDialog({
 
   if (phase === "bringing") {
     return (
-      <DialogShell
-        testId="bring-thread-dialog"
-        title={`Bringing "${title}" back`}
-        // Closing would hide a move under way; it ends on its own, either way.
-        onClose={ignore}
-      >
+      <DialogShell testId="bring-thread-dialog" title={`Bringing "${title}" back`} onClose={ignore}>
         <ol data-testid="bring-thread-steps" className="flex flex-col gap-2 text-reading">
           {bringSteps(stage, from).map((step) => (
             <li

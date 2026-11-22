@@ -80,10 +80,8 @@ export const upgradeCommand = (
 ): string | undefined => {
   const path = resolved?.replaceAll("\\", "/") ?? "";
   const owner = installerOf(tool, path, path, false);
-  // There is no safe command that pins the tested version over these installations.
   if (owner === "nix" || owner === "bundled" || (owner === "native" && tool === "codex"))
     return undefined;
-  // npm under a Homebrew Node lives in `/opt/homebrew/lib/node_modules`: that's npm's to upgrade.
   if (!path.includes("/node_modules/") && /\/(Cellar|homebrew|linuxbrew)\//.test(path))
     return `brew upgrade ${tool}`;
   return `npm i -g @openai/codex@${version}`;
@@ -103,17 +101,9 @@ export const inferredAgentOf = (checks: LaunchChecks): AgentKind | undefined => 
   return undefined;
 };
 
-/**
- * The saved default model's agent, else the one `inferredAgentOf` reads off the CLIs. A default
- * that follows a tier on no one harness goes where what's installed takes it, as an unset one does.
- */
 const defaultAgentOf = (settings: Settings, checks: LaunchChecks): AgentKind | undefined =>
   savedDefaultOf(settings)?.agent ?? inferredAgentOf(checks);
 
-/**
- * The saved default as a model ref, when it names its harness: a pinned one, or one kept to a
- * harness. One on a tier only a newer Gram knows counts as unset.
- */
 const savedDefaultOf = (settings: Settings): ModelRef | undefined => {
   const saved = settings.agents.defaultModel;
   if (saved === undefined || isPinned(saved)) return saved;
@@ -196,7 +186,6 @@ export const claudeReady = (checks: LaunchChecks): boolean => {
   );
 };
 
-/** A gateway agent's tested version and the command that gets it over the install at `resolved`. */
 const testedFields = (tool: GatewayAgentTool, resolved: string | undefined) => {
   const command = upgradeCommand(tool, resolved, TESTED_VERSIONS[tool]);
   return {
@@ -246,7 +235,6 @@ export const runLaunchChecks = (probe: LaunchProbe): Effect.Effect<LaunchChecks>
         };
         if (!isGatewayAgentTool(tool)) return found;
         const resolved = probe.realpath(path);
-        // Other installs further down the PATH explain a version the user didn't expect.
         const seen = new Set([resolved]);
         const others = probe.whichAll(tool, pathValue).filter((other) => {
           const real = probe.realpath(other);
@@ -300,7 +288,6 @@ export const runLaunchChecks = (probe: LaunchProbe): Effect.Effect<LaunchChecks>
       ],
       { concurrency: "unbounded" },
     );
-    // The verdict behind the launch banner, which is otherwise only ever on screen.
     yield* Effect.logInfo("launch checks").pipe(
       Effect.annotateLogs({
         claudeUsable: claude?.found === true && claude.unusable === undefined,

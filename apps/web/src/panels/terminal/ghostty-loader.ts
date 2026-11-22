@@ -7,13 +7,9 @@ import { loadTerminalFont, waitForTerminalFont } from "./terminal-font";
 
 export type TerminalTheme = ITheme;
 
-/** What the terminal's links do on click; nothing opens without one. */
 interface TerminalLinks {
-  /** A URL was clicked. */
   onUrl(url: string): void;
-  /** The `path:line` references in one line of terminal text. */
   findPaths(text: string): readonly PathLink[];
-  /** A `path:line` link was clicked. */
   onPath(link: PathLink): void;
 }
 
@@ -24,7 +20,6 @@ export interface TerminalSearchColors {
   activeMatchBorder: string;
 }
 
-/** What a find matches, and how its matches are highlighted. */
 interface TerminalFindOptions {
   caseSensitive: boolean;
   regex: boolean;
@@ -83,21 +78,10 @@ export interface TerminalOptions {
   onResize?: (cols: number, rows: number) => void;
 }
 
-/**
- * Ghostty counts scrollback in bytes of page memory, not lines: measured, about 3,400 rows at 90
- * columns and 1,400 at 200. It is also most of what a terminal costs, and WebAssembly memory never
- * shrinks: at this size an instance settles at 7 MB, at four times it, 31 MB. A thread can have
- * several terminals and there can be many threads, and the server only replays 256 KiB anyway.
- */
 const SCROLLBACK_BYTES = 4 * 1024 * 1024;
-/** Highlights drawn at once; beyond the screen's worth there is nothing to see anyway. */
 const MAX_HIGHLIGHTS = 500;
 const MIRROR_DELAY_MS = 100;
 
-/**
- * Fetched from this origin and compiled once. `ghostty-web`'s own `init()` would load the copy it
- * inlines as a `data:` URL, which the renderer's CSP rightly refuses.
- */
 let compiled: Promise<WebAssembly.Module> | undefined;
 const ghosttyModule = (): Promise<WebAssembly.Module> =>
   (compiled ??= import("ghostty-web/ghostty-vt.wasm?url")
@@ -149,8 +133,6 @@ export async function createTerminal(
   const highlights = document.createElement("div");
   highlights.style.cssText = "position:absolute;inset:0;pointer-events:none";
   highlights.setAttribute("aria-hidden", "true");
-  // A canvas has no text for a screen reader, or a test, to read. Silent: a terminal's output
-  // announced as it arrives is noise, so it is there to be read, not spoken.
   const mirror = document.createElement("pre");
   mirror.dataset["terminalText"] = "";
   mirror.setAttribute("role", "document");
@@ -164,16 +146,13 @@ export async function createTerminal(
   let dataListener: ((data: string) => void) | undefined;
   let keyFilter: ((event: KeyboardEvent) => boolean) | undefined;
   let font = { family: options.fontFamily, size: options.fontSize };
-  /** Whether anything has been written since the terminal was made; a reset before that is moot. */
   let written = false;
   let visible = true;
   let disposed = false;
   let fontVersion = 0;
 
   const open = () => {
-    // Synchronous, so a reset can be: the module is far below what Chromium allows on the main thread.
     const instance = new WebAssembly.Instance(wasm, {
-      // Ghostty's own diagnostics, which can quote what the terminal was sent.
       env: { log: () => {} },
     });
     const made = new Terminal({
@@ -184,17 +163,11 @@ export async function createTerminal(
       cursorBlink: true,
       scrollback: SCROLLBACK_BYTES,
     });
-    // ghostty-web makes its parent focusable and `contenteditable`, so it gets a box of its own and
-    // the highlight layer and text mirror stay out of it.
     const host = document.createElement("div");
     host.style.cssText = "position:absolute;inset:0;padding:inherit;outline:none";
     element.prepend(host);
     openLeavingFocusWhereItIs(made, host);
 
-    // Text that arrives with no key press (the emoji picker, dictation, a text replacement) comes
-    // as a plain `insertText`, which ghostty-web cancels and drops. Typed keys never get this far,
-    // since their keydown is already consumed, and an IME's commit comes through composition
-    // events, which it does handle; so this is only ever the text it would have lost.
     host.addEventListener(
       "beforeinput",
       (event) => {
@@ -205,24 +178,13 @@ export async function createTerminal(
       { capture: true },
     );
 
-    // ghostty-web copies to the system clipboard the moment a selection is made, with no setting
-    // for it. xterm never did, and a stray drag shouldn't cost the user what they had copied; the
-    // view copies on the platform's chord instead. The manager is private, hence the cast; were it
-    // renamed, copy-on-select would come back and nothing would break.
     const selection = (
       made as unknown as { selectionManager?: { copyToClipboard?: (text: string) => unknown } }
     ).selectionManager;
     if (selection !== undefined) selection.copyToClipboard = () => {};
 
-    // ghostty-web draws every terminal on every frame for as long as it lives, seen or not, and has
-    // no way to be told otherwise. Drawing is most of what streaming output costs: with six of
-    // eight terminals hidden, not drawing them cut main-thread time by two thirds. The emulator
-    // still takes every write, so nothing is lost; the first frame once visible again repaints it.
     const loop = quietRenderLoop(made, visible);
 
-    // ghostty-web registers this same provider itself, opening a link only on a ⌘/Ctrl-click and
-    // with `window.open`. Links are cached by range and the last provider wins, so the same ranges
-    // from here replace its links with ones that open on a plain click, through the app.
     const urls = new UrlRegexProvider(made);
     made.registerLinkProvider({
       provideLinks: (y, callback) =>
@@ -249,7 +211,6 @@ export async function createTerminal(
       },
     });
     made.onData((data) => dataListener?.(data));
-    // ghostty-web asks the opposite question of xterm: true means the handler took the key.
     made.attachCustomKeyEventHandler((event) => keyFilter !== undefined && !keyFilter(event));
     made.onScroll(() => {
       drawHighlights();
@@ -269,8 +230,6 @@ export async function createTerminal(
   };
 
   const metrics = () => current.terminal.renderer!.getMetrics();
-  // ghostty-web's FitAddon drops a fit that lands within 50 ms of the last, which is every font
-  // change that follows a resize.
   const fit = () => {
     const { terminal } = current;
     const { width, height } = metrics();
@@ -286,7 +245,6 @@ export async function createTerminal(
     element.dataset["rows"] = String(terminal.rows);
   };
 
-  /** The buffer row at the top of the screen; `viewportY` counts up from the bottom. */
   const viewportTop = () =>
     current.terminal.getScrollbackLength() - Math.floor(current.terminal.getViewportY());
   const readRow = (y: number): FindRow | undefined => {
@@ -297,7 +255,6 @@ export async function createTerminal(
     let next = 0;
     for (let x = 0; x < line.length; x++) {
       const cell = line.getCell(x);
-      // The spacer half of a wide character.
       if (cell === undefined || cell.getWidth() === 0) continue;
       const chars = cell.getChars() || " ";
       for (let i = 0; i < chars.length; i++) columns.push(x);
@@ -305,7 +262,6 @@ export async function createTerminal(
       next = x + cell.getWidth();
     }
     columns.push(next);
-    // What is trimmed is spaces, a cell each, so the entry after the kept text is where it ends.
     const end = text.trimEnd().length;
     return {
       text: text.slice(0, end),
@@ -342,7 +298,6 @@ export async function createTerminal(
     const { width, height } = metrics();
     const top = viewportTop();
     const { matches, active, options: findOptions } = find;
-    // Absolute boxes measure from the padding edge; the canvas sits inside the padding.
     const style = getComputedStyle(element);
     const left = Number.parseFloat(style.paddingLeft) || 0;
     const above = Number.parseFloat(style.paddingTop) || 0;
@@ -385,7 +340,6 @@ export async function createTerminal(
     if (row !== undefined && step !== "refresh") {
       const top = viewportTop();
       if (row < top || row >= top + terminal.rows) {
-        // `scrollToLine` takes lines up from the bottom, whatever its documentation says.
         const wantedTop = Math.max(0, row - Math.floor(terminal.rows / 2));
         terminal.scrollToLine(Math.max(0, terminal.getScrollbackLength() - wantedTop));
       }
@@ -394,7 +348,6 @@ export async function createTerminal(
     findListener?.({ index: active, count: matches.length });
     return matches.length > 0;
   };
-  // Output moves the matches and adds new ones, so an open find follows it, once a frame at most.
   const refindSoon = () => {
     if (find === undefined || refindFrame !== undefined) return;
     refindFrame = requestAnimationFrame(() => {
@@ -403,8 +356,6 @@ export async function createTerminal(
     });
   };
 
-  // A slow font may settle after the bounded initial wait. Update the current renderer only:
-  // stale font changes and disposed terminals must never resize/repaint a replacement.
   const fontLoaded = (loading: Promise<void>, version: number) => {
     void loading.then(() => {
       if (disposed || version !== fontVersion) return;
@@ -431,9 +382,6 @@ export async function createTerminal(
       return current.terminal.rows;
     },
     write: (data) => {
-      // ghostty-web 0.4.0 throws on an empty write ("offset is out of bounds": its allocator answers
-      // -1 for zero bytes), and a terminal attached before its shell has printed replays "". The
-      // throw ended the feed, leaving the terminal blank for good.
       if (data === "") return;
       written = true;
       current.terminal.write(data);

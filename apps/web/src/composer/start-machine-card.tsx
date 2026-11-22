@@ -8,7 +8,6 @@ export const ON_DEMAND_QUERY_KEY = ["on-demand-machine"] as const;
 
 export const useOnDemandMachine = () => {
   const client = useQueryClient();
-  // Only an app mounted in front of a hosted server can have machines started for its people.
   const hosted = useEmbedShell((s) => s.hosted);
   const query = useQuery({
     queryKey: ON_DEMAND_QUERY_KEY,
@@ -27,10 +26,6 @@ export const useOnDemandMachine = () => {
 export const needsMachine = (status: OnDemandStatus | undefined): boolean =>
   status !== undefined && status.machine?.online !== true;
 
-/**
- * The card itself loads only where it shows: a hosted deployment that starts machines on demand,
- * for a person with none online. Everywhere else the composer's route doesn't carry it.
- */
 const cardBody = lazyPart(() => import("./start-machine-card-body"));
 
 export function StartMachineCard({

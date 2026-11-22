@@ -4,11 +4,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type { ShellNavigationGroup } from "./contract";
 import { foldable, groupOpen } from "./store";
 
-// Collapsible navigation groups as the person last left them, by the group's id, kept on this
-// device. A group nobody has opened or closed starts as the embedding app says.
-
 interface FoldedState {
-  /** Open (true) or closed (false), by group id; a group left out was never touched. */
   open: Readonly<Record<string, boolean>>;
   set(id: string, open: boolean): void;
 }
@@ -31,7 +27,6 @@ export const useFoldedGroups = create<FoldedState>()(
     {
       name: "gram.embedNavigationOpen",
       version: 1,
-      // `window`, not `globalThis`: see model-favourites.ts.
       storage: createJSONStorage(() => window.localStorage),
       partialize: ({ open }) => ({ open }),
       merge: (persisted, current) => ({

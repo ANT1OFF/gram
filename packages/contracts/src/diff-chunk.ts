@@ -1,7 +1,3 @@
-// A file's patch too large to send whole, served in bounded chunks of hunks, and the summary a
-// generated file (a lockfile, a minified bundle) gets instead. Pure, so the server and the web's
-// mock page through a patch the same way.
-
 import * as Schema from "effect/Schema";
 import { DiffScope } from "./git.ts";
 
@@ -127,7 +123,6 @@ const LOCKFILES = new Set([
 
 const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
-/** A changed line this long reads as minified code, whatever the file is called. */
 const MINIFIED_LINE_CHARS = 1000;
 
 /**
@@ -161,7 +156,6 @@ export function* patchLines(text: string): Generator<string> {
   }
 }
 
-/** UTF-8 bytes of `text`, plus its newline. */
 const lineBytes = (text: string) => {
   let bytes = 1;
   for (let i = 0; i < text.length; i++) {
@@ -195,10 +189,8 @@ const parseHeader = (line: string): HunkHead | undefined => {
   };
 };
 
-/** The line a side's first line is; git names the line before for a side with no lines. */
 const firstLine = (start: number, count: number) => (count === 0 ? start + 1 : start);
 
-/** `start,count` as git writes it: the count left out when it is 1, the line before when it is 0. */
 const range = (first: number, count: number) =>
   count === 1 ? `${first}` : `${count === 0 ? Math.max(0, first - 1) : first},${count}`;
 
@@ -289,7 +281,6 @@ export function chunkPatch(
       const kept = text.length > MAX_LINE_CHARS ? `${text.slice(0, MAX_LINE_CHARS)}…` : text;
       const size = lineBytes(kept);
       const full = lines >= limits.lines || (lines > 0 && bytes + size > limits.bytes);
-      // A note belongs to the line above it, wherever the caps fall.
       if (full && !(note && open !== undefined)) {
         next = { hunk, line };
         open = undefined;
@@ -330,7 +321,6 @@ export function chunkPatch(
   };
 }
 
-/** Package name from a lockfile key: `/@scope/name@1.2.3(peer)` → `@scope/name`. */
 const packageName = (key: string) => {
   const bare = key.replace(/^['"/]+|['"]+$/g, "");
   const at = bare.indexOf("@", 1);
@@ -339,7 +329,6 @@ const packageName = (key: string) => {
 
 type SectionOf = (line: string) => string | undefined;
 
-/** Per lockfile name, the section a line (sign stripped) opens, if it opens one. */
 const SECTION_OPENERS: Readonly<Record<string, SectionOf>> = {
   "pnpm-lock.yaml": (line) => {
     const match = /^ {2}(['"]?[^\s'"][^:]*?['"]?):\s*(?:\{\})?$/.exec(line);

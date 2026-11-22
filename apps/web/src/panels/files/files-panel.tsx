@@ -32,16 +32,11 @@ import { SplitHandle } from "./split-handle";
 const inputCls =
   "h-7 w-full rounded-md border border-input bg-transparent ps-7 pe-2 text-meta outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
-/** Typed first in the find box, it searches the files' contents instead of filtering by name. */
 const CONTENTS_PREFIX = "?";
 
 /** From this width the tree sits beside the preview instead of above it. */
 export const SIDE_BY_SIDE_MIN = 720;
 
-/**
- * An element's width as it resizes, and the ref that names the element: a callback, since the
- * panel's body only mounts once the thread has loaded.
- */
 function useWidth<T extends HTMLElement>(ref: RefObject<T | null>) {
   const [element, setElement] = useState<T | null>(null);
   const [width, setWidth] = useState(0);
@@ -115,8 +110,6 @@ export function FilesPanel({
     if (!request || request.threadId !== threadId || root === undefined) return;
     const relative = checkoutRelative(request.target, root);
     if (relative !== undefined) revealInFiles(threadId, root, `${root}/${relative}`);
-    // A file elsewhere, such as a report in a temp folder, previews on its own; the server decides
-    // whether the thread may see it.
     else if (isAbsoluteRef(request.target)) showFileAt(threadId, [root], request.target);
     consumePanelTarget("files", request.id);
   }, [request, threadId, root, consumePanelTarget]);
@@ -149,7 +142,6 @@ export function FilesPanel({
   const closeTab = (path: string) => {
     closeFile(threadId, path);
     if (tabs.some((tab) => tab !== path)) return;
-    // The last tab closed: back to the file's row, where the preview was opened from.
     setTimeout(() => {
       if (!focusLost()) return;
       const items = bodyRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]');
@@ -302,8 +294,6 @@ export function FilesPanel({
               <FilePreview
                 key={selected}
                 threadId={threadId}
-                // A file link can open a file in a multi-repo worker's other worktree, or one
-                // elsewhere on disk.
                 root={previewRoot}
                 elsewhere={!mayBeInRoots(selected, [previewRoot])}
                 path={selected}

@@ -37,7 +37,6 @@ export function scrollAnchor(scroller: HTMLElement | null | undefined): ScrollAn
   };
 }
 
-/** Older history than is loaded: the server's hits there, one a message, until a step loads it. */
 const OLDER_LIMIT = 200;
 
 /**
@@ -67,13 +66,10 @@ export function FindBar({
 }) {
   useReturnFocus();
   const [query, setQuery] = useState("");
-  /** The current match, by key, so it holds while messages stream in; else the newest. */
   const [currentKey, setCurrentKey] = useState<string>();
-  // Taken as find opens, before any step scrolls.
   const [anchor] = useState(() => scrollAnchor(getScroller()));
 
   const local = useMemo(() => findMatches(messages, query), [messages, query]);
-  // Busy from the first keystroke: until the server has answered this query, its count may grow.
   const older = useThreadSearch(earlier ? query : "", {
     threadId,
     limit: OLDER_LIMIT,
@@ -89,14 +85,11 @@ export function FindBar({
       seen.add(hit.messageId);
       unloaded.push({ key: `older:${hit.messageId}`, messageId: hit.messageId, occurrence: 0 });
     }
-    // Older than anything loaded: they come first, top to bottom. The server ranks them, so their
-    // order among themselves is its, not the transcript's.
     return [...unloaded, ...local.matches];
   }, [local.matches, older, messages]);
 
   const count = matches.length;
   let at = matches.findIndex((m) => m.key === currentKey);
-  // An older hit, once its step has loaded it, is the first match in its message.
   if (at === -1 && currentKey?.startsWith("older:")) {
     const messageId = currentKey.slice("older:".length);
     at = matches.findIndex((m) => m.messageId === messageId);
@@ -159,7 +152,6 @@ export function FindBar({
       <span
         aria-live="polite"
         data-testid="find-status"
-        // Still asking the server about history older than what is loaded: the count may grow.
         aria-busy={older.status === "searching" || undefined}
         className="shrink-0 text-meta text-muted-foreground tabular-nums"
       >

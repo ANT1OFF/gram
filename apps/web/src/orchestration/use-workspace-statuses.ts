@@ -46,10 +46,8 @@ export function useWorkerTally(
   return { live, working };
 }
 
-/** A workspace leaving a status waits this long, so one worker's quick turn doesn't reorder the list. */
 const WORKSPACE_STATUS_HOLD_MS = 5_000;
 
-/** Parking and unparking are the user's own doing, and what needs you mustn't wait. */
 const holdsNot = (from: WorkspaceStatus, to: WorkspaceStatus): boolean =>
   to === "needsYou" || to === "parked" || from === "parked";
 
@@ -66,7 +64,6 @@ export function useWorkspaceStatuses(threads: readonly ThreadSummary[]): {
   const workspaces = useWorkspaces();
   const ids = useMemo(() => workspaces.map((state) => state.workspace.id), [workspaces]);
   const ledgers = useOrchestratorLedgers(ids);
-  // Its open questions as the stack still asks them, so an answered or snoozed one leaves its lane.
   const asks = useWorkspaceAsks();
   const questions = useMemo(
     () =>
@@ -82,7 +79,6 @@ export function useWorkspaceStatuses(threads: readonly ThreadSummary[]): {
     () => workspaceTrees(workspaces, threads, ledgers),
     [workspaces, threads, ledgers],
   );
-  // One string, so an activity line that ticks without changing who works re-renders nothing.
   const working = useThreadsStore((s) =>
     trees.map((tree) => workingCount(tree, s.statusDetail)).join(","),
   );
@@ -104,7 +100,6 @@ export function useWorkspaceStatuses(threads: readonly ThreadSummary[]): {
   );
   useEffect(() => hold.update(target), [hold, target]);
   useEffect(() => () => hold.dispose(), [hold]);
-  // A workspace the hold hasn't heard of yet, on the render before the effect, shows as it is.
   const held = useStore(hold.store, (s) => s.shown);
   const shown = useMemo(
     () => new Map([...target].map(([id, status]) => [id, held.get(id) ?? status])),

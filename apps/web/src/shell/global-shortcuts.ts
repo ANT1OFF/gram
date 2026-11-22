@@ -29,13 +29,11 @@ import { focusPaneComposer, gridShown } from "./pane-focus";
 import { stepThread } from "./step-thread";
 import { useOpenThread } from "./thread-switcher";
 
-/** Focus is in no dialog, or in the one with test id `own`: a toggle that may close itself. */
 const inNoDialogBut = (own: string): boolean => {
   const dialog = document.activeElement?.closest("[role='dialog'], [role='alertdialog']");
   return dialog === null || dialog === undefined || dialog.getAttribute("data-testid") === own;
 };
 
-/** Runs a pane-focus change, then moves real focus into the pane the layout now counts as focused. */
 const withPaneFocus = (change: () => void) => () => {
   change();
   focusPaneComposer(useLayoutStore.getState().grid.focused);
@@ -60,7 +58,6 @@ export function useGlobalShortcuts() {
     keys: "mod+k",
     label: "Command palette",
     group: "App",
-    // The palette is a dialog itself, so its toggle has to work from inside one.
     allowInDialogs: true,
     run: () => {
       const { paletteOpen, openPalette, closePalette } = useLayoutStore.getState();
@@ -91,7 +88,6 @@ export function useGlobalShortcuts() {
     keys: "mod+/",
     label: "Keyboard shortcuts, also while typing",
     group: "App",
-    // Toggles, so the overlay (a dialog) closes with the same keys.
     allowInDialogs: true,
     run: () => {
       const { overlayOpen, setOverlayOpen } = useLayoutStore.getState();
@@ -134,9 +130,6 @@ export function useGlobalShortcuts() {
     },
   });
 
-  // Every worker of the workspace, two steps from anywhere: ⌘J, then the worker. It shows the right
-  // panel's Workers tab, the one worker list, with the keys on its rows; again, it puts the panel
-  // back as it was.
   useShortcut({
     id: "workers.open",
     keys: "mod+j",
@@ -146,20 +139,16 @@ export function useGlobalShortcuts() {
     run: toggleWorkersTab,
   });
 
-  // Every past chat, from anywhere: finished workers, done and archived threads, past sessions.
   useShortcut({
     id: "history.open",
     keys: "mod+shift+h",
     label: "History",
     group: "Navigation",
-    // Toggles, so History (a dialog) closes with the same keys; no other dialog lets it open.
     allowInDialogs: true,
     when: () => inNoDialogBut(HISTORY_TEST_ID),
     run: () => useHistoryStore.getState().toggle(),
   });
 
-  // Everything that needs you, from anywhere; ⌘⌥3, the old Needs you key, opens it too. Each
-  // toggles, so the Inbox (a dialog) closes with the same keys. No other dialog lets it open.
   useShortcut({
     id: "inbox.open",
     keys: "mod+shift+i",
@@ -180,8 +169,6 @@ export function useGlobalShortcuts() {
   });
 
   const openThread = useOpenThread();
-  // A worker's key first: undock the one beside the chat, keep the focused worker beside its
-  // orchestrator, or bring the last one back beside it. Otherwise the grid splits or unsplits.
   useShortcut({
     id: "split.toggle",
     keys: "mod+\\",
@@ -208,8 +195,6 @@ export function useGlobalShortcuts() {
     run: () => useLayoutStore.getState().toggleMaximize(),
   });
 
-  // The window's own history, as a browser's ⌘[ and ⌘]. A text field keeps them (some indent
-  // with them), and Back never leaves the app.
   useShortcut({
     id: "history.back",
     keys: "mod+[",
@@ -296,7 +281,6 @@ export function useGlobalShortcuts() {
     run: () => useLayoutStore.getState().toggleReviewFocus(),
   });
 
-  // On the Diff tab and showing, the panel hides; otherwise it shows the Diff tab.
   useShortcut({
     id: "diff.toggle",
     keys: "mod+d",
@@ -354,7 +338,6 @@ export function useGlobalShortcuts() {
         group: "Navigation",
         hidden: i !== 0,
         when: gridShown,
-        // Ctrl+Shift+digit types nothing, so a focused composer shouldn't swallow it.
         allowInInputs: true,
         run: () => useLayoutStore.getState().setPreset(preset),
       }),

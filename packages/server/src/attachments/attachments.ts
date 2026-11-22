@@ -33,7 +33,6 @@ import { DAY_MS } from "../zone-time.ts";
  */
 export const attachmentsDir = (dataDir: string): string => resolve(dataDir, "attachments");
 
-/** Staging folders for `/new` drafts, under the attachments folder. */
 const DRAFTS_DIR = "_drafts";
 
 const TEXT_MEDIA_TYPES: ReadonlySet<string> = new Set([
@@ -194,7 +193,6 @@ export const copyForkedAttachments = (
   messages: ReadonlyArray<GramUIMessage>,
 ): Effect.Effect<ReadonlyArray<GramUIMessage>> =>
   Effect.gen(function* () {
-    // Resolved, like the paths they are compared with: a relative `dir` would match nothing.
     const source = resolve(dir, from) + sep;
     const target = resolve(dir, to);
     const copies = new Map<string, string>();
@@ -220,7 +218,6 @@ export const copyForkedAttachments = (
     return changed;
   });
 
-/** `messages` with each attachment path `copyOf` maps repointed; only the messages that changed. */
 const repoint = async (
   messages: ReadonlyArray<GramUIMessage>,
   copyOf: (path: string | undefined) => Promise<string | undefined>,
@@ -247,13 +244,6 @@ const repoint = async (
   return changed;
 };
 
-/**
- * Moves a draft's staged attachments into the thread's folder and points `input`'s attachments at
- * their new paths, before the first send. Attachments outside the draft's folder (a real path from
- * the desktop shell) are left as they are, and a draft with nothing staged is a no-op. A thread that
- * has a folder already (a task for a running orchestrator) takes the files in beside its own, whose
- * random prefixes keep the names apart. Resolves to the files moved, for `restoreDraftAttachments`.
- */
 const adoptDraft = (
   dir: string,
   draftId: DraftId,
@@ -275,14 +265,12 @@ const adoptDraft = (
             done.push(name);
           }
         } catch (error) {
-          // No half-adopted draft: what moved goes back, so the draft still has every file.
           for (const name of done) {
             await rename(join(target, name), join(staged, name)).catch(() => undefined);
           }
           throw error;
         }
         moved = names;
-        // Everything is in the thread's folder by now; an empty folder left behind is pruned later.
         await rm(staged, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(
           () => undefined,
         );
@@ -301,7 +289,6 @@ const adoptDraft = (
     catch: (error) => invalid(`Couldn't move the draft's attachments: ${failure(error)}`),
   });
 
-/** What adopting a draft moved: its whole folder, or these files into a folder already there. */
 type Moved = "folder" | ReadonlyArray<string>;
 
 export const adoptDraftAttachments = (
@@ -312,7 +299,6 @@ export const adoptDraftAttachments = (
 ): Effect.Effect<UserInput | undefined, InvalidState> =>
   adoptDraft(dir, draftId, threadId, input).pipe(Effect.map((adopted) => adopted.input));
 
-/** Moves adopted attachments back to their draft, or deletes them if they can't go back. */
 const restoreDraftAttachments = (dir: string, draftId: DraftId, threadId: ThreadId, moved: Moved) =>
   Effect.tryPromise(async () => {
     const target = join(dir, threadId);
@@ -359,7 +345,6 @@ export const withDraftAttachments = <A, E, R>(
     ),
   );
 
-/** Deletes draft staging folders untouched for `maxAgeMs`: drafts that never became threads. */
 const pruneStaleDrafts = (dir: string, maxAgeMs: number, now: number) =>
   Effect.tryPromise(async () => {
     const drafts = join(dir, DRAFTS_DIR);
@@ -424,7 +409,6 @@ export const makeAttachments = (
         if (!isAllowedAttachment(request.name, request.mediaType)) {
           return yield* invalid(`Can't attach ${request.name}: only images and text files`);
         }
-        // Base64 inflates by a third, so reject oversized payloads before decoding them.
         if (Math.floor((request.data.length * 3) / 4) > maxBytes + 2) {
           return yield* tooLarge(request.name);
         }

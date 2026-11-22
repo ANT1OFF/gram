@@ -12,10 +12,6 @@ import type { SetStageInput } from "@/api/types";
 
 import { agoText } from "@/lib/time";
 
-// Pure derivations for a feature's or a group's stage: somebody's word
-// about where a change stands, so everything here keeps who said it and how long ago beside the
-// stage itself.
-
 /** A stage nobody has touched for this long is shown as possibly stale. */
 export const STAGE_STALE_MS = 24 * 60 * 60_000;
 
@@ -117,7 +113,6 @@ export const removeStep = (draft: PlanDraft, index: number): PlanDraft => {
     ...draft,
     steps,
     current: Math.max(0, Math.min(current, steps.length - 1)),
-    // Removing the last step leaves a free label: start it from what the stage was called.
     label: steps.length === 0 ? (draft.steps[draft.current] ?? draft.label) : draft.label,
   };
 };
@@ -128,7 +123,6 @@ export const addStep = (draft: PlanDraft): PlanDraft =>
     ? draft
     : {
         ...draft,
-        // A free label becomes the plan's first step, so nothing typed is lost.
         steps:
           draft.steps.length === 0 && draft.label.trim() !== ""
             ? [draft.label.trim(), ""]
@@ -236,24 +230,12 @@ const ledgerStage = (
     ? ledger.features.find((feature) => feature.feature === target.feature)
     : ledger.groups?.find((group) => group.group === target.group);
 
-/**
- * A stage set from this window that the ledger stream has yet to show. The server reads the
- * workspace and then surveys its workers over many awaits, so a ledger that read it before the write
- * can be streamed after the write, and after the answer to it too.
- */
 interface HeldStage {
   readonly target: StageTarget;
-  /** The optimistic stage until the server answers, and what it stored from then on. */
   readonly stage: FeatureStage;
-  /** False while the server is asked, when every ledger there is was built before the write. */
   readonly confirmed: boolean;
 }
 
-/**
- * An incoming ledger with the held stages it predates laid over it, and the ones to go on holding.
- * A ledger has caught up with a confirmed stage once it carries one set no earlier, whoever set
- * that; a target that has gone from the ledger has nothing left to hold.
- */
 const settleLedger = (
   ledger: OrchestratorLedger,
   held: readonly HeldStage[],

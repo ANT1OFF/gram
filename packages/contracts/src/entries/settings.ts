@@ -1,4 +1,3 @@
-// Settings, gateway profiles and keys, keybindings, helper models and the app's own state.
 export * from "../settings.ts";
 export * from "../gateway-keys.ts";
 export * from "../custom-models.ts";

@@ -12,18 +12,13 @@ const failure = (
   ...(code === undefined ? {} : { code }),
 });
 
-// LiteLLM's router, when no deployment of the model group is left for the request. A cooldown
-// names the deployments cooling down and clears in seconds; with none named it is the router's own
-// filter (a hosted `web_search` tool on a model that has it off), which no wait or retry changes.
 const NO_DEPLOYMENTS = /No deployments available/i;
 const COOLING_DOWN = /cooldown_list=\[\s*['"]/;
-// Optional gateways may disable a key over its spending limit or restrict the models it may use.
 const KEY_DISABLED = /API key is disabled/i;
 const KEY_RESTRICTED = /is restricted for this API key/i;
 const NETWORK =
   /ECONNREFUSED|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|fetch failed|socket hang up|timed? ?out/i;
 
-/** The text is one of the gateway's own refusals, which outrank what the status alone would say. */
 const gatewayWords = (text: string): boolean =>
   NO_DEPLOYMENTS.test(text) ||
   KEY_DISABLED.test(text) ||
@@ -63,14 +58,12 @@ export const httpFailure = (
   return failure("unknown", httpStatus >= 500, httpStatus, code);
 };
 
-/** The status a LiteLLM error body carries as its `code`, for an agent that passed only the body on. */
 const bodyStatus = (text: string): number | undefined => {
   try {
     const code: unknown = (JSON.parse(text) as { error?: { code?: unknown } }).error?.code;
     const status = Number(code);
     return Number.isInteger(status) && status >= 400 && status < 600 ? status : undefined;
   } catch {
-    // Not a JSON body: an ordinary message.
     return undefined;
   }
 };
@@ -89,11 +82,8 @@ const CODEX_KINDS: Record<string, readonly [AgentFailureKind, boolean]> = {
   rateLimitExceeded: ["rateLimit", true],
   flexUnavailable: ["modelUnavailable", true],
   serverOverloaded: ["rateLimit", true],
-  // 0.166.0 split this out of `serverOverloaded`; Codex still retries it the same way.
   policyCapacityUnavailable: ["rateLimit", true],
-  // Terminal since 0.165.0: Codex no longer retries a provider's `model_not_found`.
   modelNotFound: ["modelUnavailable", false],
-  // 0.170.0: a configured inference hook refused the request; Codex treats it as terminal.
   inferenceHookDenied: ["unknown", false],
   cyberPolicy: ["unknown", false],
   misalignmentPolicyViolation: ["unknown", false],
@@ -155,8 +145,6 @@ export const claudeFailure = (
   error: string | undefined,
   text: string,
 ): AgentFailure => {
-  // The CLI can discover an expired subscription login locally, with no HTTP status and an
-  // `unknown` SDK error. Retrying that turn cannot restore the login; the user needs /login.
   if (httpStatus === undefined && /^Login expired\b/i.test(text.trim())) {
     return failure("auth", false, undefined, error);
   }

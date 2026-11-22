@@ -5,15 +5,12 @@
 
 export type Tone = "start" | "stop";
 
-/** The notes of each tone, in Hz: a fourth up for start, the same fourth down for stop. */
 const NOTES: Readonly<Record<Tone, readonly [number, number]>> = {
   start: [659.25, 880],
   stop: [880, 659.25],
 };
 const NOTE_S = 0.07;
-/** The loudest a tone gets, at volume 1: well under full scale, since it plays beside speech. */
 const PEAK = 0.25;
-/** How long the context stays running after a tone; suspended, it holds no output device. */
 const IDLE_MS = 2_000;
 
 let context: AudioContext | undefined;

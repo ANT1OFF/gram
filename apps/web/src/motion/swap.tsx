@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 export function useChangeCount<T>(value: T): number {
   const [seen, setSeen] = useState({ value, count: 0 });
   if (Object.is(seen.value, value)) return seen.count;
-  // Derived during render, as React asks for state that follows a prop: no frame shows the old count.
   setSeen({ value, count: seen.count + 1 });
   return seen.count + 1;
 }

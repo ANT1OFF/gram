@@ -1,7 +1,3 @@
-// The Electron updater's state machine (Squirrel.Mac on a signed Mac, the AppImage's own file
-// replacement on Linux, and the .deb's check-only notice): one pure reducer, so main, the pill and
-// Settings → Updates move through the same states. Main owns the timing and the side effects
-// (`apps/desktop/src/main/update/native-updates.ts`, `package-updates.ts`).
 import type { AppUpdateState, AppUpdateTarget, UpdateChannel } from "@gram/contracts";
 
 export type NativeUpdateEvent =
@@ -22,20 +18,13 @@ export type NativeUpdateEvent =
   | { readonly type: "downloadFailed"; readonly message: string }
   | { readonly type: "downloaded"; readonly version: string }
   | { readonly type: "installStarted" }
-  /**
-   * The restart was refused and nothing quit. `step` is what a retry has to do again when it
-   * isn't the restart: check (the channel changed) or download (the file no longer verifies).
-   */
   | {
       readonly type: "installRefused";
       readonly message: string;
       readonly step?: "check" | "download";
     }
-  /** The restart can't finish or be undone yet: Gram stays stopped, saying why. */
   | { readonly type: "installHeld"; readonly message: string }
-  /** macOS has an earlier install pending that Gram couldn't remove: held as an update, from any state. */
   | { readonly type: "pendingInstall"; readonly message: string }
-  /** That pending install is shown gone: back to normal. */
   | { readonly type: "pendingCleared" }
   | { readonly type: "notApplied"; readonly version: string; readonly reason: string }
   | { readonly type: "dismissed" };
@@ -71,7 +60,6 @@ export function initialNativeUpdateState(options: {
 const clamp = (percent: number) =>
   Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
 
-/** What a ready download looks like again after a check that didn't replace it. */
 const stillReady = (state: AppUpdateState, at: number): AppUpdateState => ({
   ...state,
   status: "ready",
@@ -94,7 +82,6 @@ export function reduceNativeUpdate(
   switch (event.type) {
     case "checkStarted": {
       if (state.status === "downloading" || state.status === "installing") return state;
-      // Another channel's release is never offered on this one, downloaded or not.
       const moved = event.channel !== state.channel;
       return {
         ...state,
@@ -134,7 +121,6 @@ export function reduceNativeUpdate(
     }
     case "upToDate":
       if (state.status !== "checking") return state;
-      // A download the feed no longer offers (the release was withdrawn) isn't installed.
       return {
         ...state,
         status: "upToDate",
@@ -150,7 +136,6 @@ export function reduceNativeUpdate(
       };
     case "checkFailed":
       if (state.status !== "checking") return state;
-      // The verified download is still good; a failed check doesn't take it away.
       if (state.downloadedVersion !== null) return stillReady(state, event.at);
       return {
         ...state,
@@ -165,7 +150,6 @@ export function reduceNativeUpdate(
         errorStep: "check",
       };
     case "downloadStarted":
-      // A .deb downloads nothing: apt installs the release, never Gram.
       if (
         state.target === "deb" ||
         state.availableVersion === null ||

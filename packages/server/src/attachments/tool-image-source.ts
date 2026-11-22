@@ -14,7 +14,6 @@ const protectedSource = (path: string): boolean =>
   /(?:^|[\\/])\.config[\\/]opencode(?:[\\/]|$)/i.test(path) ||
   /(?:^|[\\/])\.local[\\/]share[\\/]opencode(?:[\\/]|$)/i.test(path);
 
-/** Reject text mislabeled with an image extension before saving it as preview bytes. */
 const matchesMediaType = (bytes: Buffer, mediaType: string): boolean => {
   switch (mediaType) {
     case "image/png":
@@ -61,9 +60,6 @@ export const captureToolImageSource = (
     const current = () => nativeRead === undefined || nativeRead.isCurrent();
     const target = resolve(source.path);
     if (protectedSource(target)) return;
-    // A root holds the target by where both really are, so the canonical path of an image inside a
-    // root opened through a link counts, or as written for a root that no longer resolves. The
-    // real-path check at the open below is what admits the file.
     const holds = yield* Effect.promise(() =>
       Promise.all(
         roots.map(
@@ -80,8 +76,6 @@ export const captureToolImageSource = (
       Promise.all(containing.map((root) => tryRealPath(root))),
     );
     const realStorage = yield* Effect.promise(() => tryRealPath(storage));
-    // Normalize parent aliases such as macOS /tmp while refusing a final link for exact-path
-    // admission. Keep both the real name and directory identity through the checked read.
     const exactParent =
       native || (attached && containing.length === 0)
         ? yield* Effect.tryPromise(() => realPath(dirname(target)))

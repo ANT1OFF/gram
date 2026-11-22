@@ -48,11 +48,6 @@ export type ToolPhase =
   | "denied"
   | "cancelled";
 
-/**
- * What Claude Code answers every tool call an interrupt cut off with (a stop, or a message sent to
- * interrupt the turn): "The user doesn't want to take this action right now. STOP what you are
- * doing…", whoever interrupted and though nobody declined anything.
- */
 const CUT_OFF_TEXT = "The user doesn't want to take this action right now";
 
 /** The call was cut off by an interrupt, which Claude Code words as if the user declined it. */
@@ -79,7 +74,6 @@ export function toolPhase(
     case "output-available":
       return preliminary ? "running" : "done";
     case "output-error":
-      // An interrupted call stopped like a cancelled one: it didn't fail.
       return errorText === "Cancelled" || cutOffByInterrupt(errorText) ? "cancelled" : "error";
     case "output-denied":
       return "denied";
@@ -90,7 +84,6 @@ export function toolPhase(
 export const PHASE_DISPLAY: Record<ToolPhase, { label: string; icon: LucideIcon; tone: string }> = {
   pending: { label: "Preparing", icon: CircleDashed, tone: "text-muted-foreground" },
   running: { label: "Running", icon: Spinner, tone: "text-status-working" },
-  // Held at the user's approval card: not running yet, so never the spinner or the word Running.
   awaiting: { label: "Waiting for your approval", icon: ShieldQuestion, tone: "text-status-needs" },
   done: { label: "Done", icon: CircleCheck, tone: "text-success" },
   error: { label: "Error", icon: CircleX, tone: "text-destructive" },
@@ -193,9 +186,7 @@ export function chaptersOf(top: readonly GramUIMessage[]): Chapter[] {
           ]
         : [],
     );
-    // An explicit chapter already names this anchor; don't add a second entry for the same row.
     if (explicit.length > 0 || message.role !== "user") return explicit;
-    // These server notices render a card; their raw agent payload is behind a disclosure.
     if (
       message.parts.some(
         (part) =>
@@ -205,7 +196,6 @@ export function chaptersOf(top: readonly GramUIMessage[]): Chapter[] {
       )
     )
       return [];
-    // Only the user's visible text. Never inspect tool output, reasoning, metadata or data parts.
     const text = message.parts
       .flatMap((part) => (part.type === "text" ? [part.text] : []))
       .join(" ")

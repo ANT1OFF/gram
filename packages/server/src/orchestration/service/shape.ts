@@ -1,5 +1,4 @@
-// The orchestration service's public contract: `OrchestrationShape` and the inputs and results of its
-// tools. `service.ts` re-exports all of it, so importers keep importing from there.
+import { type MemoryQuestionsShape } from "./memory-questions.ts";
 import {
   type AppToolError,
   type InvalidState,
@@ -375,7 +374,6 @@ export interface OrchestrationShape {
           readonly autonomy?: Autonomy | undefined;
         },
     selected?: ModelRef,
-    /** Refuse an existing or concurrently won slot; explicit bot creation cannot adopt it. */
     requireNew?: boolean,
   ): Effect.Effect<Thread, NotFound | InvalidState | AgentUnavailable>;
   /**
@@ -438,7 +436,6 @@ export interface OrchestrationShape {
     workspaceId: WorkspaceId,
     writes: ReadonlyArray<SettingsWrite>,
     audit: SettingsAuditEntry,
-    /** App settings the card was drawn from; checked in the same transaction. */
     requires?: ReadonlyArray<SettingsRequirement>,
   ): Effect.Effect<
     { readonly state: WorkspaceState; readonly auditSeq: number },
@@ -620,7 +617,6 @@ export interface OrchestrationShape {
     E
   >;
 
-  // -- A workspace moved here from another Gram (`transfer/workspace-transfer.ts`) -----------
   /**
    * The model and mode an orchestrator opens on here under `charter`, as `open` decides them for
    * a new one, with a `note` when the charter's own model can't run here and another stands in.
@@ -640,7 +636,6 @@ export interface OrchestrationShape {
    */
   arrive<A, E>(write: (taken: ReadonlyArray<string>) => Effect.Effect<A, E>): Effect.Effect<A, E>;
 
-  // -- Routines' seam (`routines/routines.ts`) ----------------------------------------------
   /** Installs the routines engine's admission (`RoutineAdmission`); a routine spawn refuses without it. */
   setRoutineAdmission(admit: RoutineAdmission): Effect.Effect<void>;
   /** How each of the workspace's routines' runs stand, by routine id, as its outbox keeps them. */
@@ -660,7 +655,6 @@ export interface OrchestrationShape {
     workspaceId: WorkspaceId,
     compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined,
   ): Effect.Effect<WorkspaceState, NotFound | InvalidState>;
-  // -- end of Routines' seam -----------------------------------------------------------------
   /** `undefined` unless the thread is its workspace's orchestrator right now. */
   authorityOf(threadId: ThreadId): Effect.Effect<Authority | undefined>;
   /**
@@ -673,6 +667,8 @@ export interface OrchestrationShape {
    * workspace has no orchestrator open right now, or another thread holds the workspace.
    */
   memoryClosedReason(threadId: ThreadId): Effect.Effect<string>;
+  /** The orchestrator's questions, kept in the store and written out to `questions.md`. */
+  readonly memoryQuestions: MemoryQuestionsShape;
   /** The delegation rule for one call; reads only, since a gate may ask twice. */
   isDelegated(callerId: ThreadId, targetId: string): Effect.Effect<boolean>;
   /**
@@ -908,7 +904,6 @@ export interface OrchestrationShape {
   scheduleWake(
     callerId: ThreadId,
     input: WakeInput,
-    /** The caller's wakes pending elsewhere (`ThreadWakes`), which count toward its cap. */
     elsewhere?: number,
   ): Effect.Effect<{ readonly id: string; readonly at: string }, AppToolError>;
   /** How many of `callerId`'s wakes its workspace's outbox holds, whatever its role now. */
@@ -965,7 +960,6 @@ export interface OrchestrationShape {
    */
   readonly compactIdleBeforeStop: Effect.Effect<{ readonly compacting: number }>;
 
-  // -- Dreams' seam (`dreams.ts`) -----------------------------------------------------------
   /**
    * Puts one line in the workspace's next digest and schedules it, whatever the ledger diff says;
    * how an adopted dream tells the orchestrator to re-read its memory. Kept with the other
@@ -975,7 +969,6 @@ export interface OrchestrationShape {
     workspaceId: WorkspaceId,
     note: string,
     reason?: string,
-    /** Adds it once: a later call with the same key (the same routine run, after a restart) does nothing. */
     key?: string,
   ): Effect.Effect<void>;
   /**
@@ -1002,7 +995,6 @@ export interface OrchestrationShape {
     workspaceId: WorkspaceId,
     effect: Effect.Effect<A, E, R>,
   ): Effect.Effect<A, E | NotFound, R>;
-  // -- end of Dreams' seam ------------------------------------------------------------------
 }
 
 export type WorkspaceStage = NonNullable<WorkspaceState["stages"]>[string];

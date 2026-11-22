@@ -18,7 +18,6 @@ type ModelsApi = Pick<
   | "removeSpeechModel"
 >;
 
-/** The status in `answer`, or the tagged error it names, made again as the RPCs threw it. */
 const statusOf = (answer: SpeechModelAnswer): SpeechStatus => {
   if (answer.ok) return answer.status;
   const { _tag, ...fields } = answer.error;
@@ -56,7 +55,6 @@ export const speechModelsBridge = (models: () => SpeechModels | undefined): Mode
       [Symbol.asyncIterator]: async function* () {
         const store = models();
         if (store === undefined) throw unavailable(model);
-        // Only the latest status matters: each answer is the whole status.
         let latest: SpeechModelAnswer | undefined;
         let wake: (() => void) | undefined;
         const unwatch = store.watch(model, (answer) => {

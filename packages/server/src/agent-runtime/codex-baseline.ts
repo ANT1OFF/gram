@@ -1,13 +1,6 @@
 import { CODEX_CLI_VERSION } from "@gram/agents/codex";
 import { codexNpmCoordinates, type RuntimeArtifact } from "./gate.ts";
 
-/**
- * Codex's npm platform packages for the version Gram's Codex bindings were generated from,
- * as EXAMPLE's registry served them. They ship inside the signed app, and are the one version the
- * managed runtime may install. Each holds,
- * under `package/vendor/<target>/`, the same files as that release's complete GitHub package: the
- * code-mode host, ripgrep and the resources Codex looks for beside itself.
- */
 const release = (
   target: string,
   integrity: string,

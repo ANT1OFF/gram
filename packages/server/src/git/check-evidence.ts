@@ -1,8 +1,3 @@
-// A verify run's evidence: the folder Gram gives each driver's run, empty, beside the run's log and
-// outside any checkout, for the screenshots, videos and snapshots it wants a reader to see. Nothing
-// in it goes in git, and nothing in it is Gram's word that the run passed: it only shows what the
-// driver chose to keep. It lives and goes with its log.
-
 import {
   lstatSync,
   mkdirSync,
@@ -24,9 +19,7 @@ import {
   type VerifyEvidenceKind,
 } from "@gram/contracts";
 
-/** The most of a manifest read. */
 const MANIFEST_MAX_BYTES = 64 * 1024;
-/** The most of a caption kept. */
 const CAPTION_MAX = 200;
 
 /** The evidence folder of the run whose output is `log`. */
@@ -43,7 +36,6 @@ export const freshEvidenceDir = (log: string): string | undefined => {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     return dir;
   } catch {
-    // The run goes ahead without one: the driver sees no folder and keeps nothing.
     return undefined;
   }
 };
@@ -64,7 +56,6 @@ const names = (dir: string): readonly string[] => {
   }
 };
 
-/** The bytes a folder's files hold, links not followed. */
 const bytesUnder = (path: string, depth = 0): number => {
   const stat = lstat(path);
   if (stat === undefined) return 0;
@@ -85,9 +76,7 @@ export const removeEvidence = (log: string): number => {
   const bytes = bytesUnder(dir);
   try {
     rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // Gone already, or the next sweep tries again.
-  }
+  } catch (_goneAlreadyOrTheNextSweepTriesAgain) {}
   return bytes;
 };
 
@@ -104,7 +93,6 @@ const MEDIA: Record<string, { kind: VerifyEvidenceKind; mediaType?: string }> = 
 
 const mediaOf = (file: string) => MEDIA[nodePath.extname(file).toLowerCase()];
 
-/** A plain name in the folder: no separators, no climbing out, not the manifest. */
 const plainName = (file: string) =>
   file !== "" &&
   file.length <= 255 &&
@@ -112,7 +100,6 @@ const plainName = (file: string) =>
   !file.startsWith(".") &&
   !/[/\\\0]/.test(file);
 
-/** `file` in `dir` as a regular file, links never followed. */
 const regularFile = (dir: string, file: string): Stats | undefined => {
   if (!plainName(file)) return undefined;
   const stat = lstat(nodePath.join(dir, file));
@@ -135,7 +122,6 @@ const readBounded = (path: string, max: number): Buffer | undefined => {
 
 const KINDS: ReadonlySet<string> = new Set(["screenshot", "video", "snapshot", "log"]);
 
-/** The manifest's items, `undefined` when there is none or it can't be read as one. */
 const manifestItems = (dir: string) => {
   if (lstat(nodePath.join(dir, VERIFY_EVIDENCE_MANIFEST))?.isFile() !== true) return undefined;
   const bytes = readBounded(nodePath.join(dir, VERIFY_EVIDENCE_MANIFEST), MANIFEST_MAX_BYTES);

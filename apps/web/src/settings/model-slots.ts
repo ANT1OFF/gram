@@ -22,9 +22,6 @@ import {
 import { useModelsQuery } from "@/composer/models";
 import { useServerSettings } from "@/settings-sync/store";
 
-// Model slots in the app: a pinned slot is the model the user saved, one that follows a tier is
-// resolved here against what this machine's harnesses list, as the server resolves it at use.
-
 /**
  * What this machine's harnesses list on their own logins, for slots that follow a tier. Lists
  * only while `enabled`, so a pinned choice never probes a harness it doesn't name.
@@ -37,7 +34,6 @@ export function useAvailableModels(
   return {
     claude: claude.isError ? undefined : claude.data?.models,
     codex: codex.isError ? undefined : codex.data?.models,
-    // Both have answered, listing or failing: only then can a tier be called unfilled.
     settled: !claude.isPending && !codex.isPending,
   };
 }
@@ -84,7 +80,6 @@ export function useRosterHere(
   const available = useAvailableModels(models.some((model) => isTierRef(model)));
   return models.map((model) => {
     const here = rosterModelHere(model, available);
-    // Until both harnesses answer, a tier isn't called unfilled; its first choice shows meanwhile.
     return isTierRef(model) && !available.settled ? { entry: here.entry } : here;
   });
 }

@@ -1,4 +1,3 @@
-// Shared fixtures for the Dream service tests, which are split across files so they run side by side.
 import type { AgentHost } from "@gram/agents";
 import {
   InvalidState,
@@ -41,7 +40,6 @@ import {
   type World,
 } from "./test-harness.ts";
 
-// Built at run time so no scanner mistakes the fixture for a leaked credential.
 export const githubToken = `ghp_${"e5F6".repeat(9)}`;
 
 /** The agents' own history as a test tells it: what each kind lists per folder, and what reads back. */
@@ -85,7 +83,6 @@ const lister =
         })),
     );
 
-/** Fake hosts with explicitly invented history. */
 const historyHosts = (history: History, modelGate?: () => Effect.Effect<boolean>) =>
   Layer.effect(
     AgentHosts,
@@ -105,7 +102,6 @@ const historyHosts = (history: History, modelGate?: () => Effect.Effect<boolean>
                     ),
                   ),
                 listSessions: lister(sessions),
-                // Scoped to the folder asked for, as each adapter's is.
                 readSession: ({ cwd, agentSessionId }) =>
                   sessions.some(
                     (session) =>
@@ -239,7 +235,6 @@ export const waitDream = (dreamId: DreamId, status: Dream["status"]) =>
   });
 
 export const writeOutput = (dream: Dream, files: Readonly<Record<string, string>>) => {
-  // Successful synthetic candidates carry an actual report; refusal tests write directly.
   files = {
     "REPORT.md": "# Review\n\nReviewed the synthetic input; changes are listed in the candidate.\n",
     ...files,
@@ -287,8 +282,6 @@ export const waitMerged = (dreamId: DreamId, path: string) =>
     const store = yield* ThreadStore;
     const hub = yield* EventHub;
     const { workspaceId } = yield* store.getDream(dreamId);
-    // The hub subscribes before replay: check once, then only on actual Dream changes. Repeated
-    // review polling revalidates and reads the whole confined tree while the merge tries to finish.
     return yield* hub.serverEvents(Effect.succeed({ type: "dreams.changed", workspaceId })).pipe(
       Stream.filter(
         (event) => event.type === "dreams.changed" && event.workspaceId === workspaceId,

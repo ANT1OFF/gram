@@ -124,7 +124,6 @@ export function ReviewNoticeCard({ notice, text }: { notice: ReviewNotice; text:
   );
 }
 
-/** The text the agent read, behind a disclosure. */
 function NoticeText({ text }: { text: string }) {
   return (
     <Collapsible>

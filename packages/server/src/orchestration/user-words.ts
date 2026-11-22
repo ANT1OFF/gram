@@ -1,15 +1,3 @@
-/**
- * The user's own messages, attached word for word to what an orchestrator sends a worker
- * (`userMessages` on `spawn_worker` and `send_message`). A brief is the orchestrator's prompt, which
- * is usually better than the user's for a worker; what it shouldn't do is retype a long paste (a
- * log, a spec, an error) the worker needs exactly. Gram copies those from the orchestrator's own
- * transcript instead, after the text, under a line saying whose they are.
- *
- * Only an orchestrator's transcript is read, and in it only messages the server recorded as the
- * user's own (`author: "user"`, set where the user types into Gram). A user-role message is not
- * enough: Gram's notices, digests and other threads' messages are user-role too, and a row from
- * before Gram recorded authors is never taken as the user's.
- */
 import {
   AppToolError,
   type GramUIMessage,
@@ -34,7 +22,6 @@ export interface UserWords {
   readonly files: ReadonlyArray<string>;
 }
 
-/** The parts a message the user typed may carry besides its text and files. */
 const TYPED_DATA_PARTS: ReadonlySet<string> = new Set(["data-wait-note"]);
 
 /** The user's own messages in an orchestrator's transcript, oldest first. */
@@ -87,10 +74,8 @@ export const withUserWords = (text: string, words: ReadonlyArray<UserWords>): st
   ].join("\n");
 };
 
-/** Characters of a worker's question shown beside the user's answer to it. */
 const ASKED_MAX = 400;
 
-/** A worker's words on one line in quotes, so they can't pass for a line of Gram's or the user's. */
 const oneLine = (text: string, max: number): string => {
   const flat = text
     .replaceAll(/\s+/g, " ")
@@ -165,8 +150,6 @@ export const attachUserWords = (
           "`userMessages` attaches the user's messages from an orchestrator's conversation; this thread isn't one. Quote what the recipient needs in `text`.",
       });
     }
-    // The newest of the user's own, read back only as far as they go: most of an orchestrator's
-    // user-role messages are Gram's digests.
     const words = userMessagesOf(
       yield* findUserMessages(store, caller, {
         from: "newest",

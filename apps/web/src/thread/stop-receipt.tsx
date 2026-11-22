@@ -20,7 +20,6 @@ export const stopLabel = (
 ): string =>
   `${receipt.byYou ? "Stopped by you" : "Stopped"} · ${formatStamp(receipt.at, now, intl)}`;
 
-/** What Continue sends: the agent picks up where it stopped. */
 const CONTINUE = "Continue";
 
 /** The thread's stop receipt while nothing has followed the stop and no turn runs, else undefined. */

@@ -71,7 +71,6 @@ import { useWorkspacesQuery } from "./use-orchestration";
 import { parentFolder } from "./workspace-repos";
 import { sleep } from "@/lib/sleep";
 
-/** How often a sheet waiting for the person's machine asks whether it is up. */
 const MACHINE_POLL_MS = 1000;
 
 /** Where a key press belongs to an open menu, list or dialog rather than to the sheet. */
@@ -99,7 +98,6 @@ export function NewWorkspaceSheet({
 }) {
   const api = useApi();
   const queryClient = useQueryClient();
-  // The embedding app's word for a workspace ("Project"), so the sheet is named as its list is.
   const kind = useThreadsWorkspaceNoun();
   const settings = useServerSettings((s) => s.settings);
   const { data: projects = [], isSuccess: projectsLoaded } = useQuery({
@@ -107,8 +105,6 @@ export function NewWorkspaceSheet({
     queryFn: () => api.listProjects(),
   });
   const { workspaces, settled, error: loadError } = useWorkspacesQuery();
-  // A failed list reads as none, which would drop `from` and name the workspace over one that
-  // exists; nothing is decided from it until it loads.
   const claudeDiscovery = useModelsSettled("claude");
   const codexDiscovery = useModelsSettled("codex");
   const modelsSettled = claudeDiscovery.settled && codexDiscovery.settled;
@@ -128,10 +124,7 @@ export function NewWorkspaceSheet({
     () => subscriptionWorkspaceCharter(settings, claudeModels, codexModels),
     [settings, claudeModels, codexModels],
   );
-  // What New task carried here, as the first task: it stays carried, so Esc back to New task
-  // finds it there too.
   const [carried] = useState(() => carriedDraft()?.text);
-  // Once shown, the form stays: a later refetch can't take it away mid-edit.
   const [shown, setShown] = useState(false);
   if (loaded && !shown) setShown(true);
 
@@ -184,10 +177,6 @@ export function NewWorkspaceSheet({
   );
 }
 
-/**
- * The draft the sheet opens with: the picked repo, the task New task carried, and the charter of
- * the workspace it starts from.
- */
 const seedDraft = (
   from: WorkspaceId | undefined,
   repo: ProjectId | undefined,
@@ -223,8 +212,6 @@ function SheetForm({
   const queryClient = useQueryClient();
   const save = useSaveSettings();
 
-  // Kept in a ref as well, written by every change, so a Start that first waits for a typed
-  // repository to be added goes on with the draft that has it.
   const [draft, setDraftState] = useState(initial);
   const draftRef = useRef(initial);
   const setDraft = (update: (current: NewWorkspaceDraft) => NewWorkspaceDraft) => {
@@ -233,7 +220,6 @@ function SheetForm({
     setDraftState(next);
   };
   const charter = charterOf(draft, starting);
-  // Repositories added here, named before the projects list has them.
   const addedRef = useRef<readonly Project[]>([]);
   const [added, setAdded] = useState<readonly Project[]>([]);
   const known = useMemo(
@@ -241,7 +227,6 @@ function SheetForm({
     [projects, added],
   );
   const [issue, setIssue] = useState<string>();
-  // A typed name that is taken: said under the field, not with the sheet's other errors.
   const [nameIssue, setNameIssue] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [created, setCreated] = useState<{
@@ -249,11 +234,6 @@ function SheetForm({
     text: string | undefined;
   }>();
   const [pending, setPending] = useState(false);
-  // Where the deployment starts machines on demand, the person's own runs the orchestrator: with
-  // none online the card to start it shows here, and a workspace started meanwhile opens once it
-  // is up, rather than failing for want of one.
-  // One with an environment of its own runs on a machine of its own instead, which opening its
-  // orchestrator starts and waits for.
   const onDemand = useOnDemandMachine();
   const environments = useEnvironments();
   const ownMachine = environments?.data !== undefined && draft.environment !== undefined;
@@ -262,7 +242,6 @@ function SheetForm({
   const noun = useMachineNoun();
   const kind = useThreadsWorkspaceNoun();
   const reachesTheirs = useMachineReachesTheirs();
-  // Stops a wait for the machine when the sheet goes.
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -270,12 +249,6 @@ function SheetForm({
       alive.current = false;
     };
   }, []);
-  /**
-   * Opens `state` once the person's machine is online, starting it with their defaults where it
-   * reaches all their repositories and none is on its way: Start is then the one click. Where
-   * repositories are picked for it, the card above starts it. A start that fails says so on the
-   * card, with Try again, and Start stops waiting on it.
-   */
   const openOnceUp = async (state: WorkspaceState, text: string | undefined) => {
     setWaiting(true);
     try {
@@ -298,19 +271,13 @@ function SheetForm({
     setWaiting(false);
     await open(state, text);
   };
-  // With nothing picked yet, adding a repository is the first thing to do.
   const [adding, setAdding] = useState(initial.projectIds.length === 0);
   const repositoryRef = useRef<AddRepositoryHandle>(null);
-  // Discover goes once per workspace made here, however many times opening it is retried.
   const discovered = useRef(false);
-  // Whether Start has the orchestrator read the repositories first: the person's choice, never
-  // implied by typing a task (a survey runs a worker and costs model use the task may not want).
-  // Opened from the first-run card, whose line promises the survey, it starts ticked.
   const [reads, setSurvey] = useState(read);
   const taskId = useId();
   const nameId = useId();
   const nameRef = useRef<HTMLInputElement>(null);
-  // With a repo picked, focus goes to the task: what is next.
   const focusTask = useCallback(
     (element: HTMLTextAreaElement | null) => {
       if (element !== null && !adding) focusIfConnected(element);
@@ -323,7 +290,6 @@ function SheetForm({
     else void navigate({ to: "/" });
   };
 
-  /** Opens the new workspace's orchestrator, handing it the first message when there is one. */
   const open = async (state: WorkspaceState, text: string | undefined) => {
     setBusy(true);
     setIssue(undefined);
@@ -351,12 +317,10 @@ function SheetForm({
     }
   };
 
-  /** Makes the workspace from the sheet, once: its state and first message, or nothing on a refusal. */
   const create = async (): Promise<
     { state: WorkspaceState; text: string | undefined } | undefined
   > => {
     if (created !== undefined) return created;
-    // A repository typed but not added yet is added first, as Enter would.
     const typed = repositoryRef.current?.submit();
     if (typed !== undefined) {
       if (!(await typed)) return undefined;
@@ -389,8 +353,6 @@ function SheetForm({
     const made = { state, text: firstMessageOf(current) };
     setCreated(made);
     await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
-    // The first run is done once there is a workspace, not when the sheet opens: leaving it by
-    // Esc keeps the first-run screen for next time.
     if (!welcomeSeen) {
       useWelcome.setState({ open: false });
       save({ onboarding: { welcomeSeen: true } }).catch((e: unknown) =>
@@ -411,7 +373,6 @@ function SheetForm({
     await open(made.state, made.text);
   };
 
-  /** Saves the workspace and runs nothing: no machine, no orchestrator, no model call. */
   const saveOnly = async () => {
     if (busy || waiting) return;
     const made = await create();
@@ -431,7 +392,6 @@ function SheetForm({
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.defaultPrevented || event.nativeEvent.isComposing || inPopup(event.target)) return;
     if (event.key !== "Escape") return;
-    // Esc never throws away what was typed: in a field with text it only leaves the field.
     const target = event.target;
     if (
       (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) &&
@@ -523,7 +483,6 @@ function SheetForm({
               id={taskId}
               data-testid="new-workspace-task"
               rows={5}
-              // As wide as the rows above it: a settings field's own width stopped it short of them.
               className="min-h-28"
               value={draft.task}
               placeholder="Optional"
@@ -655,14 +614,11 @@ function ReposField({
   onPendingChange: (pending: boolean) => void;
   repositoryRef: React.RefObject<AddRepositoryHandle | null>;
 }) {
-  // Either a box being ticked or the field below can be adding a repository.
   const [ticking, setTicking] = useState(false);
   const [typing, setTyping] = useState(false);
   useEffect(() => onPendingChange(ticking || typing), [ticking, typing, onPendingChange]);
   const anyRoot = projects.find((project) => project.id === draft.homeProjectId)?.root;
   return (
-    // `min-w-0`: a fieldset is as wide as its widest content by default, so one long row would
-    // push the field past the sheet.
     <fieldset className="flex min-w-0 flex-col gap-2">
       <legend className="mb-2 font-medium">Repositories</legend>
       <div className="flex flex-wrap items-center gap-1.5" data-testid="new-workspace-repos">
@@ -697,7 +653,6 @@ function ReposField({
           Add
         </Button>
       </div>
-      {/* Kept mounted while closed, so closing it can't abort a clone under way. */}
       <Expand open={adding}>
         <div className="flex flex-col gap-2 pt-1" hidden={!adding}>
           <RepositoryChecklist
@@ -711,7 +666,6 @@ function ReposField({
             }
             onPendingChange={setTicking}
             empty={null}
-            // The chips above are the picks; the list offers the rest.
             hidePicked
           />
           <AddRepository

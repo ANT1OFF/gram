@@ -1,12 +1,3 @@
-// What the Preview tab's pages may load (`modules/preview/main.ts` applies it). A thread's page lives
-// in one of two sessions. The local one holds loopback pages, and agents' pages: it loads loopback
-// and nothing else (`previewRequest`), and the agent browser's own rules decide for an agent's page
-// off it. The web one holds the pages the user opens anywhere else, and no agent ever drives or
-// reads it: any http(s) page loads there, but never a loopback address, and a page never reaches a
-// network more private than its own (`webRequest`), so a site can't use the pane to reach Gram's own
-// server, a dev server or the office network. A page it loads is untrusted, so every request it
-// makes is checked, its subresources and redirects too.
-
 import {
   LOOPBACK_HOSTS,
   isPinnedPageUrl,
@@ -18,20 +9,13 @@ import {
 import { isThreadIdArg } from "./rules.ts";
 
 /** What happens to a page the preview is asked to navigate to. */
-export type PreviewNavigation =
-  /** A page on this computer's loopback (`localhost`, `127.0.0.1`, `[::1]`), loaded as written. */
-  | "load"
-  /** A web page elsewhere: it opens in the thread's web session (`webNavigation`). */
-  | "web"
-  /** Anything else (`file:`, `javascript:`, `data:`, `chrome:`, `devtools:`): nothing opens. */
-  | "refuse";
+export type PreviewNavigation = "load" | "web" | "refuse";
 
 /** What happens to one request the preview's page makes, a navigation or a subresource. */
 export type PreviewRequest = "allow" | "block";
 
 const WEB = new Set(["http:", "https:"]);
 const SOCKETS = new Set(["ws:", "wss:"]);
-/** Schemes that never reach the network: the page's own data and blobs. */
 const LOCAL = new Set(["data:", "blob:"]);
 const DEFAULT_PORT: Readonly<Record<string, number>> = {
   "http:": 80,
@@ -64,11 +48,8 @@ export function previewNavigation(url: string): PreviewNavigation {
   if (parsed === undefined) return "refuse";
   if (parsed.href === "about:blank") return "load";
   if (!WEB.has(parsed.protocol)) return "refuse";
-  // A pinned page runs only in its own session (`modules/pages`), never where agents' pages do.
   if (isPinnedPageUrl(url)) return "refuse";
   if (loopbackPortOf(url) !== undefined) return "load";
-  // A user name before the host, on loopback or not, is how a look-alike hides: the web session
-  // refuses it, and the address strip never takes one.
   if (parsed.username !== "" || parsed.password !== "") return "refuse";
   return "web";
 }
@@ -143,9 +124,6 @@ export function createHostDoors(now: () => number = Date.now): HostDoors {
   };
 }
 
-// ---------------------------------------------------------------------------------------------
-// The web session
-
 /**
  * How private the network an address is on: this computer, a private network (the office, home,
  * a VPN), or the internet. A request may reach its own page's zone or a more public one only.
@@ -168,7 +146,6 @@ export const withinZone = (target: NetworkZone, bound: NetworkZone): boolean =>
 
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
-/** An IPv4 address's zone; `0.0.0.0` reaches this computer on macOS and Linux. */
 const ipv4Zone = (address: string): NetworkZone | undefined => {
   const match = IPV4.exec(address);
   if (match === null) return undefined;
@@ -177,7 +154,6 @@ const ipv4Zone = (address: string): NetworkZone | undefined => {
   return isPrivateAddress(address) ? "private" : "public";
 };
 
-/** An IPv6 address's zone, unbracketed, as DNS or the URL parser spells it. */
 const ipv6Zone = (raw: string): NetworkZone => {
   const address = raw.toLowerCase();
   if (address === "::1" || address === "::") return "loopback";
@@ -185,7 +161,6 @@ const ipv6Zone = (raw: string): NetworkZone => {
   if (mapped !== undefined) {
     const dotted = ipv4Zone(mapped);
     if (dotted !== undefined) return dotted;
-    // The parser writes a mapped address in hex (`::ffff:7f00:1`).
     const hex = /^([\da-f]{1,4}):([\da-f]{1,4})$/.exec(mapped);
     if (hex === null) return "private";
     const high = Number.parseInt(hex[1]!, 16);
@@ -200,8 +175,6 @@ export function addressZone(address: string): NetworkZone {
   const v4 = ipv4Zone(address);
   if (v4 !== undefined) return v4;
   if (!address.includes(":")) return "private";
-  // Compressed as the URL parser writes it (`0:0:0:0:0:0:0:1` is `::1`); one it can't read, such
-  // as a link-local address with its zone (`fe80::1%en0`), counts as private.
   let compressed: string;
   try {
     compressed = new URL(`http://[${address}]/`).hostname.slice(1, -1);
@@ -227,7 +200,6 @@ export function hostZone(rawHost: string): NetworkZone {
   return refusedHost(host) === "private" ? "private" : "public";
 }
 
-/** Whether a host is an address already, which needs no lookup. */
 const isAddress = (host: string) => IPV4.test(host) || host.startsWith("[");
 
 /**
@@ -247,7 +219,6 @@ export function zoneOf(urlOrOrigin: string | undefined): NetworkZone {
 export type WebRequestVerdict =
   | { readonly kind: "allow" }
   | { readonly kind: "block" }
-  /** Allowed if every address `host` resolves to is within `bound`. */
   | {
       readonly kind: "resolve";
       readonly host: string;
@@ -325,9 +296,6 @@ export function webRequest(request: WebRequestDetails): WebRequestVerdict {
   const host = parsed.hostname;
   const target = hostZone(host);
   if (target === "loopback") return { kind: "block" };
-  // The shared session never reaches a private network, whoever asks. A private network page's
-  // own session runs nothing but private pages: no public page or frame, which it hands to the
-  // shared session or doesn't load, so whatever runs there already has the private network's reach.
   if ((request.network ?? "public") === "public") {
     if (target !== "public") return { kind: "block" };
   } else if (target === "public" && (request.mainFrame || request.subFrame === true)) {
@@ -336,11 +304,8 @@ export function webRequest(request: WebRequestDetails): WebRequestVerdict {
     target === "private" &&
     (request.destination === undefined || destinationOf(request.url) !== request.destination)
   ) {
-    // The only private place it reaches is the one the user opened; another needs its own.
     return { kind: "block" };
   }
-  // Where it came from: the page or frame that started it, and a redirect's previous hop. A main
-  // frame from neither is the user's own load; a subresource from neither counts as public.
   const sources = (
     request.mainFrame ? [request.initiator, request.before] : [request.initiator ?? request.page]
   ).filter((source) => source !== undefined);
@@ -422,12 +387,7 @@ export function proxyTargets(
 }
 
 /** Where a navigation of a page in the web session goes. */
-export type WebNavigation =
-  /** Any http(s) page off loopback, its requests still held to `webRequest`. */
-  | "load"
-  /** A loopback page, which the web session never loads: it goes to the link question. */
-  | "local"
-  | "refuse";
+export type WebNavigation = "load" | "local" | "refuse";
 
 /** Where a main-frame navigation of a page in the web session goes: a click, `location =`. */
 export function webNavigation(url: string): WebNavigation {
@@ -465,7 +425,6 @@ export function previewThreadOf(input: unknown): string | undefined {
   return isThreadIdArg(threadId) ? threadId : undefined;
 }
 
-/** No preview is drawn bigger than this on a side; anything past it is a malformed message. */
 const MAX_SIDE = 32_768;
 
 /**

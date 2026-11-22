@@ -1,15 +1,3 @@
-// Where an install's Electron updater reads releases: `ANT1OFF/gram`'s public releases, read
-// anonymously through one custom electron-updater provider that picks the release with
-// `pickNativeRelease`, so Stable and Pre-release follow Gram's own rules. (Electron's standard
-// GitHub provider follows only one channel's tags: on Pre-release it never offered a newer stable
-// release, and with no RC published it failed.) electron-updater downloads the payload (the signed
-// ZIP on macOS, the AppImage on Linux) from GitHub's release download URL and checks its SHA-512.
-// A .deb install reads the same feed for its target and never downloads: it is told where the
-// release is.
-//
-// The `gh` feed reads the same list through the user's own `gh` login, which also sees drafts. The
-// release tool's update check (`tools/release-stable/update-check.mjs`) uses it on a draft before
-// publication; the app never does.
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 
@@ -25,9 +13,6 @@ import {
   type RunGh,
 } from "@gram/shell/modules/update";
 import type { AppUpdater, ResolvedUpdateFileInfo, UpdateInfo } from "electron-updater";
-// The provider's own module, not the package's main: under Bun (the release tool's update check),
-// a value import from the main builds its `autoUpdater`, which loads the `electron` package, and
-// that downloads Electron's binary when it isn't there yet, as after any fresh install.
 import {
   parseUpdateInfo,
   Provider,
@@ -46,12 +31,6 @@ export interface ReleaseFeed {
   pickedSha512(): string | undefined;
 }
 
-/**
- * The update info for the release `pickNativeRelease` finds in `list` for `target`, with its
- * manifest read by `readManifest` and checked against the release's payload; the running version
- * when nothing newer is complete, which electron-updater then reports as current. A .deb reads no
- * manifest (it names the AppImage): its info carries only the version, since nothing downloads.
- */
 async function pickUpdate(
   list: unknown,
   channel: UpdateChannel,
@@ -163,7 +142,6 @@ export function createGhFeed(options: {
   };
 }
 
-/** The SHA-256 of `file`, hex, streamed. */
 function sha256File(file: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash("sha256");
@@ -242,7 +220,6 @@ export type AnonymousFetch = (
   },
 ) => Promise<{ readonly status: number; readonly body: string }>;
 
-/** The biggest release list the public feed reads: 30 releases with their notes and assets. */
 const RELEASE_LIST_MAX_BYTES = 8 * 1024 ** 2;
 
 /**

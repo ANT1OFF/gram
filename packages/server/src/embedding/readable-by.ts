@@ -1,31 +1,3 @@
-// Threads readable by one person only (`Thread.readableBy`), for an embedding host.
-//
-// A host that starts a thread from a profile may name the one subject who may see it
-// (`ProfileStartRequest.readableBy`, a subject as fronted sign-in names people). The thread keeps
-// it for good: no write changes or clears it (`ThreadStore`), and every thread it spawns, forks or
-// makes from one of its agent's tool calls gets the same (`ThreadRuntimes.create`). A thread linked
-// to another (a worker under an orchestrator, a join, an adoption) must have the same, so an
-// orchestration is all one person's or none of it is.
-//
-// Who reads is the fiber's reader (`currentReader`): every RPC as its signed-in person, or as no
-// one without fronted sign-in (`rpc/actor-guard.ts`); every agent tool call as its own thread's
-// `readableBy`, or no one for a thread without it (`app-tools/registry.ts`); the server's own work
-// as the server, which reads everything. A fiber that says nothing is no one, as with machines
-// (`host/ownership.ts`). One rule, `mayRead`, decides; a reader with no subject never reads such a
-// thread, so the rule fails closed.
-//
-// Whose a thread is gets asked on paths with no store at hand (an event on its way to a window), so
-// the store notes each thread's `readableBy` wherever it reads or writes one, and once when it
-// opens (`notePrivacy`). The value never changes, so the note never goes stale.
-//
-// Readers. Beside its person, such a thread may have readers (`Thread.readers`), set by the
-// embedding host (`THREAD_READERS_PATH`): people who see it as its person does but never act on
-// it. So there are two levels. Reading (`readerMay` given a `Privacy`, `level: "read"`) admits its
-// person and its readers; acting (`readerMay` given the bare subject, `level: "act"`, the default
-// everywhere) admits its person alone. A reader's agent is never a reader: what it reads would
-// end up in a thread of its own that others may read. Unlike `readableBy`, readers change, so the
-// store notes them on every write and on the host's change (`noteReaders`), never from a read.
-
 import { isAbsolute, resolve } from "node:path";
 import { diskPath, isInside, physicalPath } from "@gram/git";
 import type { Thread, ThreadId } from "@gram/contracts";
@@ -92,37 +64,19 @@ export const SUBJECT = /^[\x21-\x7e]{1,128}$/;
 
 const known = new Map<ThreadId, string>();
 
-/** Each thread's readers beside its person, as last written (`noteReaders`). */
 const readersKnown = new Map<ThreadId, ReadonlySet<string>>();
 
-/** Each workspace's readers, as its threads' last written: they are all one person's. */
 const workspaceReaderSets = new Map<string, ReadonlySet<string>>();
 
 const NO_READERS: ReadonlySet<string> = new Set();
 
-/**
- * The reader of each workspace a thread readable by one person belongs to, noted with the thread:
- * what the workspace holds (its finished workers, memory, docs, outputs) stays that person's after
- * its orchestrator has gone. A workspace links only threads of one reader, so a workspace has one.
- */
 const workspaceReaders = new Map<string, string>();
 
-/**
- * Every folder a thread readable by one person has worked in, as noted: its checkout, the one it
- * follows now, and its other worktrees. Only ever added to, so a folder it moved out of stays its
- * (`touchesUnreadable` fails closed).
- */
 const foldersOf = new Map<ThreadId, Set<string>>();
 
-/**
- * The machines (`undefined` for this one) and the repositories (their top folders) a thread
- * readable by one person has worked in, as noted: what a shell there, or another checkout of the
- * same repository, could read of it beside the API (`sharesWithUnreadable`).
- */
 const machinesOf = new Map<ThreadId, Set<string | undefined>>();
 const reposOf = new Map<ThreadId, Set<string>>();
 
-/** A checkout as the store keeps it. */
 interface CheckoutAt {
   readonly path: string;
   readonly hostId?: string | undefined;
@@ -136,10 +90,6 @@ export interface ThreadFolders {
   readonly extraCheckouts?: ReadonlyArray<CheckoutAt> | undefined;
 }
 
-/**
- * Told each time a thread readable by one person is first noted on a machine (`undefined`: this
- * one), with its reader: what was open there for someone else must close (`rpc/handlers/terminal.ts`).
- */
 const placedListeners = new Set<(reader: string, machine: string | undefined) => void>();
 
 /** Listens for a private thread first noted on a machine; the answer stops listening. */
@@ -284,7 +234,6 @@ export const privacyOfThread = (
     ? undefined
     : { readableBy: thread.readableBy, readers: new Set(thread.readers ?? []) });
 
-/** A thread's `Readable` at `level`: its privacy to read, its person alone to act. */
 const at = (threadId: ThreadId, level: Level): Readable =>
   level === "read" ? privacyOf(threadId) : known.get(threadId);
 
@@ -366,7 +315,6 @@ export const readableOnly = <A>(
     }),
   );
 
-/** A workspace as the reader rule asks about it: its id and orchestrator, where it has one. */
 interface WorkspaceKey {
   readonly id: string;
   readonly orchestratorThreadId?: string | undefined;
@@ -413,7 +361,6 @@ export const spawnThread: Effect.Effect<ThreadId | undefined> = Effect.map(Readi
     : undefined,
 );
 
-/** A key that names a thread of this server's, never another service's (a review's on GitHub). */
 const THREAD_KEY = /^(threadId|[a-z]+ThreadId)$/;
 const NOT_THREAD_KEYS: ReadonlySet<string> = new Set(["reviewThreadId"]);
 
@@ -505,12 +452,6 @@ export const sameReaders = (
   b: Pick<Thread, "id" | "readableBy">,
 ): boolean => (a.readableBy ?? readableByOf(a.id)) === (b.readableBy ?? readableByOf(b.id));
 
-// Folders. A thread readable by one person has its files in a folder (a profile's AGENTS.md and
-// instructions, its work), which a call taking a path of the caller's choosing could reach. A call
-// naming a path inside such a folder, by any spelling (`..`, a link that leads there), is refused
-// to anyone the thread is unreadable by (`rpc/actor-guard.ts`), and a listing of a folder above it
-// leaves the folder out (`withoutUnreadable`).
-
 /**
  * `path` with every link resolved, as far as it exists; the rest as written (`physicalPath`). With
  * `onDisk`, for a call that reads this server's own disk at the path (`rpc/server-disk.ts`), by
@@ -519,10 +460,8 @@ export const sameReaders = (
 export const realOf = (path: string, onDisk = false): string =>
   onDisk ? diskPath(path) : physicalPath(path);
 
-/** Whether `path` is `folder` or inside it, by whole components. */
 const within = (path: string, folder: string): boolean => isInside(folder, path);
 
-/** The folders, as written and with links resolved, of the threads `reader` may not see. */
 const unreadableFolders = (
   reader: Reader | undefined,
   level: Level,
@@ -557,7 +496,6 @@ export const touchesUnreadable = (
   });
 };
 
-/** A key that names a path of the caller's choosing, a folder or a file. */
 const PATH_KEY =
   /(path|paths|root|roots|cwd|dir|directory|directories|folder|worktree|file|files)$/i;
 

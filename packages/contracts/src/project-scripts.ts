@@ -1,8 +1,3 @@
-// Project scripts: a project's common commands (build, test, lint, dev), kept in
-// `.gram/scripts.json` beside `.gram/launch.json` and run by the user, never by an agent, in a
-// terminal tab named after the script. The parsers here are pure so the server, the mock and the
-// tests read the file, `package.json` and a Makefile the same way.
-
 import * as Schema from "effect/Schema";
 import { ProjectId } from "./ids.ts";
 
@@ -60,7 +55,6 @@ export const SaveProjectScriptsPayload = Schema.Struct({
 export type SaveProjectScriptsPayload = typeof SaveProjectScriptsPayload.Type;
 
 const NAME = /^[\w .:/-]{1,64}$/;
-/** Control and invisible formatting characters, which have no place in a one-line command. */
 const CONTROL = /[\p{Cc}\u061c\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u;
 const MODIFIERS = ["mod", "ctrl", "alt", "shift"] as const;
 const KEY = /^(?:[a-z0-9]|f(?:[1-9]|1[0-2]))$/;
@@ -211,7 +205,6 @@ export const packageManagerOf = (
   return LOCKFILES.find(([file]) => files.includes(file))?.[1] ?? "npm";
 };
 
-/** Lifecycle scripts a package manager runs on its own, which nobody runs by hand. */
 const LIFECYCLE = new Set([
   "install",
   "preinstall",
@@ -225,7 +218,6 @@ const LIFECYCLE = new Set([
   "postpublish",
   "dependencies",
 ]);
-/** The commands people run most, offered first. */
 const COMMON = ["dev", "start", "build", "test", "lint", "typecheck", "check", "format"];
 const SCRIPT_KEY = /^[\w:.@/-]{1,64}$/;
 
@@ -257,7 +249,6 @@ export const packageJsonSuggestions = (
   const manager = packageManagerOf(pkg as { packageManager?: unknown }, files);
   const kept = names.filter((name) => {
     if (!SCRIPT_KEY.test(name) || LIFECYCLE.has(name)) return false;
-    // `pretest` and `posttest` run with `test`.
     const hooked = /^(pre|post)(.+)$/.exec(name)?.[2];
     return hooked === undefined || !names.includes(hooked);
   });
@@ -276,17 +267,13 @@ export const makefileTargets = (text: string): string[] => {
   const targets: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     if (line.startsWith("\t") || line.startsWith(" ") || line.startsWith("#")) continue;
-    // Split at the first colon by index, not with a regex: a line is the user's file, and a pattern
-    // that backtracks over its whitespace runs in polynomial time.
     const colon = line.indexOf(":");
     if (colon <= 0) continue;
     const head = line.slice(0, colon);
     if (head.includes("=") || head.includes("#")) continue;
-    // `a := b` and `a ::= b` are assignments; `a::` is a double-colon rule.
     let rest = line.slice(colon + 1);
     if (rest.startsWith(":")) rest = rest.slice(1);
     if (rest.startsWith(":") || rest.startsWith("=")) continue;
-    // `a: b = c` is a target-specific variable, not a rule worth running.
     if (/^\s*[\w.-]+\s*[?+:!]?=/.test(rest)) continue;
     for (const target of head.trim().split(/\s+/)) {
       if (!/^[A-Za-z0-9][\w.-]*$/.test(target) || target.length > 64) continue;

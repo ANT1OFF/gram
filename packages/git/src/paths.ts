@@ -1,11 +1,3 @@
-// Gram's one place for resolving, comparing and containing paths (lint: `gram/no-raw-path`).
-//
-// Resolution is always the native `realpath`, which returns the case the disk stores: the JS
-// `fs.realpathSync` walks links but keeps the case as typed, so two spellings of one folder on a
-// case-insensitive volume would stay two. Containment is by whole components, so `..build` is a
-// name inside the root and only `..` or `../x` leaves it. Both sides of a containment check must be
-// in one form: two real paths, two `physicalPath`s or two lexical paths, never one of each.
-
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as nodePath from "node:path";
@@ -57,28 +49,17 @@ export const relativeInside = (
 ): string | undefined => {
   const rel = platformPath.relative(root, path);
   if (rel === "") return rel;
-  // `relative` answers with an absolute path when there is no relative one (another drive).
   if (platformPath.isAbsolute(rel)) return undefined;
   return rel === ".." || rel.startsWith(`..${platformPath.sep}`) ? undefined : rel;
 };
 
-/**
- * Folders on another machine (a joined host's clones and worktrees), resolved lexically. Their
- * paths mean nothing on this filesystem, and asking it about them isn't free: on macOS `/home` is
- * an autofs mount, so each `realpath` under it is a round trip to `automountd` (~17 ms idle, far
- * more under load), and `physicalPath` makes one per missing parent. Synchronous, on the event
- * loop, that starved the host connections until they dropped.
- */
 const foreignRoots = new Set<string>();
 
-/** Folders kept this machine's (`keepPathsHere`), as given and as the disk names them. */
 const keptRoots = new Set<string>();
 
-/** A path as compared with a kept one: case folded where the volumes usually ignore case. */
 const folded = (path: string): string =>
   process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
 
-/** Kept folders that didn't exist when kept, whose real path is looked for again. */
 const keptPending = new Set<string>();
 
 /**
@@ -105,7 +86,6 @@ export const pathForms = (path: string): ReadonlyArray<string> => {
   return [...forms];
 };
 
-/** Keeps every spelling of `resolved` (`pathForms`); whether any was new. */
 const keepForms = (resolved: string): boolean => {
   let added = false;
   for (const form of pathForms(resolved)) {
@@ -116,7 +96,6 @@ const keepForms = (resolved: string): boolean => {
   return added;
 };
 
-/** Keeps the spellings of each kept folder that has come into existence since it was kept. */
 const settleKept = (): boolean => {
   let added = false;
   for (const resolved of keptPending) {
@@ -127,7 +106,6 @@ const settleKept = (): boolean => {
   return added;
 };
 
-/** Whether `path` is, holds or lies under a kept folder. */
 const crossesKept = (path: string): boolean => {
   if (settleKept()) dropCrossingMarks();
   const at = folded(path);
@@ -158,17 +136,13 @@ export const keepPathsHere = (paths: Iterable<string>): void => {
   let added = false;
   for (const path of paths) {
     const resolved = nodePath.resolve(path);
-    // Kept once with its spellings, which needn't be asked of the disk again.
     if (keptRoots.has(folded(resolved)) && !keptPending.has(resolved)) continue;
-    // One that isn't there yet is spelled again once it is (`settleKept`): a link made there
-    // later leads somewhere else.
     if (tryRealPathSync(resolved) === undefined) keptPending.add(resolved);
     if (keepForms(resolved)) added = true;
   }
   if (added) dropCrossingMarks();
 };
 
-/** Takes back every `noteForeignPath` mark that crosses a kept folder. */
 const dropCrossingMarks = (): void => {
   for (const root of foreignRoots) {
     const at = folded(root);
@@ -274,7 +248,6 @@ export const projectRoot = (path: string, platform: NodeJS.Platform = process.pl
   const platformPath = windows ? nodePath.win32 : nodePath.posix;
   const normalized = platformPath.normalize(path);
   const root = platformPath.parse(normalized).root;
-  // A loop, not `/[\\/]+$/`: that regex backtracks polynomially on a run of separators.
   const separators = windows ? "/\\" : "/";
   let end = normalized.length;
   while (end > root.length && separators.includes(normalized[end - 1]!)) end--;

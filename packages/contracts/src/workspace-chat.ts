@@ -1,8 +1,3 @@
-// Workspaces by chat (docs/design/settings-by-chat.md#workspaces): `workspace_list`,
-// `workspace_create` and `workspace_update`. Which repos a workspace reaches, its autonomy and its
-// worker mode are never settings changes; these tools change them only on a card of their own that
-// shows the whole workspace, which the user approves. Pure: the server reads, checks and writes.
-
 import * as Schema from "effect/Schema";
 import type { PermissionMode } from "./domain.ts";
 import { SettingsChange, SettingsDiffRow } from "./settings-chat.ts";

@@ -20,19 +20,12 @@ export type AvatarStatusProps =
     };
 
 interface AvatarBaseProps {
-  /** Whose mark it is: its initials come from it, and it is the mark's name when `labelled`. */
   name: string;
-  /** `round` for a person, `square` for an agent or anything else that isn't one. */
   shape?: "round" | "square";
-  /** Drawn in place of the initials. */
   glyph?: AvatarGlyph;
-  /** In place of the initials taken from `name`. */
   initials?: string;
-  /** Drawn faded: someone away from it, or something switched off. */
   dimmed?: boolean;
-  /** Named to a screen reader by `name` and `statusLabel`; otherwise hidden, as beside its name. */
   labelled?: boolean;
-  /** On the tile: a fill or text colour of your own goes here. */
   className?: string;
   style?: CSSProperties;
   testId?: string;

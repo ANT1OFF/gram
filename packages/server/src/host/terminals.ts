@@ -40,7 +40,6 @@ export const terminalsOnHostKeeping = (
     const changes = yield* PubSub.unbounded<TerminalRoot>();
     const live = new Map<number, Extract<TerminalRoot, { kind: "add" }>>();
     const terminals = yield* makeTerminals({
-      // Never reached for a folder: every open names its `cwd`.
       threadFolder: () => Effect.succeed(homedir()),
       defaultFolder: Effect.succeed(undefined),
       settingsShell: Effect.succeed(undefined),
@@ -61,7 +60,6 @@ export const terminalsOnHostKeeping = (
     });
     const roots = Stream.unwrap(
       Effect.gen(function* () {
-        // Subscribed before the shells running now are read, so none starts or ends unseen.
         const subscription = yield* PubSub.subscribe(changes);
         return Stream.concat(
           Stream.fromIterable([...live.values()]),

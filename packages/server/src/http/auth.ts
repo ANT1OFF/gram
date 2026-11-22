@@ -41,11 +41,8 @@ export interface AuthRequest {
 
 export type AuthDecision =
   | { readonly kind: "pass" }
-  /** Signed in, without the origin key: the web app's own files, and nothing else. */
   | { readonly kind: "shell" }
-  /** A valid `/?boot=<token>` navigation: set the cookie and redirect to strip the token. */
   | { readonly kind: "boot" }
-  /** An `/mcp` request with a bearer token; the caller must still check it against `McpTokens`. */
   | { readonly kind: "bearer"; readonly token: string }
   | { readonly kind: "reject"; readonly status: 401 | 403; readonly message: string };
 
@@ -153,8 +150,6 @@ export const authorize = (options: AuthOptions, request: AuthRequest): AuthDecis
   const hostOk = host !== undefined && allowedHosts(options.port).includes(host);
   const originOk =
     origin === undefined || allowedOrigins(options.port, options.extraOrigins).includes(origin);
-  // Serve always adds forwarding headers, even if a raw client spoofs a loopback Host.
-  // These headers may only deny local authority; their values never grant remote authority.
   const forwarded = [
     "forwarded",
     "x-forwarded-host",
@@ -192,8 +187,6 @@ export const authorize = (options: AuthOptions, request: AuthRequest): AuthDecis
     return { kind: "reject", status: 401, message: "unauthorized: launch token required" };
   const key = originKeyOf(request.headers);
   if (key !== undefined && tokensEqual(key, options.originKey)) return { kind: "pass" };
-  // A page load with the cookie alone: the web app's files, which hold nothing of this launch's.
-  // The socket, every route and the session probe (`/?boot=0`) take the key.
   if (
     (request.method === "GET" || request.method === "HEAD") &&
     target.path !== "/ws" &&

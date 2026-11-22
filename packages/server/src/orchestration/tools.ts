@@ -108,11 +108,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const publisher = yield* GitStatePublisher;
     const store = yield* ThreadStore;
     const proc = yield* Proc;
-    // Absent in tool-only layers; `report` then notes nothing about verify drivers.
     const verifyStatus = Option.getOrUndefined(yield* Effect.serviceOption(VerifyStatus));
-    // Absent unless an embedder's host provider is set: workers then can't ask for own machines.
     const onDemand = Option.getOrUndefined(yield* Effect.serviceOption(OnDemand));
-    // In the desktop app: a hosted server it is signed in to, asked through the app.
     const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
@@ -125,10 +122,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       workerHosts,
       joined,
     });
-    /**
-     * A question's pictures and mock, confined to the asking thread's folders and made absolute
-     * before the question is kept, so a card reads only what is in its worktree or repo.
-     */
     const visualsFor = <
       I extends {
         readonly options?: ReadonlyArray<QuestionChoice> | undefined;
@@ -148,10 +141,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           Effect.mapError((refused) => new AppToolError({ tool, message: refused.message })),
         );
       });
-    /**
-     * Each resolved sandbox spawn's plan, kept from its resolve to its handler: its machine to start,
-     * and whether that machine's provider gives machines back.
-     */
     const sandboxPlans = new WeakMap<
       object,
       {
@@ -163,7 +152,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         readonly givesBack: boolean;
       }
     >();
-    /** One `schedule_wake` at a time, from its count of the other store to its write. */
     const wakeScheduleLock = yield* Semaphore.make(1);
 
     const spawnWorker = defineAppTool({
@@ -207,8 +195,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           ),
         ),
       }),
-      // Each repo as it resolves now, and the brief with the user's words in it: what the approval
-      // check, the card and the handler all see.
       resolve: (caller, { userMessages, sandbox, ...asked }) =>
         Effect.gen(function* () {
           if (sandbox !== undefined && asked.machine !== undefined)
@@ -216,16 +202,13 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
               tool: "spawn_worker",
               message: "Give machine or sandbox, not both.",
             });
-          // A machine of its own, or one its orchestrator already has, by name from here on.
           const placed =
             sandbox === undefined ? undefined : yield* workerSandbox(caller, asked, sandbox);
           const input =
             placed === undefined || sandbox === undefined
               ? asked
               : { ...asked, machine: placed.name, placement: placementOf(placed.name, sandbox) };
-          // A machine not started yet is checked once it has come, as the spawn places it.
           if (placed?.prepare === undefined) yield* orchestration.checkSpawnMachine(caller, input);
-          // The workspace's standing instructions, then the user's words, which stay last.
           const brief = yield* attachUserWords(
             store,
             "spawn_worker",
@@ -271,30 +254,20 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       }),
       handle: (caller, input, { carded }) =>
         Effect.gen(function* () {
-          // Its own machine, started now that the spawn goes ahead, and given back if it doesn't.
-          // A worker placed by `machine` on one a hosted server started is held to the same rule.
-          // Placed by name, it holds the machine's bring-up as any placement does.
           const plan = sandboxPlans.get(input) ?? workerSandbox.byName(input.machine);
           sandboxPlans.delete(input);
           const prepared = plan?.prepare === undefined ? undefined : yield* plan.prepare;
           const giveBack = prepared?.abandon ?? Effect.void;
-          // Let through with no card on a count read before the spawn lock: counted again under it.
           const spawned = yield* orchestration.spawnWorker(caller, input, carded).pipe(
             Effect.tapError(() => giveBack),
             Effect.onInterrupt(() => giveBack),
           );
-          // On a machine its provider gives back (a signed-in server's), a held brief would name a
-          // machine that is stopped, or released once its other work is over, and could never run
-          // there: the brief is let go first, then the machine, both whatever interrupts them, and
-          // the orchestrator is told to spawn again once it can. An embedder's provider keeps its
-          // machines, so a brief held there stays held, as it always has.
           if ("held" in spawned && plan?.givesBack === true)
             return yield* Effect.uninterruptible(
               Effect.gen(function* () {
                 const cancelled = yield* orchestration
                   .manageHeldSpawn(caller, { id: spawned.id, action: "cancel" })
                   .pipe(Effect.result);
-                // A brief that stays held keeps its machine, so it can still run there.
                 if (cancelled._tag === "Success") yield* giveBack;
                 const machine =
                   prepared?.abandon === undefined
@@ -312,14 +285,11 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
                 });
               }),
             );
-          // A brief a limit sends back starts nothing now: nor does its machine run.
           if ("held" in spawned || "routeOffer" in spawned) yield* giveBack;
           return spawned;
         }).pipe(
-          // The machine's name stays this try's (`WorkerMachineSource.hold`) until it is over.
           Effect.scoped,
           Effect.tap((spawned) =>
-            // A held brief keeps its plan and is seeded with it when it starts.
             input.plan === undefined || "held" in spawned || "routeOffer" in spawned
               ? Effect.void
               : Effect.gen(function* () {
@@ -384,11 +354,8 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         group: Schema.optionalKey(Schema.NonEmptyString),
         worktree: Schema.optionalKey(Schema.NonEmptyString),
       }),
-      // Pinned before the card, so the call after the user's yes acts on what the card named.
       resolve: (caller, input) =>
         orchestration.pinAdopt(caller, input).pipe(Effect.map((pinned) => ({ ...input, pinned }))),
-      // Taking a thread the user started, or one another orchestrator has, is the user's to allow
-      // whatever the workspace's autonomy, as adding a repo is.
       needsApproval: () => Effect.succeed(true),
       describe: (caller, input) => orchestration.describeAdopt(caller, input),
       handle: (caller, input) => orchestration.adoptThread(caller, input),
@@ -414,7 +381,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           .listWorkers(caller, { ...options, ...(state === undefined ? {} : { states: state }) })
           .pipe(
             Effect.map((ledger) => {
-              // Subscriptions are limits, which the budget carries; the day's dollars aren't told.
               const { costUsdToday: _, ...budget } = ledger.budget;
               return detail === true
                 ? { ...ledger, budget }
@@ -475,11 +441,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         }),
     });
 
-    /**
-     * `schedule_wake`'s PR, parsed and looked up now: the baseline its events are measured from, and
-     * a refusal for a PR GitHub doesn't have or that has already merged or closed. A lookup that
-     * can't reach GitHub leaves the first sweep's badge as the baseline.
-     */
     const wakeOnPr = (
       caller: ThreadId,
       input: {
@@ -546,9 +507,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         on: Schema.optionalKey(Schema.Array(PrWakeEvent).check(Schema.isMinLength(1))),
         condition: Schema.optionalKey(WakeConditionInput),
       }),
-      // One cap over both stores: a thread whose role changed keeps the wakes it set before. Each
-      // store checks only its own count in its write, so the count read from the other store and
-      // the write it guards happen under one lock; transports run tool calls concurrently.
       handle: (caller, { onPr, on, condition, ...rest }) =>
         Effect.gen(function* () {
           if (condition !== undefined && (onPr !== undefined || on !== undefined)) {
@@ -557,7 +515,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
               message: "Give one of `onPr` and `condition`, not both.",
             });
           }
-          // Listed flat (`WakeConditionInput`), decoded here as the union it is.
           const spec =
             condition === undefined
               ? undefined
@@ -626,8 +583,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           "Drop a wake you set with schedule_wake, by the `id` it returned; without `id`, all of yours.",
       },
       input: Schema.Struct({ id: Schema.optionalKey(Schema.NonEmptyString) }),
-      // Found where it was stored, not by the caller's role now: a role that changed moved where
-      // new wakes go, but not the ones already set.
       handle: (caller, { id }) =>
         Effect.gen(function* () {
           const own = yield* threadWakes.cancel(caller, id);
@@ -690,8 +645,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         requestId: Schema.optionalKey(Schema.NonEmptyString),
         answer: Schema.NonEmptyString.check(Schema.isMaxLength(WORKER_ANSWER_MAX)),
       }),
-      // No card either way: the handler refuses what isn't the orchestrator's to answer, and a card
-      // would ask the user to let the orchestrator answer what they could answer themselves.
       needsApproval: () => Effect.succeed(false),
       handle: (caller, input) =>
         Effect.gen(function* () {
@@ -777,8 +730,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           }
           const confined = yield* visualsFor("ask_question", worker, { ...rest, question: words });
           const question = yield* orchestration.askQuestion(worker, confined);
-          // The new question first, so the one it replaces can name it; a refusal then is reported
-          // beside the question that was asked, never instead of it.
           const superseded =
             withdraw === undefined
               ? {}
@@ -853,7 +804,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           ),
     });
 
-    /** The memory of the caller's workspace, or a refusal: the tree belongs to the slot's holder. */
     const memoryOf = (tool: string, caller: ThreadId) =>
       orchestration
         .authorityOf(caller)
@@ -867,10 +817,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           ),
         );
 
-    /**
-     * The memory the caller may read and write: its own as an orchestrator, its orchestrator's as a
-     * worker. `asWorker` holds a worker to the files it can see; questions stay with `memoryOf`.
-     */
     const readableMemoryOf = (tool: string, caller: ThreadId) =>
       Effect.gen(function* () {
         const workspaceId = yield* orchestration.memoryReaderOf(caller);
@@ -884,7 +830,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         return { workspaceId, asWorker };
       });
 
-    /** A write as a diff in the caller's transcript, and `memory.changed` to every window. */
     const showWrite = (caller: ThreadId, workspaceId: WorkspaceId, write: MemoryWrite) =>
       runtimes
         .emitChunk(caller, { type: "data-memory-write", id: randomUUID(), data: write })
@@ -902,12 +847,10 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       handle: (caller, { prefix }) =>
         Effect.gen(function* () {
           const { workspaceId, asWorker } = yield* readableMemoryOf("memory_list", caller);
-          // A worker reads through the anchored tree, without what is private or credential-shaped.
           const inPrefix = underPrefix(prefix);
           if (!asWorker) return { files: (yield* memory.list(workspaceId)).filter(inPrefix) };
           const { files, withheld } = yield* memory.listForWorker(workspaceId);
           const kept = withheld.filter(inPrefix);
-          // A file kept from workers is named with why, so an empty list never hides one.
           return {
             files: files.filter(inPrefix),
             ...(kept.length > 0 ? { keptFromWorkers: kept } : {}),
@@ -934,10 +877,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         }).pipe(Effect.mapError(failed("memory_read"))),
     });
 
-    /**
-     * A change to one file through `memory.modify`, under the memory's lock, shown as a diff. A
-     * worker changes only what it can see, into what every worker can still read.
-     */
     const memoryChange = (
       tool: string,
       caller: ThreadId,
@@ -963,8 +902,11 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           },
           { asWorker },
         );
+        const settled =
+          path === QUESTIONS_FILE && (yield* orchestration.memoryQuestions.settle(workspaceId));
         yield* showWrite(caller, workspaceId, write);
-        return { path: write.path, bytes: write.bytes, revision };
+        const now = settled ? memoryRevision(yield* memory.read(workspaceId, path)) : revision;
+        return { path: write.path, bytes: write.bytes, revision: now };
       }).pipe(Effect.mapError(failed(tool)));
 
     const memoryWrite = defineAppTool({
@@ -1068,6 +1010,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             asWorker,
             check: (current) => checkRevision("memory_delete", path, revision, current),
           });
+          if (path === QUESTIONS_FILE) yield* orchestration.memoryQuestions.settle(workspaceId);
           yield* showWrite(caller, workspaceId, write);
           return { path: write.path, deleted: true };
         }).pipe(Effect.mapError(failed("memory_delete"))),
@@ -1099,8 +1042,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           const workspaceId = yield* memoryOf("ask_user", caller);
           const confined = yield* visualsFor("ask_user", caller, input);
           const date = yield* today;
-          const { write, result } = yield* memory.modify(workspaceId, QUESTIONS_FILE, (current) =>
-            questionEdit("ask_user", askQuestion(current, confined, date)),
+          const { write, result } = yield* orchestration.memoryQuestions.modify(
+            workspaceId,
+            (current) => questionEdit("ask_user", askQuestion(current, confined, date)),
           );
           yield* showWrite(caller, workspaceId, write);
           return { id: result.id, updated: result.updated, reopened: result.reopened };
@@ -1139,8 +1083,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           }
           const workspaceId = yield* memoryOf("close_question", caller);
           const date = yield* today;
-          const { write, result } = yield* memory.modify(workspaceId, QUESTIONS_FILE, (current) =>
-            questionEdit("close_question", closeQuestion(current, input, date)),
+          const { write, result } = yield* orchestration.memoryQuestions.modify(
+            workspaceId,
+            (current) => questionEdit("close_question", closeQuestion(current, input, date)),
           );
           yield* showWrite(caller, workspaceId, write);
           return { id: result.id, closed: true };
@@ -1172,9 +1117,6 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       askUser,
       closeQuestionTool,
     ]);
-    // Only now: a wake already due opens its thread's session, which keeps the tools it opened
-    // with, and these are what lets it set the next one. The session policy is in by now too, since
-    // the orchestration service this layer reads sets it while it is built.
     yield* threadWakes.start;
   }),
 );

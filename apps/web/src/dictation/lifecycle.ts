@@ -1,10 +1,5 @@
 import { useSyncExternalStore } from "react";
 
-/**
- * Changes to what voice input has installed (the switch, a download), one at a time across every
- * mount of Settings: an on that follows an off waits until the off has deleted everything. The
- * composer neither starts nor prewarms a session while one is under way.
- */
 let lifecycle: Promise<void> = Promise.resolve();
 let queued = 0;
 let epoch = 0;

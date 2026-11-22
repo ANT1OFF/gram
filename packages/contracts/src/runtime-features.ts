@@ -1,6 +1,3 @@
-// Shared local feature availability. The server leaves shell capabilities unspecified;
-// renderer callers provide the bridge so missing native capabilities remain hidden.
-
 import type { DesktopBridge } from "./desktop-bridge.ts";
 
 export interface RuntimeFeature {

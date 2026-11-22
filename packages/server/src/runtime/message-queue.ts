@@ -1,6 +1,3 @@
-// What a thread is sent: the user's queue, kept in the store, and the system deliveries waiting
-// for the thread to be free, each sent as a turn or steered into the running one.
-
 import { storedActor } from "../host/ownership.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -140,18 +137,14 @@ export const makeMessageQueue = ({
   becomeIdle,
   restoreGate,
 }: MessageQueueDeps) => {
-  /** Whether the thread waits for a machine to be named for it (`Thread.awaitingMachine`). */
   const awaitsMachine = (rt: Runtime) =>
     store.getThread(rt.threadId).pipe(
-      // A thread that runs on a server never opens a session here either.
       Effect.map((thread) => thread.awaitingMachine !== undefined || thread.sentTo !== undefined),
       Effect.orElseSucceed(() => false),
     );
 
-  /** Called with the runtime lock held. Stores the queue with the launch, if any, at its head. */
   const persistQueue = (rt: Runtime) =>
     Effect.suspend(() => {
-      // Each notice keeps its key in the store, so a restart can't take it for the user's word.
       const withActor = <I extends QueuedInput>(item: I): StoredQueuedInput => {
         const actor = rt.actors.get(item.id);
         return actor === undefined ? item : { ...item, actor };
@@ -175,7 +168,6 @@ export const makeMessageQueue = ({
       return store.putQueue(rt.threadId, [...head, ...queue]);
     });
 
-  /** Called with the runtime lock held, after any queue change. */
   const syncQueue = (rt: Runtime) =>
     Effect.suspend(() =>
       persistQueue(rt).pipe(
@@ -185,20 +177,11 @@ export const makeMessageQueue = ({
       ),
     );
 
-  /**
-   * Called with the runtime lock held. The user's own message, sent in turn `turnId`, with the note
-   * on what they changed in Waiting on you since the agent last heard,
-   * heard once the agent takes it (`settleNote`); as it was when there is no news. Not another
-   * thread's message or a notice, not a slash command, which the text after it would break, and not
-   * an orchestrator's, whose digest carries what waits.
-   */
   const withWaitNote = (
     rt: Runtime,
     noted: UserInput,
     turnId: TurnId,
   ): Effect.Effect<UserInput> => {
-    // A launch sent again from the queue, or after a restart, takes its note afresh for this turn:
-    // what the old one told was never heard, so it is still news.
     const input =
       noted.waitNote === undefined ? noted : { ...typedInput(noted), text: typedText(noted) };
     return Effect.gen(function* () {
@@ -211,7 +194,6 @@ export const makeMessageQueue = ({
       }
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
       if (Option.isNone(thread) || thread.value.role === "orchestrator") return input;
-      // A steer into a turn whose note the agent hasn't taken yet tells only what is newer.
       const pending = rt.noteHeard?.turnId === turnId ? rt.noteHeard.items : [];
       const drafted = yield* waits.draftNote(rt.threadId, pending);
       if (drafted === undefined) return input;
@@ -219,7 +201,6 @@ export const makeMessageQueue = ({
       const waitNote = fenceWaitNote(drafted.note);
       return { ...input, text: `${input.text}\n\n${waitNote}`, waitNote };
     }).pipe(
-      // The message matters more than the note, which waits for the next one.
       Effect.catchCause((cause) =>
         Effect.logWarning("couldn't add the Waiting on you note").pipe(
           Effect.annotateLogs({ threadId: rt.threadId, cause: Cause.pretty(cause) }),
@@ -229,17 +210,9 @@ export const makeMessageQueue = ({
     );
   };
 
-  /**
-   * What the agent reads of `input`: another thread's message fenced as that thread's, never bare
-   * where the user's words would be; an orchestrator's to its own worker, and everything without
-   * an `origin`, as it is. The transcript keeps the text as written, and its origin part names the
-   * sender. A thread the store has lost fences it too.
-   */
   const forAgent = (rt: Runtime, stored: UserInput): Effect.Effect<UserInput> => {
-    // Who wrote it is the transcript's record, not something the agent is told.
     const { author: _, conversation, ...rest } = stored;
     if (conversation !== undefined) {
-      // Where it came from, and whether this thread is the one to answer there.
       return store.getThread(rt.threadId).pipe(
         Effect.option,
         Effect.map((thread) => ({
@@ -282,9 +255,7 @@ export const makeMessageQueue = ({
       if (sent.notice?.kind === "idleCompact") {
         turn.idleCompaction = { compacted: false, workspaceId: sent.notice.workspaceId };
       }
-      // A launch took its note as it published the message.
       const input = ids.published === true ? sent : yield* withWaitNote(rt, sent, turn.id);
-      // The id doubles as the agent transcript id, so a rewind can resume just before this message.
       const messageId = ids.messageId ?? randomUUID();
       if (ids.published !== true) {
         yield* publishMessage(
@@ -303,9 +274,6 @@ export const makeMessageQueue = ({
           queueLength: rt.queue.length,
         }),
       );
-      // A session that opened without the agent's own conversation reads the thread's recent
-      // turns ahead of its first input, kept until an input carrying them reaches it. Never ahead
-      // of a slash command, which the text before it would break: the next input takes them.
       const seed = rt.lostSession;
       const forAgentInput = yield* forAgent(rt, input);
       const read =
@@ -322,9 +290,6 @@ export const makeMessageQueue = ({
         if (read !== forAgentInput && rt.lostSession === seed) rt.lostSession = undefined;
         return;
       }
-      // The agent never took it, or can't be said to have. A delivery's own failure settles it,
-      // so only the queue's input is kept here: out of the feed, at the queue's head, under its id,
-      // so a host that did take it knows it again rather than take it twice.
       if (rt.carrying?.turnId === turn.id) return yield* Effect.die(lost);
       yield* Effect.logWarning(
         "thread input didn't reach the agent; kept at the queue's head",
@@ -333,8 +298,6 @@ export const makeMessageQueue = ({
       if (rt.inFlight?.id === messageId) rt.inFlight = undefined;
       const kept = QueueItemId.make(messageId);
       rt.queue.unshift({ id: kept, input: sent });
-      // Kept to be sent again, so it keeps who sent it (`host/ownership.ts`): an input that came
-      // off the queue has its writer already; one sent straight to an idle session is this call's.
       if (!rt.actors.has(kept)) rt.actors.set(kept, yield* storedActor);
       yield* finishTurn(rt, "interrupted", "sendFailed");
       yield* syncQueue(rt);
@@ -342,12 +305,6 @@ export const makeMessageQueue = ({
       return yield* lost;
     });
 
-  /**
-   * Called with the runtime lock held. The transcript records the steered input, wherever it came
-   * from: the composer, the queue, or another thread (whose `origin` part names the sender).
-   * `false` when the agent refused it (Codex, whose turn can end before ours does): nothing was
-   * recorded, and the caller keeps the input, queueing it or handing it back.
-   */
   const steerNow = (
     rt: Runtime,
     session: AgentSession,
@@ -382,7 +339,6 @@ export const makeMessageQueue = ({
         options?.interrupt === true ? session.steer(read, options) : session.steer(read)
       ).pipe(
         Effect.as(true),
-        // Its reason could quote the input, which stays out of the log; its kind can't.
         Effect.catchDefect((defect) =>
           Effect.logWarning("the agent refused a steer").pipe(
             Effect.annotateLogs({
@@ -398,18 +354,11 @@ export const makeMessageQueue = ({
           }),
         ),
       );
-      // A steer that didn't go told nothing, so the turn's reply can't make its note heard. Its
-      // message is stored only once taken: the agent's reply waits on this lock, so it still
-      // follows the message, and a refused one never shows beside the copy its caller sends.
       if (!taken) {
         rt.noteHeard = before;
         return false;
       }
       turn.lastInputAt = yield* Clock.currentTimeMillis;
-      // The agent has it now, so a transcript that fails to record it mustn't make a caller
-      // send it again.
-      // The reply under way already shows above the message: what it says from here on is drawn
-      // below it, in a message of its own (`agent-events.ts`, `splitAfterSteer`).
       const open = turn.reply === undefined ? undefined : rt.open.get(turn.reply);
       const reply =
         open !== undefined &&
@@ -434,12 +383,6 @@ export const makeMessageQueue = ({
       return true;
     });
 
-  /**
-   * Called with the runtime lock held, on an idle session with nothing queued. Sends the oldest
-   * waiting delivery that still has something to say, as a turn of its own; `false` when none did
-   * and the thread stays idle. The turn id is made before the turn, so `build` can record the turn
-   * that will carry its input before anything is sent.
-   */
   const deliverNext = (rt: Runtime, session: AgentSession, only?: string): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       for (;;) {
@@ -478,8 +421,6 @@ export const makeMessageQueue = ({
           sendNow(rt, session, { ...built.value, author: "server" }, { turnId }),
         );
         if (Exit.isFailure(sent)) {
-          // A user's send that dies takes the caller down with it; this one has no caller, so the
-          // turn is closed here and the thread says why it stopped.
           yield* Effect.logWarning("system delivery send failed").pipe(
             Effect.annotateLogs({ threadId: rt.threadId, key, cause: Cause.pretty(sent.cause) }),
           );
@@ -492,16 +433,6 @@ export const makeMessageQueue = ({
       }
     });
 
-  /**
-   * Called with the runtime lock held, on a `running` thread. Steers the oldest waiting delivery
-   * that asks for it (`SystemDelivery.steer`) into the turn, cancelling nothing. The turn then
-   * carries it, and its end settles it: accepted when the adapter ends it, back to wait when the
-   * adapter ends it in error, and failed (its owner asks again) on a limit or a lost session, as
-   * for a turn of its own. Nothing streamed after the steer accepts it. The rest, and all of them
-   * where the turn can't take one (Gram's idle compaction, an agent that can't steer, a turn
-   * already carrying a delivery, queued input that goes first, a queue hold), wait for the turn's
-   * end. One the agent refuses goes back to wait, and is built again then.
-   */
   const steerDeliveries = (rt: Runtime): Effect.Effect<void> =>
     Effect.gen(function* () {
       const session = rt.session;
@@ -516,7 +447,6 @@ export const makeMessageQueue = ({
         (yield* queueHeld(rt))
       )
         return;
-      // Deleting the entry in hand is safe mid-iteration; anything else returns at once.
       for (const [key, delivery] of rt.deliveries) {
         if (delivery.steer !== true) continue;
         rt.deliveries.delete(key);
@@ -545,7 +475,6 @@ export const makeMessageQueue = ({
           Effect.catch(() => Effect.succeed(false)),
         );
         if (!taken) {
-          // Nothing reached the agent, so it waits for the turn's end, and `build` runs again then.
           rt.deliveries.set(key, delivery);
           return;
         }
@@ -554,10 +483,6 @@ export const makeMessageQueue = ({
       }
     });
 
-  /**
-   * Called with the runtime lock held. Starts a waiting delivery if the thread can take one now;
-   * a busy thread gets to it from `becomeIdle`, or steers one that asks for it.
-   */
   const switchHold = (rt: Runtime) =>
     store.getThread(rt.threadId).pipe(
       Effect.map((thread) => {
@@ -572,17 +497,11 @@ export const makeMessageQueue = ({
 
   const pumpDeliveries = (rt: Runtime): Effect.Effect<void> =>
     Effect.gen(function* () {
-      // They wait in memory, as a stopped server leaves them; the process is about to exit.
       if (rt.deliveries.size === 0 || isShuttingDown()) return;
       const change = yield* switchHold(rt);
       if (change !== undefined && change.phase !== "ready") return;
-      // A plain thread's or worker's switch at `ready` lets only its own handoff go, so nothing
-      // reaches the new session before it; the rest wait for the switch to let go. The
-      // orchestrator's (no `handoff`) lets its boot digest through as before.
       const only = change?.handoff === undefined ? undefined : SWITCH_HANDOFF_KEY;
       if (only !== undefined && !rt.deliveries.has(only)) return;
-      // Nor does it open a session for it: the switch owns its target's startup (a reopen takes a
-      // fresh startup id), so a handoff asked for with no session fails, and the switch reopens.
       if (only !== undefined && rt.session === undefined) {
         const handoff = rt.deliveries.get(only)!;
         rt.deliveries.delete(only);
@@ -592,30 +511,20 @@ export const makeMessageQueue = ({
           handoff.failed(undefined, "ended"),
         );
       }
-      // A cold thread being closed has no session for the close to stop, so it must not get one.
       if (rt.closing) return yield* failPendingDeliveries(rt, "ended");
-      // Held for `whileAtRest`, which pumps again once it lets go.
       if (rt.reserved) return;
-      // Held while a stop is under way, so its late interrupt can't reach the turn a delivery
-      // would start; its end pumps again (`runStop`).
       if (stopHeld(rt)) return;
-      // Held until the thread's machine is named: the placement pumps again (`relocate`).
       if (yield* awaitsMachine(rt)) return;
-      // Held for the limit's resume, which pumps again.
       if (yield* waitWithAccount(rt)) return;
       switch (rt.status) {
         case "ended":
           return yield* failPendingDeliveries(rt, rt.status);
         case "running":
           return only === undefined ? yield* steerDeliveries(rt) : undefined;
-        // Not into a turn waiting on the user: the agent would read it before their answer.
         case "starting":
         case "needsApproval":
         case "needsInput":
           return;
-        // A thread in error takes it as a message from the user would: a session whose turn failed
-        // sends it like an idle one, and an agent that couldn't start, or whose session went, is
-        // opened again, since what stopped it may be gone.
         case "error":
         case "idle":
           if (rt.session !== undefined) {
@@ -638,10 +547,6 @@ export const makeMessageQueue = ({
       );
     });
 
-  /**
-   * Called with the runtime lock held, once the session that will carry `input` is opening: the
-   * message goes to the feed now and to the agent when the session is in, never through `queue`.
-   */
   const launch = (rt: Runtime, typed: UserInput) =>
     Effect.gen(function* () {
       const createdAt = yield* Clock.currentTimeMillis;
@@ -658,11 +563,6 @@ export const makeMessageQueue = ({
       );
     });
 
-  /**
-   * A thread whose folder is gone has nowhere to run: refuses with the path a client can offer to
-   * restore, and stops a session still open there. A thread that moved to another Gram runs there
-   * and never here again. Run under the lock, before any send or steer.
-   */
   const refuseMissingFolder = (rt: Runtime) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(rt.threadId);
@@ -674,9 +574,6 @@ export const makeMessageQueue = ({
         });
       }
       const path = thread.checkout.path;
-      // A folder its machine's resume is putting back, or couldn't, isn't one that is gone: the
-      // send goes on to open a session, which waits for it or fails saying why (`awaitedMachines`),
-      // and the thread shows that, with its way out (saved work gone: `thread.restoreFromBranch`).
       if (restoreGate?.(thread) !== undefined) return;
       if (yield* checkouts.present(path)) return;
       yield* forkStopInMissing(rt);
@@ -688,7 +585,6 @@ export const makeMessageQueue = ({
       });
     });
 
-  /** Tells observers of an input the user typed, once `send` or `steer` has taken it. */
   const userTyped = (threadId: ThreadId, input: UserInput) =>
     Effect.gen(function* () {
       if (input.origin !== undefined || input.notice !== undefined || observers.size === 0) return;
@@ -726,16 +622,10 @@ export const makeMessageQueue = ({
               status: rt.status,
             });
           }
-          // A thread sent to run on a server takes nothing here: what is said to it goes there.
           if ((yield* store.getThread(threadId)).sentTo !== undefined)
             return yield* new InvalidState({ message: RUNS_ON_SERVER, threadId });
-          // A thread whose machine isn't named yet has no folder to miss, and starts nothing:
-          // whatever is sent waits in its queue, which the placement sends (`relocate`).
           const awaiting = yield* awaitsMachine(rt);
-          // Rather than start an agent that fails to spawn or fails every tool.
           if (!awaiting) yield* refuseMissingFolder(rt);
-          // A monitor's notice never wakes an archived thread. Read under the lock, so an archive
-          // written while the notice waited its turn stops it before any send, steer or open.
           if (noticeKey !== undefined && (yield* store.getThread(threadId)).parked) {
             return yield* new InvalidState({ message: "the thread is archived", threadId });
           }
@@ -752,7 +642,6 @@ export const makeMessageQueue = ({
                 if (stale >= 0) {
                   const id = rt.queue[stale]!.id;
                   rt.queue[stale] = { id, input };
-                  // New text, new writer: it goes as who wrote it now, not as the one it replaced.
                   rt.actors.set(id, yield* storedActor);
                   rt.queuedAt.set(id, { at: now, messages: 1 });
                   yield* syncQueue(rt);
@@ -777,7 +666,6 @@ export const makeMessageQueue = ({
                   input: join({ input: last.input, queuedAt, messages }, input, now),
                 };
                 rt.queuedAt.set(last.id, { at: queuedAt, messages: messages + 1 });
-                // Two writers in one input: if they differ, it is no one's in particular.
                 const joiner = yield* storedActor;
                 if (JSON.stringify(rt.actors.get(last.id)) !== JSON.stringify(joiner))
                   rt.actors.set(last.id, {});
@@ -794,15 +682,10 @@ export const makeMessageQueue = ({
             });
           if (awaiting) return yield* enqueue();
           if ((yield* switchHold(rt)) !== undefined) return yield* enqueue();
-          // While the thread waits out a limit, only the user's own word starts a turn, and it
-          // ends the wait; anything else waits in the queue for the resume. A thread at rest
-          // whose account is limited waits with it rather than meet the limit.
           const typed =
             input.origin === undefined && input.notice === undefined && noticeKey === undefined;
           if (typed) yield* endWaitForUser(rt);
           else if (yield* waitWithAccount(rt)) return yield* enqueue();
-          // A queue hold (a paused feature) keeps anything but the user's own word from starting
-          // or steering a turn, at rest or cold: it waits in the queue for `releaseQueue`.
           else if (yield* queueHoldsFor(threadId)) return yield* enqueue();
           if (noticeKey !== undefined) {
             for (const id of rt.noticeKeys.keys()) {
@@ -811,22 +694,15 @@ export const makeMessageQueue = ({
             const turn = rt.turn;
             const stale = rt.queue.findIndex((item) => rt.noticeKeys.get(item.id) === noticeKey);
             if (
-              // Steered by default, never so as to cut off a tool call; one sent with
-              // `steer: false` waits for the turn's end.
               steerNotice &&
-              // One queued ahead of something else keeps its place, so the update never overtakes
-              // what was waiting behind the older one.
               (stale < 0 || stale === rt.queue.length - 1) &&
               rt.status === "running" &&
               rt.session !== undefined &&
               turn !== undefined &&
-              // Not into Gram's idle compaction: the notice would only be folded into the summary.
               turn.idleCompaction === undefined &&
               rt.capabilities?.steer === true
             ) {
-              // A steer the agent rejects leaves the notice to the queue, like one it can't take.
               const steered = yield* steerNow(rt, rt.session, turn, input).pipe(
-                // Its message could quote the notice, which stays out of the log.
                 Effect.catchDefect(() =>
                   Effect.logWarning("notice steer failed; queued instead").pipe(
                     Effect.annotateLogs({ threadId, key: noticeKey }),
@@ -852,7 +728,6 @@ export const makeMessageQueue = ({
               });
             case "idle":
             case "error":
-              // Input a failed send left at the queue's head goes first, as it would from cold.
               if (
                 rt.status === "error" &&
                 rt.session !== undefined &&
@@ -863,19 +738,15 @@ export const makeMessageQueue = ({
                 yield* becomeIdle(rt);
                 return result;
               }
-              // A stop under way: this waits for it to settle, which sends it (`runStop`).
               if (stopHeld(rt)) return yield* enqueue();
               if (rt.session !== undefined && rt.turn === undefined) {
                 const kept = yield* sendNow(rt, rt.session, input).pipe(
                   Effect.as(false),
                   Effect.tapError(() =>
-                    // deliverNext settles a carrying delivery itself. A direct send has none, and
-                    // the turn sendNow opened never reached the adapter.
                     rt.turn !== undefined && rt.carrying === undefined
                       ? finishTurn(rt, "interrupted", "sendFailed")
                       : Effect.void,
                   ),
-                  // What didn't reach the agent waits at the queue's head, and the status says why.
                   Effect.catchTag("InputUndelivered", () => Effect.succeed(true)),
                 );
                 return { queued: kept };
@@ -883,7 +754,6 @@ export const makeMessageQueue = ({
               if (rt.session !== undefined) return yield* enqueue();
               break;
             case "starting":
-              // The session opening has nothing to carry yet, so this is the turn it opens with.
               if (
                 noticeKey === undefined &&
                 rt.turn === undefined &&
@@ -902,9 +772,6 @@ export const makeMessageQueue = ({
               break;
           }
           const thread = yield* store.getThread(threadId);
-          // What a restart or a failed open left goes first, so this waits behind it. A monitor's
-          // notice waits in the queue too, where the monitor can still replace or take it back and
-          // an archive holds it.
           if (noticeKey !== undefined || rt.queue.length > 0 || rt.launch !== undefined) {
             const result = yield* enqueue();
             yield* openSession(rt, thread);
@@ -950,17 +817,10 @@ export const makeMessageQueue = ({
       yield* locked(rt, f(rt).pipe(Effect.andThen(syncQueue(rt))));
     });
 
-  /**
-   * Sends the queue of a thread with nothing running, as a send would take it: live from an idle
-   * session, or by opening one. For what an archive held back (a monitor's notice, which
-   * `becomeIdle` keeps from an archived thread), what a restart left, and a card that closed with
-   * no turn. Holds the lock.
-   */
   const drainQueue = (rt: Runtime) =>
     Effect.gen(function* () {
       if (
         (rt.queue.length === 0 && rt.launch === undefined) ||
-        // A stop under way sends what waited once it has settled (`runStop`).
         stopHeld(rt) ||
         rt.closing ||
         rt.reserved ||
@@ -984,12 +844,8 @@ export const makeMessageQueue = ({
           return;
       }
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
-      // Its folders are being put back: their coming back sends this, so nothing waits here, and
-      // a folder not there yet isn't taken for one that is gone.
       const gate = restoreGate?.(thread);
       if (gate === "wait") return;
-      // Nowhere to run, as a send there is refused: the queue waits for the folder to come back.
-      // One its machine couldn't put back opens, so the thread says why (`awaitedMachines`).
       if (gate !== "blocked" && !(yield* checkouts.present(thread.checkout.path))) return;
       yield* openSession(rt, thread).pipe(
         Effect.catchTag("AgentUnavailable", (e) => failUnavailable(rt, e)),
@@ -1015,19 +871,8 @@ export const makeMessageQueue = ({
   };
 };
 
-/**
- * A turn held on a card the user must answer (an approval, a question). The user's own steer still
- * goes in (`pastCard`): the agent takes a steer between tool rounds (Claude's `next` priority) or at
- * its next model call (Codex's `turn/steer`), so it reads it after the tool call the card holds has
- * its answer. Their interrupt there is a stop, then the message. Anything else is refused, so Gram's
- * and other agents' messages queue for the turn's end.
- */
 const WAITING_ON_USER: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 
-/**
- * Input the user wrote themselves, as `authored` marks it: no other thread's (`origin`), no notice,
- * not Gram's. An edit keeps who wrote an item, so an agent's text never becomes the user's.
- */
 const usersOwnWord = (input: UserInput) =>
   input.author === "user" && input.origin === undefined && input.notice === undefined;
 
@@ -1071,10 +916,6 @@ export interface QueueMethodsDeps {
   readonly paired?: (id: HostId) => boolean;
 }
 
-/**
- * Called with the lock held: puts the user's `input` at the head of the queue, so it is the first
- * thing sent once the open turn ends. Refused while a switch holds the thread's input.
- */
 const queueFirst = (
   { switchHold, syncQueue }: Pick<QueueMethodsDeps, "switchHold" | "syncQueue">,
   rt: Runtime,
@@ -1130,8 +971,6 @@ export const makeQueueMethods = ({
 > => ({
   sendQueuedAtBoot: Effect.gen(function* () {
     let sent = 0;
-    // What waited out a limit when the previous run stopped resumes on the same plan; its queue
-    // waits with it.
     const threads = yield* store.listThreads;
     for (const account of new Set(threads.flatMap((thread) => thread.limitWait?.account ?? []))) {
       yield* scheduleAccount(account);
@@ -1144,14 +983,10 @@ export const makeQueueMethods = ({
         );
       }
     }
-    // This is the resume of the input in flight (`handover` in `thread-runtimes.ts`): a send a
-    // crash cut off is still the stored queue's head, with its turn, and `drainQueue` opens a
-    // session and sends it once, as the same message (`queue-persistence.test.ts`).
     let unplaced = 0;
     for (const thread of threads) {
       const queued = yield* store.listQueue(thread.id);
       if (thread.parked || queued.length === 0) continue;
-      // A thread waiting for its machine to be named has no machine yet, which is not one removed.
       if (thread.awaitingMachine === undefined && !paired(sessionHostOf(thread))) {
         unplaced++;
         continue;
@@ -1179,9 +1014,6 @@ export const makeQueueMethods = ({
   }),
   sendQueuedOn: (hostId) =>
     Effect.gen(function* () {
-      // A send to a thread whose machine was offline failed and left its message queued, with
-      // nothing to send it once the machine is back: `drainQueue` waits for the folder, and nothing
-      // told it the folder came back. Its machine joining does.
       const threads = yield* store.listThreads;
       for (const thread of threads) {
         if (thread.parked) continue;
@@ -1212,7 +1044,6 @@ export const makeQueueMethods = ({
       Effect.tap(() => userTyped(threadId, input)),
     ),
   sendNotice: (threadId, key, input, options) =>
-    // Marked Gram's in the queue and the transcript, so no restart or steer makes it the user's.
     sendInput(
       threadId,
       { ...input, author: "server" },
@@ -1249,7 +1080,6 @@ export const makeQueueMethods = ({
       const turn = rt.turn;
       const input = authored(typedInput(sent));
       const stopping = (claim: StopClaim | undefined) => ({ rt, claim });
-      // As a send is: the turn running there is being stopped, and would fail every tool it calls.
       return refuseMissingFolder(rt).pipe(
         Effect.andThen((): Effect.Effect<StopClaim | undefined, InvalidState> => {
           if (turn === undefined)
@@ -1258,12 +1088,8 @@ export const makeQueueMethods = ({
             );
           const interrupting = options?.interrupt === true;
           if (WAITING_ON_USER.has(rt.status)) {
-            // Only the user's own word goes past a card, never another agent's or Gram's.
             if (options?.pastCard !== true || !usersOwnWord(input))
               return Effect.fail(waitingOnUser(threadId, rt.status));
-            // An interrupt past a card is a stop, which withdraws the card as Stop does, and the
-            // message goes first in the queue, sent once the turn has ended. Stop needs no
-            // interrupting steer, so it is the same for every agent, Codex's too.
             if (interrupting)
               return queueFirst({ switchHold, syncQueue }, rt, input).pipe(
                 Effect.andThen(claimStop(rt, turn.id)),
@@ -1276,8 +1102,6 @@ export const makeQueueMethods = ({
                 status: rt.status,
               }),
             );
-          // A plain steer past a card waits in the agent for the tool call the card holds: it is
-          // read with the card's answer, never before it (`WAITING_ON_USER`).
           return steerNow(
             rt,
             session,
@@ -1301,8 +1125,6 @@ export const makeQueueMethods = ({
         Effect.map(stopping),
       );
     }).pipe(
-      // The stop was claimed with the message queued, under one lock, for the turn it was aimed
-      // at; the turn's own end, if it came first, is left be (`runStop`).
       Effect.flatMap(({ rt, claim }) => (claim === undefined ? Effect.void : runStop(rt, claim))),
       Effect.tap(() => userTyped(threadId, sent)),
     ),
@@ -1311,16 +1133,12 @@ export const makeQueueMethods = ({
       queueIndex(rt, itemId).pipe(
         Effect.flatMap((index) => Effect.map(storedActor, (actor) => ({ index, actor }))),
         Effect.map(({ index, actor }) => {
-          // Whoever wrote the item is still shown as having written it (an edited notice never
-          // becomes the user's words), but it goes as whoever edited it: the whole text is theirs.
-          // What only the server sets is the stored item's, whatever the client sent back.
           rt.queue[index] = {
             id: itemId,
             input: { ...clientInput(input), ...serverSetOf(rt.queue[index]!.input) },
           };
           rt.actors.set(itemId, actor);
           rt.noticeKeys.delete(itemId);
-          // The edit is the whole text now: a join after it starts the numbering again.
           const known = rt.queuedAt.get(itemId);
           if (known !== undefined) rt.queuedAt.set(itemId, { at: known.at, messages: 1 });
         }),
@@ -1352,7 +1170,6 @@ export const makeQueueMethods = ({
         }),
       ),
     ),
-  // Not `withQueue`: the item leaves the queue after the steer lands, never before.
   steerQueued: (threadId, itemId) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
@@ -1366,21 +1183,15 @@ export const makeQueueMethods = ({
               message:
                 "This queued input is held for the orchestrator switch. Wait for it to finish or cancel it before steering.",
             });
-          // Refused as a send there would be, into a running turn too: it is being stopped.
           yield* refuseMissingFolder(rt);
           const turn = rt.turn;
           const session = rt.session;
           if (turn === undefined && NOTHING_RUNNING.has(rt.status) && !rt.closing && !rt.reserved) {
-            // Nothing to steer into, so the item goes now, ahead of the rest. Sent by hand, a
-            // monitor's notice is the user's, which no archive holds back and no newer replaces.
             rt.noticeKeys.delete(itemId);
             rt.queue.unshift(...rt.queue.splice(index, 1));
             yield* syncQueue(rt);
             return yield* drainQueue(rt);
           }
-          // Past a card it waits in the agent for the tool call the card holds (`WAITING_ON_USER`),
-          // and only the user's own words go: not another agent's, nor Gram's notice, whoever
-          // pressed Steer on it.
           if (
             WAITING_ON_USER.has(rt.status) &&
             (!usersOwnWord(rt.queue[index]!.input) || rt.noticeKeys.has(itemId))

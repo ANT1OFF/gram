@@ -34,7 +34,6 @@ export const prCreateHandlers = Effect.gen(function* () {
     "pr.create": ({ threadId, title, body, base, draft }) =>
       Effect.gen(function* () {
         const { thread, cwd } = yield* threadAndFolder(threadId);
-        // Its binding would be dropped on write, leaving a PR on GitHub that nothing follows.
         if (thread.role === "orchestrator") {
           return yield* new InvalidState({ message: ORCHESTRATOR_HAS_NO_PR, threadId });
         }

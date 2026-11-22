@@ -1,19 +1,12 @@
-// What a thread posted on GitHub, read back from its tool calls: the bodies its `gh pr comment`,
-// `gh pr review`, `gh api … -f body=` and review-reply calls sent, the PR each named, and the GitHub
-// links those posting calls printed back. Only posting calls count: a read that prints other
-// people's comments (`gh pr view --json comments`) never makes one of them the thread's own.
-
 import type { GramUIMessage } from "@gram/contracts";
 
 /** Text as compared: trimmed, line endings and runs of whitespace made one space. */
 export const sameText = (text: string): string => text.replaceAll(/\s+/g, " ").trim();
 
-/** Longest command line parsed; a body longer than this isn't looked for in it. */
 const MAX_COMMAND = 64_000;
 
 interface ShellCommand {
   readonly words: ReadonlyArray<string>;
-  /** What a heredoc on the command fed its standard input. */
   readonly stdin?: string | undefined;
 }
 
@@ -44,10 +37,6 @@ export const shellCommands = (line: string): Array<ShellCommand> => {
     words = [];
     stdin = undefined;
   };
-  /**
-   * The end of a balanced `$(…)` opening at `from`, or the end of the text. A heredoc inside it is
-   * skipped whole, so a parenthesis in a comment's text doesn't end it early.
-   */
   const closeParen = (from: number) => {
     let depth = 0;
     const pending: Array<string> = [];
@@ -82,7 +71,6 @@ export const shellCommands = (line: string): Array<ShellCommand> => {
   while (i < src.length) {
     const c = src[i]!;
     if (c === "\n") {
-      // Heredocs start on the line after the one that named them.
       let at = i + 1;
       for (const { tag, strip } of heredocs) {
         const lines: Array<string> = [];
@@ -171,7 +159,6 @@ export const shellCommands = (line: string): Array<ShellCommand> => {
   return commands;
 };
 
-/** `$(cat <<'EOF' … EOF)`, the way agents pass a long body inline, as the text it stands for. */
 const CAT_HEREDOC =
   /^\$\(\s*cat\s*<<-?\s*(['"]?)([A-Za-z_][\w-]*)\1[ \t]*\n([\s\S]*?)\n[ \t]*\2[ \t]*\n?\s*\)$/;
 
@@ -186,36 +173,27 @@ export interface PostTarget {
   readonly number: number;
 }
 
-/** One body a command posted, and where to; `pr` absent when it named no PR (the branch's own). */
 interface Sent {
   readonly body: string;
   readonly pr?: PostTarget | undefined;
 }
 
-/** What one command posted: its bodies, or `posts` with none read when it posted all the same. */
 interface Posting {
   readonly sent: ReadonlyArray<Sent>;
-  /** How many comments or reviews it posts, whatever their bodies were built from. */
   readonly posts: number;
-  /** It also runs a command that posts nothing, `gh` or not, whose output may print others' links. */
   readonly reads: boolean;
 }
 
-/** A `gh` command that posts nothing. */
 const READ: Posting = { sent: [], posts: 0, reads: true };
 
 const PR_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)(?:[/#?].*)?$/;
 const OWNER_REPO = /^[\w.-]+\/[\w.-]+$/;
-/** `gh api` paths that post a comment or review on a numbered PR or issue. */
 const API_PATH =
   /^\/?repos\/([^/]+\/[^/]+)\/(?:issues|pulls)\/(\d+)\/(?:comments|reviews)(?:[/?].*)?$/;
-/** `gh api` paths that post one with no PR number in the path, such as a reply in a thread. */
 const API_POSTS = /^\/?repos\/[^/]+\/[^/]+\/(?:issues|pulls)\/(?:\d+\/)?(?:comments|reviews)\b/;
 
-/** `gh pr comment|review` and `gh issue comment` flags that take a value. */
 const VALUED = new Set(["--body", "-b", "--body-file", "-F", "--repo", "-R"]);
 
-/** The PR a `gh pr|issue` command names: its argument (a number, `#N` or URL) and `--repo`. */
 const targetOf = (args: ReadonlyArray<string>): PostTarget | undefined => {
   let repo: string | undefined;
   let named: string | undefined;
@@ -240,10 +218,8 @@ const targetOf = (args: ReadonlyArray<string>): PostTarget | undefined => {
   };
 };
 
-/** What one shell command posted: gh's comment and review flags, and `gh api`'s body field. */
 const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): Posting => {
   const { words } = command;
-  // `bash -lc '…'`, as Codex runs a command line.
   if (words.length >= 3 && SHELLS.has(words[0]!) && /^-\w*c$/.test(words[1]!)) {
     const inner = shellCommands(words[2]!).map((each) => postingOf(each, files));
     return {
@@ -253,7 +229,6 @@ const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): P
     };
   }
   const gh = words.indexOf("gh");
-  // Not `gh` at all: anything it prints (a `curl` of the comments) may name others' comments.
   if (gh === -1) return READ;
   const args = words.slice(gh + 1);
   const sub = args.slice(0, 2).join(" ");
@@ -311,7 +286,6 @@ const postingOf = (command: ShellCommand, files: ReadonlyMap<string, string>): P
     }
     if (!arg.startsWith("-") && path === undefined) path = arg;
   }
-  // A body field makes gh POST unless told otherwise; a read of the comments posts nothing.
   if (path === undefined || !API_POSTS.test(path) || (method !== undefined && method !== "POST"))
     return READ;
   if (bodies.length === 0) return method === "POST" ? { sent: [], posts: 1, reads: false } : READ;
@@ -339,7 +313,6 @@ const strings = (value: unknown, out: Array<string>, depth = 0): void => {
     for (const each of Object.values(value)) strings(each, out, depth + 1);
 };
 
-/** A link to one comment, review or review comment on a PR or issue: what a post prints back. */
 const COMMENT_LINK =
   /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+#(?:issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)/g;
 
@@ -347,9 +320,7 @@ interface ToolCall {
   readonly name: string;
   readonly input: Record<string, unknown>;
   readonly output: unknown;
-  /** When its message was written, epoch ms. */
   readonly at?: number | undefined;
-  /** Where it sits in the thread: its message id and place. */
   readonly key: string;
 }
 
@@ -416,7 +387,6 @@ export const postsIn = (messages: ReadonlyArray<GramUIMessage>): Array<Post> => 
     let sent: Array<Sent> = [];
     let posting = 0;
     let reads = false;
-    // Gram's own review-reply tool, under any agent's name for it: on the thread's own PR.
     if (call.name.endsWith("pr_reply_to_thread")) {
       posting = 1;
       const body = str(call.input["body"]);
@@ -438,9 +408,6 @@ export const postsIn = (messages: ReadonlyArray<GramUIMessage>): Array<Post> => 
     const printed: Array<string> = [];
     strings(call.output, printed);
     const links = [...new Set(printed.flatMap((text) => text.match(COMMENT_LINK) ?? []))];
-    // The links name the posts' own comments only when nothing else in the call could have
-    // printed one: every command in it posts, and it printed no more links than posts. Otherwise
-    // the text match still covers the posts, and a person's comment a read printed stays theirs.
     const urls = !reads && links.length <= posting ? links : [];
     const at = call.at;
     if (sent.length === 0) posts.push({ key: call.key, urls, ...(at === undefined ? {} : { at }) });

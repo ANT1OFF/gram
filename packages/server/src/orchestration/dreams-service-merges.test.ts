@@ -413,18 +413,31 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           Effect.gen(function* () {
             const memory = yield* OrchestrationMemory;
             const answerIt = makeAnswerOnce();
+            const { memoryQuestions } = yield* Orchestration;
             const { workspaceId } = yield* openOrchestrator(world);
             yield* memory.write(workspaceId, "questions.md", ANSWERED_FILE);
             const { delivery, held } = flaky(1, false);
             const answer = `Use the token ${githubToken}`;
             const failed = yield* Effect.flip(
-              answerIt(memory, workspaceId, { ...ANSWER_TO, answer }, "2026-09-25", delivery),
+              answerIt(
+                memoryQuestions,
+                workspaceId,
+                { ...ANSWER_TO, answer },
+                "2026-09-25",
+                delivery,
+              ),
             );
             expect(failed).toMatchObject({ message: "the session went away" });
             expect(yield* memory.read(workspaceId, "questions.md")).toContain("## Q1 · open");
             expect(held).toEqual([]);
 
-            yield* answerIt(memory, workspaceId, { ...ANSWER_TO, answer }, "2026-09-25", delivery);
+            yield* answerIt(
+              memoryQuestions,
+              workspaceId,
+              { ...ANSWER_TO, answer },
+              "2026-09-25",
+              delivery,
+            );
             expect(held).toHaveLength(1);
             const file = yield* memory.read(workspaceId, "questions.md");
             expect(file).toContain("## Q1 · answered 2026-09-25");
@@ -440,6 +453,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           Effect.gen(function* () {
             const memory = yield* OrchestrationMemory;
             const answerIt = makeAnswerOnce();
+            const { memoryQuestions } = yield* Orchestration;
             const { workspaceId } = yield* openOrchestrator(world);
             yield* memory.write(workspaceId, "questions.md", ANSWERED_FILE);
             const addQ2 = memory
@@ -453,7 +467,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             const { delivery, held } = flaky(1, false, addQ2);
             yield* Effect.flip(
               answerIt(
-                memory,
+                memoryQuestions,
                 workspaceId,
                 { ...ANSWER_TO, answer: "Yes" },
                 "2026-09-25",
@@ -467,7 +481,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             ]);
 
             yield* answerIt(
-              memory,
+              memoryQuestions,
               workspaceId,
               { ...ANSWER_TO, answer: "Yes" },
               "2026-09-25",
@@ -491,12 +505,13 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           Effect.gen(function* () {
             const memory = yield* OrchestrationMemory;
             const answerIt = makeAnswerOnce();
+            const { memoryQuestions } = yield* Orchestration;
             const { workspaceId } = yield* openOrchestrator(world);
             yield* memory.write(workspaceId, "questions.md", ANSWERED_FILE);
             const { delivery, held } = flaky(1, true);
             expect(
               yield* answerIt(
-                memory,
+                memoryQuestions,
                 workspaceId,
                 { ...ANSWER_TO, answer: "Yes" },
                 "2026-09-25",
@@ -507,7 +522,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             // The UI still showed it open and the user pressed Send again.
             expect(
               yield* answerIt(
-                memory,
+                memoryQuestions,
                 workspaceId,
                 { ...ANSWER_TO, answer: "Yes" },
                 "2026-09-25",
@@ -524,6 +539,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         Effect.gen(function* () {
           const memory = yield* OrchestrationMemory;
           const answerIt = makeAnswerOnce();
+          const { memoryQuestions } = yield* Orchestration;
           const { workspaceId } = yield* openOrchestrator(world);
           // What a delivery leaves when its close fails: the entry open, with the answer and its key.
           yield* memory.write(
@@ -535,7 +551,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           held.push(`Answer to Q1 … (answer key k-1234)`);
           expect(
             yield* answerIt(
-              memory,
+              memoryQuestions,
               workspaceId,
               { ...ANSWER_TO, answer: "Yes" },
               "2026-09-25",
@@ -555,6 +571,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         Effect.gen(function* () {
           const memory = yield* OrchestrationMemory;
           const answerIt = makeAnswerOnce();
+          const { memoryQuestions } = yield* Orchestration;
           const { workspaceId } = yield* openOrchestrator(world);
           let noted = 0;
           const own = { own: true, beforeSend: Effect.sync(() => void noted++) } as const;
@@ -567,15 +584,21 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           const { delivery, held } = flaky(0, false);
           held.push(`Answer to Q1 … (answer key k-1234)`);
           const busy = { ...ANSWER_TO, answer: "No" };
-          yield* Effect.flip(answerIt(memory, workspaceId, busy, "2026-09-25", delivery, own));
+          yield* Effect.flip(
+            answerIt(memoryQuestions, workspaceId, busy, "2026-09-25", delivery, own),
+          );
           expect(noted).toBe(0);
-          // Free, it goes, and is noted first.
-          yield* memory.write(workspaceId, "questions.md", ANSWERED_FILE);
+          // Free, it goes, and is noted first. A write to the file can't free it: the store does.
+          yield* memoryQuestions.modify(workspaceId, () =>
+            Effect.succeed({ content: ANSWERED_FILE, result: undefined }),
+          );
           const yes = { ...ANSWER_TO, answer: "Yes" };
-          yield* answerIt(memory, workspaceId, yes, "2026-09-25", delivery, own);
+          yield* answerIt(memoryQuestions, workspaceId, yes, "2026-09-25", delivery, own);
           expect(noted).toBe(1);
           // Closed by that answer: the same words again are not this answer's to settle.
-          yield* Effect.flip(answerIt(memory, workspaceId, yes, "2026-09-25", delivery, own));
+          yield* Effect.flip(
+            answerIt(memoryQuestions, workspaceId, yes, "2026-09-25", delivery, own),
+          );
           expect(noted).toBe(1);
         }),
       ),
@@ -588,6 +611,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           Effect.gen(function* () {
             const memory = yield* OrchestrationMemory;
             const answerIt = makeAnswerOnce();
+            const { memoryQuestions } = yield* Orchestration;
             const { workspaceId } = yield* openOrchestrator(world);
             yield* memory.write(
               workspaceId,
@@ -600,7 +624,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
               [
                 Effect.result(
                   answerIt(
-                    memory,
+                    memoryQuestions,
                     workspaceId,
                     { question, answer: "Yes" },
                     "2026-09-25",
@@ -609,7 +633,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
                 ),
                 Effect.result(
                   answerIt(
-                    memory,
+                    memoryQuestions,
                     workspaceId,
                     { questionId: "Q1", question, answer: "No" },
                     "2026-09-25",
@@ -630,6 +654,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         Effect.gen(function* () {
           const memory = yield* OrchestrationMemory;
           const answerIt = makeAnswerOnce();
+          const { memoryQuestions } = yield* Orchestration;
           const { workspaceId } = yield* openOrchestrator(world);
           yield* memory.write(workspaceId, "questions.md", ANSWERED_FILE);
           const { delivery, held } = flaky(0, false, Effect.yieldNow);
@@ -637,7 +662,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             ["Yes", "No"].map((said) =>
               Effect.result(
                 answerIt(
-                  memory,
+                  memoryQuestions,
                   workspaceId,
                   { ...ANSWER_TO, answer: said },
                   "2026-09-25",

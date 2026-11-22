@@ -17,7 +17,6 @@ export function HelpTip({ label, help }: { label: string; help: ReactNode }) {
         <TooltipTrigger
           render={
             <span
-              // Focusable, so the words reach the keyboard as well as the pointer.
               tabIndex={0}
               role="img"
               aria-label="More info"

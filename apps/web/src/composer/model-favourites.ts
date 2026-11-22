@@ -2,13 +2,11 @@ import type { AgentKind } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-/** Favourites kept; the least recently starred go first past it. */
 const FAVOURITE_LIMIT = 200;
 
 const keyOf = (agent: AgentKind, model: string) => `${agent}:${model}`;
 
 interface ModelFavouritesState {
-  /** `agent:model` keys, the most recently starred last. */
   keys: readonly string[];
   toggle(agent: AgentKind, model: string): void;
 }
@@ -34,8 +32,6 @@ export const useModelFavourites = create<ModelFavouritesState>()(
     {
       name: "gram.modelFavourites",
       version: 1,
-      // `window`, not `globalThis`: under Node, reading `globalThis.localStorage` warns that it has no
-      // backing file, while a missing `window` throws, which zustand takes as no storage.
       storage: createJSONStorage(() => window.localStorage),
       partialize: ({ keys }) => ({ keys }),
       merge: (persisted, current) => ({

@@ -7,11 +7,6 @@ import {
   type WorkerLedgerEntry,
 } from "@gram/contracts";
 
-// "Why is it stuck?" on a worker that hasn't moved for `STUCK_AFTER_MS` (45 minutes): when it
-// applies, how long it has sat, the facts the view shows without a helper, and the nudges the user
-// picks from. Pure and deterministic; the nudges only fill a composer.
-
-/** States past the end of the road, and statuses that are an ask the request card already shows. */
 const FINISHED = new Set<WorkerLedgerEntry["state"]>(["merged", "delivered", "archived"]);
 const ASKING = new Set<ThreadStatus>(["needsApproval", "needsInput"]);
 

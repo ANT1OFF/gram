@@ -1,32 +1,13 @@
-/**
- * The only door to ghostty-web's render loop. As of 0.4.0 every terminal runs one for as long as it
- * lives: each animation frame it calls `renderer.render`, seen or not, changed or not, and `render`
- * draws the cursor every time, and the whole of the cursor's row while it blinks. A canvas drawn on
- * is a GPU upload and a composited frame, so a terminal sitting at a prompt cost the app a quarter of
- * a core on a 120 Hz display. The loop's wakeups alone, drawing nothing, still cost about 5%.
- *
- * So `render` is intercepted by name, as its loop calls it: a frame is drawn only when something it
- * shows has changed (a row the emulator marks dirty, the cursor or its blink, the viewport, the
- * scrollbar's fade, the link under the pointer, the selection), and after a frame with nothing to
- * draw the loop is stopped until one of those changes. That takes four private members: the blink
- * phase, the selection's request for a frame, the loop's frame id and its start. Were any renamed,
- * every frame would be drawn, or the loop run, as before, and nothing else would change;
- * `terminal-panel.test.tsx` runs the real package so that a bump which renames one fails there.
- */
 import type { IRenderable, Terminal } from "ghostty-web";
 
-/** What a terminal frame shows besides its rows, for telling whether a frame would change anything. */
 interface FrameState {
   cursorX: number;
   cursorY: number;
-  /** Shown by the program, and in the lit half of its blink. */
   cursorShown: boolean;
-  /** Lines scrolled up from the bottom, fractional while a scroll animates. */
   viewportY: number;
   scrollbarOpacity: number;
 }
 
-/** Whether a frame after `drawn` would draw anything: its state differs, or a row is dirty. */
 function frameChanged(
   drawn: FrameState | undefined,
   next: FrameState,
@@ -78,7 +59,6 @@ export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoo
     gated && typeof start === "function" && typeof internals.animationFrameId === "number";
 
   let redrawAll = false;
-  /** The selection or the hovered link changed, which no dirty row records. */
   let asked = true;
   let drawn: FrameState | undefined;
   let running = true;
@@ -104,7 +84,6 @@ export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoo
   const sleep = () => {
     if (!sleeps || !running || stopping) return;
     stopping = true;
-    // The loop asks for its next frame after `render` returns, and this runs once it has.
     queueMicrotask(() => {
       if (!stopping) return;
       stopping = false;
@@ -129,7 +108,6 @@ export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoo
     ask();
     hoverRange(range);
   };
-  // The blink is a timer flipping this flag; the flip is what has to wake the loop.
   if (gated) {
     let lit = phase.cursorVisible as boolean;
     Object.defineProperty(renderer, "cursorVisible", {

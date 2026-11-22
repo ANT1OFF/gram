@@ -57,10 +57,6 @@ export function SlotPresence({
   );
 }
 
-/**
- * The slot itself, inert while it leaves: a press or Tab meant for what is beside it must not land
- * on a control that is already going, which still covers its old place as it fades.
- */
 function Slot({
   closed,
   transition,

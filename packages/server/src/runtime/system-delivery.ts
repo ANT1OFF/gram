@@ -1,5 +1,3 @@
-// Server-authored input a thread takes once it is free (`ThreadRuntimesShape.requestSystemDelivery`).
-
 import type { TurnId, ThreadStatus, UserInput } from "@gram/contracts";
 import type * as Effect from "effect/Effect";
 

@@ -3,10 +3,6 @@ import { createContext, use } from "react";
 
 import { railTone, workerTone, type RailFacts, type RailTone } from "./rail-model";
 
-// A feature card's workers take the dot every other view draws for them (`StatusDot`), from the
-// same facts the Board's rail reads. They are provided once per orchestrator chat, beside its
-// stream and not in it: a worker starting or asking moves its dot, never the chat's messages.
-
 /** What the workspace knows of its workers, for the cards of an orchestrator's chat. */
 export const CardFactsContext = createContext<RailFacts | undefined>(undefined);
 
@@ -23,7 +19,6 @@ export const cardWorkerTone = (
         asking: false,
         state: worker.state,
         failed: worker.flag === "error",
-        // With no thread to read, a worker its card has at work is at work.
         working: worker.state === "working" || worker.state === "briefed",
       })
     : railTone(worker, facts);

@@ -1,10 +1,3 @@
-/**
- * Declared PR dependencies (`depends_on`): a thread's bound PR waiting on another one. They are kept
- * on the binding (`BoundPr.dependsOn`), and this module is the only one that writes them. Each open
- * one is watched through the publisher's sweeps, and the dependent thread is sent a notice when it
- * merges, is closed or gets a new push, with no wake of its own to set. `merge_when_ready` reads
- * them as `after` (`mergeAfterDependencies`), and the ledger shows the chain.
- */
 import {
   AppToolError,
   MAX_PR_DEPENDENCIES,
@@ -45,16 +38,12 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 
 const TOOL = "depends_on";
 
-/** How soon a dependency's notice its thread couldn't take yet is tried again. */
 const DEPENDENCY_RETRY = Duration.minutes(1);
 
-/** What `depends_on` asks for, its PR already parsed. */
 interface DependsOnInput {
   readonly pr: PrRef;
-  /** The worker whose PR depends on it, for an orchestrator; the caller's own otherwise. */
   readonly threadId?: ThreadId | undefined;
   readonly remove?: boolean | undefined;
-  /** `false`: `merge_when_ready` needn't wait for it. */
   readonly mergeAfter?: boolean | undefined;
 }
 
@@ -79,7 +68,6 @@ export class PrDependencies extends Context.Service<PrDependencies, PrDependenci
 
 const refused = (message: string) => new AppToolError({ tool: TOOL, message });
 
-/** A dependency as the tool's answer names it. */
 const dependencyName = (dependency: PrDependency): string =>
   `${prRefText(dependency)}${dependency.mergeAfter === false ? " (needn't merge first)" : ""}${
     dependency.seen?.state === "merged" || dependency.seen?.state === "closed"
@@ -87,23 +75,19 @@ const dependencyName = (dependency: PrDependency): string =>
       : ""
   }`;
 
-/** A dependency still to watch: not yet seen merged or closed. */
 const open = (dependency: PrDependency): boolean =>
   dependency.seen?.state !== "merged" && dependency.seen?.state !== "closed";
 
-/** What a dependency keeps of what it saw: its events turn on the state and the head alone. */
 const keptSeen = (seen: PrWatchSeen): PrWatchSeen => ({
   ...(seen.state === undefined ? {} : { state: seen.state }),
   ...(seen.head === undefined ? {} : { head: seen.head }),
 });
 
-/** `bound` with `dependsOn` as given, the key left off when it is empty. */
 const withDependencies = (bound: BoundPr, dependsOn: ReadonlyArray<PrDependency>): BoundPr => {
   const { dependsOn: _, ...rest } = bound;
   return dependsOn.length === 0 ? rest : { ...rest, dependsOn };
 };
 
-/** What the publisher's sweeps look up for every open dependency of an open thread's PR. */
 const dependencyWatches = (threads: ReadonlyArray<Thread>): ReadonlyArray<PrWatch> =>
   threads.flatMap((thread) =>
     thread.parked
@@ -112,7 +96,6 @@ const dependencyWatches = (threads: ReadonlyArray<Thread>): ReadonlyArray<PrWatc
           threadId: thread.id,
           repo: dependency.repo,
           number: dependency.number,
-          // The bot's rounds on it are what says it drags on.
           reviews: true,
         })),
   );
@@ -126,27 +109,13 @@ export const PrDependenciesLive = Layer.effect(
     const hub = yield* EventHub;
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const mergeWhenReady = Option.getOrUndefined(yield* Effect.serviceOption(MergeWhenReady));
-    /** One look at a badge at a time: a sweep's and a catch-up's would both tell the same event. */
     const looking = yield* Semaphore.make(1);
-    /** Per dependency whose notice its thread couldn't take, the look again. */
     const retries = yield* FiberMap.make<string>();
 
     const syncWatches = store.listThreads.pipe(
       Effect.flatMap((threads) => publisher.watchPrs("dependencies", dependencyWatches(threads))),
     );
 
-    /**
-     * `badge` for every open thread whose PR depends on it: the thread is told of a merge, a close
-     * or a push since, and what it saw is kept once it has been. A thread that can't take the notice
-     * yet (a cleanup holding it, its folder gone) keeps the dependency as it was, and is looked at
-     * again a minute on. A restart between the notice and the write sends it once more, which the
-     * notice's key makes replace a copy still queued.
-     */
-    /**
-     * Whether `thread`'s dependency events wait: it is in a paused workspace, or it is a worker of a feature the user paused, which holds what would start a worker's
-     * turn, as its scheduled wakes are held. What it saw isn't kept meanwhile, so the event is told
-     * once the resume looks again.
-     */
     const held = (thread: Thread) =>
       Effect.gen(function* () {
         if (thread.workspaceId === undefined) return false;
@@ -185,9 +154,6 @@ export const PrDependenciesLive = Layer.effect(
                   Effect.catch((e) =>
                     Effect.logWarning("dependency notice not delivered").pipe(
                       Effect.annotateLogs({ threadId: thread.id, error: e.message }),
-                      // As a wake: an agent that won't start leaves the notice queued and a
-                      // thread that's gone takes nothing, while anything holding the thread is
-                      // tried again.
                       Effect.as(e._tag !== "InvalidState"),
                     ),
                   ),
@@ -221,7 +187,6 @@ export const PrDependenciesLive = Layer.effect(
                 .pipe(Effect.ignore);
             }
             if (fired === undefined) continue;
-            // A merge waiting on it asks again now rather than after its recheck interval.
             if (fired.event === "merged" && mergeWhenReady !== undefined) {
               yield* mergeWhenReady.check(thread.id);
             }
@@ -229,10 +194,6 @@ export const PrDependenciesLive = Layer.effect(
         }
       });
 
-    /**
-     * Brings the watches up to the threads, and measures every open dependency against its PR's
-     * last badge: one unarchived, or read before a restart, may have moved meanwhile.
-     */
     const catchUp: Effect.Effect<void> = Effect.gen(function* () {
       yield* syncWatches;
       const seen = new Map<string, PrStatus>();
@@ -247,7 +208,6 @@ export const PrDependenciesLive = Layer.effect(
         }
       }
       for (const badge of seen.values()) yield* looking.withPermits(1)(onBadge(badge));
-      // One seen merged or closed just now is watched no more.
       if (seen.size > 0) yield* syncWatches;
     });
 
@@ -260,7 +220,6 @@ export const PrDependenciesLive = Layer.effect(
     yield* catchUp;
     const threadChanges = upsertsChanging(besidesActivity);
     yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
-      // A resume is a workspace change: the events its pause held are told then.
       Stream.filter(
         (event) =>
           ((event.type === "thread.upsert" || event.type === "thread.removed") &&
@@ -321,8 +280,6 @@ export const PrDependenciesLive = Layer.effect(
         }
         const guardedMessage = `Your orchestrator declared that ${prRefText(bound)} depends on ${prRefText(input.pr)}; only it can change that.`;
         const now = yield* Clock.currentTimeMillis;
-        // Who declared it is read again in the write: an orchestrator's declaration that landed
-        // while this call looked the PR up stands against the worker's change.
         let blocked: string | undefined;
         const write = runtimes.updateThread(targetId, (current) => {
           blocked = undefined;
@@ -356,7 +313,6 @@ export const PrDependenciesLive = Layer.effect(
             ...(input.mergeAfter === false ? { mergeAfter: false as const } : {}),
           };
           const before = list.find((each) => samePr(each, input.pr));
-          // Read again in the write: another declaration may have filled the list meanwhile.
           if (before === undefined && list.length >= MAX_PR_DEPENDENCIES) {
             blocked = `A pull request depends on ${MAX_PR_DEPENDENCIES} others at most; drop one first.`;
             return current;
@@ -378,7 +334,6 @@ export const PrDependenciesLive = Layer.effect(
             boundPr: withDependencies(binding, next),
           };
         });
-        // No merge of it between its last look and its launch while its order changes.
         const updated = yield* (
           mergeWhenReady === undefined ? write : mergeWhenReady.mutate(targetId, write)
         ).pipe(Effect.mapError((e) => refused(e.message)));

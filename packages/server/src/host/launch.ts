@@ -1,5 +1,3 @@
-// gram-host's own process, as Node or in host mode in Electron's main process (`launch-args.ts`).
-
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import * as Runtime from "effect/Runtime";
@@ -8,7 +6,6 @@ import { withoutHostSwitches } from "./launch-args.ts";
 
 export { HOST_MODE_FLAG, hostSwitches, LINUX_HOST_SWITCHES } from "./launch-args.ts";
 
-/** Whether this is Electron's main process (host mode) rather than Node. */
 const inElectronMain = () => (process as { type?: string }).type === "browser";
 
 /**
@@ -20,7 +17,6 @@ const inElectronMain = () => (process as { type?: string }).type === "browser";
 export const prepareHostProcess = (): void => {
   process.argv = withoutHostSwitches(process.argv);
   if (!inElectronMain()) return;
-  // Loaded only here, so the bundle leaves Electron's own module to Electron.
   const { app } = createRequire(import.meta.url)("electron") as { app: typeof ElectronApp };
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu");

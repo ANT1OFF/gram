@@ -10,7 +10,6 @@ import { OptionGroup, SettingRow } from "./fields";
 import { SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
-/** `terminal.shell` profiles; the server maps each to its executable. */
 const WINDOWS_SHELLS = [
   { value: "powershell", label: "Windows PowerShell" },
   { value: "pwsh", label: "PowerShell 7" },
@@ -48,7 +47,6 @@ export function TerminalSection() {
         error={error}
         detail={
           <CustomShellField
-            // No key: saving a custom shell must not remount the field and drop its status line.
             value={isShellProfile(shell) ? undefined : shell}
             onSave={(custom) => apply({ terminal: { shell: custom } })}
           />

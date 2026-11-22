@@ -1,7 +1,3 @@
-// What a signed install checks of an update before Squirrel.Mac ever sees it: the exact ZIP
-// electron-updater downloaded, unpacked with Gram's own bounded reader. Squirrel.Mac checks the
-// signature against this app's designated requirement, but neither notarization nor the version
-// the feed offered: those are checked here, as the private helper checks them.
 import { mkdtemp, rm } from "node:fs/promises";
 import { basename, join } from "node:path";
 

@@ -1,15 +1,3 @@
-// Each workspace's shared folder: plain files every thread in the workspace reads and writes, kept
-// with Gram's own data at `<data>/shared/<workspace>/`, so they outlive any one thread or machine.
-//
-// A thread on this machine is given that folder itself. A thread on another machine is given its
-// host's mirror (`host.shared.*`), which a round every few seconds keeps in step with this one
-// (`sync.ts`) while the machine is connected: changes go both ways, the later write wins, and what
-// the last round agreed on is kept beside, so a delete on either side is a delete on the other,
-// across a restart too. Solo threads, which have no workspace, and memory updates get no folder.
-//
-// Workspace memory is separate: it is the orchestrator's to curate and workers only read it. The
-// shared folder has no curator.
-
 import {
   effectiveCheckout,
   type HostId,
@@ -35,9 +23,7 @@ import { type SharedBase, type SharedSide, syncRound } from "./sync.ts";
 
 /** How often a connected machine's mirror is brought in step. */
 export const SHARED_SYNC_EVERY = Duration.seconds(5);
-/** How long a session about to open waits for its mirror's first round. */
 const FIRST_ROUND_WAIT = Duration.seconds(30);
-/** Rounds in a row a machine may be away before its mirror is let go, until a session opens again. */
 const AWAY_ROUNDS = 60;
 
 export interface SharedFoldersShape {
@@ -80,7 +66,6 @@ export const makeSharedFolders = (
     const basesDir = join(dataDir, "shared-sync");
     const rounds = makeKeyedLock<string>();
     const mirrors = yield* FiberMap.make<string>();
-    /** The workspaces mirrored on each machine. */
     const mirrored = new Map<HostId, Set<WorkspaceId>>();
 
     const baseFile = (hostId: HostId, workspaceId: WorkspaceId) =>
@@ -121,7 +106,6 @@ export const makeSharedFolders = (
         })),
       );
 
-    /** One round for a workspace on a machine; false when the machine isn't there to have one. */
     const round = (hostId: HostId, workspaceId: WorkspaceId) =>
       rounds.withLock(
         keyOf(hostId, workspaceId),
@@ -154,7 +138,6 @@ export const makeSharedFolders = (
         ),
       );
 
-    /** Rounds for a workspace on a machine until the machine has been away a while. */
     const mirror = (hostId: HostId, workspaceId: WorkspaceId) =>
       Effect.gen(function* () {
         let away = 0;

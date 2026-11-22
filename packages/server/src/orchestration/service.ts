@@ -1,20 +1,3 @@
-// Threaded orchestration's server side: workspaces and
-// the orchestrator slot, the session policy a role adds, the ledger, the wake → debounce → digest
-// pipeline with its durable outbox, workers that span repos, handoff to a fresh session, the
-// charter's one cap, pauses and drift detection. Its decisions are `rules.ts`'s; the service
-// gathers the facts and carries the decisions out.
-//
-// This file is the composition root. `service/kit.ts` holds what every part shares (services,
-// timers, locks, state, the outbox and authority), and each part under `service/` is made from the
-// kit and the few functions of other parts its `deps` name. Here the parts are made in dependency
-// order, the signals are dispatched to them, and the runtime and publisher hooks are wired.
-//
-// Two invariants hold the rest together. Authority is asked on every call (`authorityOf`), never
-// remembered, so a role outside its slot can do nothing whatever tool list its session still
-// holds. And a digest is always the ledger now against the snapshot the outbox persisted at the
-// last acknowledged digest: the wake reasons kept in memory here decide when a digest goes, never
-// what it says, so a restart loses nothing.
-
 import { makeSpawnBreaker } from "./spawn-breaker.ts";
 import {
   idleCompactOf,
@@ -45,6 +28,7 @@ import {
   workerModel,
 } from "./service/kit.ts";
 import { makeWorkerQuestions } from "./service/questions.ts";
+import { makeMemoryQuestions } from "./service/memory-questions.ts";
 import { makeLedgerWatch } from "./service/ledger-watch.ts";
 import { makeHandoff } from "./service/handoff.ts";
 import { moveKindOf } from "../runtime/agent-switch.ts";
@@ -146,7 +130,6 @@ export const OrchestrationLive = Layer.effect(
       rosterHere,
       readOutbox,
       updateOutbox,
-      // Made below, by the held spawns, which take this breaker.
       arm: (workspaceId) => armLimitResume(workspaceId),
       changed: orchestrationChanged,
       projectName: (input, state) =>
@@ -170,7 +153,6 @@ export const OrchestrationLive = Layer.effect(
           requestSeen.delete(event.requestId);
           return FiberMap.remove(requestTimers, event.requestId);
         case "thread.status": {
-          // A turn that ends in error is `onTurnEnd`'s; this is the agent that never started.
           const workspaceId = workerWorkspaces.get(event.threadId);
           if (event.status !== "error" || workspaceId === undefined) return Effect.void;
           return findThread(event.threadId).pipe(
@@ -285,9 +267,6 @@ export const OrchestrationLive = Layer.effect(
       }
     };
 
-    // Idle compaction (docs/AGENTS_AND_FEATURES.md#idle-compaction): what only this service
-    // knows, a thread's workspace, its kind there and what the user holds of it, for the
-    // compactor's rules.
     const idleCompactor = yield* makeIdleCompactor({
       runtimes,
       store,
@@ -318,7 +297,6 @@ export const OrchestrationLive = Layer.effect(
               return "user" as const;
             }
           }
-          // An open question will bring an answer: the orchestrator's for any of its workers.
           const asking = (outbox.questions ?? []).some(
             (question) =>
               question.closedAt === undefined &&
@@ -383,7 +361,6 @@ export const OrchestrationLive = Layer.effect(
       noteQuietly,
     } = makeDigests(kit, {
       survey,
-      // Made below, by the pauses, which take `wake` and `cancelDelivery` from here.
       pause: (...args) => pause(...args),
       endRecovery: (workspaceId) => endRecovery(workspaceId),
     });
@@ -428,7 +405,6 @@ export const OrchestrationLive = Layer.effect(
     } = makeHeldSpawns(kit, {
       wake,
       lookupProject,
-      // Made below, by spawning, which takes the gates from here.
       spawnFor: (...args) => spawnFor(...args),
       survey,
       spawnBreaker,
@@ -461,7 +437,6 @@ export const OrchestrationLive = Layer.effect(
       routePaused,
     });
 
-    // A routine change: the routines engine (`routines/routines.ts`) looks again on this event.
     const { setCharter, changeCharter, checkCharter, afterCharter, editCharter } = makeCharter(
       kit,
       {
@@ -495,7 +470,6 @@ export const OrchestrationLive = Layer.effect(
     } = makeHandoff(kit, {
       armWake,
       survey,
-      // Made below, by the pauses, which take `abandonHandoff` from here.
       endRecovery: (workspaceId) => endRecovery(workspaceId),
       armAlarms,
       deliveryFor,
@@ -515,7 +489,6 @@ export const OrchestrationLive = Layer.effect(
                   row.workspace.projectIds.length === 1 &&
                   row.workspace.projectIds[0] === target.projectId,
               );
-        // Not made yet: the task makes it with the pick as its orchestrator model.
         if (state === undefined) return undefined;
         const holderId = state.workspace.orchestratorThreadId;
         const holder = holderId === undefined ? undefined : yield* findThread(holderId);
@@ -528,7 +501,6 @@ export const OrchestrationLive = Layer.effect(
         const switching = holder.sessionSwitch?.target;
         if (sameTaskModel(holder.model, picked)) return undefined;
         if (switching !== undefined && sameTaskModel(switching, picked)) return undefined;
-        // Where its session can't carry over, it starts fresh on the pick, as the preview said.
         const move = yield* moveKindOf(store, hosts, holder, picked);
         yield* handoff(state.workspace.id, "user", picked, move === "fresh" ? { fresh: true } : {});
         return move;
@@ -671,7 +643,6 @@ export const OrchestrationLive = Layer.effect(
       armRecovery,
     });
 
-    // The runtime's callbacks share one fiber, so each only hands its news to the queue.
     yield* runtimes.observe({
       onTurnStart: (thread, turnId) =>
         signals.offer({ type: "turnStart", thread, turnId }).pipe(Effect.asVoid),
@@ -681,7 +652,6 @@ export const OrchestrationLive = Layer.effect(
         signals.offer({ type: "quiet", thread, active: quiet !== undefined }).pipe(Effect.asVoid),
       onRetrying: (threadId, on) =>
         Effect.sync(() => void (on ? retrying.add(threadId) : retrying.delete(threadId))),
-      // At once, not behind the signals: input the user typed before a pause mustn't undo its stop.
       onUserInput: (thread) =>
         forgetStopped(thread).pipe(
           Effect.andThen(signals.offer({ type: "userInput", thread })),
@@ -691,10 +661,6 @@ export const OrchestrationLive = Layer.effect(
         signals.offer({ type: "limitWait", thread, wait, ended }).pipe(Effect.asVoid),
       onTurnHeld: (thread) => recordHeldStop(thread),
     });
-    // A worker of a feature the user paused starts no turn from its queue or a system delivery
-    // until they resume it, which sends what waited (`setFeaturePaused`).
-    // So does every worker of a workspace the user paused, and then each one its resume holds back
-    // until its batch (`resuming`). The user's own word goes through either way.
     yield* runtimes.holdQueues((thread) =>
       Effect.gen(function* () {
         const state = yield* listeningWorkspace(thread);
@@ -706,8 +672,6 @@ export const OrchestrationLive = Layer.effect(
         return resuming?.some((each) => each.threadId === thread.id) === true;
       }),
     );
-    // A turn the agent opens by itself in a workspace the user paused (Claude reporting on a
-    // background task) has its tool gate closed too, but a held worker's: that one is theirs.
     yield* runtimes.holdAgentTurns((thread) =>
       Effect.gen(function* () {
         const own = yield* orchestratorState(thread);
@@ -718,8 +682,6 @@ export const OrchestrationLive = Layer.effect(
         return !heldByUser(memo, yield* Clock.currentTimeMillis);
       }),
     );
-    // A limit's resume never takes over what the user holds: a worker they typed into and haven't
-    // let go of, or a paused workspace's threads. They stay waiting, and are asked again later.
     yield* runtimes.holdResumes((thread) =>
       Effect.gen(function* () {
         const own = yield* orchestratorState(thread);
@@ -736,7 +698,6 @@ export const OrchestrationLive = Layer.effect(
       onState: (thread, state) =>
         Effect.gen(function* () {
           const at = effectiveCheckout(thread);
-          // Before the coalescing queue: a quick second branch switch must retain the first.
           const observed = withOwnedBranch(thread, at, state.branch);
           const latest =
             observed === thread
@@ -750,13 +711,10 @@ export const OrchestrationLive = Layer.effect(
       onWatchedPr,
     });
     yield* kit.conditions.register(conditionHost);
-    // Before the boot signal: a worker the boot continues opens its session there, and a session
-    // keeps the policy it opened with, so one opened earlier would run without its role's tools.
     yield* runtimes.setSessionPolicy({
       forThread: policyFor,
       opening,
       modeAfterSwitch,
-      // An orchestrator's switch hands over with its boot digest, through any thread's handoff path.
       switchHandoff: (thread) =>
         Effect.succeed(
           thread.role === "orchestrator" && thread.workspaceId !== undefined
@@ -779,8 +737,6 @@ export const OrchestrationLive = Layer.effect(
       Effect.forever,
       Effect.forkScoped,
     );
-    // Each limit reading may say a limit that holds briefs, new workers or the orchestrator back
-    // no longer applies; the threads' own waits end in `ThreadRuntimes`.
     if (Option.isSome(kit.limitReadings)) {
       yield* kit.limitReadings.value.changes.pipe(
         Stream.runForEach(() => signals.offer({ type: "limitHeadroom" })),
@@ -791,8 +747,6 @@ export const OrchestrationLive = Layer.effect(
       Stream.runForEach((event) => signals.offer({ type: "hub", event })),
       Effect.forkScoped,
     );
-    // Usage streams several times a turn from every thread, so only an orchestrator's reading below
-    // the note's threshold is queued.
     yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
       Stream.runForEach((event) => {
         if (event.type !== "thread.usage") return Effect.void;
@@ -866,9 +820,7 @@ export const OrchestrationLive = Layer.effect(
       retrySwitch,
       checkModelChange,
       userChoseMode: (threadId) =>
-        Effect.sync(() => {
-          kit.openedInAuto.delete(threadId);
-        }),
+        Effect.asVoid(Effect.sync(() => kit.openedInAuto.delete(threadId))),
       reopen,
       orchestratorOpening: (charter) =>
         openModel(charter).pipe(
@@ -950,6 +902,7 @@ export const OrchestrationLive = Layer.effect(
       addNote,
       noteQuietly,
       withHeldReleases: (workspaceId, effect) => kit.heldLock.withLock(workspaceId, effect),
+      memoryQuestions: yield* makeMemoryQuestions(kit),
     });
   }),
 );

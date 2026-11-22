@@ -45,11 +45,6 @@ export const makePrDetailCache = (
 ) => {
   const entries = new Map<string, { readonly at: number; readonly value: PrDetailResponse }>();
   const inFlight = new Map<string, Deferred.Deferred<PrDetailResponse>>();
-  /**
-   * Evicting, reading and claiming an entry in one synchronous step, which no fiber can be
-   * preempted inside. Split across a `yield*`, two concurrent callers both miss the in-flight
-   * check and run the fetch twice — which is the duplicate `gh` pair the cache exists to remove.
-   */
   const claimUnsafe = (key: string, now: number) => {
     for (const [other, entry] of entries) {
       if (now - entry.at >= ttlMs) entries.delete(other);

@@ -1,10 +1,3 @@
-// A worker's own questions (docs/design/worker-questions.md): asked with `ask_question`, triaged by
-// its orchestrator (answered with `answer_worker`, or forwarded with `forward_question`), and
-// otherwise answered or dismissed by the user. The server keeps them in the workspace's outbox; the
-// ledger carries them to every surface and the digest to the orchestrator. A leaf beside
-// `questions.ts`, whose choices and limits it shares: it imports only that, `mock-visuals.ts` and
-// `ids.ts`.
-
 import * as Schema from "effect/Schema";
 import { ThreadId, WorkspaceId } from "./ids.ts";
 import { visualsProblem } from "./mock-visuals.ts";
@@ -243,7 +236,6 @@ export const forwardContextProblem = (context: string | undefined): string | und
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 
-/** The question as a message quotes it: on one line, clipped. */
 const quote = (question: Pick<WorkerQuestion, "question">): string =>
   `“${clip(oneLine(question.question), 160)}”`;
 

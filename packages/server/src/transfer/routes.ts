@@ -1,10 +1,3 @@
-// `POST /workspaces/export` and `POST /workspaces/import`: a workspace out of this server as a
-// bundle, and a bundle into it. `POST /threads/export`, `/threads/import` and `/threads/settle`:
-// one thread the same way, and the read-only copy it leaves here; `/threads/settled-there`: the
-// copy on the server a thread came back from is read-only now. The auth middleware lets only the local app's own origin reach
-// them, never a paired browser or a joined machine; while the hosted features setting is off they
-// answer as a path that isn't there.
-
 import {
   anyPrivate,
   currentReader,
@@ -69,7 +62,6 @@ export const WORKSPACE_TRANSFER_PATHS: ReadonlySet<string> = new Set([
   THREAD_SETTLED_THERE_PATH,
 ]);
 
-/** An export's body: a workspace id and a flag. */
 const EXPORT_BODY_MAX = 1_024;
 
 const refuse = (message: string, status: number) =>
@@ -77,11 +69,9 @@ const refuse = (message: string, status: number) =>
 
 const notThere = HttpServerResponse.text("not found", { status: 404 });
 
-/** The request's body as JSON of at most `max` bytes, or the response that refuses it. */
 const body = (max: number) =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    // A form or a plain-text post from another page is never a bundle.
     if (!(request.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
       return { refused: refuse("Send the body as application/json.", 415) };
     }
@@ -103,7 +93,6 @@ const body = (max: number) =>
     }
   });
 
-/** What a refused move answers: the service's own sentence, and nothing of how it failed inside. */
 const refusal = (error: NotFound | ThreadNotFound | InvalidState) =>
   error._tag === "ThreadNotFound"
     ? refuse("There is no such thread here.", 404)
@@ -117,7 +106,6 @@ export const workspaceTransferRoute = (
   transfer: WorkspaceTransferShape & ThreadTransferShape,
   on: Effect.Effect<boolean>,
   path: string,
-  /** Whether the caller may see the workspace (`embedding/readable-by.ts`); absent: anyone. */
   mayExport?: (workspaceId: WorkspaceId) => Effect.Effect<boolean>,
 ): Effect.Effect<
   HttpServerResponse.HttpServerResponse,
@@ -126,7 +114,6 @@ export const workspaceTransferRoute = (
 > =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    // Only under its one spelling: the checks above this route match the path exactly.
     if (authTarget(request.url)?.path !== path) return notThere;
     if (!(yield* on)) return notThere;
     if (request.method !== "POST") {
@@ -222,9 +209,7 @@ export const WorkspaceTransferRoutes = Layer.unwrap(
       Effect.map(embeddingOn),
       Effect.orElseSucceed(() => false),
     );
-    // One at a time: a bundle is read whole, and two would each hold their own in memory.
     const one = yield* Semaphore.make(1);
-    // A workspace readable by one person leaves only for them, or for the platform's service.
     const mayExport = (workspaceId: WorkspaceId) =>
       Effect.gen(function* () {
         if (!anyPrivate()) return true;

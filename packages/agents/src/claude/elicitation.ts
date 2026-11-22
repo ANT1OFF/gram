@@ -1,8 +1,3 @@
-// An MCP server's permission prompt in a Claude session (the SDK's `onElicitation`), as an
-// approval card. Without a handler the SDK declines every one, which is what a computer-use
-// server's "may I use this app" gets. Claude Code passes on neither the prompt's `_meta` nor the
-// answer's, so a grant for the session is kept here, by server and message.
-
 import { RequestId, type ApprovalRequest, type RequestAnswer } from "@gram/contracts";
 import type { ElicitationRequest, ElicitationResult } from "@anthropic-ai/claude-agent-sdk";
 import { promptAnswer, promptScopes, promptSubject, type McpPrompt } from "../mcp-elicitation.ts";

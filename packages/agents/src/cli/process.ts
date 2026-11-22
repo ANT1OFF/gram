@@ -33,9 +33,6 @@ export const runCommand = (
   const batch = process.platform === "win32" && isWindowsBatchFile(file);
   const invocation = batch ? batchFileInvocation(file, args) : { file, args };
   return Effect.callback<CommandOutput, CommandError>((resume, signal) => {
-    // execFile drops `detached` before calling spawn; use spawn for a POSIX session boundary.
-    // A login shell can background a profile job that inherits stdout. Abort must kill that
-    // process group and drop the pipe, or `close` never runs and the child outlives the probe.
     if (options.isolateSession && process.platform !== "win32") {
       const child = spawn(invocation.file, [...invocation.args], {
         ...(options.env === undefined ? {} : { env: options.env }),
@@ -59,9 +56,7 @@ export const runCommand = (
         } catch {
           try {
             child.kill("SIGKILL");
-          } catch {
-            // The probe already exited.
-          }
+          } catch (_theProbeAlreadyExited) {}
         }
       };
       stdout.on("data", (chunk: Buffer) => {

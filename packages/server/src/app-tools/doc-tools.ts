@@ -25,7 +25,6 @@ const NOT_IN_WORKSPACE =
   "Docs belong to a workspace, and this thread isn't in one. Write the file in your checkout " +
   "instead, or show it with send_file.";
 
-/** The calling thread and the workspace it is in, or the refusal for a thread in none. */
 const callerIn = (store: Pick<ThreadStoreShape, "getThread">, tool: string, threadId: ThreadId) =>
   Effect.gen(function* () {
     const thread = yield* store
@@ -51,11 +50,6 @@ const cardOf = (published: PublishedDoc, at: number): DocCardData => ({
   excerpt: published.meta.excerpt,
 });
 
-/**
- * The card in the caller's transcript, and in its orchestrator's chat when a worker published, so
- * the orchestrator's user sees the doc land without opening the worker. Each card is its own part
- * (`doc:<id>:<revision>`): an update leaves a card where it happened.
- */
 const showCards = (
   runtimes: Pick<ThreadRuntimesShape, "emitChunk">,
   caller: Thread,
@@ -70,7 +64,6 @@ const showCards = (
     yield* runtimes.emitChunk(caller.id, chunk).pipe(Effect.mapError(failed(PUBLISH)));
     const orchestrator = caller.role === "orchestrator" ? undefined : caller.spawnedBy?.threadId;
     if (orchestrator === undefined) return false;
-    // The orchestrator may be gone; the doc and the worker's card stand without its copy.
     return yield* runtimes.emitChunk(orchestrator, chunk).pipe(
       Effect.as(true),
       Effect.orElseSucceed(() => false),
@@ -84,13 +77,6 @@ const publishInput = Schema.Struct({
   revision: Schema.optionalKey(Schema.Int),
 });
 
-/**
- * `publish_doc`: writes a report, plan or analysis as Markdown into the workspace's docs, in Gram's
- * own state (never the repo, never uploaded), and shows it as a card the user opens in the doc
- * pane. An update names the doc and the revision it last saw, so it can't overwrite the user's
- * edit made since. Only the doc's author or the workspace's orchestrator may update a doc.
- */
-/** How many of the caller's earlier docs a new publish names back to it. */
 const EARLIER_DOCS_MAX = 5;
 
 export const publishDocTool = (
@@ -134,8 +120,6 @@ export const publishDocTool = (
           .pipe(Effect.mapError(failed(PUBLISH)));
         const card = cardOf(published, published.meta.updatedAt);
         const relayed = yield* showCards(runtimes, thread, card);
-        // A new doc from a thread that has published before: its earlier ones, so the next pass
-        // on the same subject updates one of them rather than adding a version beside it.
         const earlier =
           published.action === "published"
             ? (yield* docs.list(workspaceId).pipe(Effect.orElseSucceed(() => [])))

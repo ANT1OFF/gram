@@ -1,8 +1,3 @@
-// Undoing one turn's file edits with git's own machinery: the turn's patch (its start checkpoint
-// against its end checkpoint) applied in reverse to the working tree, `git apply -R`, once every
-// path it touches is checked to hold exactly what the turn left. Anything unusual is refused rather
-// than handled: undo either reverses the whole patch or changes nothing.
-
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -14,33 +9,18 @@ import { git, gitFailMsg } from "./exec.ts";
 
 /** What `undoTurnFiles` did, or why it did nothing. Every refusal leaves the working tree as it was. */
 export type TurnUndo =
-  /** The turn's patch was reversed: its paths are as they were at its start. */
   | { readonly kind: "undone"; readonly paths: ReadonlyArray<string> }
-  /** The turn changed no files. */
   | { readonly kind: "nothing" }
-  /** A commit since the turn started changes one of these paths: undoing would leave history behind. */
   | { readonly kind: "committed"; readonly paths: ReadonlyArray<string> }
-  /** HEAD is no longer on or after the commit the turn started from, so commits can't be checked. */
   | { readonly kind: "history" }
-  /** These paths no longer hold exactly what the turn left: a later turn or the user changed them. */
   | { readonly kind: "changed"; readonly paths: ReadonlyArray<string> }
-  /**
-   * A folder above one of these paths is no longer a plain folder (a symlink, or a file), or isn't
-   * writable: undo would have to work through or around it.
-   */
   | { readonly kind: "obstructed"; readonly paths: ReadonlyArray<string> }
-  /** The turn changed something undo doesn't handle: a symlink, a submodule, or a file's mode. */
   | {
       readonly kind: "unsupported";
       readonly reason: "symlink" | "submodule" | "mode" | "filter";
       readonly paths: ReadonlyArray<string>;
     }
-  /** `git apply -R --check` refused the reversed patch; nothing was changed. */
   | { readonly kind: "refused"; readonly message: string }
-  /**
-   * `--check` passed but the apply itself failed, so any of `paths` may already be reversed and
-   * others not: never reported as nothing changed.
-   */
   | {
       readonly kind: "failed";
       readonly message: string;
@@ -52,7 +32,6 @@ interface Entry {
   readonly oid: string;
 }
 
-/** One path the turn changed: what it held at the turn's start and at its end; absent is none. */
 interface Change {
   readonly path: string;
   readonly start?: Entry;
@@ -61,11 +40,9 @@ interface Change {
 
 const LIST_MAX = 20;
 
-/** A side of a raw diff entry; an all-zero mode is none. */
 const entry = (mode: string, oid: string): Entry | undefined =>
   /^0+$/.test(mode) ? undefined : { mode, oid };
 
-/** `diff-tree -r -z --raw`: `:<old mode> <new mode> <old oid> <new oid> <status>\0<path>\0`. */
 const parseRaw = (stdout: string): ReadonlyArray<Change> => {
   const fields = stdout.split("\0");
   const changes: Array<Change> = [];
@@ -85,16 +62,11 @@ const parseRaw = (stdout: string): ReadonlyArray<Change> => {
   return changes.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 };
 
-/** Output read whole, or a failure: a check never passes on a list cut at the output cap. */
 const whole = (out: { readonly stdout: string; readonly truncated: boolean }, what: string) =>
   out.truncated ? fail(`${what} is too long to check`) : Effect.succeed(out.stdout);
 
 const splitZ = (stdout: string) => stdout.split("\0").filter((path) => path !== "");
 
-/**
- * Every path a commit since the turn started changes, whatever the net result: a change committed
- * and then reverted counts. `history` when HEAD isn't on or after the commit the turn started from.
- */
 const committedPaths = (top: string, base: string | undefined, head: string | undefined) =>
   Effect.gen(function* () {
     if (head === undefined) return base === undefined ? new Set<string>() : ("history" as const);
@@ -141,7 +113,6 @@ const kindOf = (abs: string): { readonly kind: FsKind; readonly stat?: fs.Stats 
   }
 };
 
-/** The folders above `rel`, nearest the top first: `a/b/c` → `a`, `a/b`. */
 const ancestorsOf = (rel: string): ReadonlyArray<string> => {
   const parts = rel.split("/");
   return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join("/"));
@@ -153,11 +124,6 @@ const blobOid = (bytes: Buffer, oidLength: number) =>
     .update(bytes)
     .digest("hex");
 
-/**
- * Paths with a `filter` (LFS's `filter=lfs` included) or a `working-tree-encoding`, by the worktree's
- * attributes or either checkpoint's. Their checkout runs a conversion that can fail, so `git apply`
- * could fail partway through writing them after its check passed: they are refused up front.
- */
 const convertedPaths = (top: string, rels: ReadonlyArray<string>, trees: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const found = new Set<string>();
@@ -184,7 +150,6 @@ const convertedPaths = (top: string, rels: ReadonlyArray<string>, trees: Readonl
     return [...found].toSorted();
   });
 
-/** A filesystem call, its throw a `CheckpointError`. */
 const sync = <A>(f: () => A) =>
   Effect.try({ try: f, catch: (e) => new CheckpointError({ message: String(e) }) });
 
@@ -194,7 +159,6 @@ const fileModeHonoured = (top: string) =>
     Effect.mapError((e) => new CheckpointError({ message: e.message })),
   );
 
-/** A private temp folder, removed when the scope closes. */
 const tempFolder = Effect.acquireRelease(
   Effect.sync(() => fs.mkdtempSync(nodePath.join(os.tmpdir(), "gram-undo-"))),
   (dir) => Effect.sync(() => fs.rmSync(dir, { recursive: true, force: true })),
@@ -231,7 +195,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
       if (changes.length === 0) return { kind: "nothing" } satisfies TurnUndo;
       const paths = changes.map((c) => c.path);
 
-      // Unusual changes are refused, not handled.
       const unsupported = (
         reason: "symlink" | "submodule" | "mode",
         test: (c: Change) => boolean,
@@ -253,8 +216,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
       if (converted.length > 0)
         return { kind: "unsupported", reason: "filter", paths: converted } satisfies TurnUndo;
 
-      // Committed: any commit since the turn started (in it or after) that touches one of its
-      // paths. The start checkpoint's parent is HEAD at the turn's start.
       const base = (yield* git(top, ["rev-parse", "--verify", "--quiet", `${from}^1`]).pipe(
         Effect.mapError((e) => new CheckpointError({ message: e.message })),
       )).stdout.trim();
@@ -267,9 +228,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
       const hits = paths.filter((path) => committed.has(path));
       if (hits.length > 0) return { kind: "committed", paths: hits } satisfies TurnUndo;
 
-      // Both versions as git writes them out, outside the working tree: undo handles only files
-      // git writes exactly as stored, so no conversion (line endings, `ident`, `core.autocrlf`)
-      // stands between the blob and the bytes, at either end of the turn.
       const scratch = yield* tempFolder;
       const writtenOut = (tree: string, side: "start" | "end") =>
         Effect.gen(function* () {
@@ -307,12 +265,10 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
         return { kind: "unsupported", reason: "filter", paths: differs } satisfies TurnUndo;
       const execBits = yield* fileModeHonoured(top);
 
-      // Every path on the filesystem itself, never through the index or a cleaned view of it.
       const verdict = yield* sync(() => {
         const changed: Array<string> = [];
         const obstructed: Array<string> = [];
         for (const change of changes) {
-          // The folders above: plain folders, or absent (git creates them), nothing else.
           let nearest = top;
           let clear = true;
           for (const folder of ancestorsOf(change.path)) {
@@ -328,7 +284,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
             break;
           }
           if (!clear) continue;
-          // Git removes and writes files in the folder holding them: it must let it.
           try {
             fs.accessSync(nearest, fs.constants.W_OK);
           } catch {
@@ -338,7 +293,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
           const abs = nodePath.join(top, change.path);
           const { kind, stat } = kindOf(abs);
           if (change.end === undefined) {
-            // The turn removed it: nothing may stand there now, ignored or not.
             if (kind !== "absent") changed.push(change.path);
             continue;
           }
@@ -350,8 +304,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
             changed.push(change.path);
             continue;
           }
-          // Byte for byte against the blob as stored, which is what git writes out here. Never
-          // git's cleaned view of the file, nor the index's word for it.
           const bytes = fs.readFileSync(abs);
           if (blobOid(bytes, change.end.oid.length) !== change.end.oid) changed.push(change.path);
         }
@@ -365,8 +317,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
       if (verdict.changed.length > 0)
         return { kind: "changed", paths: verdict.changed } satisfies TurnUndo;
 
-      // The turn's patch, written by git straight to a file (never through a string, so no byte
-      // is re-encoded), whatever the user's diff config says.
       const patch = nodePath.join(scratch, "turn.patch");
       yield* run(top, [
         "-c",
@@ -388,7 +338,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
         to,
       ]);
       hooks.beforeApply?.();
-      // Reversed into the working tree only; whitespace left exactly as the patch has it.
       const apply = ["apply", "-R", "--whitespace=nowarn"];
       const checked = yield* git(top, [...apply, "--check", patch]).pipe(
         Effect.mapError((e) => new CheckpointError({ message: e.message })),
@@ -399,7 +348,6 @@ export const undoTurnFiles = (repo: string, start: string, end: string, hooks: U
           message: gitFailMsg(checked, "git apply refused the reversed patch"),
         } satisfies TurnUndo;
       hooks.afterCheck?.();
-      // Never cut off halfway: an interruption waits for git to finish writing.
       const applied = yield* git(top, [...apply, patch]).pipe(
         Effect.mapError((e) => new CheckpointError({ message: e.message })),
         Effect.uninterruptible,

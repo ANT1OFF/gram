@@ -5,15 +5,10 @@ import { SqlClient, type SqlError } from "../platform/unstable.ts";
 /** Queue/output namespace only; consent and usage remain governed by HelperKind. */
 export type HelperOutputKind = HelperKind | `${HelperKind}:paletteFilters`;
 
-/** The stored output per thread, kind/namespace and optional pending request. */
 interface HelperOutputRow {
   readonly threadId: ThreadId;
   readonly kind: HelperOutputKind;
   readonly requestId?: RequestId | undefined;
-  /**
-   * A subject of the thread's other than a request, such as a feature card's summary, kept in the
-   * same column; unlike a request it is not checked for, and outlives nothing but its thread.
-   */
   readonly scope?: string | undefined;
   readonly basis: string;
   readonly promptVersion: number;
@@ -22,7 +17,6 @@ interface HelperOutputRow {
   readonly createdAt: number;
 }
 
-/** One call's worth of ledger, added to its day, kind and model. */
 interface HelperUsageDelta {
   readonly day: string;
   readonly kind: HelperKind;
@@ -40,7 +34,6 @@ export interface HelperStore {
   readonly getOutput: (
     threadId: ThreadId,
     kind: HelperOutputKind,
-    /** A request id, or a `scope` (`HelperOutputRow.scope`). */
     requestId?: RequestId | string,
   ) => Effect.Effect<HelperOutputRow | undefined>;
   /** Stores `row` while its thread and, when scoped, pending request exist. */
@@ -58,7 +51,6 @@ export interface HelperStore {
   ) => Effect.Effect<Readonly<Record<string, number>>>;
 }
 
-/** A broken database is a defect, as in `ThreadStore`. */
 const run = <A, R>(effect: Effect.Effect<A, SqlError, R>): Effect.Effect<A, never, R> =>
   effect.pipe(Effect.catch((error) => Effect.die(error)));
 
@@ -129,9 +121,6 @@ export const makeHelperStore: Effect.Effect<HelperStore, never, SqlClient.SqlCli
                 },
           ),
         ),
-      // Conditional on the thread, in the same statement: a call can outlive its thread, and its
-      // answer must neither bring back what `removeThread` or `closeThread` deleted nor fail on the
-      // thread's absence (the store deletes child rows itself rather than trust foreign keys).
       putOutput: (r) =>
         run(sql`INSERT INTO helper_outputs
             (thread_id, kind, request_id, basis, prompt_version, model, data, created_at)

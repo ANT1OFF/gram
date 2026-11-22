@@ -110,7 +110,6 @@ function TextSetting({
   value: string | undefined;
   placeholder: string;
   inputMode?: "numeric";
-  /** Offered as the input's datalist. */
   suggestions?: readonly string[];
   onSave: (value: string) => void;
   onReset: (() => void) | undefined;

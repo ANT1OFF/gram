@@ -1,7 +1,3 @@
-/**
- * Dream's bounded file bridge. Confined harnesses disable native tools; guided Codex keeps
- * normal native permissions alongside this bridge.
- */
 import { AppToolError, InvalidState, type NotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
@@ -35,16 +31,13 @@ const list = (tree: FileTree, id: string, path: string) =>
             : Effect.succeed(entries),
       ),
     );
-/** The most hits one search returns; past it the result says `truncated`. */
 const SEARCH_MAX_HITS = 100;
-/** Characters of a matching line a hit shows, around the match. */
 const SEARCH_LINE_CHARS = 400;
 const around = (line: string, at: number): string => {
   if (line.length <= SEARCH_LINE_CHARS) return line;
   const start = Math.max(0, Math.min(at - SEARCH_LINE_CHARS / 4, line.length - SEARCH_LINE_CHARS));
   return `${start > 0 ? "…" : ""}${line.slice(start, start + SEARCH_LINE_CHARS)}…`;
 };
-/** Every file below `dir`, relative to it, in name order, to memory's depth. */
 const filesUnder = (tree: FileTree, id: string, dir: string) =>
   Effect.gen(function* () {
     const files: Array<string> = [];
@@ -142,7 +135,6 @@ export const dreamFileTools = (
               tool: `dream_${name}`,
               message: "This Dream's file access has ended",
             });
-          // `check` reads the candidate memory as a whole unless it is pointed at input/memory.
           const path = args.path ?? "output";
           const segments = path.split("/");
           if (
@@ -156,7 +148,6 @@ export const dreamFileTools = (
                 /[\p{Cc}\\:*?"<>|]/u.test(s) ||
                 /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(s),
             ) ||
-            // Memory depth is relative to its version root, TWO levels below input/.
             segments.length >
               (segments[0] === "input" && segments[1] === "memory"
                 ? 2 + MEMORY_MAX_DEPTH
@@ -168,9 +159,6 @@ export const dreamFileTools = (
               tool: `dream_${name}`,
               message: "Path is outside Dream's permitted files",
             });
-          // Capture immutable binding values, then recheck them at the final operation. Temp
-          // staging is revocable; the guarded rename/read/delete is serialized with ALL store
-          // writes (cancel, close and checkout changes included), not just other bridge calls.
           const boundWorkspace = thread.workspaceId;
           const boundFolder = dream.outputDir;
           const boundDream = dream.id;
@@ -196,8 +184,6 @@ export const dreamFileTools = (
                 return yield* effect;
               }).pipe(Effect.mapError((e) => new InvalidState({ message: e.message }))),
             );
-          // Node pathname checks are insufficient against ancestor swaps. Require directory-fd
-          // operations here and during collection/adoption; unavailable platforms fail closed.
           const root = dirname(dirname(dirname(dream.outputDir)));
           const within = `dreams/${dream.id}`;
           if (join(root, thread.workspaceId, "dreams", dream.id) !== dream.outputDir)
@@ -206,8 +192,6 @@ export const dreamFileTools = (
               message: "Dream folder does not match its workspace",
             });
           const tree = confinedTree(root, { anchored: true, commit });
-          // Keep the workspace/dreams ancestors in the resolver walk too: a symlink there
-          // must be refused just like one in output/.
           const scoped: FileTree = {
             readText: (id, rel, _within, shown, max) =>
               tree.readText(id, `${within}/${rel}`, within, shown, max),
@@ -219,7 +203,6 @@ export const dreamFileTools = (
           return yield* run(scoped, thread.workspaceId, path, args);
         }).pipe(lock.withPermits(1), Effect.mapError(failed(`dream_${name}`))),
     });
-  /** The Markdown files under `dir`, as memory paths relative to it; `REPORT.md` is not memory. */
   const memoryFilesUnder = (tree: FileTree, id: string, dir: string) =>
     Effect.gen(function* () {
       const files: Array<MemoryLintFile> = [];
@@ -252,7 +235,6 @@ export const dreamFileTools = (
       (tree, id, path, args) =>
         Effect.gen(function* () {
           const needle = args.text!.toLowerCase();
-          // A `.md` path is one file; anything else is a folder, searched with everything below it.
           const paths = path.endsWith(".md")
             ? [path]
             : (yield* filesUnder(tree, id, path)).map((rel) => `${path}/${rel}`);

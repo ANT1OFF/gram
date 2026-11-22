@@ -30,11 +30,6 @@ import { useEmbedShell } from "@/embed/store";
 import { DEFAULT_MODEL_OPTIONS, EFFORT_OPTIONS } from "./options";
 import type { PickerOption } from "./picker";
 
-/**
- * The thread the pickers inside pick for, where its profile limits the models it may run
- * (`ThreadProfileBinding.models`): every model list under it lists only those, as the server
- * refuses any other.
- */
 const ModelsAllowed = createContext<Pick<ThreadProfileBinding, "models"> | undefined>(undefined);
 
 /** Narrows the model lists under it to what `profile` lets a thread run; nothing without a limit. */
@@ -86,7 +81,6 @@ function useListedModelsQuery(agent: AgentKind, profileId?: ProfileId, enabled =
     queryFn: () =>
       profileId === undefined ? api.listModels(agent) : api.listModels(agent, profileId),
     retry: false,
-    // A failed discovery stays actionable when a chooser mounts; its Retry owns the next probe.
     retryOnMount: false,
     staleTime: 5 * 60_000,
     enabled,
@@ -94,8 +88,7 @@ function useListedModelsQuery(agent: AgentKind, profileId?: ProfileId, enabled =
   const served = useServedModels(agent, profileId);
   return served === undefined || !query.isError
     ? query
-    : // The deployment's own list stands in for a listing the agent could not give.
-      { ...query, isError: false as const, error: null, data: { models: served } };
+    : { ...query, isError: false as const, error: null, data: { models: served } };
 }
 
 /**
@@ -148,7 +141,6 @@ export function useModelsSettled(
   readonly settled: boolean;
 } {
   const { data, isPending, isError, isFetched } = useModelsQuery(agent, profileId, enabled);
-  // Retrying an initial error becomes pending again, but must not unmount the retrying chooser.
   return { models: isError ? undefined : data?.models, settled: !isPending || isFetched };
 }
 
@@ -167,13 +159,11 @@ export const modelRuns = (agent: AgentKind, row: AgentModel): string | undefined
   const named = NAMED.exec(row.displayName.trim());
   if (named === null) return undefined;
   const id = `claude-${named[1]!.toLowerCase()}-${named[2]}-${named[3]}`;
-  // The same reading the catalogue makes, so the two never disagree on what a row runs.
   if (claudeLabel(id) === undefined || !row.displayName.trim().startsWith(claudeLabel(id)!))
     return undefined;
   return /\[1m\]$/i.test(row.id) ? `${id}[1m]` : id;
 };
 
-/** What the embedding app's `offered` is asked of one row. */
 type OfferCheck = (model: {
   readonly agent: AgentKind;
   readonly id: string;
@@ -211,17 +201,12 @@ export const offeredModels = (
   return paidBy === undefined ? kept : withPayer(kept, agent, paidBy);
 };
 
-/** What the embedding app's `paidBy` is asked of one row. */
 type PaidBy = (model: {
   readonly agent: AgentKind;
   readonly id: string;
   readonly runs?: string;
 }) => string | undefined;
 
-/**
- * Each row with who pays for it under its name (`ShellModels.paidBy`), after the agent's own
- * description; a row the app says nothing of, or whose check throws, as it was.
- */
 const withPayer = (
   models: readonly AgentModel[],
   agent: AgentKind,
@@ -363,13 +348,8 @@ export const NOT_LISTED_BY_GATEWAY = GATEWAY_UNLISTED_WARNING;
 export const NOT_LISTED_BY_ACCOUNT = "Not offered by your Claude account; it may not work";
 export const NOT_LISTED_BY_CODEX = "Not listed by your Codex account; it may not work";
 
-/** `[1m]` names a model's long-context variant, which runs the same model. */
 const baseId = (id: string) => id.replace(/\[1m\]$/i, "");
 
-/**
- * Whether `models` offers `id`: a row it names (`pickerModelId`), or for a row naming the id it
- * resolves to (Claude Code's aliases), that id or either one's long-context variant.
- */
 const isOffered = (models: readonly AgentModel[], id: string): boolean =>
   listedRow(models, id) !== undefined ||
   models.some(
@@ -429,7 +409,6 @@ export function modelOptions(
           label: m.displayName,
           ...(description ? { description } : {}),
           ...inGroup(m.description === CUSTOM_MODEL_DESCRIPTION && m.warning === undefined),
-          // The model a thread or entry is on stays in view, superseded or not.
           ...(superseded?.has(m.id) === true && m.id !== current ? { legacy: true } : {}),
         };
       })
@@ -437,7 +416,6 @@ export function modelOptions(
   if (current && !options.some((o) => o.value === current) && !listedRow(models, current)) {
     options.push({
       value: current,
-      // A pinned Claude id reads as Claude Code names it: `claude-sonnet-5-5` is "Sonnet 5.5".
       label: claudeLabel(current) ?? current,
       ...(models && unlisted !== undefined && !isOffered(models, current)
         ? { description: unlisted }
@@ -516,7 +494,6 @@ export interface ModelGroup {
   readonly items: readonly PickerOption<string>[];
 }
 
-/** The section of an option without a `group`, and the whole list's when no option has one. */
 const UNGROUPED = "Models";
 
 /** The searching picker's last section: the models a newer one of their family supersedes. */

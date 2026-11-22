@@ -60,8 +60,6 @@ export function playTurnCompleteSheen(surface: HTMLElement, level: ResolvedMotio
     if (entries.some((entry) => !entry.isIntersecting)) stop();
   });
   intersection.observe(surface);
-  // Maximizing a grid pane hides its siblings without unmounting them. Observe the ancestors so
-  // that hiding cancels this pass immediately, even before IntersectionObserver delivers a frame.
   const visibility = new MutationObserver(cancelHidden);
   for (let ancestor: HTMLElement | null = surface; ancestor; ancestor = ancestor.parentElement) {
     visibility.observe(ancestor, {
@@ -90,7 +88,6 @@ export function TurnCompleteSheen({
       turnRan.current = true;
       return;
     }
-    // Server-raised requests can interrupt idle threads without starting a turn.
     if (status === "needsApproval" || status === "needsInput") return;
     const completed = turnRan.current && status === "idle";
     turnRan.current = false;

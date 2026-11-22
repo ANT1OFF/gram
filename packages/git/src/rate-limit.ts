@@ -1,6 +1,3 @@
-// Classifying a failed `gh` invocation as a GitHub rate-limit response, and the retry policy that
-// follows from it. Pure: callers feed in `gitFailMsg` text and drive their own schedules.
-
 import { splitGhInclude } from "./rate-limit-headers.ts";
 
 /**
@@ -17,24 +14,10 @@ export interface RateLimitSignal {
 }
 
 const SECONDARY = /secondary rate limit|abuse detection|abuse-detection/;
-// The status only as gh prints it, `HTTP 429`: a bare 429 is also a PR number, and GitHub's "Could
-// not resolve to a PullRequest with the number of 429" is an ordinary failure.
 const PRIMARY =
   /rate limit (?:already )?exceeded|api rate limit|x-ratelimit-remaining:\s*0|http 429|429 too many requests/;
-/**
- * A refused GraphQL document's own error type, for a body too large or too broken to parse. Matched
- * against raw JSON, where a quote inside a PR title or body is escaped, so no text a user wrote can
- * read as this.
- */
 const GRAPHQL_REFUSED = /"type":\s*"RATE_LIMIT"/;
 
-/**
- * Whether a GraphQL response body says GitHub refused it on rate-limit grounds: a top-level error of
- * type `RATE_LIMIT`. Only the top level, so nothing inside `data` — where PR titles, bodies and
- * review comments are — can pass for it; and the whole body, because a partial answer puts its
- * `data` first and that alone runs to many KiB of review text. A body that doesn't parse, because
- * the output cap cut it short, is matched as raw JSON instead.
- */
 const graphqlRefused = (body: string): boolean => {
   const text = body.trim();
   if (text === "") return false;

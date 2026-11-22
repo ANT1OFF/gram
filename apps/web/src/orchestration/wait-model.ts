@@ -11,9 +11,6 @@ import {
 
 import { prRefText } from "@/components/pr-marks-model";
 
-// What each worker waits on, for the sidebar's per-state counts and the board's columns alike, so
-// the two always agree. Pure, so it is tested without a browser.
-
 /**
  * Where a worker stands for the user: running now, waiting on something that moves on by itself
  * (CI, the review bot, a merge Gram will make), waiting on a person, or finished.
@@ -64,22 +61,13 @@ const REQUEST_TAGS: Readonly<Record<string, string>> = {
 export const reviewerName = (request: PrReviewRequest): string =>
   `@${request.kind === "team" ? request.name.slice(request.name.indexOf("/") + 1) : request.name}`;
 
-/** The tag of a worker the user holds: theirs to move, by choice. */
 const HELD = "you: worker";
 
 const person = (tag: string, detail: string): WorkerWait => ({ bucket: "person", tag, detail });
 const checks = (tag: string, detail: string): WorkerWait => ({ bucket: "checks", tag, detail });
 
-/**
- * "#12 in acme/web": which PR a detail is about, for a worker with more than one. A sentence's own
- * form, where the PR's ref (`prRefText`) names the PRs it waits on.
- */
 const prName = (pr: WorkerPr): string => `#${pr.number} in ${pr.repo}`;
 
-/**
- * A PR whose failing checks no live worker owns (`workerOwnsCiFix`): its orchestrator's to follow
- * up from its digest, never the user's unless an agent asks them.
- */
 const orphanedChecks = (pr: WorkerPr): string =>
   `${prName(pr)} has failing checks and no live worker; its orchestrator follows them up.`;
 
@@ -195,7 +183,6 @@ export const openPrs = (worker: WaitInput, state: WorkerState): WorkerPr[] =>
     (pr): pr is WorkerPr =>
       pr !== undefined &&
       (pr.state === "open" ||
-        // A PR identity on a settled worker does not establish an active wait.
         (pr.state === undefined && state !== "merged" && state !== "delivered")),
   );
 
@@ -251,7 +238,6 @@ export const workerWait = (
       HELD,
       "You're talking to it. It stays the orchestrator's worker, which can still message it.",
     );
-  // A provider limit resumes it on its own: whatever its PRs wait on, it moves on once that resets.
   if (worker.limitWait !== undefined)
     return checks("usage limit", "It waits out a usage limit and resumes on its own.");
   const monitoring = [
@@ -315,10 +301,8 @@ export const isBusy = (activity: WorkerActivity): boolean =>
 export type ActivityInput = WaitInput &
   Partial<Pick<WorkerLedgerEntry, "waitingOnAutomation" | "compacting">>;
 
-/** Waits only the worker itself can move on: an armed wake or run brings it back, nothing else. */
 const WORKER_ACTS = new Set(["conflicts", "CI failing", "bot: changes"]);
 
-/** Waits that are automation at work by what they are. */
 const AUTOMATED = new Set([
   "CI pending",
   "bot reviewing",
@@ -347,7 +331,6 @@ export const workerActivity = (
   ownedCi: ReadonlySet<string> = new Set(),
 ): WorkerBusy => {
   const wait = workerWait(worker, state, status, ownedCi);
-  // One the user holds (a message, a paused feature) waits on them by choice: not stalled.
   if (wait.bucket === "person" && wait.tag === HELD)
     return { activity: "idle", reason: "you hold it" };
   if (wait.bucket === "person") return { activity: "attention", reason: wait.tag };
@@ -377,8 +360,6 @@ export const workerActivity = (
   }
   if (armed)
     return { activity: "automation", reason: localCheck ? "local check" : "monitor armed" };
-  // Spawned, its first turn not begun (`workerStarting`), with nothing armed to wait on: busy
-  // starting, never at rest.
   if (state === "briefed") return { activity: "working", reason: "starting" };
   return { activity: "idle" };
 };

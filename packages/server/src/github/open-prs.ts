@@ -1,8 +1,3 @@
-// Each repo's open PRs, cached for the sweep. The "PR on another worktree" cue needs only to know
-// which branches have an open PR, and it is asked on every sweep for every worktree no thread is on:
-// answered from a badge lookup per worktree, that was the single largest spend of the hour's GraphQL
-// points in a repo with many worktrees. One list per repo, kept for minutes, answers them all.
-
 import {
   fetchOpenPrs,
   makeTtlCache,

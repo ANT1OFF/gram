@@ -18,17 +18,12 @@ export const tempDir = (): string =>
 export const removeDirStrict = (dir: string): void =>
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 
-/** Codes Windows gives for a tree a just-exited git or watcher still holds. */
 const BUSY: ReadonlySet<string> = new Set(["EBUSY", "EPERM", "ENOTEMPTY", "EMFILE", "ENFILE"]);
 
 const sleepSync = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 const removeOnce = (dir: string) => fs.rmSync(dir, { recursive: true, force: true });
 
-/**
- * The git and gh processes still running on Windows, as candidates for what holds a tree. Given 2 s,
- * since it runs inside the cleanup's own deadline; past that it says so instead of stalling it.
- */
 const runningGit = (): string => {
   if (process.platform !== "win32") return "n/a";
   const listed = spawnSync("tasklist", ["/FO", "CSV", "/NH"], { encoding: "utf8", timeout: 2_000 });
@@ -105,7 +100,6 @@ export const makeRepo = (tmp: string): string => {
   run(repo, "config", "user.email", "t@t");
   run(repo, "config", "user.name", "t");
   run(repo, "config", "commit.gpgsign", "false");
-  // Git for Windows' system config sets `autocrlf=true`, which checks LF files out as CRLF.
   run(repo, "config", "core.autocrlf", "false");
   write(nodePath.join(repo, "tracked.txt"), "tracked\n");
   write(nodePath.join(repo, ".gitignore"), ".worktrees/\n.claude/settings.local.json\n");

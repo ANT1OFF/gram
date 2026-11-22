@@ -27,22 +27,11 @@ import {
   type MachineWait,
 } from "./awaiting-machine-model";
 
-// A thread started before its machine, as its own view draws it: the header's chip, the message
-// that waits drawn in the conversation as the person's own, and under it either the line that says
-// a machine is starting and for how long, or the failure with its sentence and Try again.
-
 const EMPTY: readonly QueuedInput[] = [];
 
-/**
- * The tries the person asked for in this window, by thread, until each thread says its own. Held
- * here and not in the card, which is drawn again whenever its pane is (a thread left and come back
- * to, or shown twice): a call still out, or its refusal, is the thread's and not one card's.
- */
 const useAskedAgain = create<{
   readonly byThread: Readonly<Record<string, AskedAgain>>;
-  /** Threads whose call to ask for another machine is still out. */
   readonly pending: Readonly<Record<string, true>>;
-  /** Why the last call was refused, with the failure it was asked after. */
   readonly refused: Readonly<Record<string, { readonly after: number; readonly words: string }>>;
 }>()(() => ({ byThread: {}, pending: {}, refused: {} }));
 
@@ -127,7 +116,6 @@ export function AwaitingMachineChip({
         <span>{words}</span>
       ) : (
         <span>
-          {/* A narrow pane keeps the one word that says it. */}
           <span className="@max-sm:hidden @max-sm/titlebar:hidden">machine </span>
           {WAIT_WORDS.chip.short}
         </span>
@@ -136,7 +124,6 @@ export function AwaitingMachineChip({
   );
 }
 
-/** The elapsed clock, ticking each second while it is in sight. */
 function Elapsed({ since }: { since: number }) {
   const anchor = useRef<HTMLSpanElement>(null);
   const now = useNow(true, anchor);
@@ -144,7 +131,6 @@ function Elapsed({ since }: { since: number }) {
     <span
       ref={anchor}
       data-testid="machine-wait-elapsed"
-      // Read out once with the line, not every second.
       aria-hidden
       className="shrink-0 tabular-nums"
     >
@@ -172,13 +158,11 @@ export function MachineStarting({ thread }: { thread: Thread }) {
   );
 }
 
-/** "Starting this thread's machine · usually under a minute   0:42". */
 function StartingLine({
   wait,
   words,
 }: {
   wait: MachineWait;
-  /** Its head and note in place of a first machine's. */
   words?: { readonly head: string; readonly note: string } | undefined;
 }) {
   const again = wait.state === "again";
@@ -194,7 +178,6 @@ function StartingLine({
         <strong className="font-medium text-foreground">
           {words?.head ?? (again ? WAIT_WORDS.again : WAIT_WORDS.starting)}
         </strong>
-        {/* A narrow pane keeps the head and the clock. */}
         <span className="@max-sm:hidden">
           {" · "}
           {words?.note ?? (again ? WAIT_WORDS.againNote : WAIT_WORDS.startingNote)}
@@ -205,11 +188,6 @@ function StartingLine({
   );
 }
 
-/**
- * No machine came: the sentence (the platform's own, or Gram's), that nothing was lost, and Try
- * again where the app Gram is mounted in gave a way to ask for another (`machines.startAgain`).
- * Gram starts no machine itself, so without one the line says what always works.
- */
 function FailedCard({
   threadId,
   wait,
@@ -221,18 +199,15 @@ function FailedCard({
 }) {
   const startAgain = useEmbedShell((s) => s.machines.startAgain);
   const pending = useAskedAgain((s) => s.pending[threadId] === true);
-  // A refusal is of the failure it was asked after: a newer failure starts clean.
   const refused = useAskedAgain((s) =>
     s.refused[threadId]?.after === failedAt ? s.refused[threadId]?.words : undefined,
   );
   const retry = () => {
-    // Read from the store, not this drawing: another card of the same thread may have asked.
     if (startAgain === undefined || useAskedAgain.getState().pending[threadId] === true) return;
     useAskedAgain.setState((s) => ({
       pending: { ...s.pending, [threadId]: true },
       refused: without(s.refused, threadId),
     }));
-    // A handler that throws at once is a refusal like one that rejects.
     void Promise.resolve()
       .then(() => startAgain({ threadId }))
       .then(
@@ -307,7 +282,6 @@ export function AwaitingMachine({ thread }: { thread: Thread }) {
     <div
       data-testid="machine-wait"
       data-state={wait.state}
-      // A container, so its lines drop their second halves by the pane's width.
       className="@container flex w-full thread-column flex-col gap-3.5 px-6 pt-5 pb-2"
     >
       {first !== undefined && (

@@ -58,16 +58,11 @@ export const AppRpcs = RpcGroup.make(
     success: UsageOverview,
     error: errors(InvalidState),
   }),
-  /**
-   * The subscription windows' kept history and the credit balances, downsampled for the period.
-   * Reads Gram's own database only: no CLI query, session or account call.
-   */
   Rpc.make("app.usageLimitHistory", {
     payload: LimitHistoryQuery,
     success: UsageLimitHistory,
     error: errors(),
   }),
-  /** Read-only selected-harness observations; never discovers models or refreshes account tokens. */
   Rpc.make("agents.support", {
     payload: {
       model: ModelRef,
@@ -77,10 +72,6 @@ export const AppRpcs = RpcGroup.make(
     success: SelectedHarnessSupport,
     error: errors(),
   }),
-  /**
-   * The server's version and the RPCs it serves: a client's first call on a socket, so it never
-   * sends one the server lacks. A server older than this answers with a defect for the unknown tag.
-   */
   Rpc.make("app.handshake", { success: ServerHandshake, error: errors() }),
   Rpc.make("app.diagnostics", { success: Diagnostics, error: errors() }),
   Rpc.make("app.diagnosticsReport", {
@@ -94,40 +85,22 @@ export const AppRpcs = RpcGroup.make(
     error: errors(),
   }),
   Rpc.make("app.keptHost", { success: KeptHostStatus, error: errors() }),
-  /**
-   * Stops the host kept running after Gram quits, now: every agent session and shell in it ends.
-   * The setting stays as it is. `InvalidState` where there is none to stop.
-   */
   Rpc.make("app.keptHostStop", { error: errors(InvalidState) }),
-  /** Opens the logs folder in the OS file manager; `InvalidState` when it can't be opened. */
   Rpc.make("app.openLogsFolder", { error: errors(InvalidState) }),
   Rpc.make("app.openExternal", { payload: OpenExternalPayload, error: errors(InvalidState) }),
-  /** What `issues.file` would post for `draft` on Gram's repo, footer and all. Local only. */
   Rpc.make("issues.preview", { payload: IssueDraft, success: ComposedIssue, error: errors() }),
-  /**
-   * Files the issue on Gram's repo through the user's `gh`; `GitError` when gh can't (no
-   * login, no access), for the form to offer `ComposedIssue.newIssueUrl` instead.
-   */
   Rpc.make("issues.file", { payload: IssueDraft, success: FiledIssue, error: errors(GitError) }),
-  /** Cached after the first run; `refresh` checks again. */
   Rpc.make("app.launchChecks", {
     payload: { refresh: Schema.optionalKey(Schema.Boolean) },
     success: LaunchChecks,
     error: errors(),
   }),
-  // Global event feed
   Rpc.make("events.subscribe", { success: ServerEvent, error: errors(), stream: true }),
-  // Windows
-  /**
-   * Registers this window for as long as the stream is open and emits every window's placement,
-   * now and on each change. Closing the window (or its socket) forgets it.
-   */
   Rpc.make("windows.watch", {
     payload: WatchWindowsPayload,
     success: WindowPlacements,
     error: errors(),
     stream: true,
   }),
-  /** The threads a watching window's panes show now. */
   Rpc.make("windows.report", { payload: ReportWindowPayload, error: errors() }),
 );

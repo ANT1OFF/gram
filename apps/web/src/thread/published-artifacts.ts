@@ -11,7 +11,6 @@ export interface PublishedArtifact {
   readonly source?: { readonly path: string; readonly kind: PreviewFileKind };
 }
 
-/** Only claude.ai's own pages: a card never offers to open anything else it was handed. */
 const claudeAiPage = (url: unknown): url is string => {
   if (typeof url !== "string") return false;
   try {
@@ -25,7 +24,6 @@ const claudeAiPage = (url: unknown): url is string => {
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value : undefined;
 
-/** An absolute Markdown or HTML path outside credential folders, which the Preview tab may show. */
 const previewSource = (path: unknown): PublishedArtifact["source"] => {
   if (typeof path !== "string" || !/^(\/|~\/|[A-Za-z]:[\\/])/.test(path)) return undefined;
   const kind = previewFileKind(path);

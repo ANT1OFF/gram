@@ -6,7 +6,6 @@ import { defineAppTool } from "../app-tools/definition.ts";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { IssueReporter, MAX_ISSUE_HITS } from "./reporter.ts";
 
-/** The approval card's line for an issue: where it goes and under which labels. */
 const describeIssue = (issue: ComposedIssue): string =>
   `File “${issue.title}” on ${issue.repo} (${issue.labels.join(", ")})`;
 
@@ -34,7 +33,6 @@ export const IssueAppToolsLive = Layer.effectDiscard(
         area: Schema.optionalKey(IssueArea),
         includeDiagnostics: Schema.optionalKey(Schema.Boolean),
       }),
-      // A post on a shared repo can carry the conversation's context, so the user reads every one.
       alwaysAsks: true,
       resolve: (threadId, { includeDiagnostics = true, ...text }) =>
         reporter.compose(text, { filer: "agent", diagnostics: includeDiagnostics, threadId }),

@@ -57,7 +57,6 @@ export const GitCheckoutLive = Layer.effect(
     const worktrees = yield* Worktrees;
     const checkpoints = yield* Checkpoints;
     const store = yield* ThreadStore;
-    // Its branch lookups name the repository each folder Gram made is, never its live origin.
     yield* answerCheckoutRepos(store);
     yield* guardStoreOrigins(store);
     const provide = Effect.provideService(Proc, proc);
@@ -73,7 +72,6 @@ export const GitCheckoutLive = Layer.effect(
         ),
       );
 
-    /** The open worktree a new-worktree request would have reused, as a typed refusal. */
     const inUseWorktree = (
       root: string,
       branch: string,
@@ -89,12 +87,6 @@ export const GitCheckoutLive = Layer.effect(
         return yield* new CheckoutInUse({ path: entry?.path ?? root, message });
       });
 
-    /**
-     * The identity of `repoRoot`'s origin, as a new checkout of it records it: it must still be the
-     * one its project recorded when it was added (`recordedCloneIdentity`), and so must where git
-     * fetches and pushes it (`effectiveOriginsAt`). Asked before a new worktree fetches anything, so
-     * a refused one fetches nothing into the shared repository and leaves no worktree behind.
-     */
     const checkedOrigin = (repoRoot: string) =>
       provide(originIdentityAt(repoRoot)).pipe(
         Effect.flatMap((live) =>
@@ -106,12 +98,6 @@ export const GitCheckoutLive = Layer.effect(
         ),
       );
 
-    /**
-     * `checkout` with the identity of its repository's origin recorded as Gram makes it, before the
-     * thread's agent runs there (`checkedOrigin`): what the worker's ownership of a PR is later
-     * checked against, never the origin the agent can rewrite since. Only a worktree on this
-     * machine; another machine's records its own as it is made there.
-     */
     const withOrigin = (checkout: Checkout, repoRoot: string) =>
       checkout.kind !== "worktree" ||
       (checkout.hostId !== undefined && checkout.hostId !== LOCAL_HOST_ID) ||
@@ -125,7 +111,6 @@ export const GitCheckoutLive = Layer.effect(
 
     const prepare: CheckoutService["Service"]["prepare"] = (request, openCheckouts, projectRoot) =>
       Effect.gen(function* () {
-        // Every kind checks its folder before git runs there, so a typo never persists a thread.
         const root = yield* resolveFolder(projectRoot);
         switch (request.kind) {
           case "current": {
@@ -137,7 +122,6 @@ export const GitCheckoutLive = Layer.effect(
             } satisfies Checkout;
           }
           case "newWorktree": {
-            // Before `create` fetches the branch or a PR's head from origin.
             yield* checkedOrigin(root);
             const created = yield* worktrees
               .create({
@@ -183,7 +167,6 @@ export const GitCheckoutLive = Layer.effect(
               });
             }
             const branch = entry.branch === undefined ? {} : { branch: entry.branch };
-            // A PR head from another repository stays someone else's code in every thread opened on it.
             const trust = isUntrustedWorktree(entry.path) ? { untrusted: true } : {};
             if (entry.isMain)
               return { kind: "main", path: entry.path, ...branch } satisfies Checkout;
@@ -195,7 +178,6 @@ export const GitCheckoutLive = Layer.effect(
         }
       });
 
-    /** `WorktreeDirty` for the first checkout a non-forced removal would refuse, primary first. */
     const refuseDirty = (
       checkouts: ReadonlyArray<Checkout>,
       options: GitReleaseOptions,
@@ -207,7 +189,6 @@ export const GitCheckoutLive = Layer.effect(
         }
         for (const target of checkouts) {
           if (target.kind !== "worktree") continue;
-          // Unreadable status refuses too: removal won't delete what git can't show is clean.
           if ((yield* provide(worktreeCleanliness(target.path))) !== "clean") {
             const changedFiles = yield* provide(changedFileCount(target.path));
             return yield* new WorktreeDirty({ path: target.path, changedFiles });
@@ -215,7 +196,6 @@ export const GitCheckoutLive = Layer.effect(
         }
       });
 
-    /** The thread's project folder: its repo when nothing else names it. */
     const projectRootOf = (thread: Thread) =>
       store.listProjects.pipe(
         Effect.map((projects) => {
@@ -224,13 +204,6 @@ export const GitCheckoutLive = Layer.effect(
         }),
       );
 
-    /**
-     * The main checkout of `target`'s repo, resolved while the worktree is still there. A worktree
-     * checkout without `repoRoot` (one a hook reported) would otherwise remove its worktree from
-     * inside it (which Windows refuses) and prune through the folder that removal just deleted,
-     * leaking its refs. One whose worktree was deleted outside Gram goes by its project's folder,
-     * since git can't run in a folder that isn't there.
-     */
     const repoOf = (target: Checkout, thread: Thread): Effect.Effect<string> =>
       target.repoRoot !== undefined || target.kind !== "worktree"
         ? Effect.succeed(target.repoRoot ?? target.path)
@@ -256,17 +229,12 @@ export const GitCheckoutLive = Layer.effect(
       Effect.gen(function* () {
         const checkout = thread.checkout;
         const repo = yield* repoOf(checkout, thread);
-        // Only once removal succeeded, so a refused close keeps the thread's rewind points too.
         const prune = checkpoints.prune(repo, thread.id).pipe(Effect.ignore);
         const removal = options.removeWorktree;
         if (removal === undefined || removal === false) return yield* prune;
         const force = removal === true ? false : removal.force;
         const extras = extraWorktrees(thread);
-        // Before anything goes: the primary removed and an extra then refused would leave a thread
-        // that can neither close nor work.
         yield* refuseDirty(extras, options);
-        // Read at removal time, followed checkouts included: another thread's agent may have moved in.
-        // It isn't held across the removal, an accepted gap that `git/worktree-gc.ts` describes.
         const others = usedCheckoutPaths(
           (yield* store.listThreads).filter((t) => t.id !== thread.id),
           LOCAL_HOST_ID,
@@ -287,9 +255,6 @@ export const GitCheckoutLive = Layer.effect(
               ),
             ),
           );
-        // The thread's own worktree goes first: it is the one most likely to refuse (it is where
-        // the agent worked), and a refusal there must leave the extras for the retry. The picked
-        // rules were read from it, so they are its repo's alone.
         if (checkout.kind === "worktree") yield* remove(checkout, options.permissionRules);
         for (const extra of extras) yield* remove(extra, undefined);
         yield* prune;

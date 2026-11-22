@@ -25,7 +25,6 @@ export const STOPPED_REATTACH_MS = 15 * 60_000;
  * waits as long as the session does (`REATTACH_WITHIN_MS`).
  */
 export const CALL_WAIT_MS = 15_000;
-/** How often a dropped machine is looked for again. */
 const LOOK_EVERY = "500 millis";
 
 /** The machine's connection once it is back, or `HostUnavailable` when it isn't within `ms`. */
@@ -48,7 +47,6 @@ export const awaitConnection = (
  * session (it restarted) ends it with `NotFound`, as before.
  */
 export const followingSessions = (
-  /** The machine's connection now, failing while it is offline. */
   current: Effect.Effect<HostConnection, HostUnavailable>,
   timing: {
     /** Read at each wait, so a machine readied to stop meanwhile is waited for as one. */
@@ -68,7 +66,6 @@ export const followingSessions = (
   const sessions = awaitConnection(current, callMs).pipe(
     Effect.map((connection) => connection.sessions),
   );
-  /** A call that keeps its own errors, an offline machine reading as `HostFailed`. */
   const call = <A, E>(
     run: (sessions: HostSessionsConnection) => Effect.Effect<A, E>,
   ): Effect.Effect<A, E | HostFailed> =>
@@ -76,14 +73,6 @@ export const followingSessions = (
       Effect.mapError((error) => new HostFailed({ message: error.message })),
       Effect.flatMap(run),
     );
-  /**
-   * A send or a steer under `deliveryId`, which the agent must neither miss nor take twice. A
-   * machine that is away is waited for as long as its sessions are (`reattachMs`): the input waits
-   * with them rather than fail and leave the session running without it. A connection that drops
-   * under the call leaves unknown whether it arrived, so it is asked again, under the same id, once
-   * the machine is back: a host that serves `deliveries` takes it once and answers a repeat as it
-   * did the first. One that doesn't is never asked again, and what a host itself answers stands.
-   */
   const deliver = (
     deliveryId: string | undefined,
     run: (sessions: HostSessionsConnection) => Effect.Effect<void, HostFailed>,
@@ -107,24 +96,12 @@ export const followingSessions = (
             yield* Effect.logInfo("worker host: a delivery waits for its machine to dial in");
           }
         });
-  /**
-   * A call with nothing to report, which a machine that is away leaves undone. Its exit is
-   * dropped whole: a connection torn down under it interrupts the call, and a close run as a
-   * finalizer must not fail the scope it closes.
-   */
   const quiet = (run: (sessions: HostSessionsConnection) => Effect.Effect<void>) =>
-    // Not waited for: a close is a finalizer, and an ack is repeated anyway. A session left on a
-    // machine that is away is ended there once nothing follows it.
     current.pipe(
       Effect.flatMap((connection) => run(connection.sessions)),
       Effect.exit,
       Effect.asVoid,
     );
-  /**
-   * The disk each session was opened on, and the one its events last came from, as their hosts
-   * said (`HostHello.diskId`): a session the host no longer has after its machine came back on
-   * another disk was lost with the old one (`replaced`).
-   */
   const disks = new Map<string, { opened?: string | undefined; seen?: string | undefined }>();
   return {
     open: (request) =>
@@ -183,8 +160,6 @@ export const followingSessions = (
       return follow(awaitConnection(current, callMs));
     },
     ack: (handle, seq) => quiet((s) => s.ack(handle, seq)),
-    // Ends quietly when its connection goes, so it is followed again after a redial; it ends for
-    // good when the session does, or when the machine doesn't come back.
     connectorsSeen: (handle) => {
       const follow = (wait: number): Stream.Stream<ConnectorsSeen> =>
         Stream.unwrap(

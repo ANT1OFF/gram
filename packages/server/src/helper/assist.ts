@@ -109,7 +109,6 @@ export const ThreadAssistLive = Layer.effect(
       seenChecks: pr.seenChecks,
       now: Clock.currentTimeMillis,
     };
-    /** The plan as the prompts show it: the goal and each step's words and state, no ids. */
     const promptPlan = (threadId: ThreadId) =>
       Effect.map(plans.get(threadId), (plan) =>
         plan === undefined || (plan.goal === "" && plan.steps.length === 0)
@@ -232,7 +231,6 @@ export const ThreadAssistLive = Layer.effect(
           Effect.orElseSucceed(() => ""),
         ),
     });
-    // One job a thread: a new turn interrupts the suggestions still being made for the last.
     const suggesting = yield* FiberMap.make<ThreadId>();
     const turnMoved = (threadId: ThreadId) =>
       Effect.andThen(FiberMap.remove(suggesting, threadId), suggestions.forget(threadId));
@@ -246,7 +244,6 @@ export const ThreadAssistLive = Layer.effect(
       lastTurnId: (threadId) => Effect.map(store.listTurns(threadId), (turns) => turns.at(-1)?.id),
       enabled: Effect.map(store.getSettings, (settings) => helperOn(settings, "wait")),
     });
-    // Off the observer's fiber, which a call would hold up; one of each kind a thread at a time.
     const waiting = yield* FiberMap.make<string>();
 
     const watch = yield* makeRecapWatch(recaps);
@@ -256,7 +253,6 @@ export const ThreadAssistLive = Layer.effect(
         Effect.all([
           watch.started(thread.id),
           turnMoved(thread.id),
-          // Before its lapse: a suggestion still being made for the last turn is for a turn gone.
           waitHelper.userSent(thread.id),
           FiberMap.remove(waiting, `end:${thread.id}`),
           FiberMap.run(waiting, `input:${thread.id}`, waitHelper.atUserInput(thread, input.text)),
@@ -275,13 +271,10 @@ export const ThreadAssistLive = Layer.effect(
         }),
     });
 
-    // A plan edit can contradict what was suggested against the old one; a closed thread's
-    // suggestions and recap timer would otherwise stay for the server's lifetime.
     yield* hub.internalEvents(isPlanOrRemoval, "thread assist").pipe(
       Stream.runForEach((event) =>
         event.type === "thread.plan"
-          ? // Behind suggestions still being made, which check the plan before they're kept.
-            FiberMap.run(suggesting, event.threadId, suggestions.planChanged(event.threadId), {
+          ? FiberMap.run(suggesting, event.threadId, suggestions.planChanged(event.threadId), {
               onlyIfMissing: true,
             }).pipe(Effect.asVoid)
           : Effect.all([
@@ -311,11 +304,7 @@ export const ThreadAssistLive = Layer.effect(
           const made = yield* recaps.onOpenMade(threadId);
           if (made === undefined) return undefined;
           const { view } = made;
-          // The agent's own: there are no helper replies to keep or take back for its turn.
           if (view.wrapUp !== undefined) return view;
-          // Its replies answer the plan and PRs it read. A plan edited or a PR moved since, or a
-          // thread closed meanwhile, makes them stale: they neither stand as the turn's suggestions
-          // nor reach the composer.
           const kept =
             view.turnId !== undefined &&
             (yield* suggestions.remember(
@@ -326,7 +315,6 @@ export const ThreadAssistLive = Layer.effect(
             ? view
             : { ...view, recap: { ...view.recap, replies: [] } };
         }).pipe(
-          // Suggestions switched off leave the recap's replies out, and the recap itself alone.
           Effect.flatMap((view) =>
             view === undefined
               ? Effect.succeed(view)
@@ -338,7 +326,6 @@ export const ThreadAssistLive = Layer.effect(
           ),
         ),
       paletteFilters: (threadId, query) =>
-        // Only workspaces the caller may see are offered to the helper, or taken from its answer.
         Effect.flatMap(
           Effect.flatMap(store.listWorkspaces, (all) =>
             readableWorkspacesOnly(all, (state) => state.workspace),

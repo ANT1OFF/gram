@@ -1,9 +1,3 @@
-/**
- * GitHub's own auto-merge on a repo's open pull requests, which a merge freeze takes down while it
- * stands and puts back after (`merge-freezes.ts`): GitHub merges an armed PR by itself, under any
- * freeze of Gram's. One bounded `gh` each, with `--repo`, run in a folder Gram has for the repo;
- * and which repo a checkout's origin is, which scopes a freeze to the caller's workspace.
- */
 import { gh, gitFailMsg, originOwnerRepo, Proc } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -84,7 +78,6 @@ const decodeView = Schema.decodeUnknownOption(
   ),
 );
 
-/** A full commit id (SHA-1 or SHA-256), as `--match-head-commit` takes it. */
 const isOid = (text: string | null | undefined): text is string =>
   text != null && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i.test(text);
 

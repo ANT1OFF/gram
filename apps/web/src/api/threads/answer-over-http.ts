@@ -20,7 +20,6 @@ export const postAnswer = async (
   threadId: string,
   requestId: string,
   answer: RequestAnswer,
-  /** The card's key as it was listed: only that card takes the answer. */
   shown?: string,
 ): Promise<void> => {
   const response = await fetch(

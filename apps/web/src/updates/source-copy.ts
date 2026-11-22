@@ -1,10 +1,6 @@
 import type { UpdateSource } from "@gram/contracts";
 import { useEffect, useState } from "react";
 
-// What Settings → Updates says about where releases come from, from the repository and visibility
-// the shell's updater reads (`updates.source`), so the copy follows `UPDATE_REPO` and the feed.
-// Without a source (a shell older than it, or before it answers) the copy names no repository.
-
 /** The shell's update source, once it has answered; undefined before then and in older shells. */
 export function useUpdateSource(): UpdateSource | undefined {
   const [source, setSource] = useState<UpdateSource>();

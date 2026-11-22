@@ -10,12 +10,6 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { GRID_COLUMNS, useLatestReport } from "./board-grid";
 
-// The Board's Done band: under the lines at work, the features whose work is over and that have
-// left the Board, as Done lists them in the sidebar. A line each, newest first, on the grid's
-// columns: how it ended and when (Stage), what its last report said (Now) and the PR it ended with;
-// "Show N more" unfolds the rest in place, and the header's Show finished brings them back among
-// the lines.
-
 /** The most finished features the band lists before it says how many more there are. */
 export const DONE_BAND_MAX = 5;
 
@@ -45,7 +39,6 @@ export function DoneBand({
   repos: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
-  // "Show N more" unfolds the rest here; the header's Show finished puts them back among the lines.
   const [all, setAll] = useState(false);
   if (rows.length === 0) return null;
   const newest = rows.toReversed();
@@ -57,7 +50,6 @@ export function DoneBand({
       data-testid="board-done"
       className="mt-4 px-4"
     >
-      {/* On the grid's columns, as wide as its lines: a finished task's PR sits under Pull request. */}
       <div className={cn(GRID_COLUMNS, "items-baseline border-b border-border/60 pb-1.5")}>
         <h3
           id={`done-band-${workspaceId}`}
@@ -93,10 +85,6 @@ export const doneEnded = (ended: number, now = Date.now()): string => {
   return stamp.includes(" ") ? formatDay(ended, now) : stamp;
 };
 
-/**
- * One finished line: its title (a click from its thread), how it ended and when, the first line of
- * its last report with its repos, and its PR under Pull request.
- */
 function DoneRow({
   row,
   repos,
@@ -138,8 +126,6 @@ function DoneRow({
           </button>
         )}
       </span>
-      {/* One line in the Stage column's width: the clock today, the date alone on another day
-          (the column has no room for both, and wrapped), with the whole stamp on hover. */}
       <span
         data-testid="board-done-ended"
         title={ended === undefined ? undefined : `${outcome} ${formatStamp(ended)}`}

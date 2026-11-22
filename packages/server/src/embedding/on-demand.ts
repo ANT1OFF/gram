@@ -1,18 +1,3 @@
-// Hosts an embedder provisions on demand, for one person each.
-//
-// A headless server runs no work itself (`host/headless.ts`): a thread needs a machine. With
-// `GRAM_HOST_PROVIDER_URL` set, the deployment that runs this server can start one for the person
-// who asks: a person signed in through the fronting proxy starts their machine with a plain HTTP
-// request, which the proxy signs and can bind to that one request, and the server asks the
-// provider to start a host for them, passing that statement on exactly as received as `proof`.
-// The provider checks the proof itself, starts the host, and registers it here (as any
-// provisioned host, through `/machines/provision`) with its `owner` and `onDemand` kind. From then
-// on only that person's threads are placed on it, and only they see it.
-//
-// The provider reports how the start goes on `/embed/v1/hosts/progress`, which the person's
-// status read shows. A person can stop their machine too. Nothing here starts a host without a
-// person's own request: an agent, a skill or a repository's instructions have no path to it.
-
 import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -47,7 +32,6 @@ export const ON_DEMAND_PATHS: ReadonlySet<string> = new Set([
 
 /** The largest start body: a few repository names. */
 export const ON_DEMAND_MAX_BYTES = 8 * 1024;
-/** `owner/name`, each starting with a letter or digit: never `.` or `..`. */
 const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
 const MAX_REPOSITORIES = 20;
 const HOST_KEY = /^[\x21-\x7e]{1,200}$/;
@@ -72,7 +56,6 @@ export interface OnDemandProgress {
   readonly at: number;
 }
 
-/** A short id a provider names a choice or one of its options with: `size`, `arm64`. */
 const CHOICE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const MAX_CHOICES = 6;
 const MAX_OPTIONS = 8;
@@ -148,7 +131,6 @@ const refusal = (status: number, tag: string, message: string) =>
 /** What a person picked, by choice id: short ids only. */
 export type Picked = Readonly<Record<string, string>>;
 
-/** A body's `choices`, or why not. */
 const pickedIn = (picked: unknown): Picked | string =>
   picked === undefined
     ? {}
@@ -347,7 +329,6 @@ export const statusFor = (
   return statusOf(hosts, ownMachine(machines, person), person, choices, now);
 };
 
-/** The status of `mine`, with the progress kept under `key`. */
 const statusOf = (
   hosts: OnDemandHosts,
   mine: OwnedMachine | undefined,
@@ -380,7 +361,6 @@ const readBody = (request: HttpServerRequest.HttpServerRequest) =>
     );
     if (bytes === undefined) return "unreadable" as const;
     try {
-      // Kept exactly as sent, as the proxy hashed it.
       return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
     } catch {
       return "unreadable" as const;
@@ -402,7 +382,6 @@ export const onDemandRequest = (
   Effect.gen(function* () {
     if (path === ON_DEMAND_STATUS_PATH) {
       if (request.method !== "GET") return refusal(405, "MethodNotAllowed", "method not allowed");
-      // A workspace's own machine: its status, with no choices (the workspace's environment is it).
       const workspace = new URL(request.url, "http://gram").searchParams.get("workspace");
       if (workspace !== null)
         return WORKSPACE_ID.test(workspace)
@@ -425,7 +404,6 @@ export const onDemandRequest = (
     if (body === "too-large") return refusal(413, "TooLarge", "the request is too large");
     if (body === "unreadable") return refusal(400, "BadRequest", "the request could not be read");
     const proof = { statement, method: request.method, path: request.url, body };
-    /** Asks the provider for a start, its progress kept under `key`. */
     const started = (key: string, json_: Record<string, unknown>) =>
       Effect.gen(function* () {
         const answered = yield* callOutside("host provider", hosts.provider, {
@@ -508,7 +486,6 @@ export const onDemandRequest = (
       );
     }
     const mine = ownMachine(machines(), actor.id);
-    // Online already: nothing to start, unless they asked for it again with other picks.
     if (mine?.onlineSince !== undefined && parsed.restart !== true)
       return json(200, { machine: { id: mine.id, name: mine.name, online: true } });
     const answer = yield* started(actor.id, {
@@ -522,12 +499,10 @@ export const onDemandRequest = (
       },
       proof,
     });
-    // What it has, and what is theirs, may have changed with this start: asked again next read.
     hosts.choices.delete(actor.id);
     return answer;
   });
 
-/** A short line a provider sends: one line, at most 300 characters. */
 const line = (value: unknown) =>
   typeof value === "string" && value.length <= 300 && !/[\0\n\r]/.test(value) ? value : undefined;
 
@@ -547,7 +522,6 @@ export const takeProgress = (
     return { status: 400, body: { message: "`owner` and `hostKey` are required" } };
   if (typeof phase !== "string" || !(PHASES as readonly string[]).includes(phase))
     return { status: 400, body: { message: `\`phase\` is one of ${PHASES.join(", ")}` } };
-  // A workspace's own machine reports with its workspace (`workspace-machines.ts`).
   const workspace = body?.["workspace"];
   const key = progressKey(owner, typeof workspace === "string" ? workspace : undefined);
   const known = hosts.progress.get(key);

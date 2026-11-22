@@ -5,7 +5,6 @@ import { meterText } from "@/usage/limit-format";
 
 import { OptionGroup, SettingRow } from "./fields";
 
-/** The thresholds offered; `off` leaves the charter without one. */
 const PAUSE_AT_CHOICES = [
   { value: "off", label: "Off" },
   { value: "80", label: "80%" },
@@ -15,7 +14,6 @@ const PAUSE_AT_CHOICES = [
 
 type PauseChoice = (typeof PAUSE_AT_CHOICES)[number]["value"];
 
-/** The charter with its threshold set to `choice`, or without one. */
 const withPauseAt = (charter: OrchestratorCharter, choice: PauseChoice): OrchestratorCharter => {
   const { pauseAtLimitPct: _, ...rest } = charter;
   return choice === "off" ? rest : { ...rest, pauseAtLimitPct: Number(choice) };
@@ -35,10 +33,8 @@ export function PauseAtLimitField({
   onChange: (charter: OrchestratorCharter, title: string) => void;
 }) {
   const limits = useUsageLimits((s) => s.limits);
-  // As of the last reading: the row names the share, not how fresh it is.
   const tightest = tightestLimit(limits, latestReadingAt(limits));
   const pct = charter.pauseAtLimitPct;
-  // A threshold set elsewhere that isn't one of the choices still shows as itself.
   const value = (pct === undefined ? "off" : String(pct)) as PauseChoice;
   const options = PAUSE_AT_CHOICES.some((choice) => choice.value === value)
     ? PAUSE_AT_CHOICES

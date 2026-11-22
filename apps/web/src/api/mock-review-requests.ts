@@ -1,7 +1,5 @@
 import type { OwnPr, ReviewRequest } from "@gram/contracts";
 
-// Review requests for MockApi: one in a known project (so it can be checked out), one elsewhere.
-
 export const seedReviewRequests = (): ReviewRequest[] => [
   {
     repo: "example/api",

@@ -1,9 +1,3 @@
-// The speech models this app version pins. Each is exact files at an exact Hugging Face commit; a
-// model update ships with an app release, under a new id, and nothing here is ever "latest". What
-// the store enforces is identity: every file's size and sha256. Equivalence to NVIDIA's checkpoint
-// is for CI to hold: a reproduce job (not in this repo yet) re-exports each model from the pinned
-// `.nemo` and is to fail unless every file's sha256 equals the one pinned here.
-
 import {
   SPEECH_ACCURATE_MODEL,
   SPEECH_MODEL_FOR_STOP,
@@ -22,7 +16,6 @@ const NVIDIA_OPEN_MODEL_LICENSE: SpeechModelLicense = {
   attribution: "Licensed by NVIDIA Corporation under the NVIDIA Open Model License",
 };
 
-/** Attribution as CC BY 4.0 asks: who made it, its licence, and that this copy is changed. */
 const PARAKEET_LICENSE: SpeechModelLicense = {
   id: "cc-by-4.0",
   name: "Creative Commons Attribution 4.0",
@@ -44,7 +37,6 @@ const LFS_VERIFIED = {
   detail: "Each file's sha256 equals the LFS digest Hugging Face serves at the revision.",
 } as const;
 
-/** The decoder, joiner and tokens every chunk size shares, byte for byte. */
 const SHARED_FILES = [
   {
     path: "decoder.int8.onnx",
@@ -63,10 +55,6 @@ const SHARED_FILES = [
   },
 ] as const;
 
-/**
- * Nemotron Speech Streaming EN 0.6B as sherpa-onnx's maintainer exported it to int8 for one
- * streaming chunk; only the encoder differs between chunk sizes.
- */
 const nemotronEnglish = (
   chunkMs: 160 | 560 | 1120,
   revision: string,
@@ -98,7 +86,6 @@ const nemotronEnglish = (
   evidence: [LFS_VERIFIED],
 });
 
-/** What `accurate` mode commits text from. Measured beside Nemotron, about 3.0 GB in all. */
 const PARAKEET_ENGLISH: SpeechModelManifest = {
   id: SPEECH_ACCURATE_MODEL,
   name: "Parakeet TDT 0.6B v2",
@@ -144,7 +131,6 @@ const PARAKEET_ENGLISH: SpeechModelManifest = {
   evidence: [LFS_VERIFIED],
 };
 
-/** Finds the speech in an utterance. The same file Silero publishes at its v5.0 tag. */
 const SILERO_VAD: SpeechModelManifest = {
   id: SPEECH_VAD_MODEL,
   name: "Silero VAD v5",

@@ -40,15 +40,12 @@ export const sequenceEvents = (
 ): Effect.Effect<EventLog, never, Scope.Scope> =>
   Effect.gen(function* () {
     const pull = yield* Stream.toPull(source);
-    /** One reader of `source` at a time, so two subscribers can't number a chunk twice. */
     const reading = yield* Semaphore.make(1);
-    /** Read and not yet confirmed, oldest first; `kept[i].seq === acked + 1 + i`. */
     let kept: Array<SequencedEvent> = [];
     let acked = 0;
     let last = 0;
     let ended = false;
 
-    /** Reads the next chunk into `kept`, unless another reader already moved the log on. */
     const readMore = (seen: number) =>
       reading.withPermits(1)(
         Effect.suspend(() => {
@@ -66,10 +63,8 @@ export const sequenceEvents = (
         }),
       );
 
-    /** The next event after `cursor`, reading one if needed; undefined once there will be none. */
     const after = (cursor: number): Effect.Effect<SequencedEvent | undefined> =>
       Effect.suspend(() => {
-        // Confirmed events are gone; a cursor behind them resumes at the oldest kept one.
         const next = kept[Math.max(0, cursor - acked)];
         if (next !== undefined) return Effect.succeed(next);
         if (ended) return Effect.succeed(undefined);

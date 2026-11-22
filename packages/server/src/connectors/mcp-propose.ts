@@ -1,9 +1,3 @@
-// `mcp_server_propose`: an agent proposes an MCP server, the user sees everything that would be
-// written on a card, and only on their approval does Gram add it, through Settings → Connectors'
-// own path (`claude mcp add-json`, and Codex's own config write through its app-server). What may
-// be proposed is decided in `@gram/contracts` (`mcp-propose.ts`); this reads what each agent has
-// under the name, raises the card and writes.
-
 import { APP_TOOLS_SERVER_NAME } from "@gram/agents";
 import {
   checkMcpServerProposal,
@@ -38,16 +32,13 @@ export interface McpProposeToolOptions {
 
 const TOOL = MCP_SERVER_PROPOSE_TOOL;
 
-/** What each target has under the proposal's name now; fails when one's config can't be read. */
 type Existing = Partial<Record<McpTarget, ConfiguredServer>>;
 
-/** The same server, or none, as the card would show it: what decides whether an approval holds. */
 const sameServer = (a: ConfiguredServer | undefined, b: ConfiguredServer | undefined) =>
   a === undefined || b === undefined
     ? a === b
     : JSON.stringify(existingOf(a)) === JSON.stringify(existingOf(b));
 
-/** Why `existing` can't be replaced as proposed, if it can't. */
 const conflict = (proposal: McpServerProposal, existing: Existing) => {
   for (const target of proposal.targets) {
     const there = existing[target];
@@ -74,14 +65,12 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
       const { handlers: connectors, writes } = yield* ConnectorConfigs;
       const ttl = Duration.fromInputUnsafe(options.proposalTtl ?? SETTINGS_PROPOSAL_TTL_MS);
 
-      /** The caller's checkout: where a `project` server's `.mcp.json` is, and what the CLI runs in. */
       const folderOf = (caller: ThreadId) =>
         store.getThread(caller).pipe(
           Effect.map((thread) => effectiveCheckout(thread).path),
           Effect.mapError(() => fail(TOOL, "Couldn't read this thread.")),
         );
 
-      /** Each target's server named `name`, read afresh from its own config. */
       const existingIn = (folder: string, proposal: McpServerProposal) =>
         Effect.gen(function* () {
           const { agents } = yield* connectors["connectors.configured"]({
@@ -108,7 +97,6 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
       const tool = defineAppTool({
         descriptor: {
           name: TOOL,
-          // It raises its own card on every call, whatever the binding, mode or autonomy.
           class: "outwardGated",
           description:
             'Propose adding an MCP server to the user\'s agent CLIs. The user sees everything that would be written on a card and Gram adds it only if they approve; this call waits for the answer (applied, declined, or expired after 15 minutes). server: {type: "stdio", command, args?, env?} (runs a program on this machine) or {type: "http"|"sse", url, headers?}. targets: claude, codex or both. scope: user (default, every project) or project (the repo\'s .mcp.json; Claude Code only). Never include credentials: secret-looking env vars, headers, arguments or URLs are refused, and the user adds those by hand. A name already in use needs replace: true, and the card shows both. Say why in reason.',
@@ -118,7 +106,6 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
         rejectExcessProperties: true,
         handle: (caller, input) =>
           Effect.gen(function* () {
-            // Who the caller is now, not which binding it was given.
             const role = yield* runtimes.audienceOf(caller);
             if (role === "dream") {
               return yield* fail(TOOL, "Memory updates don't propose MCP servers.");
@@ -154,8 +141,6 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
               logged,
             );
 
-            // The approval is for this card: this caller, this folder, and what each target held
-            // when it was drawn. Anything else and nothing more is written.
             const roleNow = yield* runtimes.audienceOf(caller);
             const folderNow = yield* folderOf(caller).pipe(Effect.orElseSucceed(() => undefined));
             if (roleNow !== role || folderNow !== folder) {
@@ -165,9 +150,6 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
               );
             }
 
-            // Under the name's lock, which Settings' own adds and removes take too: each target's
-            // server of the name is read again just before its write, so nothing written between
-            // targets, or by anyone between the check and the write, is overwritten unshown.
             yield* writes.withName(
               proposal.name,
               Effect.gen(function* () {
@@ -195,8 +177,6 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
                       `${label}'s ${proposal.name} changed after the card was drawn, so the approval no longer covers it; nothing was written to ${label}.${already} Propose again if it's still wanted.`,
                     );
                   }
-                  // `claude mcp add-json` refuses a taken name, so the old entry goes first; Codex
-                  // replaces its table in one write.
                   const replacing = existing[target] !== undefined && target === "claude";
                   if (replacing) {
                     yield* writes

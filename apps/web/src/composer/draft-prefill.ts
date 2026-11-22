@@ -3,9 +3,7 @@ import { useCallback, useState, useSyncExternalStore } from "react";
 
 import type { TaskTarget } from "@/orchestration/task-model";
 
-/** What the next draft starts on. */
 let pendingRoot: string | undefined;
-/** The last project prefilled, numbered so an open draft can tell a new one from one it has. */
 let latest: { readonly root: string | undefined; readonly seq: number } = {
   root: undefined,
   seq: 0,

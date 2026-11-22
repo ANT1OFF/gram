@@ -30,9 +30,6 @@ import type { createPullRequestsMock } from "./pull-requests/mock";
 import type { createReviewRequestsMock } from "./review-requests/mock";
 import type { ApiServerEvent, ApiThreadFeedEvent } from "./types";
 
-// What MockCore and its scenario files share: a thread's runtime, the seeded identity and
-// capabilities, and the handle the scenarios reach the core through.
-
 /** A feed event as the mock's turns make it; `#feed` stamps the revisions the server would. */
 export type MockFeedEvent =
   | Extract<ThreadFeedEvent, { type: "chunk" | "messages" }>
@@ -70,7 +67,6 @@ export interface ThreadRuntime {
   turnUsage?: UsageSummary | undefined;
 }
 
-/** What each agent's session reports it runs, as the real adapters list them. */
 const COMMANDS: Partial<Record<AgentKind, ThreadIdentity["commands"]>> = {
   claude: [
     { name: "compact", description: "Free up context by summarizing the conversation so far" },

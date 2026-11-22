@@ -1,11 +1,3 @@
-/**
- * The app's BrowserWindows: macOS hidden-inset and Windows overlay title bars (Linux keeps the
- * desktop's frame), theme and vibrancy sync, the dock badge and Windows overlay/flash, notifications
- * with click-to-focus, and
- * every link that leaves the app's origin sent through the shell's link trust. What the app
- * provides comes in as a `WindowContext`: the preload, the title, and how links open.
- */
-
 import { readFileSync, writeFileSync } from "node:fs";
 
 import type { DesktopNotification, DesktopWindowInfo, TitleBarTheme } from "@gram/contracts";
@@ -37,16 +29,13 @@ export interface WindowContext {
   readonly openLink: (url: string, window: BrowserWindow) => Promise<boolean>;
 }
 
-// Neutral Dark, matching the default palette, until a saved theme or renderer sync replaces it.
 let theme: TitleBarTheme = { background: "#0b0b0b", foreground: "#f5f5f5", mode: "dark" };
 let windowBackground = "#131313";
-/** Where the last synced theme is saved, so the next launch opens on the right background. */
 let appearancePath: string | undefined;
 let vibrancyWanted = false;
 let overlayDot: NativeImage | undefined;
 const liveNotifications = new Set<Notification>();
 
-// Linux has no vibrancy or Mica: a translucent look paints its own backdrop there, on an opaque window.
 const vibrancyActive = () =>
   (isMac || isWindows) && vibrancyWanted && !nativeTheme.prefersReducedTransparency;
 
@@ -94,8 +83,6 @@ export function createWindow({
           titleBarOverlay: { color: theme.background, symbolColor: theme.foreground, height: 40 },
         }
       : {}),
-    // Linux keeps the desktop's own frame and window buttons, which follow its theme and button
-    // layout. The menu bar would be a second row under it; Alt shows it, and its accelerators work.
     ...(isLinux ? { autoHideMenuBar: true } : {}),
     webPreferences: {
       preload: context.preloadPath,
@@ -107,14 +94,12 @@ export function createWindow({
     },
   });
 
-  // Window events can still arrive while the app tears down, after the window is destroyed.
   if (show) {
     win.once("ready-to-show", () => {
       if (!win.isDestroyed()) win.show();
     });
   }
   if (vibrancyWanted) applyAppearance(win);
-  // Full screen hides macOS's window buttons, so the renderer stops keeping room for them.
   if (isMac) {
     const sendFullScreen = (fullScreen: boolean) => () => {
       if (!win.isDestroyed()) win.webContents.send(Channels.windowFullScreenChanged, fullScreen);
@@ -179,7 +164,6 @@ export function setTitleBarTheme(next: TitleBarTheme) {
   try {
     writeFileSync(appearancePath, JSON.stringify(next));
   } catch (error) {
-    // The next launch opens on the default background instead; nothing else depends on the file.
     process.stderr.write(`appearance: couldn't save the window theme: ${String(error)}\n`);
   }
 }
@@ -197,8 +181,6 @@ export function setVibrancy(enabled: boolean) {
 
 export function setBadge(count: number) {
   if (!isWindows) {
-    // Linux shows a count only where the launcher reads Unity's API (KDE's task manager, Dash to
-    // Dock); the window's urgency hint, which every taskbar shows, is what's left elsewhere.
     app.setBadgeCount(count);
     if (isLinux) {
       for (const win of appWindows()) win.flashFrame(count > 0 && !win.isFocused());
@@ -218,7 +200,6 @@ export function focusWindow(win: BrowserWindow) {
   win.focus();
 }
 
-/** Told about each notification before it shows; see `core/notification-status.ts`. */
 let watcher: ((note: Notification, test: boolean) => void) | undefined;
 
 /** Follows every notification the shell shows from now on, for Settings' notification row. */
@@ -232,10 +213,8 @@ export function showNotification(note: Notification, test = false) {
   note.show();
 }
 
-/** Ask notifications by their page-made id: one live notification each. */
 const liveById = new Map<string, Notification>();
 
-/** The window a notification answers to: the one that raised it, else any. */
 const windowFor = (target: BrowserWindow | null) =>
   target && !target.isDestroyed() ? target : appWindows()[0];
 
@@ -269,7 +248,6 @@ export function notify(notification: DesktopNotification, target: BrowserWindow 
     liveNotifications.delete(note);
     if (id !== undefined && liveById.get(id) === note) liveById.delete(id);
   };
-  // Held so the notification isn't garbage-collected before it's clicked.
   liveNotifications.add(note);
   note.on("close", forget);
   const open = () => {

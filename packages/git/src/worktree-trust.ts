@@ -1,16 +1,8 @@
-// Whether a worktree holds someone else's tree: a pull request's head from another repository.
-// Recorded in the worktree's own git dir, which the checked-out tree can't write or ship, so every
-// later step (seeding rules, copying `.worktreeinclude` files, a restore, a reopen) can ask.
-
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 
 const MARKER = "gram-untrusted";
 
-/**
- * The worktree's own git dir, from the `gitdir:` line of its `.git` file; `undefined` for a main
- * checkout (whose `.git` is a folder), a missing or linked `.git`, or one that can't be read.
- */
 const worktreeGitDir = (worktreeDir: string): string | undefined => {
   try {
     const dotGit = nodePath.join(worktreeDir, ".git");
@@ -36,10 +28,6 @@ export const isUntrustedWorktree = (worktreeDir: string): boolean => {
   const gitDir = worktreeGitDir(worktreeDir);
   return gitDir !== undefined && fs.existsSync(nodePath.join(gitDir, MARKER));
 };
-
-// Provenance: which commits came in as someone else's head. Recorded in the common git dir, which
-// every worktree of the repository shares, so a new worktree made from that branch or from one of
-// its commits, through any path, is untrusted too, after the first worktree is gone.
 
 const HEADS_FILE = "gram-untrusted-heads";
 

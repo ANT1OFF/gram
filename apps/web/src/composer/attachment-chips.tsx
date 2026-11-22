@@ -23,7 +23,6 @@ export function AttachmentChips({
   onRemove: (key: string) => void;
   className?: string;
 }) {
-  // A file just pasted or dropped settles in; a restored draft's files are simply there.
   const arrivals = useArrivals(
     items.map((item) => item.key),
     true,
@@ -31,9 +30,6 @@ export function AttachmentChips({
   const level = useMotionLevel();
   const snappy = usePresetTransition("snappy");
   if (items.length === 0) return null;
-  // A removed chip shrinks and fades out of the flow, and the chips after it glide into its place.
-  // Under Reduced and Off it goes at once: popped out of the flow while it faded, it would sit over
-  // the chip that took its place. The last one goes with the row, which the composer folds anyway.
   const chip =
     level === "full"
       ? { layout: "position" as const, exit: { opacity: 0, scale: 0.8 }, transition: snappy }
@@ -120,10 +116,6 @@ export function AttachmentChips({
   );
 }
 
-/**
- * One chip, inert while it leaves: popped out of the flow, it still covers the place the next chip
- * is gliding into, and a click meant for that one must not remove this one again.
- */
 function ChipItem(props: HTMLMotionProps<"li">) {
   const present = useIsPresent();
   return <m.li {...props} inert={!present} />;

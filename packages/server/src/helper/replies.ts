@@ -1,9 +1,5 @@
-// Suggested replies as the helper writes them, and the checks one must pass before a user sees it.
-// The recap's first suggestions and the turn-end ones share both.
-
 /** At most this many suggestions, most likely first. */
 export const MAX_REPLIES = 3;
-/** A longer suggestion is dropped, never cut: the 2026-09-20 experiments found them wordy. */
 const REPLY_MAX_CHARS = 90;
 const REPLY_MAX_WORDS = 12;
 
@@ -15,10 +11,8 @@ export const REPLY_RULES = [
   '- Never write as the agent ("I\'ll…", "Let me…").',
 ].join("\n");
 
-/** The agent's voice, which a message from the user never opens with. */
 const AGENT_VOICE = /^(I('ll| will| can)|Let me|Sure|Okay)\b/i;
 
-/** Something the model could only have got right by reading it: a `backticked` token or a path. */
 const specifics = (reply: string): ReadonlyArray<string> => [
   ...[...reply.matchAll(/`([^`]+)`/g)].map((m) => m[1]!),
   ...[

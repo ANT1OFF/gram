@@ -1,20 +1,3 @@
-// A workspace's pinned pages (`@gram/contracts` `pages.ts`), kept in Gram's state at
-// `<dataDir>/pages/<workspaceId>/<id>/`: `page.json`, its metadata, and one folder per version kept,
-// `v<n>/`, each a bundle with its `manifest.json`. Never in a repo, never uploaded.
-//
-// A version is a copy, made when the user pins or an agent offers: the HTML file's folder read file
-// by file through `openOutside` (no link followed out of it, no dotfile, nothing `isCredentialPath`
-// names), bounded in files, bytes and depth, and written into a fresh folder of Gram's that is
-// renamed into place whole. Nothing written in the worktree afterwards reaches it, and nothing ever
-// writes into a version once it is in place: an offer is a new version beside the shown one, and the
-// page keeps showing its version until the user shows the offer.
-//
-// Only the user pins, shows an offer or unpins (`pages.*` RPCs); an agent's one call is `offer`.
-//
-// Every path is built from checked segments: the workspace id (`WORKSPACE_SEGMENT`), the page id
-// (`PAGE_ID_PATTERN`) and a version number. The pages root and the workspace folder are refused when
-// they are links or not folders.
-
 import {
   FsError,
   InvalidState,
@@ -50,12 +33,9 @@ import { openOutside } from "../fs/files.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { servedFrom } from "../preview/files.ts";
 
-/** A workspace id as a folder name; ids are UUIDs, tests use short names. */
 const WORKSPACE_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
-/** The metadata file of a page. */
 const META = "page.json";
 const META_MAX_BYTES = 16 * 1024;
-/** How much of the entry is read for its `<title>`. */
 const TITLE_SCAN_BYTES = 64 * 1024;
 
 export type PageError = InvalidState | NotFound | FsError;
@@ -111,7 +91,6 @@ const notFound = (id: string) =>
 
 const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
 
-/** Never the raw error, whose message carries absolute paths: only what failed and its code. */
 const fsError = (shown: string, error: unknown) => {
   const code = codeOf(error);
   return new FsError({
@@ -120,7 +99,6 @@ const fsError = (shown: string, error: unknown) => {
   });
 };
 
-/** A refusal raised inside a copy, whose message is safe to show. */
 class Refusal extends Error {}
 
 const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))} MB`;
@@ -160,7 +138,6 @@ export const pageTitle = (html: string, fileName: string): string => {
       }
       return ENTITIES[name.toLowerCase()] ?? whole;
     })
-    // No control or bidirectional override character survives into Gram's chrome.
     .replace(/[\p{Cc}\p{Cf}]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -176,14 +153,6 @@ interface Copied {
   readonly entry: string;
 }
 
-/**
- * Copies `source`'s files (the entry's resolved folder) into `dest`, a fresh folder: each regular
- * file under it, read through `openOutside` while its real path is one `servedFrom` allows, so a
- * link out of the folder, a dotfile or a credential file is never read. Links are not followed,
- * other kinds of file are passed over, and a folder past `PAGE_FILES_MAX`, `PAGE_BYTES_MAX` or
- * `PAGE_DEPTH_MAX` is refused rather than cut. A `manifest.json` of the draft's own must name this
- * entry and declare no reads; the bundle's manifest is then written by Gram.
- */
 const copyBundle = async (source: string, entryName: string, dest: string): Promise<Copied> => {
   let files = 0;
   let bytes = 0;
@@ -198,7 +167,6 @@ const copyBundle = async (source: string, entryName: string, dest: string): Prom
           });
           const info = yield* Effect.promise(() => handle.stat());
           if (bytes + info.size > PAGE_BYTES_MAX) return undefined;
-          // At most one byte past what is left, so a file that grew since `stat` is still caught.
           const buffer = Buffer.alloc(Math.min(info.size, PAGE_BYTES_MAX - bytes) + 1);
           const { bytesRead } = yield* Effect.promise(() =>
             handle.read(buffer, 0, buffer.length, 0),
@@ -232,7 +200,6 @@ const copyBundle = async (source: string, entryName: string, dest: string): Prom
         await walk(path, depth + 1);
         continue;
       }
-      // A link is never followed, inside the folder or out of it, nor a socket or a device read.
       if (!entry.isFile()) continue;
       if (!PAGE_PATH_PATTERN.test(path)) continue;
       files++;
@@ -280,7 +247,6 @@ const copyBundle = async (source: string, entryName: string, dest: string): Prom
   return { title: pageTitle(entryText, entryName), entry: entryName };
 };
 
-/** A folder that must be a real folder of Gram's, never a link: made when `create`. */
 const ownFolder = async (path: string, create: boolean): Promise<boolean> => {
   try {
     const info = await lstat(path);
@@ -294,7 +260,6 @@ const ownFolder = async (path: string, create: boolean): Promise<boolean> => {
   }
 };
 
-/** `f`, its refusals as `InvalidState` and anything else as an `FsError` naming only `shown`. */
 const run = <A>(shown: string, f: () => Promise<A>): Effect.Effect<A, InvalidState | FsError> =>
   Effect.tryPromise({
     try: f,
@@ -308,7 +273,6 @@ const checkedWorkspace = (workspaceId: WorkspaceId) =>
 const checkedId = (id: string) =>
   PAGE_ID_PATTERN.test(id) ? Effect.succeed(id as PageId) : Effect.fail(notFound(id));
 
-/** A version's folder, `v<n>` under the page's. */
 const versionDir = (at: string, id: PageId, version: number) => join(at, id, `v${version}`);
 
 const readMeta = (at: string, workspaceId: WorkspaceId, id: PageId) =>
@@ -335,7 +299,6 @@ const readMeta = (at: string, workspaceId: WorkspaceId, id: PageId) =>
     return meta.value.id === id && meta.value.workspaceId === workspaceId ? meta.value : undefined;
   });
 
-/** Writes `meta` by one rename, so a failed write leaves the last one whole. */
 const writeMeta = (at: string, meta: PageMeta) =>
   run(meta.id, async () => {
     const page = join(at, meta.id);
@@ -344,10 +307,6 @@ const writeMeta = (at: string, meta: PageMeta) =>
     await rename(temp, join(page, META));
   });
 
-/**
- * Copies `entry`'s folder into a fresh folder in `within` and hands it to `place`, which renames
- * it into place: whole, or not at all.
- */
 const copyVersion = (
   within: string,
   entry: string,
@@ -373,7 +332,6 @@ export const makePages = (
 ): PagesShape => {
   const locks = makeKeyedLock<WorkspaceId>();
 
-  /** The workspace's folder, made (with the root) when `create`; `undefined` when there is none. */
   const workspaceFolder = (workspaceId: WorkspaceId, create: boolean) =>
     Effect.gen(function* () {
       yield* checkedWorkspace(workspaceId);
@@ -480,7 +438,6 @@ export const makePages = (
             },
           };
           yield* writeMeta(at, next);
-          // The offer it replaces was never shown, so nothing still loads from it.
           if (meta.offer !== undefined) {
             const old = versionDir(at, meta.id, meta.offer.version);
             yield* run(meta.id, () => rm(old, { recursive: true, force: true }));
@@ -499,7 +456,6 @@ export const makePages = (
         const info = await lstat(dir);
         if (info.isSymbolicLink() || !info.isDirectory()) throw new Refusal("not a page's folder");
         const real = await realPath(dir);
-        // The version's folder, at its own path under the root, not one a link leads to.
         if (real.split(sep).at(-1) !== `v${meta.version}`) throw new Refusal("not a page's folder");
         return real;
       });

@@ -1,18 +1,3 @@
-/**
- * The managed runtime store's on-disk layout, and the only code that writes it:
- *
- * ```
- * <root>/codex/
- *   active.json             which version runs, and the one before it
- *   versions/<version>-<target>/   an unpacked, verified package; never written once in place
- *   staging/<random>/       a download in progress; anything here at startup is deleted
- * ```
- *
- * A version directory is renamed into `versions/` only after its archive and entrypoint have been
- * verified and smoke-tested, and `active.json` is replaced by renaming a temp file over it, so a
- * crash at any point leaves the old selection or the new one, never a half-installed one. Nothing
- * here touches the user's own `codex`, PATH, `~/.codex` or any shell profile.
- */
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -73,10 +58,6 @@ export const versionId = (version: string, target: string) => `${version}-${targ
 const LOCKED = new Set(["EPERM", "EBUSY", "EACCES"]);
 const codeOf = (error: unknown) => (error as { code?: string } | null)?.code;
 
-/**
- * `rename`, retried briefly where Windows holds the file open (the indexer, antivirus); elsewhere
- * a single attempt.
- */
 const renameRetrying = async (
   from: string,
   to: string,
@@ -193,14 +174,12 @@ export const makeRuntimeStore = (
   const activePath = join(dir, "active.json");
   const versionDir = (id: string) => join(versionsDir, id);
   const executable = (receipt: RuntimeReceipt) => join(versionDir(receipt.id), receipt.entrypoint);
-  /** Executable fingerprints already hashed this run, so a launch rehashes only what changed. */
   const verified = new Map<string, string>();
 
   const readActive = async (): Promise<ActiveRecord> => {
     try {
       return parseActive(await readFile(activePath, "utf8"));
     } catch (error) {
-      // Missing is the fresh state; a torn or hand-edited file selects nothing rather than guess.
       if (codeOf(error) === "ENOENT" || error instanceof SyntaxError) return {};
       throw error;
     }
@@ -231,7 +210,6 @@ export const makeRuntimeStore = (
       else verified.delete(path);
       return ok;
     } catch {
-      // Unreadable is as good as missing: it can't be launched as what was verified.
       return false;
     }
   };
@@ -253,8 +231,6 @@ export const makeRuntimeStore = (
     commit: async (staged, id) => {
       await mkdir(versionsDir, { recursive: true });
       const target = versionDir(id);
-      // Windows can't rename onto an existing directory; a leftover of the same id (a crash after
-      // commit, before activation) isn't selected by anything, so it goes.
       await rm(target, { recursive: true, force: true, maxRetries: 5 });
       await renameRetrying(staged, target, platform);
     },
@@ -279,8 +255,6 @@ export const makeRuntimeStore = (
     prune: async (keep) => {
       for (const name of await readdir(versionsDir).catch(() => [] as Array<string>)) {
         if (keep.has(name)) continue;
-        // Best effort: on Windows a version some orphaned process still runs from stays locked,
-        // and the next prune gets it.
         await rm(versionDir(name), { recursive: true, force: true, maxRetries: 3 }).catch(
           () => undefined,
         );

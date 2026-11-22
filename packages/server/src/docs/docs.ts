@@ -1,15 +1,3 @@
-// A workspace's docs (`@gram/contracts` `docs.ts`): Markdown its threads publish with `publish_doc`
-// and the user edits in the doc pane, kept in Gram's state at `<dataDir>/docs/<workspaceId>/`, one
-// `<id>.doc` record each: a line of its metadata, then its Markdown. Never in a repo, never uploaded.
-//
-// Every path is built here from two checked segments: the workspace id (`WORKSPACE_SEGMENT`) and the
-// doc id (`DOC_ID_PATTERN`: lowercase letters, digits and inner hyphens), so no input can name `..`,
-// a separator or another folder. The file layer (`doc-files.ts`) pins the docs root and the
-// workspace folder for each operation and refuses a link in either. A save is one record renamed
-// into place, so a failed write leaves the last saved doc whole, and a read is one file, so its text
-// and its revision always belong together. Every metadata field is bounded, and a record whose
-// metadata line would pass its read cap is refused at the save, so whatever was saved can be read.
-
 import {
   DOC_ID_PATTERN,
   DOC_MAX_BYTES,
@@ -49,7 +37,6 @@ import {
   type DocFolder,
 } from "./doc-files.ts";
 
-/** A workspace id as a folder name; ids are UUIDs, tests use short names. */
 const WORKSPACE_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type DocError = InvalidState | NotFound | FsError;
@@ -100,7 +87,6 @@ const refuse = (message: string) => new InvalidState({ message });
 
 const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
 
-/** Never the raw error, whose message carries absolute paths: only the doc and the code. */
 const fsError = (shown: string, error: unknown) => {
   const code = codeOf(error);
   return new FsError({
@@ -113,7 +99,6 @@ const kb = (bytes: number) => `${Math.ceil(bytes / 1024)} KB`;
 
 /** `gap-analysis-3f9a2c`: the title's words, then six random hex digits. */
 export const newDocId = (title: string): DocId => {
-  // Bounded first, so the trims below never scan a long run of separators.
   const words = title
     .slice(0, 200)
     .normalize("NFKD")
@@ -129,7 +114,6 @@ export const newDocId = (title: string): DocId => {
 
 const decodeMeta = Schema.decodeUnknownOption(DocMeta);
 
-/** A doc's record: one line of its metadata, then its Markdown, committed by one rename. */
 const RECORD = ".doc";
 const recordName = (id: DocId) => `${id}${RECORD}`;
 const HEAD_MAX = DOC_META_MAX_BYTES + 1;
@@ -146,10 +130,6 @@ const notFound = (id: string) =>
 const unreadable = (id: string) =>
   refuse(`The doc ${id}'s details don't read, so it wasn't opened`);
 
-/**
- * The metadata a record's first line holds, when it decodes, is in bounds and names this doc of
- * this workspace; `undefined` otherwise.
- */
 const metaOf = (head: string, workspaceId: WorkspaceId, id: DocId): DocMeta | undefined => {
   const end = head.indexOf("\n");
   if (end < 0 || end > DOC_META_MAX_BYTES) return undefined;
@@ -160,14 +140,12 @@ const metaOf = (head: string, workspaceId: WorkspaceId, id: DocId): DocMeta | un
     return undefined;
   }
   const meta = decodeMeta(parsed);
-  // A record that says it is another doc, or another workspace's, is not this one.
   if (meta._tag === "None" || meta.value.id !== id || meta.value.workspaceId !== workspaceId) {
     return undefined;
   }
   return meta.value;
 };
 
-/** The record for `meta` and `content`, refused if its metadata is out of bounds. */
 const recordOf = (meta: DocMeta, content: string) => {
   if (decodeMeta(meta)._tag === "None") {
     return Effect.fail(refuse("The doc's details are out of bounds, so it wasn't saved"));
@@ -186,7 +164,6 @@ const checkContent = (content: string) => {
     : Effect.succeed(bytes);
 };
 
-/** A refusal as `InvalidState`, any other failure as an `FsError` naming only `shown`. */
 const run = <A>(shown: string, io: () => Promise<A>): Effect.Effect<A, InvalidState | FsError> =>
   Effect.tryPromise({ try: io, catch: (error) => error }).pipe(
     Effect.catch((error) =>
@@ -225,7 +202,6 @@ export const makeDocs = (
         if (!name.endsWith(RECORD)) continue;
         const id = name.slice(0, -RECORD.length);
         if (!DOC_ID_PATTERN.test(id)) continue;
-        // One that doesn't read is left out of the list rather than failing it.
         const meta = yield* readHead(at, workspaceId, id as DocId).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
@@ -240,7 +216,6 @@ export const makeDocs = (
       return at === undefined ? [] : yield* listIn(at, workspaceId);
     });
 
-  /** The whole record, read once: its metadata and text always belong together. */
   const readDoc = (at: DocFolder, workspaceId: WorkspaceId, id: DocId) =>
     Effect.gen(function* () {
       const record = yield* run(id, () =>
@@ -271,11 +246,6 @@ export const makeDocs = (
       return doc ?? (yield* notFound(id));
     });
 
-  /**
-   * Writes the record and tells the clients, uninterruptibly: a promise outlives its fiber's
-   * interruption, so a save cancelled mid-write must not give up the workspace's lock until the
-   * write has settled, or a later save could land first and be overwritten by it.
-   */
   const commit = (at: DocFolder, meta: DocMeta, content: string) =>
     Effect.uninterruptible(
       Effect.gen(function* () {
@@ -289,7 +259,6 @@ export const makeDocs = (
     locks.withLock(
       input.workspaceId,
       Effect.gen(function* () {
-        // What an agent publishes may quote a token it saw; it is kept with the secret censored.
         const content = redactText(input.content);
         const bytes = yield* checkContent(content);
         const now = yield* Clock.currentTimeMillis;

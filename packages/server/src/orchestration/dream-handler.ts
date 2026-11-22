@@ -26,8 +26,13 @@ import { logDefects, type Handlers } from "../rpc/handlers/common.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { steerOrSend } from "../runtime/steer-or-send.ts";
 import { Dreams } from "./dreams.ts";
-import { OrchestrationMemory, type MemoryError, type OrchestrationMemoryShape } from "./memory.ts";
+import { OrchestrationMemory, type MemoryError } from "./memory.ts";
+import { Orchestration } from "./service.ts";
+import { type MemoryQuestionsShape } from "./service/memory-questions.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
+
+/** Where an answer finds its question and closes it: the store (`Orchestration.memoryQuestions`). */
+export type QuestionsFile = Pick<MemoryQuestionsShape, "read" | "modify">;
 
 /** How an answer reaches the orchestrator, apart from the file, so a failure can be tried in a test. */
 export interface AnswerDelivery<E> {
@@ -38,7 +43,7 @@ export interface AnswerDelivery<E> {
 }
 
 export type AnswerOnce = <E>(
-  memory: OrchestrationMemoryShape,
+  questions: QuestionsFile,
   workspaceId: WorkspaceId,
   input: {
     readonly questionId?: string | undefined;
@@ -80,19 +85,16 @@ export interface AnswerOnceOptions {
  */
 export const makeAnswerOnce = (): AnswerOnce => {
   const locks = makeKeyedLock<WorkspaceId>();
-  return (memory, workspaceId, input, date, delivery, options = {}) => {
+  return (questions, workspaceId, input, date, delivery, options = {}) => {
     const name = input.questionId ?? "That question";
-    const read = memory
-      .read(workspaceId, QUESTIONS_FILE)
-      .pipe(Effect.catchTag("NotFound", () => Effect.succeed(undefined)));
+    const read = questions.read(workspaceId);
     const edit = (change: (current: string | undefined) => QuestionEdit) =>
-      memory.modify(workspaceId, QUESTIONS_FILE, (current) => {
+      questions.modify(workspaceId, (current) => {
         const made = change(current);
         return made.ok
           ? Effect.succeed({ content: made.content, result: made.id })
           : Effect.fail(new InvalidState({ message: made.problem }));
       });
-    /** Closes the entry by its id; one the orchestrator closed meanwhile is left as it is. */
     const close = (id: string, answer: string) =>
       edit((current) =>
         answerQuestion(current, { questionId: id, question: input.question, answer }, date),
@@ -104,7 +106,6 @@ export const makeAnswerOnce = (): AnswerOnce => {
         return yield* new InvalidState({ message: `${name} isn't in ${QUESTIONS_FILE} any more.` });
       }
       if (!entry.open) {
-        // Pressed again after this very answer went and closed it: that is done, not a failure.
         if (
           options.own !== true &&
           entry.closedAs === "answered" &&
@@ -118,7 +119,6 @@ export const makeAnswerOnce = (): AnswerOnce => {
         return yield* new InvalidState({ message: `An answer to ${name} is on its way already.` });
       }
       if (entry.pending !== undefined && (yield* delivery.holds(answerKeyTag(entry.pending)))) {
-        // An earlier attempt got there and didn't close: close it with what that attempt said.
         yield* close(entry.id, entry.answer ?? input.answer);
         return { questionId: entry.id, delivered: "sent" as const };
       }
@@ -151,10 +151,6 @@ export const isQueuedAnswer = (input: UserInput): boolean =>
   (input.attachments?.length ?? 0) === 0 &&
   /\(answer key [^)]+\)$/.test(input.text);
 
-/**
- * Answers are taken one at a time in a workspace however they come: the socket's
- * `question.answer` and an embedder's `asks/answer` share these locks.
- */
 const answerOnce = makeAnswerOnce();
 
 /**
@@ -164,7 +160,7 @@ const answerOnce = makeAnswerOnce();
  */
 export const questionAnswerer =
   (deps: {
-    readonly memory: OrchestrationMemoryShape;
+    readonly questions: QuestionsFile;
     readonly store: Pick<ThreadStoreShape, "getWorkspace" | "messagesWith">;
     readonly hub: Pick<EventHubShape, "publish">;
     readonly runtimes: Pick<ThreadRuntimesShape, "summaryOf" | "sendOrJoin" | "steer" | "send">;
@@ -184,7 +180,7 @@ export const questionAnswerer =
     options?: AnswerOnceOptions,
   ) =>
     Effect.gen(function* () {
-      const { memory, store, hub, runtimes } = deps;
+      const { questions, store, hub, runtimes } = deps;
       const orchestrator = (yield* store.getWorkspace(workspaceId)).workspace.orchestratorThreadId;
       const summary =
         orchestrator === undefined ? undefined : yield* runtimes.summaryOf(orchestrator);
@@ -194,11 +190,6 @@ export const questionAnswerer =
         });
       }
       const delivery: AnswerDelivery<ThreadNotFound | InvalidState | AgentUnavailable> = {
-        // Steered into a running turn: a steer cancels nothing, so a burst of answers no longer
-        // cuts off one turn after another as it did when steers interrupted (36 of 68
-        // interrupted turns in the 0.8 retro). One queued behind a turn that can't take it
-        // (waiting on the user, or Gram's idle compaction) joins an earlier answer still
-        // waiting, so a burst lands as one turn.
         deliver: (text) =>
           steerOrSend(
             runtimes,
@@ -217,14 +208,13 @@ export const questionAnswerer =
               item.input.text.includes(tag),
             );
             if (queued === true) return true;
-            // Only the user messages whose stored form holds the tag are read and decoded.
             return (yield* store.messagesWith(orchestrator, [tag], "user")).some((message) =>
               message.parts.some((part) => part.type === "text" && part.text.includes(tag)),
             );
           }),
       };
       const result = yield* answerOnce(
-        memory,
+        questions,
         workspaceId,
         { questionId, question, answer },
         questionDate(yield* Clock.currentTimeMillis),
@@ -248,13 +238,21 @@ export const dreamHandlers = Effect.gen(function* () {
   const store = yield* ThreadStore;
   const hub = yield* EventHub;
   const runtimes = yield* ThreadRuntimes;
-  const answerQuestionAsUser = questionAnswerer({ memory, store, hub, runtimes });
+  const { memoryQuestions } = yield* Orchestration;
+  const answerQuestionAsUser = questionAnswerer({
+    questions: memoryQuestions,
+    store,
+    hub,
+    runtimes,
+  });
 
-  /** The workspace exists; memory folders are made on demand, so ask first. */
   const guard = (workspaceId: WorkspaceId) => Effect.asVoid(store.getWorkspace(workspaceId));
 
   const changed = (workspaceId: WorkspaceId) =>
-    hub.publish({ type: "orchestration.changed", workspaceId });
+    memoryQuestions.settle(workspaceId).pipe(
+      Effect.catch((error) => Effect.logWarning("questions.md not read back", error)),
+      Effect.andThen(hub.publish({ type: "orchestration.changed", workspaceId })),
+    );
 
   return {
     "dream.automaticStatus": ({ workspaceId }) => dreams.automaticStatus(workspaceId),

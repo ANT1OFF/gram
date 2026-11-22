@@ -177,7 +177,6 @@ export function TokensChart({
   );
 }
 
-/** About five dates under the axis: the first, the last, and evenly between. */
 function xTicks(count: number): number[] {
   if (count <= 1) return count === 1 ? [0] : [];
   const step = Math.max(1, Math.round((count - 1) / 4));
@@ -187,16 +186,7 @@ function xTicks(count: number): number[] {
   return ticks;
 }
 
-function DayTip({
-  day,
-  families,
-  at,
-}: {
-  day: UsageDay;
-  families: readonly Family[];
-  /** Across the plot, from 0 to 1. */
-  at: number;
-}) {
+function DayTip({ day, families, at }: { day: UsageDay; families: readonly Family[]; at: number }) {
   return (
     <div
       role="status"

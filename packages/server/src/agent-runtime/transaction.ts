@@ -1,22 +1,3 @@
-/**
- * The install, update and rollback transaction for a managed runtime. One runs at a time. Each step
- * either completes or leaves the selection as it was:
- *
- * 1. the gate approves the exact artifact (qualified for this build, at least 24 hours old);
- * 2. the npm tarball is fetched into a fresh staging directory through the user's own registry
- *    (`Downloader`), and the integrity the registry reports, its size, its SHA-256 and its SHA-512
- *    must all match the approved values before anything is unpacked;
- * 3. it unpacks through `extractTarGz`, and the `codex-package.json` under
- *    `package/vendor/<target>/` must name the same version and target and an entrypoint inside;
- * 4. the package moves into `versions/`, where `codex --version` and an app-server handshake run
- *    against an empty `CODEX_HOME`;
- * 5. `active.json` is replaced to select it, keeping the old selection as `previous`, and the smoke
- *    test runs again from the selected path; if that fails the selection goes straight back.
- *
- * Interrupting it (Cancel) before step 5 deletes the staging directory and changes nothing; step 5
- * is uninterruptible. A crash anywhere leaves at most an unselected directory, which `recover`
- * and `prune` clean up.
- */
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { isStrictlyInside } from "@gram/git";
@@ -65,7 +46,6 @@ export interface Downloader {
     dir: string,
   ) => Effect.Effect<
     { readonly path: string; readonly integrity: string },
-    /** `notYet`: the registry doesn't offer the version yet (its own release-age hold). */
     { readonly message: string; readonly notYet?: true | undefined }
   >;
 }
@@ -82,7 +62,6 @@ export interface TransactionDeps {
   readonly context: () => GateContext;
 }
 
-/** Unpack limits: generous for a ~600 MB package, and short of a gzip bomb filling the disk. */
 const UNPACK_LIMITS = { maxEntries: 20_000, maxBytes: 4 * 1024 * 1024 * 1024 };
 
 const fail = (step: RuntimeInstallFailed["step"], message: string) =>
@@ -165,22 +144,16 @@ export const stage = (
       before.previous.archiveSha256 === artifact.sha256 &&
       (yield* Effect.promise(() => store.intact(before.previous!)))
     ) {
-      // Already unpacked and verified: selecting it is all that's left.
       return { receipt: before.previous, selected: false };
     }
     const sameId = [before.current, before.previous].find((receipt) => receipt?.id === id);
     if (sameId !== undefined && sameId.archiveSha256 !== artifact.sha256) {
-      // Same version and target, different bytes: the vendor replaced the asset. Overwriting the
-      // directory would change what is selected without the activation step, so it is refused.
-      // The same bytes with damaged files on disk fall through to a fresh install: a repair.
       return yield* new RuntimeRefused({
         reason: "replaced",
         message: `Codex ${artifact.version}'s package differs from the one installed; it needs approving again.`,
       });
     }
     if (deps.leases.count(id) > 0) {
-      // A process runs from the directory a reinstall would replace; that would pull its files out
-      // from under it.
       return yield* new RuntimeRefused({
         reason: "in-use",
         message: `Codex ${artifact.version} is running from an earlier install; try again once its sessions close.`,
@@ -246,7 +219,6 @@ const stageAndCommit = (
         `the download is ${onDisk} bytes; the approved package is ${artifact.size}`,
       );
     }
-    // Hashed from disk ourselves: what npm reports is a claim, these are the bytes.
     const digests = yield* Effect.tryPromise({
       try: (signal) => hashFile(archive, signal),
       catch: (error) => fail("verify", describe(error)),
@@ -274,7 +246,6 @@ const stageAndCommit = (
         ),
     });
     yield* Effect.promise(() => rm(download, { recursive: true, force: true }));
-    // An npm tarball's files sit under `package/`; Codex's own package layout is beneath it.
     const root = join(unpacked, "package", "vendor", artifact.target);
     const isDir = yield* Effect.promise(() =>
       stat(root).then(
@@ -308,7 +279,6 @@ const stageAndCommit = (
     );
     if (!isFile) return yield* fail("unpack", `the package has no ${entrypoint}`);
 
-    // Moved in before it runs, so Windows never renames a folder whose executable just exited.
     yield* Effect.tryPromise({
       try: () => store.commit(root, id),
       catch: (error) => fail("unpack", `couldn't move the package into place: ${describe(error)}`),
@@ -365,7 +335,6 @@ export const activate = (
       ) {
         return before.current;
       }
-      // A repair of the selected version keeps the previous one; anything else becomes it.
       const previous = before.current?.id === receipt.id ? before.previous : before.current;
       const next: ActiveRecord = {
         current: receipt,

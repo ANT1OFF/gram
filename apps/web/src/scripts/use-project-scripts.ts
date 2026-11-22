@@ -52,8 +52,6 @@ export const useThreadProject = (threadId: ThreadId | undefined): ProjectId | un
  * Only a click or the script's own key calls this.
  */
 export function startScript(api: Api, threadId: ThreadId, name: string): void {
-  // The run is asked for before the panel shows, so the panel adopts its tab instead of opening a
-  // blank shell beside it.
   const running = runScript(api, threadId, name);
   openThreadPanel(threadId, "terminal");
   running.catch((error: unknown) =>

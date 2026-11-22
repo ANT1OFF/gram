@@ -1,6 +1,3 @@
-// The git services the server depends on, with no dependency on the server core, so `main.ts` can
-// provide them from outside `ServerLayer`.
-
 import {
   CheckpointsLive,
   GitStateRuntimeLive,
@@ -218,7 +215,6 @@ export const GitPlatformLive = platform(
   OpenPrs.layer,
 );
 
-/** No `gh`: PR lookups find nothing. */
 const NoPr = Layer.succeed(Pr, {
   status: () => Effect.succeed(undefined),
   checks: () => Effect.succeed([]),

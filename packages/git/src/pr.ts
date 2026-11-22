@@ -1,8 +1,3 @@
-// GitHub PR status and detail through read-only `gh` calls: the SHA anchoring that keeps a phantom
-// "Merged" badge off a reused branch name, the check rollups, and the batched GraphQL fan-in — many
-// branches and bound PRs, one `gh api graphql` request — via a `RequestResolver`, behind a TTL
-// cache so the polls between sweeps cost nothing.
-
 import {
   DEFAULT_REVIEW_BOTS,
   PR_STALE_SIGNED_OUT,
@@ -73,15 +68,8 @@ const optionalCount = (value: Json, key: string): number | undefined => {
 };
 const arr = (value: unknown): Array<Json> => (Array.isArray(value) ? value.filter(isJson) : []);
 
-// ---------------------------------------------------------------------------------------------
-// Checks
-
 const field = (entry: Json, key: string) => str(entry, key).toUpperCase();
 
-/**
- * The one definition of a failed check, shared by the rollup and the per-check rows. CANCELLED and
- * STALE render grey on GitHub, so they're neutral like SKIPPED, not failures.
- */
 const checkIsFailure = (conclusion: string, state: string): boolean =>
   ["FAILURE", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"].includes(conclusion) ||
   state === "FAILURE" ||
@@ -189,9 +177,6 @@ export const checkRuns = (rollup: unknown): Array<PrCheck> => {
     };
   });
 };
-
-// ---------------------------------------------------------------------------------------------
-// PR detail
 
 export interface PrCommit {
   readonly oid: string;
@@ -355,9 +340,6 @@ export const buildPrDetail = (
   };
 };
 
-// ---------------------------------------------------------------------------------------------
-// Anchoring
-
 export interface PrInputs {
   /** The thread's OWN checkout; a PR belongs to the branch it was published from. */
   readonly workTree: string;
@@ -391,7 +373,6 @@ export const choosePr = <R>(
   isAncestor: (oid: string) => Effect.Effect<boolean, never, R>,
 ): Effect.Effect<ChosenPr | undefined, never, R> =>
   Effect.gen(function* () {
-    // A branch name is anyone's: only a PR whose head is in the repo asked can be this branch's.
     const own = prs.filter(isSameRepoHead);
     const anchored = own.find((p) => isTip(str(p, "headRefOid"), localTip, remoteTip));
     if (anchored) return { pr: anchored, headMatches: true, aheadOfPr: false };
@@ -428,7 +409,6 @@ export const buildPrStatus = (
     gitIsAncestor(inputs.workTree, inputs.localTip),
   ).pipe(Effect.map((chosen) => (chosen ? toPrStatus(chosen.pr, chosen, bots) : undefined)));
 
-/** One PR in the `gh pr list --json` shape as the badge, anchored as `anchoring` says. */
 const toPrStatus = (
   p: Json,
   anchoring: Pick<ChosenPr, "headMatches" | "aheadOfPr">,
@@ -542,9 +522,6 @@ export const boundPrStatus = (
 export const rebaseDone = (pr: PrStatus | undefined, head: string): boolean =>
   head !== "" && pr !== undefined && pr.state !== "OPEN" && pr.headRefOid === head;
 
-// ---------------------------------------------------------------------------------------------
-// GraphQL batching
-
 /**
  * Lookups — branches and bound PRs alike — per GraphQL document; well under GitHub's limits. A branch
  * whose PR is already known takes two blocks, so a document runs to twice this many.
@@ -554,36 +531,21 @@ export const GQL_BRANCHES_PER_QUERY = 40;
 /** Which PR an aliased block in the batched document names. */
 export type PrLookupKind = "branch" | "number";
 
-/** The rollup, each check saying whether PR `$<number>` requires it: a scalar, so no extra cost. */
 const rollupGqlField = (number: string) =>
   "commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename " +
   `... on CheckRun{status conclusion isRequired(pullRequestNumber:$${number})} ` +
   `... on StatusContext{state isRequired(pullRequestNumber:$${number})}}}}}}}`;
 
-/**
- * Who is asked to review, which says who a PR blocked on a review waits for. Ten nodes under one
- * PR, never under a branch's candidates, so it adds a request per block rather than ten.
- */
 const REVIEW_REQUESTS_GQL_FIELD =
   "reviewRequests(first:10){nodes{asCodeOwner requestedReviewer{__typename " +
   "... on User{login} ... on Bot{login} ... on Mannequin{login} ... on Team{slug name}}}} ";
 
-/**
- * What the badge itself reads, for the block whose PR number is `$<number>`. A bound PR takes only
- * these unless a review monitor is on it.
- */
 const badgeGqlFields = (number: string) =>
   "number state url isDraft headRefOid baseRefOid baseRef{target{oid}} title baseRefName headRefName isCrossRepository author{login} additions " +
   "deletions changedFiles updatedAt mergeStateStatus reviewDecision " +
   REVIEW_REQUESTS_GQL_FIELD +
   rollupGqlField(number);
 
-/**
- * What decides which PR is a branch's. Nothing nested, on purpose: GitHub prices a document by the
- * requests its connections could need, so a connection under these ten candidates costs ten times
- * what it costs under the one PR chosen from them. Asking for review threads here was five of the
- * six points a branch lookup cost, measured, and the sweep spent the hour's 5,000 in twenty minutes.
- */
 const DISCOVERY_GQL_FIELDS = "number state headRefOid isCrossRepository";
 
 const THREADS_GQL_FIELD =
@@ -643,7 +605,6 @@ const at = (value: unknown, path: ReadonlyArray<string | number>): unknown => {
   return current;
 };
 
-/** Reshape the badge fields of a GraphQL PullRequest node into the `gh pr view --json` shape. */
 const reshapeBadgeNode = (node: Json): Json => ({
   number: node["number"],
   state: node["state"],
@@ -710,11 +671,8 @@ const attempt = <A, R>(
   );
 
 type BatchOutcome =
-  /** Block `i`'s answer: a `discover` block's PR nodes, or a `pr` block's node (absent when null). */
   | { readonly kind: "Data"; readonly answers: ReadonlyArray<unknown> }
-  /** A body without usable `data`: a GraphQL-shape problem REST might not share. */
   | { readonly kind: "NoData" }
-  /** `gh` itself failed (offline, logged out); REST would hit the same wall. */
   | { readonly kind: "RequestFailed"; readonly reason: string };
 
 const graphqlErrorText = (body: unknown): string =>
@@ -723,7 +681,6 @@ const graphqlErrorText = (body: unknown): string =>
     .filter((message) => message !== "")
     .join("\n");
 
-/** One `gh api graphql` for `blocks`, run in `workTree` so `gh` picks up that checkout's host. */
 const runBlocks = (
   workTree: string,
   blocks: ReadonlyArray<PrBlock>,
@@ -745,7 +702,6 @@ const runBlocks = (
     }
     const out = yield* attempt(ghApi(workTree, args));
     if (!out.ok) return { kind: "RequestFailed", reason: out.reason } as const;
-    // `gh api graphql` exits non-zero whenever `errors` is present, yet still prints partial data.
     let body: unknown;
     try {
       body = JSON.parse(out.value.stdout.trim());
@@ -758,7 +714,6 @@ const runBlocks = (
     }
     const data = at(body, ["data"]);
     if (!isJson(data)) {
-      // Falling back to REST here would turn one refused document into 40 refused requests.
       const reason = `${graphqlErrorText(body)}\n${out.value.stderr}`.trim();
       return detectRateLimit(reason) === undefined
         ? ({ kind: "NoData" } as const)
@@ -803,7 +758,6 @@ const restPrList = (inputs: PrInputs): Effect.Effect<ReadonlyArray<Json>, PrLook
     }),
   );
 
-/** The one `gh pr view` for a bound PR, for when the batched document came back unusable. */
 const restBoundPr = (
   bound: BoundPrInputs,
 ): Effect.Effect<ReadonlyArray<Json>, PrLookupError, Proc> =>
@@ -828,7 +782,6 @@ const restBoundPr = (
     }),
   );
 
-/** The commit at the tip of `branch`, read from GitHub. */
 const baseTip = (cwd: string, repo: string, branch: string) =>
   ghApi(cwd, [
     "--method",
@@ -897,10 +850,6 @@ const restFallback = (
 const branchKey = (repo: string, branch: string) => `${repo.toLowerCase()}#${branch}`;
 const prKey = (repo: string, number: number) => `${repo.toLowerCase()}#${number}`;
 
-/**
- * The badge from a PR node read with its reviews, or `undefined` when its threads are neither in
- * the node nor carried from a read of the PR as it stands now, and have to be fetched.
- */
 const reviewedBadge = (
   node: Json,
   block: { readonly repo: string; readonly number: number; readonly fields: PrFieldSet },
@@ -933,7 +882,6 @@ const resolveChunk = (
     const now = yield* Clock.currentTimeMillis;
 
     const blocks: Array<PrBlock> = [];
-    /** The review block for a PR: its threads only when none carried are fresh enough. */
     const reviewBlock = (repo: string, number: number) => {
       const carried = memo.threads.get(prKey(repo, number));
       const fields: PrFieldSet =
@@ -974,9 +922,6 @@ const resolveChunk = (
       return;
     }
 
-    // A branch whose PR wasn't in the document — never seen, or no longer the one chosen — or a PR
-    // read with its reviews that moved since its threads were read: one more document, with the
-    // threads, for just those.
     const pending: Array<{
       readonly entry: Entry;
       readonly block: PrBlock & { readonly kind: "pr" };
@@ -987,7 +932,6 @@ const resolveChunk = (
       const plan = plans[i]!;
       if (lookup.kind === "number" && plan.known !== undefined) {
         const node = outcome.answers[plan.at];
-        // GitHub has no such PR.
         if (!isJson(node)) {
           entry.completeUnsafe(Exit.succeed(undefined));
           continue;
@@ -1086,7 +1030,6 @@ export const makePrResolver = (
 ): RequestResolver.RequestResolver<GetPrStatus> =>
   RequestResolver.grouped(
     RequestResolver.make<GetPrStatus>((entries) => {
-      // One caller a batch (`grouped`), each read under its own `GhCallEnv`.
       const env = ghCallEnvOf(entries[0].context);
       const mine = memo.forCaller(ghCallerKey(env));
       return Effect.gen(function* () {
@@ -1104,7 +1047,6 @@ const sharedResolvers = new WeakMap<
   RequestResolver.RequestResolver<GetPrStatus>
 >();
 
-/** One resolver per `Proc`, so callers without their own still share a batch window. */
 const sharedPrResolver = (proc: Proc["Service"]): RequestResolver.RequestResolver<GetPrStatus> => {
   const existing = sharedResolvers.get(proc);
   if (existing !== undefined) return existing;
@@ -1112,9 +1054,6 @@ const sharedPrResolver = (proc: Proc["Service"]): RequestResolver.RequestResolve
   sharedResolvers.set(proc, created);
   return created;
 };
-
-// ---------------------------------------------------------------------------------------------
-// Inputs
 
 export { originOwnerRepo, parseOwnerRepo };
 
@@ -1134,7 +1073,6 @@ export const PR_INPUTS_REV_PARSE = [
   "@{upstream}",
 ] as const;
 
-/** `cwd`'s HEAD as the PR lookup needs it: `PR_INPUTS_REV_PARSE`, and its branch when untracked. */
 const readCheckoutHead = (cwd: string) =>
   Effect.gen(function* () {
     const out = yield* git(cwd, PR_INPUTS_REV_PARSE);
@@ -1183,9 +1121,6 @@ export const resolvePrInputs = (
     if (repo === undefined) return undefined;
     return { workTree, branch, localTip, remoteTip: tip, repo } satisfies PrInputs;
   }).pipe(Effect.mapError((e) => new PrLookupError({ message: e.message })));
-
-// ---------------------------------------------------------------------------------------------
-// Service
 
 export class Pr extends Context.Service<
   Pr,
@@ -1269,7 +1204,6 @@ export interface SeenChecks {
 /** How many PRs' checks `Pr.seenChecks` remembers; the oldest read goes first. */
 export const SEEN_CHECKS_MAX = 256;
 
-/** One PR's key in the checks cache and `Pr.seenChecks`: GitHub ignores the repo's case. */
 const checksKey = (repo: string, number: number) => `${repo.toLowerCase()}#${number}`;
 
 /** A checkout's branch and HEAD as just read, which primed lookup inputs must still match. */
@@ -1293,7 +1227,6 @@ export interface PrChecksOptions {
   readonly fresh?: boolean | undefined;
 }
 
-// Lives in contracts, where the helper's PR context reads it.
 export { prChecksStamp } from "@gram/contracts";
 
 /** One PR's checks by name, and nothing else of it: two requests, so a point. */
@@ -1332,7 +1265,6 @@ export const withRequired = (
   });
 };
 
-/** How many checkouts' lookup inputs `Pr.prime` reads at once: a handful of `git` runs each. */
 const PRIME_INPUT_CONCURRENCY = 8;
 
 /**
@@ -1356,8 +1288,6 @@ export const PrLive = Layer.effect(
     const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       withCheckoutRepos(repos, Effect.provideService(effect, Proc, proc));
 
-    // Keyed on the tips the badge is anchored against, so a commit, push or fetch is a new entry
-    // and can never be answered from the one before it.
     const branchBadges = makeTtlCache<PrInputs, PrStatus | undefined, PrLookupError, never>({
       key: (inputs) => `${inputs.repo}#${inputs.branch}@${inputs.localTip}|${inputs.remoteTip}`,
       ttlMs,
@@ -1371,7 +1301,6 @@ export const PrLive = Layer.effect(
       PrLookupError,
       never
     >({
-      // A review monitor's lookup is its own entry: a badge read without reviews can't answer it.
       key: ({ bound }) =>
         `${bound.repo.toLowerCase()}#${bound.number}${bound.reviews === true ? "+reviews" : ""}`,
       ttlMs,
@@ -1424,9 +1353,6 @@ export const PrLive = Layer.effect(
         }),
       );
 
-    // One entry a PR, shared by every checkout and caller: a failing run is announced to every
-    // thread on the PR at once. A caller that names the state it has seen only takes an answer read
-    // under that state; one that names none takes whatever is there.
     const prChecks = makeTtlCache<PrChecksInput, ReadonlyArray<PrCheck>, PrLookupError, never>({
       key: ({ repo, number }) => checksKey(repo, number),
       ttlMs,
@@ -1439,11 +1365,6 @@ export const PrLive = Layer.effect(
       yield* Effect.addFinalizer(() => Effect.sync(untrack));
     }
 
-    /**
-     * Per checkout: the lookup inputs `prime` just read, taken by the `status` call its sweep makes
-     * next instead of reading them again. Older than a badge may be, or read on another branch or
-     * HEAD than the caller has just seen, they are read afresh.
-     */
     const primedInputs = new Map<
       string,
       { readonly inputs: PrInputs | undefined; readonly at: number }
@@ -1455,8 +1376,6 @@ export const PrLive = Layer.effect(
         primedInputs.delete(cwd);
         if (primed === undefined || checkout === undefined || now - primed.at >= ttlMs) return;
         const { inputs } = primed;
-        // No inputs is a checkout off any branch, or one with no GitHub remote: only the first is
-        // still provably so.
         const same =
           inputs === undefined
             ? checkout.branch === undefined
@@ -1468,7 +1387,6 @@ export const PrLive = Layer.effect(
       Effect.gen(function* () {
         if (!(yield* tools.ghReady)) return undefined;
         if (bound !== undefined) {
-          // Actions must not reuse a TTL answer or an in-flight/memoized older lookup.
           if (options?.fresh === true)
             return yield* provide(boundPrStatus(cwd, bound, makePrResolver(proc, reviewBots.get)));
           return yield* boundBadges.get({ cwd, bound });
@@ -1501,8 +1419,6 @@ export const PrLive = Layer.effect(
           if (locallyChecked && options.declaredCi !== true) return badge;
           return yield* new PrLookupError({ message: "Merge CI repository is unknown" });
         }
-        // A merge goes by the base branch's tip: the REST fallback has none, so it asks for it, and
-        // without it the read fails rather than pass off the PR's recorded base as the tip.
         const known =
           badge.baseTipOid !== undefined || badge.baseRef === undefined
             ? badge
@@ -1557,10 +1473,7 @@ export const PrLive = Layer.effect(
               ? parseGitDiffCapped(diff.value.stdout, diff.value.truncated)
               : { files: [], note: "Diff unavailable" };
           const fields = isJson(parsed) ? parsed : {};
-          // `gh pr view` can't say which checks are required; the checks lookup the PR strip
-          // already makes can, and is usually cached.
           const rollup = arr(fields["statusCheckRollup"]);
-          // Stamped as the badge would be, so a list read on another head or rollup isn't reused.
           const head = optionalStr(fields, "headRefOid") ?? commitList(fields).at(-1)?.oid;
           const stamp = prChecksStamp({
             ...(head === undefined ? {} : { headRefOid: head }),
@@ -1610,8 +1523,6 @@ export const PrLive = Layer.effect(
     const prime: Pr["Service"]["prime"] = (lookups) =>
       Effect.gen(function* () {
         if (lookups.length === 0 || !(yield* tools.ghReady)) return;
-        // Inputs first, requests after: the resolver batches what is asked in one scheduler turn,
-        // and a request issued as each checkout's `git` runs finish is a turn of its own.
         const ready = yield* Effect.forEach(
           lookups,
           ({ cwd, bound, caller }) =>

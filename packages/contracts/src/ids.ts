@@ -1,6 +1,5 @@
 import * as Schema from "effect/Schema";
 
-// `Schema.brand` rejects a union or widened key (one brand per id); the helper keeps that check.
 const id = <const B extends string>(brand: Parameters<typeof Schema.brand<B>>[0]) =>
   Schema.NonEmptyString.pipe(Schema.brand<B>(brand));
 

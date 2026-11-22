@@ -32,7 +32,6 @@ export async function createApi(
     const speed = Number(import.meta.env.VITE_MOCK_SPEED ?? "1");
     const mock = createMockApi({ speed: Number.isFinite(speed) ? speed : 1, persist: true });
     window.gramMock = mock;
-    // The fault profile disturbs what the app calls, never what a spec drives through `gramMock`.
     if (import.meta.env.VITE_MOCK_FAULTS) {
       const { parseRate, withFaults } = await import("./mock-modes/faults");
       const { parseSeed } = await import("./mock-modes/prng");

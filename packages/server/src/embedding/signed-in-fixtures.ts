@@ -1,6 +1,3 @@
-// The fakes the signed-in worker machine tests share: a desktop app and the hosted server behind
-// it, as the server's port sees them, and a machine registered as one that server started.
-
 import { generateHostKey } from "../host/machine-keys.ts";
 import type { RemoteHosts } from "../host/remote-hosts.ts";
 import type { WorkerMachineMessagePort } from "./signed-in-port.ts";

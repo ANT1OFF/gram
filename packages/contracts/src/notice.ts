@@ -1,11 +1,3 @@
-// What an ask's desktop notification may say and still be read whole, shared by the page that
-// writes it and the shell that shows it. Schema-free, for the shells' main processes.
-//
-// An approval answered from a notification must show its exact command. The OS cuts a body short
-// past a couple of lines and never says so, so a body is measured here against a conservative
-// estimate of what a macOS banner shows. A body that doesn't fit, or holds characters that change
-// how the rest reads (control, format and bidi characters), offers Open only.
-
 /** Rows of body text a banner shows before it cuts the rest. */
 export const NOTICE_BODY_ROWS = 2;
 /** Characters a body row holds, estimated low: wide characters count twice. */
@@ -17,15 +9,12 @@ export const NOTICE_CUT_LINE = "Cut short. Open to review.";
 export const NOTICE_ACTIONS = ["Allow", "Merge"] as const;
 export type NoticeAction = (typeof NOTICE_ACTIONS)[number];
 
-/** Control, format (bidi, zero-width) and separator characters, which hide or reorder text. */
 const HIDING = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cn}]/u;
-/** Characters a banner draws two columns wide: East Asian wide and fullwidth, and emoji. */
 const WIDE = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦\p{Extended_Pictographic}]/u;
 
 /** Whether one line reads as written: no character in it hides, reorders or breaks the rest. */
 export const noticePlain = (line: string): boolean => !HIDING.test(line);
 
-/** How many columns `line` takes. */
 const columns = (line: string): number => {
   let n = 0;
   for (const char of line) n += WIDE.test(char) ? 2 : 1;

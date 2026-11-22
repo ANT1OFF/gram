@@ -9,7 +9,6 @@ export const REVEAL_AFTER_MS = 120;
 /** How long the pointer may be off the navigation before it slides away. */
 export const HIDE_AFTER_MS = 400;
 
-/** What a menu, card, list or dialog opened from the navigation is drawn in, portalled out of it. */
 const POPUP = '[data-surface="overlay"], [role="menu"], [role="listbox"], [role="dialog"]';
 
 export type NavEdge = "left" | "top" | "bottom";
@@ -69,7 +68,6 @@ export function AutoHide({
     [],
   );
 
-  // ⌘B or Escape hid it: whatever held it goes, and the focus leaves it for the page.
   const [tick, setTick] = useState(hideTick);
   if (tick !== hideTick) {
     setTick(hideTick);
@@ -87,7 +85,6 @@ export function AutoHide({
   const hideLater = () => {
     clearTimeout(timer.current);
     timer.current = setTimeout(function check() {
-      // A menu opened from it is still its: it stays until that closes.
       if (document.querySelector(POPUP) !== null) {
         timer.current = setTimeout(check, HIDE_AFTER_MS);
         return;
@@ -131,7 +128,6 @@ export function AutoHide({
           setHover(true);
         }}
         onPointerLeave={hideLater}
-        // From the keyboard only: a click's focus is the click's, which goes somewhere itself.
         onFocus={(event) => {
           if (event.target instanceof Element && event.target.matches(":focus-visible"))
             setFocus(true);

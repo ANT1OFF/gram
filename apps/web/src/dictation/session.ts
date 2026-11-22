@@ -9,33 +9,19 @@ import {
   type SpeechServerMessage,
 } from "@gram/contracts";
 
-/**
- * One dictation, from the mic button or the shortcut to the text it commits: opens a session on the
- * desktop shell's local speech process, streams microphone frames into it,
- * and hands back partials to show and finals to commit. Messages travel through a dedicated port,
- * so nothing here knows which runs. Audio and text stay in memory; nothing here logs either.
- */
-
-/** Why dictation couldn't start or stopped early, beyond the speech process's own reasons. */
 type DictationErrorCode =
   | SpeechErrorCode
-  /** The user or policy refused the microphone. */
   | "microphone-denied"
-  /** No input device, or it couldn't be opened. */
   | "microphone-unavailable"
-  /** The stop never got its last message back. */
   | "timeout";
 
 export type DictationState =
   | { readonly phase: "idle" }
-  /** Asking for the microphone and opening the session; the model may still be loading. */
   | { readonly phase: "starting" }
   | { readonly phase: "listening" }
-  /** Told to stop: capturing the last of the speech, then waiting for the last of the text. */
   | { readonly phase: "stopping" }
   | { readonly phase: "error"; readonly code: DictationErrorCode; readonly message: string };
 
-/** What a session's port says: the local speech process's messages. */
 type DictationServerMessage =
   | Exclude<SpeechServerMessage, { readonly type: "error" }>
   | { readonly type: "error"; readonly code: DictationErrorCode; readonly message: string };
@@ -124,7 +110,6 @@ const STOP_TIMEOUT_MS = 5_000;
  */
 export const STOP_TAIL_MS = 200;
 
-/** What a `getUserMedia` rejection means for the user. */
 const captureError = (error: unknown): { code: DictationErrorCode; message: string } => {
   const name = (error as { name?: unknown } | null)?.name;
   if (name === "NotAllowedError" || name === "SecurityError")
@@ -141,7 +126,6 @@ const captureError = (error: unknown): { code: DictationErrorCode; message: stri
 
 const DENIED: ReadonlySet<MicrophoneAccess> = new Set(["denied", "restricted"]);
 
-/** How far up the scale ordinary speech reaches: its RMS sits around 0.05–0.2 of full scale. */
 const LOUDNESS_GAIN = 5;
 
 /** How loud a frame of microphone samples is, from 0 (silence) to 1, for the listening bars. */
@@ -171,7 +155,6 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
   let level = 0;
   const listener = (event: MessageEvent) => onMessage(event.data as DictationServerMessage);
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
-  /** Bumped by every start and end, so an answer to a superseded start is ignored. */
   let generation = 0;
 
   const set = (next: DictationState) => {
@@ -184,7 +167,6 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
     events.onPartial(text);
   };
 
-  /** Releases the microphone and the port; `then` is the state it ends in. */
   const end = (then: DictationState) => {
     generation += 1;
     clearTimeout(stopTimer);
@@ -251,19 +233,14 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
       ...(target.performance === undefined ? {} : { performance: target.performance }),
       ...(wanted.mode === undefined ? {} : { mode: wanted.mode }),
     };
-    /** What the microphone heard before the session could take it. */
     let early: Float32Array[] | undefined = [];
     const onFrame = (samples: Float32Array) => {
       if (mine !== generation) return;
       if (early !== undefined) return void early.push(samples);
       if (state.phase === "listening") level = loudness(samples);
-      // Copied, never transferred: a transferred buffer reaches the speech process as `null`.
       port?.postMessage({ type: "audio", samples });
     };
 
-    // Together: words spoken from the press on are kept however long the session takes to open.
-    // Each side is `end`'s to release as soon as it's here, so a cancel or the other side's failure
-    // lets go of it at once; one that comes after a cancel lets go of itself.
     const capturing = deps.startCapture(onFrame).then(
       (started): CaptureResult => {
         if (mine === generation) capture = started;
@@ -299,7 +276,6 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
     set({ phase: "listening" });
   };
 
-  /** Takes the last of the audio off the microphone, then asks for the last of the text. */
   const finish = async () => {
     const mine = generation;
     await capture?.flush();
@@ -308,7 +284,6 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
     capture = undefined;
     port?.postMessage({ type: "stop" });
     stopTimer = setTimeout(() => {
-      // The last message never came: keep what was shown rather than lose it.
       commit(partial);
       end({ phase: "idle" });
     }, deps.stopTimeoutMs ?? STOP_TIMEOUT_MS);

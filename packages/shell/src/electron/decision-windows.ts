@@ -1,10 +1,5 @@
 import { BrowserWindow, type WebContents } from "electron";
 
-/**
- * The windows the main process owns for decisions: the ask, the lending sheet and the new-server
- * dialog. Nothing the app does to its windows (reload, hide, theme, vibrancy, icons, badges,
- * links, menus) may touch them, so every loop over the app's windows goes through `appWindows`.
- */
 const decisionWindows = new WeakSet<WebContents>();
 
 export const markDecisionWindow = (contents: WebContents): void => {

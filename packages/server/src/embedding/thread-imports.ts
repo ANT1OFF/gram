@@ -1,30 +1,3 @@
-// `POST /embed/v1/thread-imports`: a thread moved here from another Gram, brought in by the
-// platform the server is embedded in on behalf of a person it signed in (`move-a-thread.md`).
-//
-//   { "person": { "id", "name"? }, "bundle": ThreadBundle, "from": "<the other Gram's name>" }
-//     → 200 { "threadId", "notes" }   the thread is here, with its edits, opened
-//       409 { "error" } one that can't come in (moved already, no machine, a remote that refuses)
-//       400 a body that isn't one
-//
-// The thread is placed as one the person started (`thread-starts.ts`): on their own machine where
-// machines are started for one person, from the repository's remote, its edits read only from the
-// ref and commit the bundle names. A bundle is untrusted input: how the thread runs here (its mode,
-// its model's profile) is this server's, and it is recorded as the person's.
-//
-// Bringing a thread back, to a Gram of the person's that it moved from:
-//
-//   POST /embed/v1/thread-exports  { "threadId", "person": { "id", "name"? } }
-//     → 200 { "bundle" }  the thread as a bundle, its edits kept at the remote; nothing else changes
-//   POST /embed/v1/thread-settles  { "threadId", "person", "exportedAt", "to" }
-//     → 200 { "settled": true }  the thread here is the read-only copy, saying where it went
-//   each → 404 no such thread (or one the person can't reach), 409 { "error" }, 400
-//
-// Whether a person may take work away is the platform's to decide before it asks: this server
-// asks only that the thread is one the person reaches, as for a message they send into it.
-//
-// The platform is trusted to say who the person is, as for `thread-starts`: it proves itself with
-// the embed token, never a cookie.
-
 import type { ThreadId } from "@gram/contracts";
 import {
   ExportThreadForPersonInput,
@@ -71,13 +44,11 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
     const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
     const ownerOf = ownersOf(machines);
 
-    /** Whether the person reaches the thread: on a machine of theirs, and readable by them. */
     const reaches = (person: string, threadId: ThreadId) =>
       Effect.gen(function* () {
         const thread = yield* store.getThread(threadId).pipe(Effect.option);
         if (Option.isNone(thread)) return false;
         if (!readerMay({ subject: person }, thread.value.readableBy)) return false;
-        // A thread brought here for one person goes back with them alone.
         const by = thread.value.transferredFrom?.by;
         if (by !== undefined && by !== person) return false;
         return yield* mayReachThread(store.getThread, ownerOf, threadId).pipe(
@@ -85,7 +56,6 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
         );
       });
 
-    /** `effect` as the person, recorded as theirs once it has run. */
     const asPerson = <A, E>(
       person: Actor,
       action: string,
@@ -135,7 +105,6 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
           return refusal(400, "`threadId`, `exportedAt` and `to` say which export went where");
         const { threadId } = decoded.value;
         if (!(yield* reaches(person.id, threadId))) return refusal(404, "there is no such thread");
-        // An export not made yet settles nothing: only one this server gave can.
         if (decoded.value.exportedAt > Date.now())
           return refusal(400, "`exportedAt` is when the thread was exported, not later");
         return yield* asPerson(
@@ -163,7 +132,6 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
           if (Option.isNone(decoded))
             return refusal(400, "`bundle` is a thread bundle and `from` names where it was");
           const { bundle } = decoded.value;
-          // Here before this call: a refusal then names nothing, since this call made nothing.
           const before = yield* store
             .movedThreadConflict(bundle.thread.id, [])
             .pipe(Effect.orElseSucceed(() => "unknown"));
@@ -186,8 +154,6 @@ export const ThreadImportsInboundLive = Layer.effectDiscard(
           return yield* imported.pipe(
             Effect.map(({ thread, notes }) => answer({ threadId: thread.id, notes })),
             Effect.catch((error: { readonly message?: string }) =>
-              // A thread this call recorded and then couldn't open is here, closed: the answer
-              // names it, so the platform doesn't take the move for one that never happened.
               store.movedThreadConflict(bundle.thread.id, []).pipe(
                 Effect.orElseSucceed(() => undefined),
                 Effect.map((here) => ({

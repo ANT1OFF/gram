@@ -151,7 +151,6 @@ export function PrPeople({ threadId, detail }: { threadId: ThreadId; detail: PrD
   const close = () => {
     setOpen(false);
     setValue("");
-    // The form leaves with its focused field: back to "Request review…".
     setTimeout(() => {
       if (focusLost()) focusIfConnected(stripRef.current?.querySelector("[data-request-review]"));
     }, 0);

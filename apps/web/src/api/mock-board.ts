@@ -13,9 +13,6 @@ import {
 
 import type { MockBoardSimulation, MockFinishedSimulation, MockScenes } from "./mock-orchestration";
 
-// The board scenario and what builds on it: the cross-repo workspace `simulateBoard` makes, its live
-// cards, its workers' questions, its finished work and its archived groups.
-
 /**
  * A workspace across `projectIds` with its orchestrator and three features. `mail-trigger` spans
  * the repos: one worker running tests (the user stepped in, and it overlaps a sibling in its
@@ -60,7 +57,6 @@ export async function simulateBoard(
     (await create({ name, projectIds: [home, ...rest], homeProjectId: home }));
   const workspaceId = state.workspace.id;
   const orchestrator = await fillSlot(state, settings);
-  // 92 % of its window, so the board and the banner offer a fresh session.
   host.setUsage(orchestrator.id, {
     tokens: { inputTokens: 0, outputTokens: 0 },
     contextWindow: 200_000,
@@ -224,7 +220,6 @@ export async function simulateBoard(
   ]);
   host.replace({
     ...inReview,
-    // The endpoint merges after the form that calls it, in the other repo.
     boundPr: {
       repo: origin,
       number: 212,
@@ -291,8 +286,6 @@ export async function simulateBoard(
   progress(waitingDocs, "The how-to is written. Ready to publish.", 5);
   push(waitingWeb, 12, 2.4);
   push(waitingDocs, 3, 0.9);
-  // The same command line under another `timeout`: what the inbox has to keep out of the group,
-  // since "Allow all" shows one input and answers every member.
   progress(waitingApart, "The limiter is in, behind a flag. Ready to publish.", 2);
   push(waitingApart, 1, 0.6, { timeout: 600_000 });
 
@@ -319,7 +312,6 @@ export async function simulateBoard(
     host.emit({ type: "orchestration.changed", workspaceId });
   });
 
-  // What `full` autonomy looks like afterwards: the orchestrator's answer, shown in both threads.
   const answered = {
     threadId: briefed.id,
     requestId: `r-answered-${briefed.id}` as RequestId,

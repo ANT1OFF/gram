@@ -144,7 +144,6 @@ export function EnvironmentField({
 function ManageLink({ manage }: { manage: NonNullable<ShellEnvironmentList["manage"]> }) {
   return (
     <Link
-      // A path under the app: one of its pages, as the navigation's are.
       {...({ to: manage.to } as unknown as { to: "/" })}
       className="rounded-sm text-foreground underline underline-offset-2 outline-none hover:text-foreground/80 focus-visible:focus-ring"
     >

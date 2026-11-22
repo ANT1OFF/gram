@@ -60,7 +60,6 @@ export function TitlebarPopover({
       {hint === undefined ? (
         <Popover.Trigger render={trigger} />
       ) : (
-        // The tooltip's parts by hand: a `Hint` would hand the trigger its own (empty) children.
         <Tooltip>
           <TooltipTrigger render={<Popover.Trigger render={trigger} />} />
           <TooltipContent side="bottom" className="whitespace-pre-line">
@@ -81,7 +80,6 @@ export function TitlebarPopover({
             data-surface="overlay"
             aria-label={label}
             data-testid={testId}
-            // The unfold below moves focus in itself, once the content is no longer inert.
             initialFocus={false}
             className="outline-none"
           >
@@ -103,7 +101,6 @@ export function TitlebarPopover({
   );
 }
 
-/** Mounts folded and unfolds a frame later, so `Expand` has a height to grow from. */
 function Unfold({
   onShown,
   children,

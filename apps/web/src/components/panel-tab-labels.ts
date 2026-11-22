@@ -73,15 +73,12 @@ export function tabLabelFit(
   held = Number.POSITIVE_INFINITY,
 ): LabelFit {
   const order = more > 0 ? foldOrder(tabs) : [];
-  // The steps More may take: as many as keep it to `held` tabs.
   let steps = 0;
   for (let count = 0; steps < order.length; steps++) {
     count += order[steps]!.length;
     if (count > held) break;
   }
-  // The rarer tabs, folded together, are the first step when there are any.
   const rare = order.length > 0 && order[0]!.some((i) => !tabs[i]!.primary) ? 1 : 0;
-  // What always folds: the rarer tabs, when More may hold them.
   const least = Math.min(rare, steps);
   const width = (fit: TabLabelFit, words: boolean, folds: number) => {
     const folded = foldedTabs(tabs, folds);
@@ -104,7 +101,6 @@ export function tabLabelFit(
   for (const tier of tiers) {
     if (tier.action && action === 0) continue;
     for (let folds = least; folds <= tier.folds; folds++) {
-      // A pixel spare absorbs rounding, so a strip that just fits never scrolls.
       if (width(tier.tabs, tier.action, folds) + 1 <= available) {
         return { tabs: tier.tabs, action: tier.action, folds };
       }
@@ -138,9 +134,6 @@ export function useTabLabelFit(list: RefObject<HTMLElement | null>, active: stri
           !el.hasAttribute("data-tab-measure") &&
           !el.hasAttribute("data-panel-more"),
       );
-    // A fit changes the strip, which can move what was measured (a scrollbar, a tab mounted
-    // mid-animation): a changed fit is measured again on the next frame, a few times at most, so a
-    // reading taken mid-change can't stand once the row has settled.
     let last: LabelFit | undefined;
     let frame = 0;
     let settles = 0;
@@ -151,8 +144,6 @@ export function useTabLabelFit(list: RefObject<HTMLElement | null>, active: stri
       const rowStyle = getComputedStyle(row);
       const style = getComputedStyle(strip);
       const action = row.querySelector<HTMLElement>("[data-action-label]");
-      // What the row leaves the tabs, More and the action's words: its width but for its padding
-      // and everything beside the strip as it stands without its words.
       const words = action?.getBoundingClientRect().width ?? 0;
       const besides = besideStrip().reduce((sum, el) => sum + el.getBoundingClientRect().width, 0);
       const available =
@@ -198,8 +189,6 @@ export function useTabLabelFit(list: RefObject<HTMLElement | null>, active: stri
     }
     const resized = new ResizeObserver(() => measure());
     resized.observe(row);
-    // The copy's faces resize as fonts load and counts change, and what sits beside the strip comes
-    // and goes with the open tab: follow them all.
     const observeAll = () => {
       for (const el of besideStrip()) resized.observe(el);
       for (const el of row.querySelectorAll("[data-measure-tab], [data-measure-more]")) {

@@ -84,7 +84,6 @@ export function TerminalFindBar({
     latest.current = { find, query, toggles };
   });
 
-  // A later request's seed replaces the query during render; its search and focus follow below.
   const [handled, setHandled] = useState(request);
   if (handled !== request) {
     setHandled(request);
@@ -123,7 +122,6 @@ export function TerminalFindBar({
   const toggle = (name: keyof FindToggles) => {
     const next = { ...toggles, [name]: !toggles[name] };
     setToggles(next);
-    // The terminal keeps its last results while the query is unchanged, whatever the toggles.
     find.clear();
     runSearch(find, query, next, "next");
     inputRef.current?.focus();

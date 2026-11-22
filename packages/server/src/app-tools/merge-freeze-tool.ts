@@ -1,5 +1,3 @@
-// `merge_freeze`: a thread holds Gram's merges onto a branch for a while, its workspace's by
-// default and every workspace's only on the user's yes.
 import {
   AppToolError,
   BranchName,
@@ -39,7 +37,6 @@ export const makeMergeFreezeTool = Effect.gen(function* () {
       lift: Schema.optionalKey(Schema.Boolean),
       acrossWorkspaces: Schema.optionalKey(Schema.Boolean),
     }),
-    // Holding other workspaces' merges is the person's call: always on a card.
     needsApproval: (_caller, input) => Effect.succeed(input.acrossWorkspaces === true),
     handle: (caller, input, { carded }) =>
       Effect.gen(function* () {

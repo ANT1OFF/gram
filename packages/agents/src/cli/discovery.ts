@@ -28,15 +28,11 @@ export const parseProbeOutput = (stdout: string): ProbeResult => {
       if (eq > 0) env[entry.slice(0, eq)] = entry.slice(eq + 1);
     }
   }
-  // `command -v` prints an alias definition or a bare name for non-path results.
   const commandPath = which.split("\n").at(-1)?.trim();
   return commandPath !== undefined && /^([/\\]|[A-Za-z]:)/.test(commandPath)
     ? { commandPath, env }
     : { env };
 };
-
-// ---------------------------------------------------------------------------------------------
-// Candidates and wrapper detection
 
 export type ExecutableKind = "native" | "script" | "shellWrapper" | "unknown";
 
@@ -109,11 +105,6 @@ export interface ResolvedBinary {
   readonly skipped: ReadonlyArray<{ readonly path: string; readonly reason: string }>;
 }
 
-/**
- * The first usable candidate, skipping shell wrappers that may inject hooks or session arguments.
- * Interpreter scripts (npm installs) and Windows batch shims are accepted.
- */
-/** Binaries that run as whichever tool their name says, so they are run by their link's name. */
 const MULTICALL: ReadonlySet<string> = new Set(["mise", "busybox", "toybox"]);
 
 const commandName = (path: string): string =>
@@ -140,8 +131,6 @@ export const resolveBinary = Effect.fnUntraced(function* (
       skipped.push({ path: real.value, reason: "shell wrapper" });
       continue;
     }
-    // A native multicall binary (mise's command wrappers, busybox) picks its tool by the name it
-    // is run under, so a link to it under another name keeps the link's path.
     const path =
       kind === "native" &&
       MULTICALL.has(commandName(real.value)) &&

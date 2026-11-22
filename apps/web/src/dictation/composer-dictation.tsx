@@ -57,7 +57,6 @@ export function useComposerDictation({
   /** The thread whose project's names dictation spells; a draft without one has only the user's. */
   threadId?: ThreadId | undefined;
 }): ComposerDictation {
-  /** Puts each finished utterance at the caret, as typing would, so ⌘Z takes it back. */
   const dictation = useDictation((spoken) => {
     const field = fieldRef.current;
     const before = field === null ? text : field.value.slice(0, field.selectionStart);
@@ -74,7 +73,6 @@ export function useComposerDictation({
     latest.current = dictation;
   });
   const machine = useRef<PushToTalk | undefined>(undefined);
-  /** Made on the first key, since it reads the latest controls and render mustn't. */
   const talk = () =>
     (machine.current ??= createPushToTalk({
       now: () => performance.now(),
@@ -82,7 +80,6 @@ export function useComposerDictation({
       toggle: () => latest.current.toggle(),
       stop: () => latest.current.stop(),
     }));
-  // The modifier-alone key, which this composer answers while it's the one in use.
   const enabledNow = useRef(enabled);
   useEffect(() => {
     enabledNow.current = enabled;
@@ -105,7 +102,6 @@ export function useComposerDictation({
   useEffect(() => {
     if (enabled && target.current !== undefined) promoteHoldTarget(target.current);
   }, [enabled]);
-  /** Stops listening for the held chord's release. */
   const unlisten = useRef<(() => void) | undefined>(undefined);
   useEffect(() => () => unlisten.current?.(), []);
   const hold = () => {
@@ -117,7 +113,6 @@ export function useComposerDictation({
       done();
       talk().release();
     };
-    // Its key-ups go to whatever has the focus now, so letting go can't be seen: stop now.
     const onBlur = () => {
       done();
       talk().blur();
@@ -144,7 +139,6 @@ export function useComposerDictation({
     },
     enabled && dictation.available,
   );
-  /** Discards what was heard; a hold under way ends with it, so letting go stops nothing. */
   const cancel = () => {
     talk().reset();
     resetHold();
@@ -157,7 +151,6 @@ export function useComposerDictation({
     typed: () => {
       if (!insertingRef.current && dictation.active) dictation.stop();
     },
-    // Ahead of the menus and window shortcuts (an approval's Deny is Escape too).
     onKeyDownCapture: (event) => {
       if (event.key !== "Escape" || (!dictation.active && dictation.state.phase !== "error"))
         return;
@@ -200,13 +193,11 @@ export function useMirrorFit(
     const wanted = mirror.scrollHeight;
     field.style.minHeight = `${Number.isFinite(cap) ? Math.min(wanted, cap) : wanted}px`;
     setOverflows(Number.isFinite(cap) && wanted > cap);
-    // `deps` are what else moves the mirror's height: the draft, a ghost's position.
     // oxlint-disable-next-line react/exhaustive-deps -- see above
   }, [fieldRef, mirrorRef, rest, ...deps]);
   return overflows;
 }
 
-/** Provisional words: the placeholder's tone with a dotted underline, so they don't read as typed. */
 const DICTATION_PARTIAL =
   "text-muted-foreground underline decoration-muted-foreground/50 decoration-dotted underline-offset-4";
 
@@ -241,8 +232,6 @@ export function DictationMirror({
  */
 export function DictationStrip({ partial }: { partial: string }) {
   return (
-    // Right-to-left only as a box, so a line too long for the pane loses its start, not the words
-    // just said; the text inside reads left to right as ever.
     <p
       aria-hidden
       data-testid="dictation-partial"

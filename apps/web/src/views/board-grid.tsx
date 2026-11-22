@@ -36,11 +36,6 @@ import {
   useThreadSent,
 } from "@/thread/machine-marker";
 
-// The Board as a grid: a row per feature with its cells side by side, Task · Stage · Now · Pull
-// request, so a feature's name, how far it has come, what it does and its checks read on one line.
-// A feature with several workers (or a held brief beside one) heads a row of its own, its workers
-// under it. The stations stay in each Stage cell as a segmented bar under the station's name.
-
 /**
  * The grid's four columns, shared by its heads and every row so the cells line up. The table fills
  * the Board's column, so a wide window leaves no dead gutter after it: the stage bar keeps its
@@ -50,7 +45,6 @@ import {
 export const GRID_COLUMNS =
   "grid grid-cols-[minmax(10rem,2fr)_8rem_minmax(12rem,3fr)_minmax(7rem,1fr)] gap-x-6";
 
-/** How soon a cell's whole text shows on hover: quick, but not for a pointer passing over. */
 const HINT_MS = 200;
 
 /** The column heads over the rows. */
@@ -98,7 +92,6 @@ export function StationSteps({ station }: { station: FeatureStation }) {
         />
       }
     >
-      {/* The first line's height, so the bar sits level with the task's name beside it. */}
       <span aria-hidden className="flex h-lh items-center text-reading">
         <span
           data-testid="grid-stage-bar"
@@ -131,11 +124,6 @@ export function StationSteps({ station }: { station: FeatureStation }) {
   );
 }
 
-/**
- * The Pull request cell: the worker's chips, then what its first PR waits on in words (its checks,
- * its review, its merge), so the state reads without decoding the glyphs. Before one, a quiet dash
- * that says "No PR yet" to a screen reader and on hover: the same words on every row read as noise.
- */
 function PrCell({ worker }: { worker: RailWorker }) {
   const chips = useWorkerPrChips(worker.threadId, worker.prs);
   const first = chips[0];
@@ -151,7 +139,6 @@ function PrCell({ worker }: { worker: RailWorker }) {
       </span>
     );
   }
-  // A settled PR's marks are its state alone, so a merged one adds no words.
   const { checks, review, merge } = first.marks;
   const words = [
     ...(checks === undefined || checks.kind === "none" || checks.kind === "unknown"
@@ -168,7 +155,6 @@ function PrCell({ worker }: { worker: RailWorker }) {
           data-testid="grid-pr-state"
           className="line-clamp-2 min-w-0 text-meta break-words text-muted-foreground"
         >
-          {/* Muted words: the chip's failing-checks glyph and the worker's dot are the alarm. */}
           {words.map((mark, index) => (
             <span key={mark.word}>
               {index > 0 && " · "}
@@ -181,13 +167,8 @@ function PrCell({ worker }: { worker: RailWorker }) {
   );
 }
 
-/**
- * A worker's state in words, its tone's word first (amber only while it needs you), then what it
- * is doing: "Working · tests 38/52".
- */
 function Status({ tone, now }: { tone: RailWorker["tone"]; now: string }) {
   const { label } = RAIL_TONES[tone];
-  // What it waits on may lead with the same word ("Waiting · checks on #88"): said once.
   const rest = now.replace(new RegExp(`^${label}\\s*(?:·\\s*)?`, "iu"), "");
   return (
     <span className="line-clamp-2 min-w-0 flex-[1_1_6rem] break-words">
@@ -216,10 +197,6 @@ function Status({ tone, now }: { tone: RailWorker["tone"]; now: string }) {
   );
 }
 
-/**
- * The worker's Now cell: its tone and what it does, a click from its thread (or its ask in the
- * dock). It carries the worker's test hooks (`rail-worker`, its station and tone).
- */
 function NowCell({
   workspaceId,
   worker,
@@ -232,7 +209,6 @@ function NowCell({
   worker: RailWorker;
   station: FeatureStation;
   asking: boolean;
-  /** The PRs its PR cell shows, which its words leave out. */
   shown: readonly { readonly number: number }[];
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
@@ -267,11 +243,9 @@ function NowCell({
             />
           }
         >
-          {/* The sidebar's and Workers' dot for its state. */}
           <span className="flex h-lh shrink-0 items-center">
             <StatusDot state={worker.tone} data-testid="rail-dot" />
           </span>
-          {/* Its PRs are in the cell beside it: each said once. */}
           <Status tone={worker.tone} now={nowBesidePrs(worker.now, shown)} />
         </Hint>
         {overlap !== undefined && (
@@ -289,7 +263,6 @@ function NowCell({
           </Hint>
         )}
       </div>
-      {/* Its latest report, in the room the row has: when, then what it said. */}
       {report !== undefined && (
         <p
           data-testid="grid-report"
@@ -323,7 +296,6 @@ export function useLatestReport(
   }, [ledger, threadId]);
 }
 
-/** A worker's Stage, Now and Pull request cells. */
 function WorkerCells({
   workspaceId,
   worker,
@@ -354,11 +326,9 @@ function WorkerCells({
   );
 }
 
-/** A line's workers with the station each stands on, in the stations' order. */
 const placedWorkers = (row: RailRow) =>
   FEATURE_STATIONS.flatMap((station) => row.cells[station].map((worker) => ({ worker, station })));
 
-/** One row of the grid: its four cells, aligned with the heads. */
 function GridRow({ sub = false, children }: { sub?: boolean; children: ReactNode }) {
   return (
     <div
@@ -369,15 +339,7 @@ function GridRow({ sub = false, children }: { sub?: boolean; children: ReactNode
   );
 }
 
-/** A worker under its feature's row: its title, indented, then its cells. */
-function SubTask({
-  children,
-  threadId,
-}: {
-  children: ReactNode;
-  /** The worker the row is, whose other machine is named under its title; absent for a brief. */
-  threadId?: ThreadId | undefined;
-}) {
+function SubTask({ children, threadId }: { children: ReactNode; threadId?: ThreadId | undefined }) {
   return (
     <span className="flex min-w-0 items-start gap-1.5 pl-3 text-meta text-foreground/80">
       <span aria-hidden className="mt-1.5 h-px w-2 shrink-0 bg-border-strong" />
@@ -432,7 +394,6 @@ export function GridLine({
     </ul>
   );
   const needs = workers.filter(({ worker }) => worker.tone === "needs").length;
-  // A lone worker's other machine, named under the task with its stage and repos.
   const onlyHost = useThreadHost(only?.worker.threadId);
   const onlySent = useThreadSent(only?.worker.threadId);
   return (
@@ -455,7 +416,6 @@ export function GridLine({
       <GridRow>
         <div className="flex min-w-0 flex-col gap-1">
           <span className="flex min-w-0 items-start gap-1.5 text-reading font-medium">
-            {/* The name opens the feature's sheet; its menu sits beside it. */}
             <button
               type="button"
               data-testid="rail-feature"
@@ -502,7 +462,6 @@ export function GridLine({
                   {row.projects.join(" · ")}
                 </span>
               )}
-              {/* The helper's sentence for this card version; the row is complete without it. */}
               {summary !== undefined && (
                 <span
                   data-testid="rail-summary"

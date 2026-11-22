@@ -68,7 +68,6 @@ export function createAppMock(world: MockWorld): AppApi & AppMockControls {
       };
     },
     openLogsFolder: async () => {},
-    // As a machine that turned it on at its last start: running while the setting is on.
     keptHost: async () => {
       const on = (await world.settings()).agents.keepRunningAfterQuit === true;
       return on

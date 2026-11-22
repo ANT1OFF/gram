@@ -56,27 +56,14 @@ import { useTitlebarOutline } from "./titlebar-outline";
 import { SettingsItem, UsageItem } from "./window-menu-items";
 import { FOLD_ALL, FOLD_ICONS, useTitlebarSlot, useTitlebarThread } from "./titlebar-slot";
 
-// The title bar's one "…": everything the bar keeps out of sight, each item with its words and its
-// shortcut, and like every menu at most seven items. The carried thread's menu (and its scripts),
-// Workers, the workspace's (Tidy up, Discover, Pause, Memory, its settings) and the window's (Contents,
-// Quiet, focus mode, History, the layout), the groups each a submenu. A narrow bar folds a worker's
-// own actions and Board's layout into it too, then usage, and last Chat · Board and Settings, as a
-// phone's "…" has them. Each item does what its button did.
-
 const SEPARATOR = <div role="separator" className="-mx-1 my-1 h-px bg-border" />;
 
-/** How soon after the menu closes a focus on its trigger is the one it handed back. */
 const FOCUS_RETURN_MS = 500;
 
-/**
- * A menu item's words and, under them, one line on what it does: for Gram's own words, whose
- * meaning a name alone doesn't carry (`EXPLAIN`).
- */
 function Described({ label, line }: { label: ReactNode; line: string }) {
   return (
     <span className="flex max-w-64 min-w-0 flex-col">
       {label}
-      {/* Its item's description, not part of its name: the item carries it as aria-description. */}
       <span
         aria-hidden
         data-testid="menu-item-line"
@@ -88,16 +75,13 @@ function Described({ label, line }: { label: ReactNode; line: string }) {
   );
 }
 
-/** An item's shortcut, right-aligned as the palette shows it. */
 function Keys({ id }: { id: string }) {
   const hint = useShortcutHint(id);
-  // A phone has no keyboard to name.
   return hint ? (
     <span className="ml-auto pl-4 text-meta text-muted-foreground phone:hidden">{hint}</span>
   ) : null;
 }
 
-/** A submenu's current value, right-aligned before its chevron. */
 function Current({ children }: { children: ReactNode }) {
   return (
     <span className="ml-auto max-w-32 truncate pl-4 text-meta text-muted-foreground">
@@ -154,7 +138,6 @@ function Submenu({
   );
 }
 
-/** The carried thread's chapters, as its header's Contents button listed them. */
 function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
   const outline = useTitlebarOutline((s) =>
     s.outline?.threadId === threadId ? s.outline : undefined,
@@ -196,10 +179,6 @@ function ContentsSubmenu({ threadId }: { threadId: ThreadId }) {
   );
 }
 
-/**
- * The workspace's Tidy up and Discover, held by the bar rather than the menu, so what was just sent
- * outlasts the menu closing: reopened, it still says it asked, and rests until it may ask again.
- */
 const TidyContext = createContext<ReturnType<typeof useTidyUp> | undefined>(undefined);
 const DiscoverContext = createContext<ReturnType<typeof useDiscover> | undefined>(undefined);
 
@@ -215,7 +194,6 @@ export function TidyScope({ state, children }: { state: WorkspaceState; children
       body: discover.sent === "queued" ? DISCOVER_QUEUED : DISCOVER_SENT,
     });
   }, [discover.sent]);
-  // The menu has closed by the time it goes: a toast says so, as the palette's Tidy up does.
   useEffect(() => {
     if (tidy.sent === undefined) return;
     useThreadsStore.getState().applyEvent({
@@ -251,7 +229,6 @@ export function DiscoverItem() {
       onClick={() => void discover.send()}
     >
       <Telescope aria-hidden className="mt-0.5" />
-      {/* A disabled item shows no tooltip, so it says why it is off. */}
       {discover.blocked === undefined ? (
         discover.sent === undefined ? (
           <Described label={`Discover ${noun}`} line={EXPLAIN.discover} />
@@ -283,7 +260,6 @@ export function TidyItem() {
       onClick={() => void tidy.send()}
     >
       <BroomSparkles aria-hidden className="mt-0.5" />
-      {/* A disabled item shows no tooltip, so it says why it is off. */}
       {tidy.blocked === undefined ? (
         tidy.sent === undefined ? (
           <Described label="Tidy up" line={EXPLAIN.tidyUp} />
@@ -358,7 +334,6 @@ export function PauseItem({ state }: { state: WorkspaceState }) {
   );
 }
 
-/** Workers, the right panel's tab of the workspace's workers (⌘J), with how many are on now. */
 function WorkersItem() {
   const { count } = useWorkersNow();
   return (
@@ -373,11 +348,9 @@ function WorkersItem() {
   );
 }
 
-/** The workspace's own, in a submenu named for it: Tidy up, Discover, Pause, Memory and its settings. */
 function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: number }) {
   const navigate = useNavigate();
   const workspaceId = state.workspace.id;
-  // In the embedding app's word for one, such as Project.
   const noun = useThreadsWorkspaceNoun();
   return (
     <Submenu
@@ -390,7 +363,6 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
     >
       <TidyItem />
       <DiscoverItem />
-      {/* Each opening of the menu starts Pause unasked, whatever the last one left. */}
       <PauseItem key={`pause-${workspaceId}-${opening}`} state={state} />
       <Menu.Item
         data-testid="menu-memory"
@@ -412,14 +384,8 @@ function WorkspaceSubmenu({ state, opening }: { state: WorkspaceState; opening: 
   );
 }
 
-/**
- * The window's own, in a submenu: the carried thread's Contents and, on an orchestrator's
- * chat, Show all activity, then Quiet, focus mode, History, then the grid's layout, picked with a
- * check.
- */
 function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
   const preset = useLayoutStore((s) => s.grid.preset);
-  // A touch screen shows one pane at a time, so it offers no layouts.
   const touch = useTouch();
   const focusMode = useLayoutStore((s) => s.focusMode);
   return (
@@ -457,7 +423,6 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
       <Menu.Item
         data-testid="menu-history"
         className={MENU_ITEM}
-        // After the menu has closed and given focus back, so History's field keeps it.
         onClick={() => setTimeout(() => useHistoryStore.getState().toggle())}
       >
         <History aria-hidden />
@@ -492,7 +457,6 @@ function ViewSubmenu({ threadId }: { threadId: ThreadId | undefined }) {
   );
 }
 
-/** A radio item's check, at its end: the current value's mark. */
 function Check() {
   return (
     <span className="ml-auto flex size-3.5 shrink-0 items-center justify-center pl-0">
@@ -503,7 +467,6 @@ function Check() {
   );
 }
 
-/** The carried thread's scripts, in a submenu once its project has any. */
 function RunScriptSubmenu({ threadId, projectId }: { threadId: ThreadId; projectId: ProjectId }) {
   const scripts = useProjectScripts(projectId).data?.scripts ?? [];
   if (scripts.length === 0) return null;
@@ -519,7 +482,6 @@ function RunScriptSubmenu({ threadId, projectId }: { threadId: ThreadId; project
   );
 }
 
-/** The carried thread's own: its menu's verbs in a submenu, and its scripts. */
 function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode }) {
   const thread = useThreadsStore((s) => s.byId[threadId]?.thread);
   if (thread === undefined) return null;
@@ -539,14 +501,9 @@ function ThreadItems({ threadId, items }: { threadId: ThreadId; items: ReactNode
   );
 }
 
-/** On a phone every item is a 44 px target, and the menu stays inside the screen. */
 const PHONE_MENU =
   "phone:max-w-[calc(100vw-1rem)] phone:[&_[role^=menuitem]]:min-h-11 phone:max-h-[calc(100dvh-5rem)] phone:overflow-y-auto";
 
-/**
- * What a phone's header leaves out of its bar, first in its "…": Chat or Board, and the workspace
- * to show, each in words.
- */
 function PhonePlaces() {
   const workspaces = useWorkspaces();
   const current = useViewWorkspace();
@@ -588,7 +545,6 @@ function PhonePlaces() {
   );
 }
 
-/** Chat or Board in words: a phone's, and a desktop bar's folded all the way. */
 function ViewPlaces() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -610,8 +566,6 @@ function ViewPlaces() {
       value={checked}
       onValueChange={(next: AppView) => pickView(next)}
     >
-      {/* No "View" label: the View submenu below is a different thing, and a checked Chat or
-          Board says what these are. */}
       <Menu.RadioItem value="chat" closeOnClick className={MENU_ITEM}>
         <MessageSquare aria-hidden />
         Chat
@@ -631,9 +585,7 @@ function ViewPlaces() {
   );
 }
 
-/** The window's own that a wide bar shows as icons: usage, the right panel and Settings. */
 function PhoneWindowItems() {
-  // An app in front of Gram that leaves Usage out of Settings has no meter to link to.
   const usage = useGramSettingKept("usage");
   return (
     <>
@@ -657,7 +609,6 @@ export interface TitlebarFolds {
   readonly usage: boolean;
 }
 
-/** What the desktop bar has folded into "…" of `folds`, as far as it has folded. */
 function useFolded(folds: TitlebarFolds | undefined) {
   const fold = useTitlebarSlot((s) => s.fold);
   return {
@@ -682,17 +633,10 @@ function OverflowMenu({
   const folded = useFolded(folds);
   const workspace = orchestration && state !== undefined;
   const paletteHint = useShortcutHint("palette.open");
-  // A phone's header keeps only the menu, the title, Needs you and this: the rest is in here.
   const phone = usePhone();
-  // How many times the menu has opened: what it asked last time doesn't carry over.
   const [opening, setOpening] = useState(0);
-  // The trigger's words show on hover and on Tab, but not as the menu closes and hands focus
-  // back: they would stand over what is under the bar, a banner's button say, as the user goes on.
   const [hint, setHint] = useState(false);
   const closedAt = useRef(0);
-  // Closed from a submenu (a chapter in View ▸ Contents, say), focus comes back here too, not to
-  // the submenu's trigger that closes with it. Unless something has taken it since: Workers' list
-  // or a dialog an item opened keeps it.
   const trigger = useRef<HTMLButtonElement>(null);
   const returnFocus = () => {
     const active = document.activeElement;
@@ -746,8 +690,6 @@ function OverflowMenu({
       </Tooltip>
       <Menu.Portal>
         <Menu.Positioner align="end" sideOffset={4} className="isolate z-50 outline-none">
-          {/* At most seven items, as every menu: the thread's, the workspace's and the window's
-              each a submenu of its own, Workers beside them. */}
           <Menu.Popup
             data-testid="titlebar-overflow-menu"
             finalFocus={returnFocus}
@@ -755,7 +697,6 @@ function OverflowMenu({
           >
             <div data-testid="titlebar-folded" role="group" aria-label="Title bar">
               {phone && <PhonePlaces />}
-              {/* A desktop bar folded all the way: Chat · Board first, as a phone's. */}
               {!phone && folded.views && (
                 <>
                   <ViewPlaces />
@@ -786,7 +727,6 @@ function OverflowMenu({
     </Menu.Root>
   );
   return workspace ? (
-    // A workspace switch starts the next one's Tidy up fresh, not resting on the last one's send.
     <TidyScope key={state.workspace.id} state={state}>
       {menu}
     </TidyScope>
@@ -795,7 +735,6 @@ function OverflowMenu({
   );
 }
 
-/** The bar's "…" with the carried thread's menu in it, whose dialogs outlast the menu. */
 function ThreadOverflow({
   threadId,
   orchestration,

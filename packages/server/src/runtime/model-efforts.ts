@@ -34,7 +34,6 @@ export const selectableModels = (
   Effect.gen(function* () {
     const listed = yield* listedModels(store, hosts, agent, profileId);
     const settings = yield* store.getSettings;
-    // A model added in Settings carries no effort list, which the picker reads as every effort.
     return withCustomModels(listed, customModelsOf(settings, agent)).map((m) => ({
       id: m.id,
       displayName: m.displayName,
@@ -59,8 +58,5 @@ const listedModels = (
         message: `unknown gateway profile ${profileId}`,
       });
     }
-    // Every discovered model, not only what the pickers offer: the picker keeps Codex's own
-    // configured model and a thread's current one whatever the gateway says of them, so the server
-    // mustn't refuse what the user could pick.
     return profile.models.map((model) => gatewayAgentModel(model, agent));
   });

@@ -1,28 +1,15 @@
 import type { NotifyAbout, ServerEvent } from "@gram/contracts";
 
-// What may interrupt you with a desktop notification while the window isn't in front, in one table.
-// Only asks and failures do, or only asks with Settings → Notifications → Notify me about at Asks only. Everything else waits for "Since you left" or stays in the app's own
-// notification center; macOS Focus can still hold even these.
-
 /** What happened, as far as interrupting goes. */
 export type AwayEvent =
-  /** An ask in the stack: an approval, a question or a plan waiting on you. */
   | "ask"
-  /** Wants you without an ask in the stack: a review requested, a paused workspace. */
   | "needsYou"
-  /** Something failed: red CI, a run that didn't succeed, an agent that stopped. */
   | "failure"
-  /** A pull request merged. */
   | "merge"
-  /** Work finished: a thread done, checks passed, a PR ready. */
   | "done"
-  /** A worker woke from a timer or a watched event. */
   | "wake"
-  /** A feature moved a stage. */
   | "stage"
-  /** A worker's progress report. */
   | "progress"
-  /** Anything else the app says in passing. */
   | "info";
 
 /** `interrupt` raises a desktop notification; the rest never do. */

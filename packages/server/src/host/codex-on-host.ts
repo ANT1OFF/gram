@@ -1,9 +1,3 @@
-// A joined machine's Codex: the user's own `codex` there, run by its host as the server runs it
-// here. Its sessions live in that machine's own Codex homes: the user's (`~/.codex`, or the
-// `CODEX_HOME` the host was started with), and Gram's native gated home in the host's folder,
-// which links the login file by path. Nothing here reads a credential, and no gateway profile
-// crosses: a profile's key stays with the control plane, which opens no such session on a machine.
-
 import { homedir } from "node:os";
 import { GatewayKeyProvider, type AgentHost } from "@gram/agents";
 import { type CodexHost, CodexHostLive } from "@gram/agents/codex";
@@ -36,14 +30,8 @@ export const hostCodexLive = (dataDir: string, home = homedir()): Layer.Layer<Co
     },
   }).pipe(Layer.provide(GatewayKeyProvider.layerNone));
 
-/**
- * How long one part of the Codex status may take before it reads as unknown: well inside the
- * control plane's wait for the whole status (`STATUS_TIMEOUT`), so a Codex slow to start never
- * costs the machine its Claude Code's answer. A part cut off now answers at the next check.
- */
 const PART_TIMEOUT_MS = 20_000;
 
-/** Whether `codex` is on the login-shell PATH, and its version. */
 const probeCodex = (run: ShellRun): Promise<{ found: boolean; version?: string }> =>
   run("command -v codex >/dev/null 2>&1 && codex --version").then(
     ({ code, stdout }) => {
@@ -54,7 +42,6 @@ const probeCodex = (run: ShellRun): Promise<{ found: boolean; version?: string }
     () => ({ found: false }),
   );
 
-/** How many listed models a status carries, as the wire takes. */
 const MODELS_SENT = 64;
 
 const bounded = <A>(effect: Effect.Effect<A, unknown>, fallback: A): Effect.Effect<A> =>
@@ -118,7 +105,6 @@ export const codexStatusOf = (
           : listed.failed === "not-logged-in" || chatgpt === "noAccount"
             ? "notSignedIn"
             : "unknown";
-    // A Codex that answered is installed, whatever the login shell's PATH says.
     const found = probed.found || "models" in listed || chatgpt === "yes";
     return {
       ...probed,

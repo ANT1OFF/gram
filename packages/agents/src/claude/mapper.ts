@@ -23,31 +23,6 @@ import { claudeFailure } from "../failure.ts";
 import { offered, toSlashCommand, type ReportedCommand } from "./commands.ts";
 import { makeUsageLedger } from "./usage.ts";
 
-/*
- * Message shape
- * - One assistant UIMessage per turn: `start` at its first output, `finish` at `result` (or `idle`
- *   if no result arrives). Each API response (`msg_…` id) is a step (`start-step`/`finish-step`),
- *   so tool results, which arrive in later SDK `user` messages, still land on the same message.
- * - Subagent output (`parent_tool_use_id` set) is a separate UIMessage per parent tool call, with
- *   `metadata.parentToolUseId`; the UI nests it under that Task/Agent card. It finishes when the
- *   parent's tool result arrives, or, for a subagent launched in the background (the result is
- *   only `async_launched`), at its `task_notification`, so its lane outlives the turn.
- * - With `includePartialMessages`, text/reasoning/tool input stream from `stream_event`s and the
- *   duplicate content of the complete `assistant` messages is skipped; tool calls still take their
- *   final input from the complete message (`tool-input-available`). Without partial messages the
- *   complete messages are emitted whole.
- * - Each complete `assistant` message's `uuid` (one per content block) is appended to its
- *   UIMessage's `metadata.agentMessageIds`; the last one is the rewind point after that message.
- * - A foreground shell command reports no output until it exits, but the CLI registers it as a
- *   `local_bash` task once it has run a few seconds (`task_started`, `is_backgrounded: false`).
- *   The session reads that task's output tail (`getTaskOutput`) while the call runs, and each
- *   new read becomes a preliminary `tool-output-available` for the Bash call, the same snapshot
- *   the Codex mapper sends; the call's result replaces it.
- * - A background shell (`run_in_background`, or moved there on timeout) has its call's result at
- *   once, so its reads become `backgroundOutput` events beside the transcript instead, from its
- *   `task_started` (or move) until its task ends, leaves the CLI's level, or the query ends.
- */
-
 export interface MapperOptions {
   readonly newMessageId: () => MessageId;
   /**
@@ -113,11 +88,9 @@ export interface ClaudeMapper {
 
 type Chunk = GramUIMessageChunk;
 
-/** A shell command, by the task id the CLI gave it, and its tool call. */
 interface RunningShell {
   readonly taskId: string;
   readonly toolCallId: string;
-  /** It runs in the background: its call has its result, and reads become `backgroundOutput`. */
   readonly background?: boolean;
 }
 
@@ -131,17 +104,12 @@ export interface TaskOutputRead {
   readonly truncated: boolean;
 }
 
-/**
- * A read's text: a tail cut from a longer output starts mid-line, so it shows from its first whole
- * line, or whole when it is all one line.
- */
 const readText = (read: TaskOutputRead): string => {
   const cut = read.truncated ? read.output.indexOf("\n") : -1;
   const trimmed = cut === -1 ? read.output : read.output.slice(cut + 1);
   return trimmed === "" ? read.output : trimmed;
 };
 
-/** The tools whose running command the CLI keeps as a `local_bash` task. */
 const SHELL_TOOLS: ReadonlySet<string> = new Set(["Bash", "PowerShell"]);
 
 type OpenBlock =
@@ -150,17 +118,12 @@ type OpenBlock =
 
 interface Lane {
   readonly messageId: MessageId;
-  /** Open step: the API message id. */
   step: string | undefined;
-  /** Wire model id of the last assistant message in this lane, once reported. */
   model: string | undefined;
   modelConflict: boolean;
-  /** API message ids whose content arrived as stream events. */
   readonly streamed: Set<string>;
-  /** Open streamed content blocks by index. */
   readonly blocks: Map<number, OpenBlock>;
   seq: number;
-  /** SDK `uuid`s of the complete assistant messages in this UIMessage, in order. */
   readonly agentMessageIds: Array<string>;
 }
 
@@ -171,7 +134,6 @@ interface ToolCall {
 }
 
 const MAIN = "";
-/** The model the CLI names on a message no model wrote. */
 const SYNTHETIC_MODEL = "<synthetic>";
 
 const chunk = (lane: Lane, c: Chunk): AgentEvent => ({
@@ -194,13 +156,7 @@ const toolFlags = (dynamic: boolean) =>
 const asRecord = (u: unknown): Record<string, unknown> =>
   typeof u === "object" && u !== null ? (u as Record<string, unknown>) : {};
 
-/**
- * The summary in a `PostCompact` hook's `compact_summary`: the model writes its working notes in an
- * `<analysis>` block ahead of the `<summary>` the session carries on from, and only the second is
- * the summary. `undefined` when nothing is left.
- */
 const summaryText = (raw: string): string | undefined => {
-  // `indexOf` rather than a lazy regex, which backtracks polynomially on repeated open tags.
   const open = raw.indexOf("<summary>");
   let text: string;
   if (open !== -1) {
@@ -208,7 +164,6 @@ const summaryText = (raw: string): string | undefined => {
     const close = raw.indexOf("</summary>", from);
     text = raw.slice(from, close === -1 ? undefined : close);
   } else {
-    // Drop working notes, including a truncated block: its remaining text isn't a summary.
     text = "";
     let at = 0;
     for (;;) {
@@ -231,7 +186,6 @@ const summaryText = (raw: string): string | undefined => {
 const int = (u: unknown): number | undefined =>
   typeof u === "number" && Number.isFinite(u) ? Math.trunc(u) : undefined;
 
-/** Text of a `tool_result` content (string or content blocks). */
 const resultText = (content: unknown): string => {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -249,7 +203,6 @@ interface ResultImage {
   readonly data: string;
 }
 
-/** The base64 `image` blocks of a `tool_result` content: a `Read` of a PNG, an MCP screenshot. */
 const resultImages = (content: unknown): Array<ResultImage> => {
   if (!Array.isArray(content)) return [];
   return content.flatMap((block) => {
@@ -264,11 +217,6 @@ const resultImages = (content: unknown): Array<ResultImage> => {
   });
 };
 
-/**
- * A structured tool output without its image bytes, which travel as `toolImage` events instead: the
- * output is stored in the transcript and replayed to every client, and the CLI repeats a read
- * image in it as `file.base64`, or as `image` blocks when the output is the content array itself.
- */
 const withoutImageBytes = (output: unknown): unknown => {
   if (Array.isArray(output)) {
     return output.map((block: unknown) => {
@@ -320,14 +268,12 @@ const subagentUsage = (
   };
 };
 
-/** TodoWrite's statuses, mapped to the shared thread plan. */
 const TODO_STATUS: Readonly<Record<string, PlanItem["status"]>> = {
   pending: "pending",
   in_progress: "inProgress",
   completed: "completed",
 };
 
-/** TodoWrite's `todos` as a plan; `undefined` for input that isn't a todo list. */
 const todoPlan = (input: unknown): Array<PlanItem> | undefined => {
   const todos = asRecord(input)["todos"];
   if (!Array.isArray(todos)) return undefined;
@@ -351,20 +297,14 @@ const TASK_KINDS: Readonly<Record<string, BackgroundTaskKind>> = {
   mcp_task: "mcp",
 };
 
-/** What `task_started` says about a task that the level (`background_tasks_changed`) doesn't. */
 interface TaskStart {
   readonly startedAt: number;
   readonly toolCallId?: string | undefined;
   readonly subagentType?: string | undefined;
   readonly command?: string | undefined;
-  /** It is a `local_bash` task started by a shell tool call (Bash, PowerShell). */
   readonly shell?: boolean;
 }
 
-/**
- * How a result ends the turn. `apiError` is the `error` the SDK put on the turn's synthetic API-error
- * message, which with the result's `api_error_status` classifies the failure.
- */
 const turnEnd = (
   result: SDKResultMessage,
   apiError?: string,
@@ -375,8 +315,6 @@ const turnEnd = (
   readonly failure?: AgentFailure;
 } => {
   const terminal = asRecord(result)["terminal_reason"];
-  // Claude can abort streaming after reporting a subscription rejection. That is the
-  // provider's refusal, not the user's Stop; its synthetic reply is otherwise hidden.
   if (
     (terminal === "aborted_tools" || terminal === "aborted_streaming") &&
     apiError !== undefined &&
@@ -414,11 +352,9 @@ export const identityFromInitialization = (
   commands: init.commands.filter((c) => offered(c, undefined)).map(toSlashCommand),
 });
 
-/** A command list, comparable whatever order it was listed in. */
 const commandsKey = (list: ReadonlyArray<SlashCommand>): string =>
   JSON.stringify(list.toSorted((x, y) => x.name.localeCompare(y.name)));
 
-/** What a local command wrote to stderr, from the replayed user message the CLI reports it in. */
 const commandStderr = (content: string): string | undefined => {
   const match = /^<local-command-stderr>([\s\S]*)<\/local-command-stderr>$/.exec(content.trim());
   const text = match?.[1]
@@ -433,29 +369,15 @@ const commandStderr = (content: string): string | undefined => {
 export const makeMapper = (options: MapperOptions): ClaudeMapper => {
   const lanes = new Map<string, Lane>();
   const tools = new Map<string, ToolCall>();
-  /** Subagent tool calls running in the background: their lanes outlive the turn. */
   const background = new Set<string>();
-  /** Task ids whose progress isn't a subagent's: housekeeping, watchers, backgrounded shells. */
   const ignoredTasks = new Set<string>();
-  /**
-   * Each running subagent's start, by its tool call: `task_started` carries no time, and every later
-   * snapshot repeats it.
-   */
   const starts = new Map<string, TaskUsageFields & { readonly startedAt: number }>();
   const startedAt = (id: string) => starts.get(id)?.startedAt;
   const now = options.now ?? Date.now;
-  /** A background task finished between turns, so the CLI answers without a send. */
   let reportedBack = false;
-  /** Bash commands by tool call, until the call's result: `task_started` names only the call. */
   const bashCommands = new Map<string, string>();
-  /** Each task's `task_started`, by task id, until its `task_notification`. */
   const taskStarts = new Map<string, TaskStart>();
-  /**
-   * Foreground shell commands by task id, until the call's result: their tool call, and the last
-   * output sent for it.
-   */
   const shells = new Map<string, { readonly toolCallId: string; sent?: string }>();
-  /** Follows a shell tool call's output under `taskId`, while the call is still running. */
   const followShell = (taskId: string, toolCallId: string): void => {
     const call = tools.get(toolCallId);
     if (call === undefined || !SHELL_TOOLS.has(call.toolName) || shells.has(taskId)) return;
@@ -465,20 +387,14 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
     for (const [taskId, shell] of shells)
       if (shell.toolCallId === toolCallId) shells.delete(taskId);
   };
-  /**
-   * Background shell commands by task id, until their task ends: their tool call, which already
-   * has its final result, the last output sent for them, and whether the CLI has listed them yet.
-   */
   const backgroundShells = new Map<
     string,
     { readonly toolCallId: string; sent?: string; listed: boolean }
   >();
-  /** Whether `toolCallId` is a shell tool call this mapper knows of. */
   const isShellCall = (toolCallId: string): boolean => {
     const call = tools.get(toolCallId);
     return call !== undefined && SHELL_TOOLS.has(call.toolName);
   };
-  /** Follows a backgrounded shell call's output under `taskId`, while its task runs. */
   const followBackgroundShell = (taskId: string, toolCallId: string): void => {
     if (backgroundShells.has(taskId)) return;
     backgroundShells.set(taskId, {
@@ -486,22 +402,16 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
       listed: listed.some((task) => task.task_id === taskId),
     });
   };
-  /** The background tasks the CLI last listed, leaving out the ambient ones. */
   let listed: ReadonlyArray<{
     readonly task_id: string;
     readonly task_type: string;
     readonly description: string;
   }> = [];
-  /** When each listed task was first listed. */
   const firstListed = new Map<string, number>();
-  /** The last `backgroundTasks` event's tasks, to send only a change. */
   let reportedTasks = "[]";
   let commands = new Map<string, ReportedCommand>();
-  /** `system/init`'s skills, which tell the bundled skills from the CLI's other `builtin` commands. */
   let skills: ReadonlySet<string> | undefined;
-  /** The last `system/init`, which a changed command list is reported against. */
   let identity: Extract<AgentEvent, { type: "identity" }> | undefined;
-  /** The thread's commands from `names`, those the CLI didn't describe kept with no description. */
   const offeredCommands = (names: ReadonlyArray<string>): ReadonlyArray<SlashCommand> =>
     names.flatMap((name) => {
       const known = commands.get(name);
@@ -522,7 +432,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
     return { type: "status", status: "compacting", compaction: activity };
   };
 
-  /** Reports the listed background tasks, joined to what their `task_started` said, if they changed. */
   const reportBackground = (out: Array<AgentEvent>): void => {
     const tasks = listed.map((task): BackgroundTask => {
       const start = taskStarts.get(task.task_id);
@@ -534,8 +443,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         ...(start?.command === undefined ? {} : { command: start.command }),
         ...(start?.subagentType === undefined ? {} : { subagentType: start.subagentType }),
         ...(start?.toolCallId === undefined ? {} : { toolCallId: start.toolCallId }),
-        // The level usually arrives a moment before `task_started`, but a shell the CLI moves to
-        // the background when it outruns its timeout started long before it was listed.
         startedAt: Math.min(seen, start?.startedAt ?? seen),
       };
     });
@@ -621,7 +528,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
     lanes.delete(key);
   };
 
-  /** Closes every lane, except those of subagents still running in the background unless `all`. */
   const closeAll = (out: Array<AgentEvent>, all = false, errorText?: string): void => {
     for (const key of [...lanes.keys()].filter((k) => k !== MAIN)) {
       if (all || !background.has(key)) close(key, out, errorText);
@@ -639,14 +545,10 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
     return call;
   };
 
-  /** A `PostCompact` summary waiting for its `compact_boundary`. */
   let compactSummary: string | undefined;
-  /** The compaction under way, from its `compacting` status to its `compact_boundary`. */
   let compaction: CompactionActivity | undefined;
-  /** The last compaction marker sent without a summary, in case its hook comes after it. */
   let lastCompaction: { readonly messageId: MessageId; readonly part: Chunk } | undefined;
   const ledger = makeUsageLedger(options);
-  /** The `error` on this turn's synthetic API-error message, for `turnEnd`. */
   let apiError: string | undefined;
   let apiErrorText: string | undefined;
   const record = (apiMessageId: string, raw: unknown, out: Array<AgentEvent>): void => {
@@ -739,7 +641,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         l.blocks.delete(e.index);
         return;
       }
-      // The request's final output count, which its complete assistant message never carries.
       case "message_delta":
         if (key === MAIN && l.step !== undefined) record(l.step, e.usage, out);
         return;
@@ -750,7 +651,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
 
   const onAssistant = (m: Extract<SDKMessage, { type: "assistant" }>, out: Array<AgentEvent>) => {
     const key = m.parent_tool_use_id ?? MAIN;
-    // A local command's reply (`/context`) is `<synthetic>`: no window or price to read from it.
     if (key === MAIN && m.message.model !== SYNTHETIC_MODEL) ledger.setWireModel(m.message.model);
     if (key === MAIN && m.error !== undefined) apiError = m.error;
     const l = lane(key, out);
@@ -760,7 +660,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         chunk(l, { type: "message-metadata", messageMetadata: { agentSessionId: m.session_id } }),
       );
     step(l, apiId, out);
-    // A subagent that inherits the default model names it nowhere else: its Task input has no model.
     if (m.message.model !== SYNTHETIC_MODEL && l.model !== m.message.model) {
       l.modelConflict ||= key === MAIN && l.model !== undefined;
       l.model = m.message.model;
@@ -776,7 +675,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
     }
     if (!l.agentMessageIds.includes(m.uuid)) {
       l.agentMessageIds.push(m.uuid);
-      // Metadata merges key by key but arrays replace, so send the whole list.
       out.push(
         chunk(l, {
           type: "message-metadata",
@@ -784,9 +682,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         }),
       );
     }
-    // An API error Claude Code reports as a reply of its own (`API Error: Request rejected (429)
-    // ...`) is the turn's failure, which ends it and is shown as one: an error card, or the line of
-    // a limit waited out. Its words are not the agent's reply.
     const failureReply =
       key === MAIN && m.error !== undefined && m.message.model === SYNTHETIC_MODEL;
     if (failureReply) {
@@ -809,7 +704,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
             ...toolFlags(call.dynamic),
           }),
         );
-        // The main conversation's todo list is the thread's plan; a subagent's is its own business.
         if (block.name === "TodoWrite" && key === MAIN) {
           const items = todoPlan(block.input);
           if (items !== undefined) out.push({ type: "plan", items });
@@ -832,41 +726,30 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
   const onUser = (m: Extract<SDKMessage, { type: "user" }>, out: Array<AgentEvent>) => {
     const content = m.message.content;
     if ("isReplay" in m && m.isReplay) {
-      // A command whose `!`-shell step failed (`/security-review` with no `origin`) says so only
-      // here, and its turn ends with nothing else to show.
       const stderr = typeof content === "string" ? commandStderr(content) : undefined;
       if (stderr !== undefined) out.push(notice("warning", stderr));
       return;
     }
     if (typeof content === "string") return;
-    // `MessageParam` also covers system messages, whose content is text blocks: read either as blocks.
     const blocks: ReadonlyArray<ContentBlockParam> = content;
     const results = blocks.filter((block) => block.type === "tool_result");
     for (const block of results) {
-      // Its `task_started`, if it has one, came before the result and took the command.
       bashCommands.delete(block.tool_use_id);
-      // The result is the command's whole output, or its move to the background.
       unfollowCall(block.tool_use_id);
       const call = tools.get(block.tool_use_id);
       const l = call && lanes.get(call.lane);
       if (!call || !l) continue;
       tools.delete(block.tool_use_id);
-      // Close the subagent transcript before its parent card completes, unless the result is only
-      // a background launch: that subagent keeps streaming until its `task_notification`.
       const launched =
         results.length === 1 && asRecord(m.tool_use_result)["status"] === "async_launched";
       if (launched) {
         background.add(block.tool_use_id);
-        // Opened now rather than at its first message, which can come after the turn has ended:
-        // an open lane is what tells the runtime a subagent is still working.
         lane(block.tool_use_id, out);
-        // The start went out on the reply before the lane existed; the lane gets its own copy.
         const start = starts.get(block.tool_use_id);
         if (start !== undefined) out.push(subagentUsage(block.tool_use_id, "running", start));
       }
       if (!background.has(block.tool_use_id)) {
         close(block.tool_use_id, out);
-        // A foreground run can end here with no `task_notification` to forget its start.
         starts.delete(block.tool_use_id);
       }
       for (const image of resultImages(block.content)) {
@@ -931,8 +814,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         mode(m.permissionMode, out);
         return;
       case "commands_changed": {
-        // Skills found as the agent works, and the list again after `/reload-skills`. It comes
-        // several times a turn, mostly unchanged.
         commands = new Map(m.commands.map((c) => [c.name, c]));
         if (identity === undefined) return;
         const next = offeredCommands(m.commands.map((c) => c.name));
@@ -942,11 +823,8 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         return;
       }
       case "session_state_changed":
-        // `requires_action` is reported with the request itself (approval vs input).
         if (m.state === "running") out.push(status("running"));
         if (m.state === "idle") {
-          // A CLI iteration can go idle without a result. Its open lane is the evidence;
-          // after a real result the lane is closed, so its idle tail adds no second turn end.
           const unfinished = lanes.has(MAIN);
           const failure =
             apiError !== undefined && apiErrorText !== undefined
@@ -967,7 +845,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
       case "status":
         mode(m.permissionMode, out);
         if (m.status === "compacting") {
-          // A summary from a compaction that never reached its boundary isn't this one's.
           compactSummary = undefined;
           compaction = {
             startedAt: now(),
@@ -987,13 +864,9 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
           } else if (compaction === undefined) {
             out.push(status("running"));
           }
-          // A success stays `compacting` until its boundary brings the marker, so the live line
-          // hands over to it without a gap (CLI 2.1.285 sends an `init` in between).
         }
         return;
       case "informational": {
-        // CLI 2.1.325: a `PreToolUse` hook gave no verdict on a call, once per hook in a session,
-        // and its failure didn't refuse the call. Gram's own gates are such hooks, so this is said.
         if (m.tag !== "hook_no_verdict") return;
         const detail = (m as { readonly hook_no_verdict?: { readonly timed_out?: boolean } })
           .hook_no_verdict;
@@ -1020,8 +893,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         const { trigger, pre_tokens, post_tokens } = m.compact_metadata;
         const preTokens = int(pre_tokens);
         const postTokens = int(post_tokens);
-        // The meter would otherwise keep the last request's prompt until the next one: to the end
-        // of a `/compact`, which sends none, the turn's usage still showed the context it dropped.
         if (postTokens !== undefined) ledger.setContextTokens(postTokens);
         const summary = compactSummary;
         compactSummary = undefined;
@@ -1046,9 +917,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         if (m.is_backgrounded === true && m.tool_use_id !== undefined) {
           background.add(m.tool_use_id);
         }
-        // A foreground command that has run a while: the CLI now keeps its output where
-        // `getTaskOutput` reads it, and its call shows it as interim output. A backgrounded one
-        // has its result already, so its output goes beside the transcript instead.
         if (m.task_type === "local_bash" && m.tool_use_id !== undefined) {
           if (m.is_backgrounded !== true) followShell(m.task_id, m.tool_use_id);
           else if (isShellCall(m.tool_use_id)) followBackgroundShell(m.task_id, m.tool_use_id);
@@ -1084,14 +952,10 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         }
         return;
       case "background_tasks_changed": {
-        // The CLI's own level of what is running in the background, shells included, rather than
-        // pairing `task_started` with `task_notification`: a missed edge can't strand a task.
         listed = m.tasks.filter((task) => task.ambient !== true);
         const ids = new Set(listed.map((task) => task.task_id));
         for (const id of firstListed.keys()) if (!ids.has(id)) firstListed.delete(id);
         for (const id of ids) if (!firstListed.has(id)) firstListed.set(id, now());
-        // A background shell that has left the level has ended, whatever edge is still to come.
-        // One not listed yet may be about to join: the level and `task_started` come in either order.
         for (const [id, shell] of backgroundShells) {
           if (ids.has(id)) shell.listed = true;
           else if (shell.listed) backgroundShells.delete(id);
@@ -1108,18 +972,14 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
       case "task_updated": {
         const ended = m.patch.status;
         if (ended === "completed" || ended === "failed" || ended === "killed") {
-          // Ended: nothing more to follow.
           shells.delete(m.task_id);
           backgroundShells.delete(m.task_id);
           return;
         }
         if (m.patch.is_backgrounded !== true) return;
-        // Moved to the background when it outran its timeout: its call's result comes now, and
-        // the output it goes on writing is followed beside the transcript.
         const foreground = shells.get(m.task_id);
         shells.delete(m.task_id);
         const start = taskStarts.get(m.task_id);
-        // Not its last interim output: that was the call's, which its result now replaces.
         if (foreground !== undefined) followBackgroundShell(m.task_id, foreground.toolCallId);
         else if (start?.shell === true && start.toolCallId !== undefined)
           followBackgroundShell(m.task_id, start.toolCallId);
@@ -1128,9 +988,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
       case "task_notification": {
         shells.delete(m.task_id);
         backgroundShells.delete(m.task_id);
-        // Between turns the CLI answers a finished background task with a turn of its own: a
-        // subagent's report, or a shell's exit, including one it moved to the background itself
-        // when it outran its timeout.
         if (!lanes.has(MAIN) && m.ambient !== true && m.skip_transcript !== true) {
           reportedBack = true;
         }
@@ -1138,8 +995,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         const id = m.tool_use_id;
         if (id === undefined) return;
         if (m.ambient !== true && m.skip_transcript !== true && !ignoredTasks.has(m.task_id)) {
-          // Not `m.summary`: on a notification that is the subagent's whole report, which is
-          // already in its transcript and unbounded in length.
           out.push(
             subagentUsage(id, m.status, {
               startedAt: startedAt(id),
@@ -1149,7 +1004,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         }
         ignoredTasks.delete(m.task_id);
         starts.delete(id);
-        // A background subagent is done: close its transcript.
         if (!background.delete(id)) return;
         close(id, out);
         for (const [toolId, call] of tools) if (call.lane === id) tools.delete(toolId);
@@ -1180,7 +1034,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         break;
       case "rate_limit_event": {
         const info = message.rate_limit_info;
-        // Past the window on extra usage: Claude goes on, so the window is spent but no stop.
         const credits =
           info.isUsingOverage === true ||
           info.overageInUse === true ||
@@ -1200,8 +1053,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
           break;
         }
         if (info.status === "allowed") {
-          // A reading for the usage meter only, never a notice. It comes between warnings for the
-          // same window too, so without a share and a window it says nothing about either.
           const window = info.rateLimitType;
           if (info.utilization === undefined || (window !== "five_hour" && window !== "seven_day"))
             break;
@@ -1227,14 +1078,10 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         break;
       }
       case "tool_progress":
-        // A hook that runs long beats (CLI 2.1.323): the turn is waiting on it, not stuck. Said as
-        // the turn still running, which counts as progress, so the silent-tool watch keeps quiet.
         if (message.heartbeat === true) {
           if (lastStatus === "running") out.push(status("running"));
           break;
         }
-        // Only elapsed time, no output, but it names the task a running shell writes to. CLI
-        // 2.1.296 didn't send it on a local lane; `task_started` names the task there.
         if (message.task_id !== undefined) followShell(message.task_id, message.tool_use_id);
         break;
       case "auth_status":
@@ -1266,8 +1113,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
       if (summary === undefined) return [];
       const last = lastCompaction;
       lastCompaction = undefined;
-      // Recorded on CLI 2.1.285 the hook runs first; should that turn around, the marker already
-      // sent is sent again with the summary, as long as its message is still the open one.
       const open = lanes.get(MAIN);
       if (last === undefined || open?.messageId !== last.messageId) {
         compactSummary = summary;
@@ -1277,7 +1122,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
       return [chunk(open, { ...part, data: { ...part.data, summary } })];
     },
     runningShells: () => {
-      // A call can end with no result or notification for its task (an interrupt closes it).
       for (const [taskId, shell] of shells) if (!tools.has(shell.toolCallId)) shells.delete(taskId);
       return [
         ...[...shells].map(([taskId, shell]) => ({ taskId, toolCallId: shell.toolCallId })),
@@ -1325,8 +1169,6 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
     },
     flush: () => {
       const out: Array<AgentEvent> = [];
-      // The query is over, so background subagents won't report back either, and the CLI that
-      // ran the background shells is gone.
       closeAll(out, true);
       shells.clear();
       backgroundShells.clear();

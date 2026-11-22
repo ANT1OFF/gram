@@ -58,13 +58,11 @@ export function profileIdFor(name: string, taken: ReadonlySet<string>): ProfileI
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-/** What adding a gateway did with the key typed into the form. */
 interface AddOutcome {
   readonly profileId: ProfileId;
   readonly result?: SetKeyResult;
 }
 
-/** Profiles and the model lists derived from them. */
 function useInvalidateProfiles() {
   const queryClient = useQueryClient();
   return async () => {
@@ -176,11 +174,6 @@ export const OPENROUTER_PRIVACY_URL = "https://openrouter.ai/settings/privacy";
 /** Whether a pasted key looks like an OpenRouter one. */
 export const openRouterKeyLooksRight = (key: string): boolean => /^sk-or-\S+$/.test(key.trim());
 
-/**
- * One card for OpenRouter above the custom gateways: sign in, which makes a key in the person's own
- * OpenRouter account, or paste one. Either makes an OpenRouter profile, on which Claude Code is
- * offered Anthropic's models and Codex OpenAI's.
- */
 function AddOpenRouter({
   taken,
   noKeyring,
@@ -195,7 +188,6 @@ function AddOpenRouter({
   const keyId = useId();
   const [pasting, setPasting] = useState(false);
   const [key, setKey] = useState("");
-  // A cancelled sign-in's late answer is ignored rather than shown.
   const attempt = useRef(0);
   const signIn = useMutation({
     mutationFn: async (): Promise<AddOutcome | undefined> => {
@@ -212,7 +204,6 @@ function AddOpenRouter({
       if (outcome) onDone(outcome);
     },
   });
-  // The key is read from state, never passed as a mutation variable, so it stays out of the cache.
   const paste = useMutation({
     mutationFn: async (): Promise<AddOutcome> => {
       const saved = await api.upsertProfile({
@@ -345,10 +336,6 @@ function AddOpenRouter({
   );
 }
 
-/**
- * Dollars for threads on a gateway's key, off by default: subscription threads are measured by the
- * title bar's usage meter, never in dollars.
- */
 function ShowCostToggle() {
   const checked = useShowCost();
   const save = useSaveSettings();
@@ -371,7 +358,6 @@ function ShowCostToggle() {
   );
 }
 
-/** Name and base URL for a new profile, or for `existing`; a new one can take its key too. */
 function ProfileForm({
   existing,
   taken,
@@ -380,7 +366,6 @@ function ProfileForm({
 }: {
   existing?: GatewayProfile;
   taken: ReadonlySet<string>;
-  /** Linux without a keyring: no key field, since none could be stored. */
   noKeyring?: boolean;
   onDone: (outcome?: AddOutcome) => void;
 }) {
@@ -391,9 +376,7 @@ function ProfileForm({
   const [baseURL, setBaseURL] = useState(existing?.baseURL ?? "");
   const [catalog, setCatalog] = useState(existing?.modelCatalogURL ?? "");
   const [key, setKey] = useState("");
-  // Once saved, a retry after a failed key save updates the same profile rather than adding another.
   const [savedId, setSavedId] = useState<ProfileId | undefined>();
-  // The key is read from state, never passed as a mutation variable, so it stays out of the cache.
   const save = useMutation({
     mutationFn: async (): Promise<AddOutcome> => {
       const previous = existing === undefined ? undefined : { ...existing };
@@ -519,7 +502,6 @@ function ProfileCard({
 }: {
   profile: GatewayProfile;
   vault: VaultInfo | undefined;
-  /** What the add form did with this profile's key, when it was just added. */
   added: AddOutcome | undefined;
 }) {
   const api = useApi();
@@ -589,7 +571,6 @@ function ProfileCard({
   );
 }
 
-/** A stored key's status line, per vault kind. */
 const SAVED_IN: Record<VaultInfo["kind"], string> = {
   keychain: "Saved securely in the macOS Keychain",
   dpapi: "Encrypted with Windows data protection for your account",
@@ -598,9 +579,7 @@ const SAVED_IN: Record<VaultInfo["kind"], string> = {
   memory: "Not saved: the key is kept only while the server runs",
 };
 
-/** Whether the profile has a key, and where it's kept; never by colour alone. */
 function KeyStatus({ profile, vault }: { profile: GatewayProfile; vault: VaultInfo | undefined }) {
-  // Linux without a keyring: keys aren't stored at all, rather than in a file anyone can read.
   if (vault?.kind === "no-keyring") {
     return (
       <p role="status" className={noteCls}>
@@ -626,7 +605,6 @@ function KeyStatus({ profile, vault }: { profile: GatewayProfile; vault: VaultIn
   );
 }
 
-/** What saving a key set off: the models found, or why listing them failed, and a new default. */
 function KeyResultNote({ result }: { result: SetKeyResult }) {
   const failed = result.discoveryError !== undefined;
   const sentences = [
@@ -646,10 +624,6 @@ function KeyResultNote({ result }: { result: SetKeyResult }) {
   );
 }
 
-/**
- * The profile's API key, write-only: a typed key is sent to the server and cleared from the field,
- * and nothing ever reads it back.
- */
 function KeyField({
   profile,
   vault,
@@ -665,7 +639,6 @@ function KeyField({
   const [key, setKey] = useState("");
   const keySet = profile.keyRef !== "";
   const noKeyring = vault?.kind === "no-keyring";
-  // The mutation's variable is only "clear or not", so the key never lands in the query cache.
   const save = useMutation({
     mutationFn: (clear: boolean) => api.setProfileKey(profile.id, clear ? "" : key),
     onSuccess: async () => {
@@ -732,7 +705,6 @@ function KeyField({
   );
 }
 
-/** Imports the key from OpenCode's `auth.json`, only after the user agrees to that read. */
 function ImportKey({ profile, vault }: { profile: GatewayProfile; vault: VaultInfo | undefined }) {
   const api = useApi();
   const invalidate = useInvalidateProfiles();
@@ -851,11 +823,9 @@ function Models({ profile }: { profile: GatewayProfile }) {
   );
 }
 
-/** Why a discovered model is struck through: the pickers leave it out. */
 const NOT_FOR_AGENTS =
   "Not offered to agents: the gateway says it isn't a chat model with tools, or is deprecated or restricted";
 
-/** On the default profile: where its helper models are picked now. */
 function HelperModel({ profile }: { profile: GatewayProfile }) {
   if (profile.default !== true || profile.models.length === 0) return null;
   const choice = helperChoice(profile);

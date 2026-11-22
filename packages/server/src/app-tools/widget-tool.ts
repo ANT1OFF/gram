@@ -8,16 +8,11 @@ import { defineAppTool, failed } from "./definition.ts";
 /** A drawing is stored with its message and replayed to every client, so it stays small. */
 export const WIDGET_MAX_LENGTH = 256 * 1024;
 
-/** Where the construct opening at `from` ends (exclusive), given what closes it; -1 when it doesn't. */
 const after = (text: string, close: string, from: number): number => {
   const at = text.indexOf(close, from);
   return at === -1 ? -1 : at + close.length;
 };
 
-/**
- * Where the tag opening at `from` ends (exclusive), or -1. Quote-aware, because an attribute value
- * may hold a `>`: `aria-label="latency > target"` is valid.
- */
 const tagEnd = (text: string, from: number): number => {
   let quote: string | undefined;
   for (let i = from; i < text.length; i++) {
@@ -33,19 +28,12 @@ const tagEnd = (text: string, from: number): number => {
   return -1;
 };
 
-/** The non-element constructs a scan steps over, by how they open and close. */
 const OPAQUE: ReadonlyArray<readonly [open: string, close: string]> = [
   ["<!--", "-->"],
   ["<![CDATA[", "]]>"],
   ["<?", "?>"],
 ];
 
-/**
- * Where the first element in `text` at or after `from` ends (exclusive), or why it doesn't: it never
- * closes, or a closing tag names a different element than the one open (`<svg><g></svg></g>`
- * balances by count and is still not a document). A scanner rather than a parser: it finds where the
- * root stops and that the nesting holds, and leaves the rest to `<img>`, which draws it or doesn't.
- */
 const elementEnd = (text: string, from: number): number | "unclosed" | "mismatched" => {
   const open: Array<string> = [];
   let i = from;
@@ -72,7 +60,6 @@ const elementEnd = (text: string, from: number): number | "unclosed" | "mismatch
   return "unclosed";
 };
 
-/** Where the root element starts: past the XML declaration, comments and a doctype. */
 const rootStart = (svg: string): number => {
   let i = 0;
   for (;;) {
@@ -104,7 +91,6 @@ export const widgetProblem = (svg: string): string | undefined => {
   if (end === "unclosed") return "The SVG isn't closed; it must end with </svg>.";
   if (end === "mismatched")
     return "The SVG isn't well formed: a closing tag doesn't match its opening tag.";
-  // A second root, or anything else after the first, is not one document, and `<img>` draws none of it.
   if (svg.slice(end).trim() !== "")
     return "Nothing may follow the closing </svg>: send one SVG document.";
   return undefined;
@@ -124,7 +110,6 @@ export const showWidgetTool = (runtimes: Pick<ThreadRuntimesShape, "emitChunk">)
         "Draw a chart or diagram in your reply, as one self-contained SVG document with a viewBox. It renders as a static image: no scripts, no external images, fonts or stylesheets, and no links. For colours use the theme's CSS variables so it suits light and dark: var(--fg), var(--fg-muted), var(--bg), var(--surface), var(--border), var(--accent), var(--success), var(--warning), var(--danger), var(--info); text uses font-family: var(--font). currentColor is not set.",
     },
     input: Schema.Struct({
-      // Not `NonEmptyString`: "   " passes that and trims to an image with no name.
       title: Schema.String.check(Schema.isPattern(/\S/)),
       svg: Schema.NonEmptyString,
     }),

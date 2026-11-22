@@ -26,11 +26,6 @@ export const FileRpcs = RpcGroup.make(
     success: FsTree,
     error: errors(FsError),
   }),
-  /**
-   * A folder's files and folders for the Files panel (`fs.browse` stays folders-only). Hidden
-   * entries only with `showHidden`. `threadId` scopes and validates `path` within the thread's
-   * checkout.
-   */
   Rpc.make("fs.list", {
     payload: {
       path: Schema.String,
@@ -41,12 +36,6 @@ export const FileRpcs = RpcGroup.make(
     success: FsListing,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * A file preview for the Files panel. Binary files, and files over `maxBytes` (at most 2 MiB), come
-   * back without `content`. `threadId` scopes `path` to the thread's checkouts, or, for an absolute
-   * path outside them, to the paths the thread's messages name, in their text or a finished Write
-   * or Edit, never a credential file (`isCredentialPath`). Without `threadId` it is refused.
-   */
   Rpc.make("fs.file", {
     payload: {
       path: Schema.String,
@@ -56,47 +45,26 @@ export const FileRpcs = RpcGroup.make(
     success: FsFile,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Content search in the thread's checkout: tracked files and untracked ones git doesn't ignore,
-   * skipping binary files. Paged by `offset`, and capped by match count, output size and time.
-   */
   Rpc.make("fs.search", {
     payload: FsSearchFields,
     success: FsSearchResult,
     error: errors(NotFound, InvalidState),
   }),
-  /** Every file and folder in the thread's checkout for `@` mentions, capped. */
   Rpc.make("fs.files", {
     payload: FsFilesFields,
     success: FsFilesResult,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The names in the thread's checkout dictation should spell its way: exported symbols, tracked
-   * file and folder names, branches and thread titles, capped. Read from git and cached until the
-   * commit or index changes; nothing leaves this computer.
-   */
   Rpc.make("fs.vocabulary", {
     payload: ProjectVocabularyFields,
     success: ProjectVocabulary,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Which of the paths an agent's message names are files, so the transcript links only those. A
-   * path into a checkout never resolves outside it, lexically or through a symlink; an absolute
-   * path in no checkout is only checked to be a file, and only when the thread's messages write it.
-   * Reads no content.
-   */
   Rpc.make("fs.resolve", {
     payload: FsResolveFields,
     success: FsResolveResult,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * A png / jpg / gif / svg / webp image as base64 for previews, up to `maxBytes` (at most 5 MiB);
-   * other extensions are refused.
-   * `threadId` scopes `path` as `fs.file` does; without one it is refused.
-   */
   Rpc.make("fs.image", {
     payload: {
       path: Schema.String,
@@ -106,25 +74,11 @@ export const FileRpcs = RpcGroup.make(
     success: FileImage,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * A Markdown or HTML file for the Preview tab. `path` must be inside the thread's checkouts or
-   * folders it was granted, or a file the thread's own Write or Edit calls named, such as a report
-   * written to a temp folder. Anything else, and any other kind of file, is `InvalidState`.
-   */
   Rpc.make("fs.preview", {
     payload: { threadId: ThreadId, path: Schema.String },
     success: FsPreview,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Folder autocomplete for the project picker. Expands `~` and lists directories only. A `path`
-   * ending in `/` lists that folder; otherwise the last segment is a case-insensitive name prefix
-   * matched within its parent. Dotfolders appear only when that prefix starts with `.`. At most
-   * `limit` entries (default 500), with `truncated` set when more matched.
-   *
-   * This machine's folders only: a joined machine's are listed by its host, from the local app
-   * alone (`/machines/folders/browse`).
-   */
   Rpc.make("fs.browse", {
     payload: {
       path: Schema.String,
@@ -133,10 +87,6 @@ export const FileRpcs = RpcGroup.make(
     success: FolderListing,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Opens a file (at `line`) or a folder in `settings.editor.command`. `threadId` scopes and validates
-   * `path` within the thread's checkout.
-   */
   Rpc.make("editor.open", {
     payload: {
       path: Schema.String,
@@ -146,41 +96,26 @@ export const FileRpcs = RpcGroup.make(
     success: EditorOpened,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Shows a file or folder in the system file manager, selected in Finder or Explorer. A relative
-   * `path` resolves within the thread's checkout.
-   */
   Rpc.make("fs.reveal", {
     payload: { path: Schema.String, threadId: Schema.optionalKey(ThreadId) },
     success: Revealed,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The files the workspace's threads produced, newest first, `limit` a page (`OUTPUTS_PAGE`, at
-   * most `OUTPUTS_PAGE_MAX`). Lists what was recorded as it was written; reads no file. Each entry's
-   * bytes are read through its thread's scoped paths. `InvalidState` for a cursor this didn't make.
-   */
   Rpc.make("workspace.outputs", {
     payload: WorkspaceOutputsFields,
     success: WorkspaceOutputsPage,
     error: errors(InvalidState),
   }),
-  /** The workspace's docs (`docs.ts`), newest first, without their text. */
   Rpc.make("docs.list", {
     payload: DocsListFields,
     success: DocList,
     error: errors(InvalidState, FsError),
   }),
-  /** One doc with its Markdown. `NotFound` once it is gone. */
   Rpc.make("docs.read", {
     payload: DocReadFields,
     success: Doc,
     error: errors(NotFound, InvalidState, FsError),
   }),
-  /**
-   * The user's edit from the doc pane, over the `revision` it opened; `InvalidState` when the doc
-   * moved on since, which the pane says rather than overwriting the newer text.
-   */
   Rpc.make("docs.save", {
     payload: DocSaveFields,
     success: DocMeta,

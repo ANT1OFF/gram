@@ -1,7 +1,3 @@
-// Settings by chat (docs/design/settings-by-chat.md): `settings_read` and `settings_propose`.
-// What may change and how is decided in `@gram/contracts` (`settings-chat.ts`); this reads the
-// world, raises the user's card, and applies an approved change by the Settings UI's own paths.
-
 import {
   AppToolError,
   planSettingsChanges,
@@ -46,7 +42,6 @@ export interface SettingsToolsOptions {
 const WORKER_REFUSAL =
   "Workers can read Gram's settings but not propose changes to them: a change to the workspace's settings is the user's, asked for by the orchestrator in the thread the user watches. Tell your orchestrator what you need with report or message_orchestrator.";
 
-/** What `changes` would do, or why nothing was proposed. */
 const plan = (tool: string, world: SettingsWorld, changes: ReadonlyArray<SettingsChange>) => {
   const result = planSettingsChanges(world, changes);
   return result.ok
@@ -63,17 +58,11 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       const runtimes = yield* ThreadRuntimes;
       const store = yield* ThreadStore;
       const writer = yield* makeSettingsWriter;
-      // Absent in runtime-only layers, which have no workspaces to change.
       const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
       const hosts = Option.getOrUndefined(yield* Effect.serviceOption(AgentHosts));
       const ttl = Duration.fromInputUnsafe(options.proposalTtl ?? SETTINGS_PROPOSAL_TTL_MS);
-      // Absent in layers without a data folder, which write no guide.
       const config = Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig));
 
-      /**
-       * The workspace in scope for `caller`: its own (an orchestrator's, a worker's, or the one a
-       * plain thread joined), or for a plain thread the one it names by id or name.
-       */
       const workspaceInScope = (
         tool: string,
         caller: ThreadId,
@@ -155,7 +144,6 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
           return found;
         });
 
-      /** The settings, the workspace, and the model its orchestrator runs on, if one holds it. */
       const worldOf = (workspace: WorkspaceState | undefined, project?: Project) =>
         Effect.gen(function* () {
           const settings = yield* store.getSettings;
@@ -226,7 +214,6 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 role === "worker"
                   ? WORKER_REFUSAL
                   : "Propose changes with settings_propose; the user approves each proposal on a card in this thread before anything changes.",
-              // Read on demand: every tool, setting and hand-edited file, for this release.
               ...(config === undefined
                 ? {}
                 : { agentGuide: join(config.dataDir, AGENT_GUIDE_FILE) }),
@@ -237,7 +224,6 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
       const settingsPropose = defineAppTool({
         descriptor: {
           name: SETTINGS_PROPOSE_TOOL,
-          // It raises its own card on every call, whatever the binding, mode or autonomy.
           class: "outwardGated",
           description:
             'Propose a change to Gram\'s settings. Gram checks it, shows the user a before → after card in this thread, and applies it only when they approve; this call waits for that answer and says whether it was applied, declined or expired (after 15 minutes). Each change is `{op: "set", key, value}` (`null` clears an optional key), or for a list key (`workspace.workerModels`, `agents.workerModels`) `{op: "add", key, item: {agent, model, variant?, speed?, useFor?, default?}}`, `{op: "update", key, match: "agent:model", item: {useFor?, default?, variant?, speed?}}` or `{op: "remove", key, match: "agent:model"}`. One proposal changes app settings, one workspace, or one project. projectId selects a project in this thread’s workspace; omit it for this thread’s project. settings_read lists the keys. A workspace\'s projects, home, autonomy and worker mode change with workspace_update instead; pausing and resuming, default permission modes, connectors, credentials, gateways, folders and consent switches are the user\'s alone and are refused. Say why in `reason`, which the card shows.',
@@ -247,8 +233,6 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
         handle: (caller, { changes, reason, workspaceId, projectId }) =>
           Effect.gen(function* () {
             const tool = SETTINGS_PROPOSE_TOOL;
-            // Who the caller is now, not which binding it was given: a Claude session keeps its
-            // tools through a turn in which its role can change.
             const role = yield* runtimes.audienceOf(caller);
             if (role === "worker") return yield* fail(tool, WORKER_REFUSAL);
             if (role !== "orchestrator" && role !== "plain") {
@@ -265,15 +249,12 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               return yield* fail(tool, "Workspaces can't be changed here.");
             }
             if (proposed.scope === "app") {
-              // Refused before the card: the user couldn't approve it into effect either.
               const held = yield* suppliedPathAmong(
                 store,
                 proposed.writes.map((write) => write.path),
               );
               if (held !== undefined) return yield* fail(tool, suppliedRefusal(held));
             }
-            // The target is fixed now, by id: a rename, or another workspace taking this one's
-            // name, never moves the approval elsewhere.
             const pinned = proposed.scope === "workspace" ? state?.workspace.id : undefined;
             const checked = yield* checkModels(store, hosts, tool, proposed.models);
             const notes = [...proposed.notes, ...checked];
@@ -305,8 +286,6 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               { scope: proposed.scope },
             );
 
-            // The approval is for this card's writes, on this card's target, by this caller as it
-            // was when it asked: nothing is planned or resolved again.
             const roleNow = yield* runtimes.audienceOf(caller);
             const threadNow = yield* store
               .getThread(caller)
@@ -354,7 +333,6 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               );
             let auditSeq: number;
             if (proposed.scope === "app") {
-              // Supplied while the card waited: nothing is written and nothing is recorded.
               const held = yield* suppliedPathAmong(
                 store,
                 proposed.writes.map((write) => write.path),
@@ -373,7 +351,6 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               if (done === undefined) return yield* moved();
               auditSeq = done.auditSeq;
             } else {
-              // Pausing and resuming are the user's alone, so there is no route to them from here.
               const done = yield* orchestration!
                 .changeCharter(pinned!, proposed.writes, audit, proposed.requires)
                 .pipe(

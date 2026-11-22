@@ -1,6 +1,3 @@
-// A thread's status and turns: opening and finishing a turn, how it failed, the system delivery or
-// note it carried, and the idle timer that ends a session nobody uses.
-
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Clock from "effect/Clock";
@@ -110,7 +107,6 @@ export const incidentAfter = (
   lost: MachineLostNote | undefined,
   away: string | undefined,
 ): MachineIncident | undefined => {
-  // An error written before incidents were kept apart, which said its machine was lost, is one.
   const legacy = thread.lastError?.machineLost;
   const kept: MachineIncident | undefined =
     thread.machineIncident ??
@@ -154,7 +150,6 @@ export const withIncident = (
         },
       };
 
-/** The statuses that show the agent at work on a turn: what `noteDeliveryStart` counts. */
 const WORK_STATUSES: ReadonlySet<AgentStatus> = new Set<AgentStatus>(["running", "compacting"]);
 
 /** Status, turns and failures, which every other part of `ThreadRuntimes` reports through. */
@@ -181,7 +176,6 @@ export const makeTurnLifecycle = ({
   clearPendingRequests,
   awayMachine,
 }: TurnLifecycleDeps) => {
-  /** Reports a delivery's outcome, once: whichever comes first clears `carrying`. Holds the lock. */
   const settleDelivery = (rt: Runtime, outcome: "accepted" | SystemDeliveryFailure) =>
     Effect.suspend(() => {
       const carried = rt.carrying;
@@ -196,15 +190,6 @@ export const makeTurnLifecycle = ({
       );
     });
 
-  /**
-   * The one place both adapters' events say the agent natively began the turn carrying a
-   * delivery. An allowlist of positive work only: a status of work (`WORK_STATUSES`: Codex's on
-   * `turn/started`, Claude's as its session runs), a chunk of the turn's own reply, or a request
-   * (a tool's approval, a question) from it. Nothing else counts: not `error` (Codex's thread
-   * `systemError`, Claude's `auth_status` error), `idle`, `starting` or `retrying`, nor a notice
-   * or a turn end, which is all a refusal sends. Tells the delivery once
-   * (`SystemDelivery.started`). Holds the lock.
-   */
   const noteDeliveryStart = (rt: Runtime, event: AgentEvent, ownReply: boolean) =>
     Effect.suspend(() => {
       const carried = rt.carrying;
@@ -227,10 +212,6 @@ export const makeTurnLifecycle = ({
         : dispatch(rt.threadId, "system delivery started", started(carried.turnId));
     });
 
-  /**
-   * Records what turn `turnId`'s note told as heard when `taken`, or leaves it news. Holds the
-   * lock.
-   */
   const settleNote = (rt: Runtime, turnId: TurnId | undefined, taken: boolean) =>
     Effect.suspend(() => {
       const told = rt.noteHeard;
@@ -239,7 +220,6 @@ export const makeTurnLifecycle = ({
       return taken ? waits.heard(rt.threadId, told.items) : Effect.void;
     });
 
-  /** Holds the lock. */
   const failPendingDeliveries = (rt: Runtime, reason: SystemDeliveryFailure) =>
     Effect.suspend(() => {
       const pending = [...rt.deliveries.values()];
@@ -252,19 +232,12 @@ export const makeTurnLifecycle = ({
       );
     });
 
-  /**
-   * Publishes `status`; without an explicit `detail`, a busy status carries the activity line, and
-   * so does an idle one while a background subagent is still working.
-   */
   const setStatus = (rt: Runtime, status: ThreadStatus, detail?: string, force = false) =>
     Effect.gen(function* () {
       if (rt.status === status && detail === undefined && !force) return;
       rt.status = status;
-      // Only a running thread compacts; whatever else it became, the compaction is over.
       const endedCompaction = status !== "running" ? rt.compaction : undefined;
       if (status !== "running") rt.compaction = undefined;
-      // A turn that failed leaves its session open, and the next input goes to it as it would from
-      // idle: failing what waits here paused orchestration over one API error.
       if (status === "ended" || (status === "error" && rt.session === undefined)) {
         yield* failPendingDeliveries(rt, status);
       }
@@ -292,12 +265,6 @@ export const makeTurnLifecycle = ({
       }
     });
 
-  /**
-   * Puts the thread in `error` for an agent that couldn't start, and logs why: the reason otherwise
-   * exists only on screen, and a tester's log for a thread that never started (0.2.0-rc.1 on Windows)
-   * held nothing about it. Only `AgentUnavailable`'s own fields are logged, which the adapters write
-   * about starting the agent. A turn's error is the agent's text and stays out of the log.
-   */
   const failUnavailable = (
     rt: Runtime,
     error: AgentUnavailable,
@@ -314,8 +281,6 @@ export const makeTurnLifecycle = ({
         }),
       );
       const at = yield* Clock.currentTimeMillis;
-      // An agent can't start in a folder that is gone, and its spawn error would read as a broken
-      // install: the thread says what happened instead.
       const keptGone = keptWorkGoneError(error, KEPT_WORK_GONE_REASON, at);
       const gone =
         keptGone === undefined && rt.cwd !== undefined && !(yield* checkouts.present(rt.cwd));
@@ -332,12 +297,6 @@ export const makeTurnLifecycle = ({
       yield* setStatus(rt, "error", text ?? detail);
     });
 
-  /**
-   * Puts `error` on the thread as its `lastError`, or with none, clears the one it has and its
-   * machine incident: only a turn that completes does. A failure keeps the incident apart
-   * (`incidentAfter`) and the error carries it, so a later failure never hides a lost machine.
-   * The error as kept, if any.
-   */
   const keepError = (rt: Runtime, error: ThreadError | undefined, lost?: MachineLostNote) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
@@ -367,11 +326,6 @@ export const makeTurnLifecycle = ({
       return next.lastError;
     });
 
-  /**
-   * Records how a turn failed: its kind and status in the log, never the agent's words, which may
-   * echo the request; Gram's sentence for it on the thread, before the turn ends so its
-   * observers read it. Holds the lock.
-   */
   const recordFailure = (
     rt: Runtime,
     failure: AgentFailure,
@@ -414,11 +368,6 @@ export const makeTurnLifecycle = ({
       return kept;
     });
 
-  /**
-   * The failed turn's error part, at the end of that turn's own reply once it is stored, so the
-   * reply keeps its resume anchor for a fork or a rewind. A turn that streamed no reply gets no card:
-   * a message of its own, with no anchor, would become the one those resolve against.
-   */
   const publishFailure = (
     rt: Runtime,
     error: ThreadError,
@@ -433,19 +382,16 @@ export const makeTurnLifecycle = ({
       yield* publishMessage(rt, withDataPart(reply, part), turnId);
     });
 
-  /** Publishes the activity line if it changed since clients last got one. Holds the lock. */
   const publishActivity = (rt: Runtime) =>
     Effect.gen(function* () {
       const line = rt.activity.line;
       if (line === rt.activityPublished) return;
-      // Between turns only a background subagent's line, or clearing it, reaches clients.
       if (!BUSY.has(rt.status) && !rt.activity.subagentsRunning && line !== undefined) return;
       rt.activityPublished = line;
       rt.activityPublishedAt = yield* Clock.currentTimeMillis;
       yield* hub.publish(statusEvent(rt, rt.status, line));
     });
 
-  /** At most one activity publish per `ACTIVITY_THROTTLE_MS`; the latest line wins. */
   const scheduleActivity = (rt: Runtime) =>
     Effect.gen(function* () {
       const wait = rt.activityPublishedAt + ACTIVITY_THROTTLE_MS - (yield* Clock.currentTimeMillis);
@@ -466,10 +412,6 @@ export const makeTurnLifecycle = ({
     return Duration.minutes(settings.agents.idleEvictMinutes);
   });
 
-  /**
-   * Stops the thread's session. With `when`, only if it holds, looked at under the same lock that
-   * marks the session as stopping, so nothing starts on it in between; false when it didn't.
-   */
   const stopSession = (
     rt: Runtime,
     reason: NonNullable<Runtime["stopping"]>,
@@ -487,7 +429,6 @@ export const makeTurnLifecycle = ({
         }),
       );
       if (!stop) return false;
-      // Outside the lock: the session fiber's exit handler takes it.
       yield* FiberMap.remove(sessions, rt.threadId);
       return true;
     });
@@ -541,10 +482,8 @@ export const makeTurnLifecycle = ({
       );
     });
 
-  /** `limited`: the turn stopped on a provider limit the thread now waits out (`enterWait`). */
   const finishTurn = (rt: Runtime, reason: TurnEndReason, origin: TurnEndOrigin, limited = false) =>
     Effect.gen(function* () {
-      // A compaction Gram asked for that the agent never reported still gets its marker, saying so.
       const idle = rt.turn?.idleCompaction;
       if (rt.turn !== undefined && idle !== undefined && !idle.compacted) {
         yield* appendDataPart(rt, {
@@ -560,7 +499,6 @@ export const makeTurnLifecycle = ({
         });
       }
       yield* closeOpenMessages(rt);
-      // A reply split after a steer closed with the rest; the agent's next turn opens its own.
       rt.steerSplit = undefined;
       rt.replyAliases.clear();
       const turn = rt.turn;
@@ -570,14 +508,9 @@ export const makeTurnLifecycle = ({
       yield* clearQuiet(rt);
       yield* FiberMap.remove(quietTimers, rt.threadId);
       yield* setRetrying(rt, false);
-      // Only the adapter's own word counts: a turn the host ended says nothing about whether the
-      // agent has the input, and neither does an `error` end before any of its reply.
       const taken = origin === "adapter" && reason !== "error";
       const steered = rt.carrying?.turnId === turn.id ? rt.carrying.steered : undefined;
       if (steered !== undefined && origin === "adapter" && reason === "error" && !limited) {
-        // The turn's own error isn't the steered delivery's: it waits again, as it would have
-        // behind the turn, unless a newer one under its key already does, and `build` runs again
-        // for it. A limit or a lost session fails it below, and its owner asks again.
         const delivery = rt.carrying!.delivery;
         rt.carrying = undefined;
         if (!rt.deliveries.has(steered.key)) rt.deliveries.set(steered.key, delivery);
@@ -612,11 +545,8 @@ export const makeTurnLifecycle = ({
           ? {}
           : { usage: { ...turn.usage, lastRequestAt: turn.lastInputAt } }),
       });
-      // Before the thread's status moves, so no client sees it settled on an unstamped reply. A
-      // limit stopped the turn rather than failed it: the thread waits it out and resumes.
       if (turn.reply !== undefined) {
         const end = { at: endedAt, reason: limited ? ("interrupted" as const) : reason };
-        // A label on the transcript, so nothing past this point may wait on it.
         yield* guarded(
           rt.threadId,
           "turn end stamp",
@@ -624,8 +554,6 @@ export const makeTurnLifecycle = ({
         );
       }
       yield* Deferred.succeed(turn.done, undefined);
-      // Requests belong to the turn: once it ends nothing will answer them, whether or not the agent
-      // reported them resolved.
       yield* clearPendingRequests(rt, `turn-${reason}`);
       if (rt.cwd !== undefined) {
         yield* runHook(
@@ -660,10 +588,6 @@ export const makeTurnLifecycle = ({
       );
     });
 
-  /**
-   * Opens a turn; with `adopted`, takes up one a Gram before this one opened and left open, whose
-   * agent a host kept running after it quit, under its own id and start, with no new row.
-   */
   const openTurn = (
     rt: Runtime,
     id: TurnId = makeTurnId(),
@@ -748,13 +672,10 @@ export const makeTurnLifecycle = ({
       );
     });
 
-  /** A session's first message creates its transcript, so from then on it can be resumed. */
   const markSessionUsed = (rt: Runtime) =>
     Effect.gen(function* () {
       const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
       if (thread.agentSessionUnused !== true) return;
-      // Cleared on the row the update reads, not on `thread`: an edit committed since (a rename)
-      // would be written back over.
       const updated = yield* store
         .updateThread(rt.threadId, (current) => {
           const { agentSessionUnused: _, ...used } = current;

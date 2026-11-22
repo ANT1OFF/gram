@@ -285,7 +285,6 @@ type AgentKindOption = Parameters<Api["listModels"]>[0];
 
 class Interrupted extends Error {}
 
-/** A refusal shaped as the server's `InvalidState`. */
 const refuse = (message: string) => Object.assign(new Error(message), { _tag: "InvalidState" });
 
 const stampSubagentStart = (
@@ -299,7 +298,6 @@ const stampSubagentStart = (
   return { ...chunk, data: { ...chunk.data, startedAt } };
 };
 
-/** The `messages` head the server sends for `messages`: their last `FEED_WINDOW_TURNS` turns. */
 const windowed = (messages: readonly GramUIMessage[]): ThreadFeedEvent => {
   const recent = recentTurns(messages, FEED_WINDOW_TURNS);
   return {
@@ -309,7 +307,6 @@ const windowed = (messages: readonly GramUIMessage[]): ThreadFeedEvent => {
   };
 };
 
-/** The server's `samePath` without the filesystem: separators, trailing slashes and case. */
 const pathKey = (path: string) => path.replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
 
 const SCRIPTS: Record<string, Script> = {
@@ -318,7 +315,6 @@ const SCRIPTS: Record<string, Script> = {
   "t-background": backgroundSubagentScript,
 };
 
-/** Points a draft's staged attachments at the new thread's folder, as the server moves them there. */
 const adoptDraft = (
   input: UserInput,
   draftId: string | undefined,
@@ -378,20 +374,16 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const calm = mockStartsRealistic();
     for (const summary of calm ? calmSeeds(seeds) : seeds) {
       if (closedEarlier.has(summary.thread.id)) continue;
-      // `t-flaky`'s worktree has uncommitted work, so closing it with removal needs a force.
       const git = mockGitState(
         summary.thread.id,
         this.#pullRequests.reviewState(summary.thread.id),
       );
-      // Sessions that have run report their identity; cold ones haven't started yet.
       const runtime = this.#add({
         ...summary,
         capabilities: MOCK_CAPABILITIES,
         ...(summary.status === "cold" ? {} : { identity: IDENTITY }),
         ...(git ? { git } : {}),
       });
-      // `messages` starts a subscription in the fold, so it's caught up again afterwards.
-      // A seed calmed of its question or plan reads as answered: the reply it brought follows.
       const messages = seedMessages(summary.thread.id);
       runtime.fold.apply({
         type: "messages",
@@ -399,7 +391,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       });
       runtime.fold.apply({ type: "caughtUp", rev: this.#rev });
     }
-    // Seeded pending requests resume the conversation when answered.
     this.#waiters.set(
       "r-question",
       (answer) =>
@@ -525,7 +516,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const orchestration = createOrchestrationMock(this.world, {
       orchestration: this.#orchestration,
       adoptDraft: (input, draftId, threadId) => {
-        // As the server does, the draft's files move into the thread that takes the task.
         const adopted = adoptDraft(input, draftId, threadId);
         this.#composer.moveUploads(input.attachments, adopted.attachments);
         return adopted;
@@ -545,7 +535,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
         orchestration: this.#orchestration,
       }),
       ...orchestration,
-      // A workspace the mock starts with is listed once it is there, as a relaunch would find it.
       listWorkspaces: async () => {
         await this.#starting;
         return orchestration.listWorkspaces();
@@ -646,12 +635,10 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
         const rev = ++this.#rev;
         runtime.resetRev = rev;
         runtime.revs = new Map(event.messages.map((m) => [m.id, rev]));
-        // Like the server: a live replace-all is a head of its own, ending with `caughtUp`.
         events.push(event, { type: "caughtUp", rev });
         break;
       }
       case "chunk":
-        // The server stores a message as it streams; its end is the write that counts here.
         if (event.chunk.type === "finish" || event.chunk.type === "abort") {
           runtime.revs.set(event.messageId, ++this.#rev);
         }
@@ -660,7 +647,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     }
     for (const e of events) {
       runtime.fold.apply(e);
-      // The mock's own fold keeps everything; subscribers get the window, as from the server.
       const sent = e.type === "messages" ? windowed(e.messages) : e;
       for (const channel of runtime.subscribers) channel.push(sent);
     }
@@ -681,7 +667,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const { compaction: _was, ...rest } = runtime.summary;
     runtime.summary = { ...rest, status, ...(compaction === undefined ? {} : { compaction }) };
     const threadId = runtime.summary.thread.id;
-    // A snoozed thread that asks something or fails is back then, as the server brings it.
     if (status === "needsApproval" || status === "needsInput" || status === "error") {
       this.#endSnooze(threadId);
     }
@@ -691,9 +676,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       status,
       ...(detail === undefined ? {} : { detail }),
       ...(compaction === undefined ? {} : { compaction }),
-    }); // A thread at work has a session, which reported its identity (and what its agent can do) as
-    // it opened: a scenario's worker set running by hand is one too. A card alone isn't: an
-    // independent approval comes to a thread at rest.
+    });
     if (status === "starting" || status === "running") this.#ensureIdentity(runtime);
   }
 
@@ -781,7 +764,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
           await this.#delay(step.ms);
           break;
         case "gate":
-          // Only a page that opted in holds; dev use and unit tests run straight through.
           if (typeof window === "undefined" || window.gramMockHoldGates !== true) break;
           if (this.#released.delete(step.name)) break;
           runtime.heldAt = step.name;
@@ -796,7 +778,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
           this.#setPlans(runtime, { turnPlan: step.items });
           break;
         case "background": {
-          // A task keeps the start it was first listed with, as the adapter stamps it.
           const since = new Map((runtime.summary.background ?? []).map((t) => [t.taskId, t]));
           this.#setBackground(
             runtime,
@@ -925,11 +906,9 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   /** `delivery` marks a message steered into the turn that was running, as the server's does. */
   async #turn(threadId: ThreadId, input: UserInput, delivery?: "steer" | "interrupt") {
     const runtime = this.#runtime(threadId);
-    // No session yet and nothing said: this turn opens the session first.
     const fresh =
       runtime.summary.identity === undefined && runtime.fold.store.getState().messages.length === 0;
     this.#ensureIdentity(runtime);
-    // As the server's `withWaitNote`: the user's own message tells a plain thread or a worker.
     const waitNote =
       input.origin === undefined &&
       input.notice === undefined &&
@@ -956,7 +935,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       ],
     });
     this.#update(runtime, { lastActivityAt: Date.now() });
-    // The real agent runs `/model` itself and the server moves the thread's model to follow it.
     const switched = modelCommand(input.text);
     if (switched !== undefined) {
       await this.setModel(threadId, { ...runtime.summary.thread.model, model: switched });
@@ -967,9 +945,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       await this.#continue(threadId, compactScript(runtime.summary.usage, this.#ids));
       return;
     }
-    // A seeded thread plays its script on the first turn; later turns get the echo reply.
     const answered = runtime.fold.store.getState().messages.some((m) => m.role === "assistant");
-    // A worker's first turn waits for its session to open, as a real one's does.
     const opening = fresh && runtime.summary.thread.spawnedBy !== undefined;
     const script =
       (!answered && SCRIPTS[threadId]) ||
@@ -993,7 +969,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     runtime.turnUsage = undefined;
     if (reply === undefined) return;
     const turnEnd = { at: Date.now(), reason };
-    // The reply keeps the turn's tokens and context, never the thread's dollars.
     const kept =
       usage === undefined
         ? {}
@@ -1009,12 +984,10 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
 
   async #continue(threadId: ThreadId, steps: Step[]) {
     const runtime = this.#runtime(threadId);
-    // The error a turn that completes clears: one an earlier turn left, not one made meanwhile.
     const earlier = runtime.summary.thread.lastError;
     runtime.running = true;
     try {
       await this.#runSteps(runtime, steps);
-      // What was steered in is answered in the same turn, before it ends.
       for (let next = runtime.steeredInTurn?.shift(); next; next = runtime.steeredInTurn?.shift()) {
         await this.#runSteps(runtime, echoScript(next, this.#ids));
       }
@@ -1031,20 +1004,17 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     runtime.steer = undefined;
     runtime.steerDelivery = undefined;
     runtime.interrupted = false;
-    // A steer that came after the turn's last step goes as the turn after, as the CLI runs one.
     this.#stampTurnEnd(
       runtime,
       interrupted || (steer !== undefined && delivery === "interrupt")
         ? "interrupted"
         : "completed",
     );
-    // `#stopInMissingFolder` stopped it and rested the thread cold: nothing more runs there.
     if (runtime.folderGone === true) {
       runtime.folderGone = false;
       this.#update(runtime, { lastActivityAt: Date.now() });
       return;
     }
-    // As the server: a turn that completes clears the error an earlier one left.
     if (
       !steer &&
       !interrupted &&
@@ -1085,9 +1055,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       throw new Error(`NotFound: queueItem ${itemId}`);
     }
   }
-
-  // -------------------------------------------------------------------------------------------
-  // Api
 
   readonly #connection = createConnectionMonitor();
 
@@ -1159,8 +1126,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const inflight = runtime.inflight;
     const all = runtime.fold.store.getState().messages;
     const stored = all.filter((m) => !inflight.has(m.id));
-    // Resumes as the server does: from a revision it issued, after the history was last replaced,
-    // from the oldest message the client holds.
     const afterRev = resume?.afterRev;
     const from = resume?.from === undefined ? 0 : all.findIndex((m) => m.id === resume.from);
     if (
@@ -1191,7 +1156,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
 
   /** The project for `root`, recorded as just opened (and created on first use), as the server does. */
   #openProject(input: string): Project {
-    // Like the server, a missing or unreadable folder rejects with NotFound / InvalidState.
     const root = resolveMockFolder(input);
     const existing = this.#projects.find((p) => p.root === root);
     const project = existing
@@ -1219,7 +1183,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     if (input.checkout.kind === "existingWorktree") {
       const { threads } = await this.checkoutUsers(input.checkout.path);
       if (threads.length > 0) {
-        // The server's one-thread-per-worktree refusal.
         throw Object.assign(new Error("a thread is already open in that checkout"), {
           _tag: "CheckoutInUse",
           path: input.checkout.path,
@@ -1229,7 +1192,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     if (input.checkout.kind === "machineFolder") return this.#createOnMachine(input, model);
     const project = this.#openProject(input.projectRoot);
     if (input.checkout.kind === "newWorktree" && !isMockRepo(project.root)) {
-      // The server's `worktrees.create` answer for a folder without git.
       throw Object.assign(new Error("repoPath is not a git repository"), { _tag: "GitError" });
     }
     const branch = input.checkout.kind === "newWorktree" ? input.checkout.branch : "main";
@@ -1361,11 +1323,9 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   async send(threadId: ThreadId, input: UserInput) {
     const runtime = this.#runtime(threadId);
     this.#refuseMissingFolder(runtime);
-    // As the server's `userTyped`: a notice or another thread's message is not the user stepping in.
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
     }
-    // As the server: what is sent to a thread that waits for its machine waits in its queue.
     if (runtime.running || runtime.summary.thread.awaitingMachine !== undefined) {
       this.#setQueue(runtime, [
         ...runtime.summary.queue,
@@ -1379,7 +1339,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
 
   async steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }) {
     const runtime = this.#runtime(threadId);
-    // As the server's: a turn whose folder is gone is being stopped, so it takes nothing more.
     this.#refuseMissingFolder(runtime);
     if (input.origin === undefined && input.notice === undefined) {
       this.#orchestration.userTyped(threadId);
@@ -1390,8 +1349,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     }
     runtime.steer = input;
     runtime.steerDelivery = options?.interrupt === true ? "interrupt" : "steer";
-    // As the server's: an interrupt past a card is a stop, the message going once the turn ends. A
-    // plain steer waits for the card's answer.
     if (options?.interrupt === true && runtime.summary.pendingRequests.length > 0) {
       await this.interrupt(threadId);
     }
@@ -1401,9 +1358,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const runtime = this.#runtime(threadId);
     if (!runtime.running) return;
     runtime.interrupted = true;
-    // A turn held at a gate stops there, as a real turn stops wherever it is.
     if (runtime.heldAt !== undefined) this.release(runtime.heldAt);
-    // As the server's, Stop answers every open card.
     const { thread, pendingRequests } = runtime.summary;
     for (const request of pendingRequests) {
       this.#waiters.delete(request.id);
@@ -1611,7 +1566,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       seed.worker !== undefined && state !== undefined && orchestrator !== undefined
         ? { ...seed.worker, orchestrator }
         : undefined;
-    // Started before its machine: on no machine, its messages in its queue, nothing said yet.
     const awaiting = seed.worker === undefined ? seed.awaitingMachine : undefined;
     const thread: Thread = {
       id,
@@ -1868,7 +1822,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
 
   #setBackground(runtime: ThreadRuntime, tasks: readonly BackgroundTask[]) {
     const { background: _previous, backgroundOutput: outputs, ...rest } = runtime.summary;
-    // A task's output goes with it, as on the server.
     const kept = (outputs ?? []).filter((each) =>
       tasks.some((task) => task.taskId === each.taskId),
     );
@@ -2049,7 +2002,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
             previousAgent: from,
             previousModel: thread.model.model,
             model: target.model,
-            // A seeded thread has had turns but no session id of its own in the mock.
             previousAgentSessionId: thread.agentSessionId ?? `mock-session-${thread.id}`,
             noteMode,
             ...(limit === undefined ? {} : { limit }),
@@ -2161,7 +2113,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   async threadBrowserStatus(threadId: ThreadId): Promise<ThreadBrowserStatus> {
     const thread = this.#runtime(threadId).summary.thread;
     const settings = await this.#settings.get();
-    // A cold fork resumes its source in the source's home (the mock keeps no anchors).
     const home =
       thread.codexHome ??
       (thread.agentSessionId === undefined ? thread.forkedFrom?.codexHome : undefined);
@@ -2284,7 +2235,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     setStatus: (threadId, status, detail) =>
       this.#setStatus(this.#runtime(threadId), status, detail),
     setGit: (threadId, given) => {
-      // Like the server's publisher, an orchestrator is sent its checkout's state without the PR.
       const orchestrator = this.#runtime(threadId).summary.thread.role === "orchestrator";
       const { pr: _pr, extraPrs: _extras, prElsewhere: _elsewhere, ...rest } = given;
       const state = orchestrator ? rest : given;
@@ -2565,7 +2515,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       aheadBase: 0,
       conflicts: false,
     };
-    // Restored from the branch's commits: what was uncommitted is gone.
     const restored: GitState = { ...git, changedFiles: 0 };
     runtime.summary = { ...runtime.summary, git: restored };
     this.#emit({ type: "git.state", threadId, state: restored });
@@ -2605,7 +2554,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       this.#goneFolders.add(pathKey(checkout.path));
     }
     this.#missingFolders.delete(threadId);
-    // Like the server, the conversation stays while the thread is on the closed list.
     this.#closedHistory.set(threadId, runtime.fold.store.getState().messages);
     const listed = this.#closed.ids();
     for (const id of this.#closedHistory.keys())
@@ -2720,7 +2668,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       this.#closedWorkers.delete(thread.id);
       return { closed, thread, ...(membership === undefined ? {} : { membership }) };
     } catch (error) {
-      // As the server: a reopen that fails puts the entry back for the next try.
       this.#closed.restore(newest.thread, newest.closedAt);
       throw error;
     }
@@ -2738,7 +2685,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     if (options.fromMessageId !== undefined) {
       const index = messages.findIndex((m) => m.id === options.fromMessageId);
       if (index === -1) throw new Error(`NotFound: message ${options.fromMessageId}`);
-      // Like the server, a fork point is a reply the agent has reported its own ids for.
       if ((messages[index]!.metadata?.agentMessageIds?.length ?? 0) === 0) {
         throw new Error("InvalidState: that message can't be forked from");
       }
@@ -2810,12 +2756,9 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   async queueSteer(threadId: ThreadId, itemId: QueueItemId) {
     const runtime = this.#runtime(threadId);
     this.#queueItem(runtime, itemId);
-    // As the server: refused as a send there would be, into a running turn too.
     this.#refuseMissingFolder(runtime);
     const item = runtime.summary.queue.find((q) => q.id === itemId);
-    // As the server: a thread that waits for its machine holds its queue until it is placed.
     if (runtime.summary.thread.awaitingMachine !== undefined) return;
-    // As the server: only the user's own words go in past a card, whoever pressed Steer.
     const status = runtime.summary.status;
     if (
       (status === "needsApproval" || status === "needsInput") &&
@@ -2826,7 +2769,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
         "only your own message goes in past a card; this one waits for the turn to end",
       );
     }
-    // As the server: with nothing running there is nothing to steer into, so it goes now.
     if (!runtime.running) {
       this.#setQueue(
         runtime,
@@ -2866,7 +2808,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       this.#projects.find((p) => p.id === runtime.summary.thread.projectId) ?? PROJECTS[0]!;
     return this.createThread({
       projectRoot: project.root,
-      // As the server does: a worktree of its own unless the chip asks to share this one.
       checkout:
         chip.checkout === "current"
           ? { kind: "current" }
@@ -2895,7 +2836,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const messages = runtime.fold.store.getState().messages;
     const index = messages.findIndex((m) => m.id === toMessageId);
     if (index === -1) throw new Error(`NotFound: message ${toMessageId}`);
-    // An assistant target is kept; a user target is dropped, since an edit replaces it.
     const kept = messages.slice(0, messages[index]!.role === "user" ? index : index + 1);
     runtime.inflight.clear();
     this.#feed(runtime, { type: "messages", messages: kept });
@@ -3135,8 +3075,6 @@ export function createMockApi(options: MockApiOptions = {}) {
   const agentBrowse = createAgentBrowseMock((threadId, request, onAnswer) =>
     core.simulateRequest(threadId, request, onAnswer),
   );
-  // One spread object and a two-argument `Object.assign`: past three sources `Object.assign` falls
-  // back to an overload returning `any`, which would pass `satisfies Api` unchecked.
   const owned = core.ownedApis();
   const slices = {
     ...owned,
@@ -3156,8 +3094,6 @@ export function createMockApi(options: MockApiOptions = {}) {
     /** Local browser-shell stand-ins; hosted flags never change available bridge members. */
     shell: {
       ...agentBrowse.shell,
-      // A browser tab on a server that runs its own browser has no shell to draw a page. Typed as
-      // there, since every spec but that scene's reads it.
       preview: (mockServerBrowser() ? undefined : new MockPreview()) as MockPreview,
       pages: new MockPages(),
     },
@@ -3175,10 +3111,6 @@ export type MockApi = ReturnType<typeof createMockApi>;
 /** What `window.gramMock` offers beyond `Api`: the dev and e2e scenario controls. */
 export type MockControls = Omit<MockApi, keyof Api>;
 
-/**
- * `input` as the server's `authored` marks it: Gram's with a notice, the user's unless another
- * thread sent it, which is what lets the user's own queued words, and only those, past a card.
- */
 function authoredInput(input: UserInput): UserInput {
   if (input.author !== undefined) return input;
   if (input.notice !== undefined) return { ...input, author: "server" };

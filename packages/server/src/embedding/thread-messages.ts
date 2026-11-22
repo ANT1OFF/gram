@@ -1,47 +1,3 @@
-// `POST /embed/v1/thread-messages` and `POST /embed/v1/thread-interrupt`: a person's message into
-// one thread, and stopping its turn, asked for by the platform the server is embedded in on behalf
-// of a person it signed in. It is how a person's own API or MCP client writes in a thread without a
-// browser: the platform decided that the person may, and names them.
-//
-//   thread-messages  { "threadId", "person": { "id", "name"? }, "text", "key", "mode"?,
-//                      "conversation"?: { "id", "label"? } }
-//     → 200 { "queued": false }                 sent now, or steered into the running turn
-//       200 { "queued": true }                  a turn was running: it waits behind it
-//   thread-interrupt { "threadId", "person": { "id", "name"? } }
-//     → 200 { "interrupted": true }
-//   thread-fresh-session { "threadId", "person": { "id", "name"? }, "checkpoint"?, "model"? }
-//     → 200 { "started": true }                 an orchestrator's fresh session is under way, or
-//                                               any other thread's, on `model`
-//   thread-resume-machine-lost { "threadId", "person": { "id", "name"? } }
-//     → 200 { "resumed": true }                 the conversation a lost machine cut off goes on
-//   each → 404 no such thread, 409 { "error" } one that can't take it now, 400 a body that isn't one
-//
-// An orchestrator's fresh session (`orchestrator.handoff`, the web app's Fresh session) replaces
-// its agent session, with memory, charter and ledger as the bridge. Any other thread's needs a
-// `model` and is its menu's Start fresh in… (`thread.startFreshOn`): a new session on that model in
-// the same thread, which reads the recent turns; `checkpoint` doesn't apply to it.
-// `checkpoint` (default true) has the orchestrator save to memory first; false is a hard cut.
-// `model` (a `ModelRef`) opens the fresh session on it, and it becomes the workspace's orchestrator
-// model: the way onto a model the running session can't carry over to.
-//
-// A resume after a lost machine is the web app's Resume worker (`thread.resumeAfterMachineLost`):
-// the same conversation is told what was cut off, and opens again once the machine is back. It is
-// refused (409) for a thread whose last turn a lost machine didn't end.
-//
-// The message is the person's, exactly as one they typed in the web app: the same receipt, so a
-// `key` sent again is one message (`thread.send`'s `clientMessageId`), the same record of who
-// acted, and the same rule for a machine started for one person, which only that person reaches.
-// `mode` is `queue` (the default, `thread.send`), `steer` (into the running turn, cancelling
-// nothing) or `interrupt` (the turn stops and the agent answers this); a steer on a thread with no
-// turn it can take it in is sent as `queue` would.
-//
-// `conversation` names the host's own conversation the message came from (a chat thread, say):
-// the transcript shows where it came from, the agent is told so it can `reply` there, and the
-// thread owns the conversation unless another open thread does (`conversations.ts`).
-//
-// The platform is trusted to say who the person is, as it is when it starts a thread for one
-// (`/threads/from-profile`'s `startedBy`): it proves itself with the embed token, never a cookie.
-
 import { readableByOf, readerMay } from "./readable-by.ts";
 import {
   type ConversationRef,
@@ -74,13 +30,11 @@ export const THREAD_MESSAGE_MODES = ["queue", "steer", "interrupt"] as const;
 export type ThreadMessageMode = (typeof THREAD_MESSAGE_MODES)[number];
 
 const THREAD = /^[A-Za-z0-9_.:-]{1,200}$/;
-/** As `thread.send`'s `clientMessageId`. */
 const KEY = /^[A-Za-z0-9_-]{1,128}$/;
 const PERSON = /^[A-Za-z0-9_.:@|-]{1,200}$/;
 
 const sendRpc = [...ThreadRpcs.requests.values()].find((rpc) => rpc._tag === "thread.send")!;
 
-/** The person a call names, or why the body doesn't name one. */
 const personOf = (value: unknown): Actor | string => {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return "`person` is the person the platform signed in, with their `id`";
@@ -91,7 +45,6 @@ const personOf = (value: unknown): Actor | string => {
   return { id, name: typeof name === "string" ? name.trim() : id, role: "member" };
 };
 
-/** The answer to a failure the runtime names, in its own words. */
 const failed = (error: { readonly _tag: string; readonly message?: string }): EmbedAnswer =>
   error._tag === "ThreadNotFound"
     ? refusal(404, "there is no such thread")
@@ -108,10 +61,6 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const conversations = Option.getOrUndefined(yield* Effect.serviceOption(Conversations));
 
-    /**
-     * `effect` as `person`, for the thread: refused for a thread on a machine started for someone
-     * else, and recorded as theirs once it has run, as the RPC guard records a person's call.
-     */
     const asPerson = <A, E>(
       person: Actor,
       threadId: ThreadId,
@@ -122,8 +71,6 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
       Effect.gen(function* () {
         if (!(yield* mayReachThread(store.getThread, ownerOf, threadId)))
           return "not-yours" as const;
-        // A thread readable by one person takes what is sent, interrupted or restarted for them
-        // alone (`embedding/readable-by.ts`).
         if (!readerMay({ subject: person.id }, readableByOf(threadId))) return "not-yours" as const;
         const result = yield* effect;
         yield* store.appendActorEvents(actorEventsOf(person, action, payload, Date.now(), result));
@@ -170,7 +117,6 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
                 },
               }),
         };
-        // A steer the thread can't take now (no turn running, or an agent that can't) is sent.
         const deliver =
           mode === "queue"
             ? runtimes.send(id, input)
@@ -180,9 +126,6 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
                   Effect.as({ queued: false }),
                   Effect.catchTag("InvalidState", () => runtimes.send(id, input)),
                 );
-        // One receipt per key, as the web app's: sent again, it answers what the first did.
-        // The thread takes the conversation as the message goes in, and keeps it if it can't be
-        // sent now: the host routed the conversation here.
         const received = store.messageReceipt(
           id,
           key,
@@ -256,7 +199,6 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         const id = threadId as ThreadId;
         const thread = Option.getOrUndefined(yield* store.getThread(id).pipe(Effect.option));
         if (thread === undefined) return refusal(404, "there is no such thread");
-        // Any other thread starts fresh only onto a model, as its own menu does (`startFreshOn`).
         if (thread.role !== "orchestrator") {
           if (model === undefined)
             return refusal(

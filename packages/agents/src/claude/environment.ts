@@ -102,7 +102,6 @@ export const withOAuthToken = (
     ? prepared
     : { ...prepared, env: { ...tokenChildEnv(prepared.env), [OAUTH_TOKEN_VAR]: token } };
 
-/** The environment Gram's process has, without unset entries. */
 const inheritedEnv = () =>
   Object.fromEntries(
     Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
@@ -163,11 +162,6 @@ export const resolveClaudeCli = (
     return { binaryPath: binary.path, env: buildChildEnv(probed.env) };
   });
 
-/**
- * Whether the Agent SDK can find the CLI it bundles for this platform. It looks from its own module,
- * which in the desktop's server bundle is this file's too, so both bases are tried: this module
- * (bundled) and the SDK's entry (running from source). A packaged app ships neither.
- */
 const hasBundledCli = (): boolean => {
   const cli = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}/claude${process.platform === "win32" ? ".exe" : ""}`;
   const bases = [
@@ -179,7 +173,6 @@ const hasBundledCli = (): boolean => {
       createRequire(base()).resolve(cli);
       return true;
     } catch {
-      // Not resolvable from this base; a CommonJS bundle has no `import.meta.resolve` at all.
       return false;
     }
   });
@@ -264,7 +257,6 @@ export const ClaudeEnvironmentLive = (
       const checkAuth = (prepared: PreparedClaude) => Effect.asVoid(checked(prepared));
 
       const prepared = yield* resettableOnSuccess(prepare);
-      // Read after the cache, so a token set or forgotten applies to the next session.
       const oauthToken = config.oauthToken;
       return {
         prepare:
@@ -273,7 +265,6 @@ export const ClaudeEnvironmentLive = (
             : prepared.get.pipe(
                 Effect.flatMap((ready) =>
                   Effect.try(() => withOAuthToken(ready, oauthToken())).pipe(
-                    // A token that can't be read leaves the machine on its own sign-in.
                     Effect.orElseSucceed(() => ready),
                   ),
                 ),

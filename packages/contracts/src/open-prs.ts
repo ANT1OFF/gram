@@ -1,7 +1,3 @@
-// The Open PRs list as the user sees it, reconciled from the poll's own PRs and the badges the
-// threads carry. The sidebar and `list_open_prs` both go through `reconcileOpenPrs`, so an agent is
-// never told of a list other than the one on screen.
-
 import type { Thread } from "./domain.ts";
 import { repoFromPrUrl, type GitState, type PrStatus } from "./git.ts";
 import type { ThreadId } from "./ids.ts";
@@ -23,13 +19,11 @@ export interface OpenPrThread {
 
 const urlKey = (url: string) => url.toLowerCase();
 
-/** The PR badges a thread's git state carries, its extra PRs' included. */
 const badgesOf = (git: OpenPrThread["git"]): PrStatus[] => [
   ...(git?.pr === undefined ? [] : [git.pr]),
   ...(git?.extraPrs ?? []),
 ];
 
-/** The review bot as a row shows it, from a badge's review state; absent when it says nothing. */
 const botOf = (badge: PrStatus): OwnPr["bot"] =>
   badge.review?.latestVerdict === undefined
     ? undefined
@@ -57,13 +51,6 @@ export function badgeRow(badge: PrStatus): OwnPr | undefined {
   };
 }
 
-/**
- * The badge saw GitHub later than `stamp`, the PR's `updatedAt` as the read it is compared with
- * saw it. Neither read says when it ran, and a quiet thread's badge can be ten minutes old
- * (`lookupEvery`), so the PR's own `updatedAt` decides: only a badge that saw a change that read
- * hadn't is newer. A tie goes to the poll, which ran on a schedule a badge's lookup needn't have
- * kept, and a badge carried over failed refreshes is never newer.
- */
 const badgeNewerThan = (stamp: string, badge: PrStatus): boolean =>
   badge.stale === undefined &&
   badge.updatedAt !== undefined &&
@@ -120,11 +107,6 @@ export function withBadge(pr: OwnPr, badge: PrStatus | undefined): OwnPr {
   };
 }
 
-/**
- * Whether `badge` says more of its PR than `held` does: one carried over failed refreshes loses to
- * one that isn't, and between those the later `updatedAt` wins. A tie keeps `held`, which came
- * from the more recently active thread.
- */
 const fresherBadge = (badge: PrStatus, held: PrStatus): boolean => {
   if ((badge.stale === undefined) !== (held.stale === undefined)) return badge.stale === undefined;
   return (badge.updatedAt ?? "").localeCompare(held.updatedAt ?? "") > 0;
@@ -148,8 +130,6 @@ export function reconcileOpenPrs(
     ({ thread, git, origin }) => prOwnerCandidate(thread, git, origin) ?? [],
   );
   const badges = new Map<string, PrStatus>();
-  // Two threads can carry the same PR's badge, read at different times; the freshest speaks for
-  // it, whoever owns it, so an old OPEN badge can't hide a later MERGED one.
   for (const { git } of byActivity) {
     for (const badge of badgesOf(git)) {
       const held = badges.get(urlKey(badge.url));

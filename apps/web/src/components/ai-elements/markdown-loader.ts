@@ -6,11 +6,6 @@ import type * as Markdown from "./markdown";
 
 type MarkdownModule = typeof Markdown;
 
-/**
- * The module once loaded; `failed` once a load failed, until the next try. `plain` while it is
- * still loading over a slow link: text shows unstyled there and restyles when the module arrives,
- * since the renderer is a fifth of a megabyte and the wait for it is seconds, not a frame.
- */
 type MarkdownState = {
   readonly module?: MarkdownModule;
   readonly failed?: true;
@@ -19,7 +14,6 @@ type MarkdownState = {
 
 let state: MarkdownState = {};
 let slow: boolean | undefined;
-/** Asked once, when a transcript first wants the renderer: the window's own files have arrived by then. */
 const slowLink = () => (slow ??= thisLinkIsConstrained());
 let loading: Promise<MarkdownModule> | undefined;
 const listeners = new Set<() => void>();
@@ -71,6 +65,5 @@ export function useMarkdown(start = true): MarkdownState {
 }
 
 const PLAIN: MarkdownState = { plain: true };
-/** Stable between changes, as `useSyncExternalStore` needs. */
 const snapshot = (): MarkdownState =>
   state.module === undefined && state.failed === undefined && slowLink() ? PLAIN : state;

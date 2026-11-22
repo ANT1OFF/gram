@@ -47,7 +47,6 @@ import {
 import { RestoreWorktreeResult, WorktreeRemoval } from "../worktrees.ts";
 import { PositiveInt, errors, threadRef } from "./shared.ts";
 
-/** Stable per logical message, reused on every transport retry. */
 const clientMessageId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/));
 
 /** Threads: their lifecycle, turns, queue, feed and history, and what the sidebar asks of them. */
@@ -78,19 +77,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: Thread,
     error: errors(NotFound, AgentUnavailable, GitError, InvalidState, CheckoutInUse),
   }),
-  /**
-   * Starts a thread from a profile supplied whole (`ThreadProfile`): its charter, files and
-   * skills, agent and model, its one MCP server, its autonomy and where it works. One of the
-   * hosted features: `InvalidState` unless `experimental.embedding` is on, and for a profile that
-   * can't be applied, naming why, with nothing made. `profile` is decoded strictly by the handler
-   * (`decodeThreadProfile`), so a key this version doesn't know is refused rather than dropped.
-   *
-   * `threadId` is the caller's own id for the thread, a UUID it made before asking, so a start it
-   * asks for again makes one thread: when a thread started from a profile already has that id, it
-   * is answered as it is and nothing is made, whatever profile came this time. A signed-in person
-   * (fronted sign-in) names no id: theirs is refused, so no id a person picks can pass for a later
-   * start by the embedding host's service.
-   */
   Rpc.make("thread.createFromProfile", {
     payload: { profile: Schema.Unknown, threadId: Schema.optionalKey(ThreadId) },
     success: Thread,
@@ -101,10 +87,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: SendResult,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
-  /**
-   * Into the running turn: after the tool calls under way, cancelling nothing; with `interrupt`, the
-   * turn stops now and the agent answers it (refused where the agent can't, `steerInterrupt`).
-   */
   Rpc.make("thread.steer", {
     payload: {
       ...threadRef,
@@ -118,71 +100,35 @@ export const ThreadRpcs = RpcGroup.make(
     payload: threadRef,
     error: errors(ThreadNotFound, InterruptHung),
   }),
-  /** Resumes a thread waiting out a provider limit (`Thread.limitWait`) now; nothing without one. */
   Rpc.make("thread.resumeLimitWait", { payload: threadRef, error: errors(ThreadNotFound) }),
-  /**
-   * Resumes a thread whose last turn was cut off by a lost machine (`ThreadError.machineLost`): the
-   * same conversation gets Gram's note of what happened, which brings the machine back and its
-   * folder as last kept. Nothing for a thread whose last error wasn't that.
-   */
   Rpc.make("thread.resumeAfterMachineLost", {
     payload: threadRef,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
-  /**
-   * Makes the thread's folder on its machine from its branch without the work its last stop kept,
-   * which is gone from the remote (`ThreadError.code` `kept-work-gone`): what a person chooses when
-   * that work can't be got back. Resumes each joined machine the thread is held off for that reason;
-   * `InvalidState` when it isn't, or the machine couldn't do it.
-   */
   Rpc.make("thread.restoreFromBranch", {
     payload: threadRef,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * The diff behind `Thread.savedWork`, as the machine last sent it: readable while the machine is
-   * away. `saved` is absent once Gram restarted since (the record outlives it, the diff doesn't),
-   * or when nothing of the thread was saved.
-   */
   Rpc.make("thread.savedDiff", {
     payload: threadRef,
     success: Schema.Struct({ saved: Schema.optionalKey(SavedDiff) }),
     error: errors(ThreadNotFound),
   }),
-  /** Stops a thread's limit wait: no resume comes, and it stands failed until the user sends. */
   Rpc.make("thread.cancelLimitWait", { payload: threadRef, error: errors(ThreadNotFound) }),
-  /**
-   * Stops the thread's agent session and opens it again on the same conversation, so the agent
-   * reads its settings, MCP servers, connectors, instructions, skills and CLI from disk afresh. A
-   * thread with no session open but a conversation has one opened. `midTurn` says what a running
-   * turn gets, `afterTurn` when absent. `InvalidState` for a closed thread, one whose folder is
-   * gone, and one whose session is still starting.
-   */
   Rpc.make("thread.restartSession", {
     payload: { ...threadRef, midTurn: Schema.optionalKey(RestartMidTurn) },
     success: RestartSessionResult,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * Opens a cold thread's agent session with no turn, connecting its MCP servers as a message
-   * would, so its Connectors tab can list them live. `InvalidState` for a closed or archived
-   * thread, a dream, and one whose folder is gone.
-   */
   Rpc.make("thread.startSession", {
     payload: threadRef,
     success: StartSessionResult,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /** Stops one of the agent's background tasks; its end arrives as a `thread.background` without it. */
   Rpc.make("thread.stopTask", {
     payload: { ...threadRef, taskId: Schema.String },
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
-  /**
-   * Answers a card, naming it by `shown`, its key as it was listed: only that card takes it,
-   * `RequestNotFound` once the agent has asked again under the id. An answer that names no card
-   * is refused (`InvalidState`) for one that has a key; a card the server raised has none.
-   */
   Rpc.make("thread.respond", {
     payload: {
       ...threadRef,
@@ -192,12 +138,6 @@ export const ThreadRpcs = RpcGroup.make(
     },
     error: errors(ThreadNotFound, RequestNotFound, InvalidState),
   }),
-  /**
-   * Several answers in one round trip, for the approvals inbox that answers a group of identical
-   * requests at once. They are given in order, and one that fails
-   * (a request already answered, a thread since closed) says so in its own row without stopping
-   * the rest, so the call itself only fails when the payload doesn't decode.
-   */
   Rpc.make("thread.respondMany", {
     payload: {
       answers: Schema.Array(
@@ -220,22 +160,11 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, model: ModelRef },
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
-  /**
-   * Starts the thread fresh on `model` in the same thread and checkout, where its session can't
-   * carry over (`thread.switchAgent` refuses): the new session reads the thread's recent turns
-   * ahead of its first input, and a divider marks it. An orchestrator's goes through
-   * `orchestrator.handoff` with its model. `InvalidState`: it can't now, with why.
-   */
   Rpc.make("thread.startFreshOn", {
     payload: { ...threadRef, model: ModelRef },
     success: Thread,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * Moves the thread to the other agent on `target`: a fresh session there, with a divider in the
-   * transcript. Returns once the switch is claimed; `sessionSwitch` follows it. On a failed switch
-   * it tries again, onto `target`. `InvalidState`: the thread can't move now, with why.
-   */
   Rpc.make("thread.switchAgent", {
     payload: {
       ...threadRef,
@@ -250,7 +179,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: Thread,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),
-  /** `InvalidState`: a turn is running, or the message has no agent ids to resume from. */
   Rpc.make("thread.fork", {
     payload: {
       ...threadRef,
@@ -274,12 +202,6 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, toMessageId: MessageId, files: Schema.Boolean },
     error: errors(ThreadNotFound, InvalidState, GitError),
   }),
-  /**
-   * Puts the files one finished turn changed back as they were before it, and only those, leaving a
-   * `turn-undo` receipt in the transcript. Refused (`InvalidState`, nothing touched) while the agent
-   * is working, when a later turn or the user has since changed one of those files, or when a commit
-   * holds the turn's changes.
-   */
   Rpc.make("thread.undoTurn", {
     payload: { ...threadRef, turnId: TurnId },
     success: TurnUndoDataSchema,
@@ -289,10 +211,6 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, title: Schema.String },
     error: errors(ThreadNotFound),
   }),
-  /**
-   * Gives the thread's agent a folder outside its checkout, as `/add-dir` does in a terminal. A
-   * relative `path` is from the checkout and `~` is home; answers the folder granted.
-   */
   Rpc.make("thread.addDirectory", {
     payload: { ...threadRef, path: Schema.String },
     success: Schema.String,
@@ -337,11 +255,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: WorktreeRemoval,
     error: errors(ThreadNotFound, WorktreeDirty, GitError, InvalidState),
   }),
-  /**
-   * Recreates a thread's worktree deleted outside Gram, at its recorded path on its branch,
-   * and seeds it as a new worktree is. With `fromPr`, a branch gone from the repo and `origin` is
-   * recreated from its PR's head.
-   */
   Rpc.make("thread.restoreWorktree", {
     payload: { ...threadRef, fromPr: Schema.optionalKey(Schema.Boolean) },
     success: RestoreWorktreeResult,
@@ -360,10 +273,6 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, itemId: QueueItemId },
     error: errors(ThreadNotFound, NotFound),
   }),
-  /**
-   * Injects a queued item into the running turn; it leaves the queue only once the agent takes it.
-   * With no turn running, the item is sent now.
-   */
   Rpc.make("thread.queue.steer", {
     payload: { ...threadRef, itemId: QueueItemId, clientMessageId },
     error: errors(ThreadNotFound, NotFound, InvalidState),
@@ -372,23 +281,11 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, unread: Schema.Boolean },
     error: errors(ThreadNotFound),
   }),
-  /**
-   * Snoozes the thread until `until` (epoch ms), out of the active lists until then, or with `null`
-   * brings it back now. It comes back unread at that time, or sooner when it asks something or
-   * fails. Refused for a time already past or more than `SNOOZE_AHEAD_MAX_DAYS` ahead.
-   */
   Rpc.make("thread.snooze", {
     payload: { ...threadRef, until: Schema.NullOr(Schema.Number) },
     success: Thread,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * The user gives the thread their browser, or takes it back (`Thread.browser`); a live session
-   * reopens once idle to load it. Refused for an orchestrator, whose browser is the
-   * `workspaces.orchestratorBrowser` setting. The agent's own consent (`browserUseAllowed`) still
-   * decides whether a session gets it.
-   */
-  /** Whether the thread's sessions get the user's browser now, as the server opens them. */
   Rpc.make("thread.browserStatus", {
     payload: threadRef,
     success: ThreadBrowserStatus,
@@ -399,53 +296,26 @@ export const ThreadRpcs = RpcGroup.make(
     success: Thread,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * The user's edit of the thread's plan: every step it lists, in order. A step whose text, status
-   * or PR changed, and a new one, become the user's and are locked against the helper. An edit with
-   * no goal and no steps removes the plan, and answers `null`.
-   */
   Rpc.make("thread.setPlan", {
     payload: { ...threadRef, plan: PlanEdit },
     success: Schema.NullOr(ThreadPlan),
     error: errors(ThreadNotFound),
   }),
-  /**
-   * Asks the helper to bring the thread's plan up to date now (Refresh), or with `rebuild` to drop
-   * its unlocked steps and derive them again from the whole thread. Answers the plan as it then is;
-   * with the helper off or out of budget, the plan unchanged.
-   */
   Rpc.make("thread.refreshPlan", {
     payload: { ...threadRef, rebuild: Schema.optionalKey(Schema.Boolean) },
     success: Schema.NullOr(ThreadPlan),
     error: errors(ThreadNotFound),
   }),
-  /**
-   * The user's Done on a Waiting on you item, or with `undo` its reopening. Answers the item as it
-   * then is; the thread's open items also arrive as `thread.waits`. The agent hears of it with the
-   * next note, not now. `undo` fails with `InvalidState` while `MAX_OPEN_WAITS` are open.
-   */
   Rpc.make("thread.resolveWait", {
     payload: { ...threadRef, id: WaitId, undo: Schema.optionalKey(Schema.Boolean) },
     success: WaitItem,
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
-  /**
-   * Keeps a helper's suggestion as an item of the thread's own, counted and with its chip drawn in
-   * the reply it came from. Answers the item as it then is. Fails with `InvalidState` while the
-   * thread already has `MAX_OPEN_WAITS` open, and with `NotFound` for an id that is no open
-   * suggestion.
-   */
   Rpc.make("thread.keepWait", {
     payload: { ...threadRef, id: WaitId },
     success: WaitItem,
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
-  /**
-   * The user's "Add to Waiting on you" on a message: an item of `kind` (a `draft` without one)
-   * anchored there, titled from the message's first line unless `title` names it. The agent hears
-   * of it with the next note. Fails with `NotFound` for a message the thread hasn't stored, and with
-   * `InvalidState` while the thread already has `MAX_OPEN_WAITS` open.
-   */
   Rpc.make("thread.addWait", {
     payload: {
       ...threadRef,
@@ -456,10 +326,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: WaitItem,
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
-  /**
-   * The thread's Waiting on you items, oldest first: the open ones, or with `all` the resolved ones
-   * kept too (30 days), for the tray's Resolved line. Reading them tells the agent nothing.
-   */
   Rpc.make("thread.listWaits", {
     payload: { ...threadRef, state: Schema.optionalKey(WaitListState) },
     success: Schema.Array(WaitItem),
@@ -469,7 +335,6 @@ export const ThreadRpcs = RpcGroup.make(
     payload: { ...threadRef, completed: Schema.Boolean },
     error: errors(ThreadNotFound),
   }),
-  /** Babysit mode on the bound PR; enabling resets its counters. */
   Rpc.make("thread.setBabysit", {
     payload: {
       ...threadRef,
@@ -479,22 +344,16 @@ export const ThreadRpcs = RpcGroup.make(
     success: Thread,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /** Watch review-bot rounds on the thread's PR; enabling binds the branch's PR if none is bound. */
   Rpc.make("thread.setReviewMonitor", {
     payload: { ...threadRef, enabled: Schema.Boolean },
     success: ReviewMonitorResult,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * The stored messages before `before`, from the `FEED_WINDOW_TURNS`th user message back on: the
-   * page a feed that has `earlier` history prepends.
-   */
   Rpc.make("thread.history", {
     payload: { ...threadRef, before: MessageId },
     success: ThreadHistoryPage,
     error: errors(ThreadNotFound),
   }),
-  /** Message search; `threadId` limits it to one thread. */
   Rpc.make("thread.search", {
     payload: {
       query: Schema.String,
@@ -504,12 +363,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: ThreadSearchResult,
     error: errors(ThreadNotFound),
   }),
-  /**
-   * The thread's feed. With `afterRev` (a `caughtUp` or `message` revision this client holds
-   * everything up to), the head is `resumed` rather than `messages` when the server can resume from
-   * it: not past a rewind, not a revision it hasn't issued, and not too far behind. `from` is the
-   * oldest message the client holds; changes to older ones are left out.
-   */
   Rpc.make("thread.subscribe", {
     payload: {
       ...threadRef,
@@ -520,14 +373,7 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound),
     stream: true,
   }),
-  /** The last closed threads, newest first, marked with what changed since they closed. */
   Rpc.make("threads.closed.list", { success: Schema.Array(ClosedThread), error: errors() }),
-  /**
-   * ⌘⇧T: takes the newest closed thread off the list and opens it again from its stored record,
-   * under its own id with its conversation, its place in a workspace included. One whose folder is
-   * gone opens too, cold, for the folder-missing flow to restore. `null` when there are none. A
-   * reopen that fails puts the entry back.
-   */
   Rpc.make("threads.closed.reopen", {
     success: Schema.NullOr(ReopenedClosedThread),
     error: errors(NotFound, AgentUnavailable, GitError, InvalidState, CheckoutInUse),
@@ -537,7 +383,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: CheckoutUsers,
     error: errors(),
   }),
-  // App-tool actions: task chips and panels
   Rpc.make("task.accept", {
     payload: { ...threadRef, taskId: TaskId },
     success: Thread,
@@ -548,14 +393,11 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound, NotFound),
   }),
   Rpc.make("ui.showPanel", { payload: ShowPanelFields, error: errors(ThreadNotFound) }),
-  // Wakes a plain thread set itself with `schedule_wake`
   Rpc.make("threads.wakes", { success: ThreadWakes, error: errors() }),
-  /** Drops one of the thread's pending wakes, or with no `id` all of them. */
   Rpc.make("thread.cancelWake", {
     payload: { ...threadRef, id: Schema.optionalKey(Schema.String) },
     success: Schema.Struct({ cancelled: Schema.Int }),
     error: errors(),
   }),
-  // Sidebar
   Rpc.make("threads.reorder", { payload: ReorderThreadsPayload, error: errors() }),
 );

@@ -43,7 +43,6 @@ export function SharedSlab({
       controls.stop();
       el.style.transform = "";
     };
-    // Once per origin: the move starts where the old slab was, not again on each render.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies, react/exhaustive-deps -- see above
   }, [from]);
 

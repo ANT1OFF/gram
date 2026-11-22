@@ -21,16 +21,8 @@ export type CatalogEntry = Readonly<Record<string, unknown>> & { readonly slug: 
  */
 export const GATEWAY_CONTEXT_WINDOW = 272_000;
 
-/**
- * Efforts a clone never carries. `ultra` is Codex's "maximum reasoning with automatic task
- * delegation", and what it puts on the wire through a gateway is unknown.
- */
 const DROPPED_EFFORTS: ReadonlySet<string> = new Set(["ultra"]);
 
-/**
- * Historical gateway alias targets retained for configured profiles. These supply catalog
- * metadata only; the actual deployment and routing belong to the user's gateway.
- */
 const ALIASES: Readonly<Record<string, string>> = {
   "gpt-latest": "gpt-6.1-sol",
   "gpt-chat-latest": "gpt-6.1-sol",
@@ -59,7 +51,6 @@ interface Family {
   readonly tier: string;
 }
 
-/** `gpt-6.1-sol` as `gpt`, `[6, 1]`, `sol`; `gpt-5.5` has an empty tier. */
 const familyOf = (slug: string): Family | undefined => {
   const match = /^([a-z]+)-(\d+(?:\.\d+)*)(?:-([a-z]+))?$/.exec(slug);
   if (match === null) return undefined;
@@ -107,8 +98,6 @@ const cloneEntry = (base: CatalogEntry, model: GatewayModel): CatalogEntry => {
       )
     : base["supported_reasoning_levels"];
   return {
-    // `supports_search_tool` gates MCP discovery/deferral in Codex 0.160.1, so inherit it.
-    // The gateway's unsupported web search is disabled separately by `appServerArgs`.
     ...base,
     slug: model.id,
     display_name: model.name,

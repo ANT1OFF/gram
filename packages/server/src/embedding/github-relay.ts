@@ -1,25 +1,3 @@
-// The GitHub relay of a headless control plane (`GRAM_GITHUB_ROUTE_URL`): every `gh` the server
-// runs reaches GitHub through a route the embedding deployment serves, instead of with a token of
-// its own. The server keeps the network tier (PR badges and checks, the CI monitor, merges), and a
-// control plane run as part of a larger product holds no GitHub credential: the route attaches
-// one, decides what each call may do, and may act for the thread a call names.
-//
-// How a call travels:
-//
-//   gh ──(http_unix_socket)──▶ this relay ──▶ <route>/<api|uploads|codeload><path>
-//
-// - `gh` is pointed at the relay's socket by a config folder the relay writes (`GH_CONFIG_DIR`),
-//   and given a placeholder `GH_TOKEN` so it does not ask anyone to sign in.
-// - A call made for one thread (a merge, say) runs its `gh` with `GH_TOKEN` set to that thread's
-//   handle (`ghThreadEnv`). The relay reads the handle back off the `Authorization` header and sends
-//   it on as `x-gram-thread`; neither the placeholder nor the handle goes further.
-// - The relay sends the route's own bearer token (read from its file on every call, for a token
-//   that is replaced while the server runs) and the host `gh` asked for, as `x-gram-upstream-host`.
-//   It follows no redirect: one is the route's answer, handed back to `gh`.
-//
-// Only a headless server takes it: such a server runs no agent and no terminal of its own, so
-// every `gh` it starts is its own, and the environment it sets for them reaches nothing else.
-
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -41,20 +19,16 @@ export const GITHUB_ROUTE_NEEDS_HEADLESS =
 export const NO_THREAD =
   "this GitHub call names no thread, and behind a GitHub route every call must name the thread it is made for.";
 
-/** What `gh` is given while no thread is named: it is never sent on. */
 const PLACEHOLDER = "gram-relay";
-/** The prefix of a thread's handle in `GH_TOKEN`. */
 const THREAD_PREFIX = "gram-thread:";
 const THREAD_ID = /^[A-Za-z0-9_.:-]{1,200}$/;
 
-/** The hosts `gh` talks to, and the part of the route each one goes to. */
 const ROUTES: Readonly<Record<string, string>> = {
   "api.github.com": "api",
   "uploads.github.com": "uploads",
   "codeload.github.com": "codeload",
 };
 
-/** Headers `gh` sends that are the relay's to set, or that end at this hop. */
 const DROPPED_REQUEST = new Set([
   "authorization",
   "host",
@@ -77,16 +51,13 @@ const DROPPED_RESPONSE = new Set([
   "te",
   "trailer",
   "upgrade",
-  // fetch decodes the body, so its encoding and length no longer apply.
   "content-encoding",
   "content-length",
 ]);
 
-/** The most a request body may be: `gh`'s are GraphQL documents and small JSON. */
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const CALL_TIMEOUT_MS = 60_000;
 
-/** Whether this process runs its `gh` through a relay, once one started. */
 let relaying = false;
 
 /**
@@ -108,7 +79,6 @@ export const threadOfAuthorization = (value: string | undefined): string | undef
   return THREAD_ID.test(id) ? id : undefined;
 };
 
-/** The route's bearer token now: the configured one, or what its file holds. */
 const bearerOf = async (endpoint: EndpointConfig): Promise<string | undefined> => {
   if (endpoint.tokenFile === undefined) return endpoint.token;
   const token = (await readFile(endpoint.tokenFile, "utf8")).trim();
@@ -172,7 +142,6 @@ export const relayRequest =
         signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
       });
     } catch {
-      // fetch's own message can quote a header it would not send.
       return answer(res, 502, "the route did not answer");
     }
     const out: Record<string, string> = {};
@@ -247,8 +216,6 @@ export const GitHubRelayLive: Layer.Layer<never, Error, ServerConfig | ThreadSto
               }),
           ),
       );
-      // Every `gh` the server starts inherits these. A headless server starts no agent, terminal
-      // or shell of its own that could.
       process.env["GH_CONFIG_DIR"] = configDir;
       process.env["GH_TOKEN"] = PLACEHOLDER;
       delete process.env["GITHUB_TOKEN"];

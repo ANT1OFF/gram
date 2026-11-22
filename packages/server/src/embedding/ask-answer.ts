@@ -1,14 +1,3 @@
-// Answering a card over plain HTTP, for a server whose people sign in through a fronting proxy.
-//
-// The proxy signs a statement of who sends each request it passes on (`http/fronted-identity.ts`),
-// and can bind it to that one request (its method, path and a hash of its body). A WebSocket's
-// statement is read only when the socket opens, so it can't say who sent one message on it. So
-// while fronted sign-in is on, an answer to a card comes as its own request, and what the
-// proxy signed for it is kept, exactly as received, with the answer: the event sink's
-// `ask.resolved` carries it as `proof`, for a receiver to check who answered without taking this
-// server's word for it. The server checks the statement as it checks every request, and nothing
-// more: the extra claims are the receiver's to read.
-
 import { NOT_READABLE, readableByOf, readerMay } from "./readable-by.ts";
 import {
   type AnswerQuestionResult,
@@ -144,8 +133,6 @@ export const answerAsk = (
       Effect.catch(() => Effect.succeed(undefined)),
     );
     if (bytes === undefined) return refusal(400, "BadRequest", "the answer could not be read");
-    // Kept exactly as sent, as the proxy hashed it: no BOM dropped, and no bytes that aren't
-    // UTF-8 replaced (those are refused, since the proof could never match them).
     let body: string;
     try {
       body = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
@@ -156,7 +143,6 @@ export const answerAsk = (
     if (parsed._tag === "None")
       return refusal(400, "BadRequest", "expected {threadId, requestId, answer}");
     const { threadId, requestId, answer, shown } = parsed.value;
-    // A thread readable by one person is answered by them alone (`embedding/readable-by.ts`).
     if (!readerMay({ subject: actor.id }, readableByOf(threadId as ThreadId)))
       return refusal(404, "NotFound", NOT_READABLE);
     const proof: AnswerProof = { statement, method: request.method, path: request.url, body };
@@ -165,7 +151,6 @@ export const answerAsk = (
         Effect.provideService(ActingPerson, actor.id),
         Effect.provideService(RoutedFor, { person: actor.id }),
       );
-    /** On record as the socket's `thread.respond` would be, failed or not. */
     const record = (failed: unknown) =>
       deps.store
         .appendActorEvents(
@@ -202,9 +187,6 @@ export const answerAsk = (
       yield* record(keylessForKeyedCard);
       return refusal(409, "InvalidState", keylessForKeyedCard);
     }
-    // As the signed person: the runtimes refuse it, before the request is taken, on a machine
-    // they may not reach (`runtime/owned-runtimes.ts`). The statement says who answered, never
-    // that they may answer here.
     const failed = yield* asActor(deps.runtimes.respond(threadId, requestId, answer, shown)).pipe(
       Effect.provideService(AnswerProofRef, proof),
       Effect.as(undefined),
@@ -221,11 +203,6 @@ export const answerAsk = (
     return refusal(404, failed._tag, failed.message);
   });
 
-/**
- * One answer to a worker question's ask at a time, so the note one answer keeps for its
- * `ask.resolved` is never another's: a second answer finds the question closed, and its note is
- * never written.
- */
 const answering = makeKeyedLock<string>();
 
 /**
@@ -268,8 +245,6 @@ export const answerWorkerQuestion = (
         .pipe(Effect.provideService(RoutedFor, { person }));
       if (!reachable)
         return { status: 403, tag: "InvalidState", message: NOT_YOUR_MACHINE } as const;
-      // Only a question that waits on the user is an ask. One answered already, here or anywhere
-      // else, is not answered again: the answer that closed it, and who gave it, stand.
       if (!isUsersQuestion(question)) {
         return {
           status: 409,
@@ -283,7 +258,6 @@ export const answerWorkerQuestion = (
       const failed = yield* questions
         .answer(
           { workspaceId: asked.workspaceId, questionId: asked.questionId, answer: text },
-          // Refused when it closed meanwhile, so a success is always this answer's.
           { onlyIfOpen: true },
         )
         .pipe(
@@ -347,7 +321,6 @@ export const answerOrchestratorQuestion = (
         .pipe(Effect.provideService(RoutedFor, { person }));
       if (!reachable)
         return { status: 403, tag: "InvalidState", message: NOT_YOUR_MACHINE } as const;
-      // An entry answered already, here or anywhere else, is not answered again.
       if (!found.question.open) {
         return {
           status: 409,
@@ -357,8 +330,6 @@ export const answerOrchestratorQuestion = (
       }
       const askId = orchestratorQuestionAskId(asked.workspaceId, asked.questionId);
       const note = deps.noteAnswer ?? (() => Effect.void);
-      // Noted under the answer's own lock, once this answer is the one that goes: an answer given
-      // meanwhile on the socket is never put on this person's record.
       const failed = yield* questions
         .answer(
           {

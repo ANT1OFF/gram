@@ -1,7 +1,3 @@
-// The part of OpenCode 2's server API (`opencode serve`, `/api/*`, OpenAPI at `/openapi.json`)
-// the adapter uses. OpenCode labels the surface experimental, so only what is read here is typed,
-// and every event is checked field by field before use rather than trusted to its type.
-
 /** The OpenCode release this adapter was written against and recorded with. */
 export const OPENCODE_CLI_VERSION = "2.3.0";
 

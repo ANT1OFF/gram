@@ -55,17 +55,14 @@ const latestFirst = (a: ThreadSummary, b: ThreadSummary) =>
 export const soloDone = (summary: ThreadSummary): boolean =>
   summary.thread.completedAt !== undefined && sectionOf(summary) === "settled";
 
-/** Asks you something now: an approval or an answer, the rows that say so in amber. */
 const asks = (summary: ThreadSummary): boolean =>
   summary.status === "needsApproval" ||
   summary.status === "needsInput" ||
   summary.pendingRequests.length > 0;
 
-/** Those that ask you first, so a long list never scrolls them away; then latest first. */
 const needsYouFirst = (a: ThreadSummary, b: ThreadSummary) =>
   Number(asks(b)) - Number(asks(a)) || latestFirst(a, b);
 
-/** Snoozed and not archived: out of the list until its snooze ends. */
 const snoozedOnly = (summary: ThreadSummary): boolean =>
   summary.thread.snoozedUntil !== undefined && !summary.thread.parked;
 

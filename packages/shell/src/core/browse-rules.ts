@@ -1,8 +1,3 @@
-// What an agent may do to its thread's page in the Preview pane (`modules/agent-browser`), decided
-// here in the shell whatever the server asked: the server asks, the shell decides.
-// Where it may navigate (contracts' `browseTarget`, the "Agent may browse" list and the hosts the
-// user allowed once), which requests a page it opened may make, and when acting waits.
-
 import {
   BROWSER_MOBILE_MAX_WIDTH,
   BROWSER_VIEWPORT_MAX,
@@ -47,7 +42,6 @@ export interface BrowseContext {
 /** Where a main-frame navigation of an agent's page goes. */
 export type AgentNavigation =
   | { readonly kind: "allow"; readonly url: string; readonly access: PaneAccess }
-  /** A public host nobody approved yet: the server raises a card for it. */
   | { readonly kind: "ask"; readonly url: string; readonly host: string }
   | { readonly kind: "refuse"; readonly reason: BrowseRefusal; readonly host?: string | undefined };
 
@@ -62,8 +56,6 @@ export function agentNavigation(url: string, context: BrowseContext): AgentNavig
   const target = browseTarget(url);
   if (target.kind === "loopback") {
     const origin = originOf(target.url);
-    // The file preview listener by its path as well, so it stays refused on a command whose
-    // limits name no app origins.
     if (
       isPreviewFilesUrl(target.url) ||
       (origin !== undefined && context.appOrigins?.has(origin) === true)
@@ -82,7 +74,6 @@ export function agentNavigation(url: string, context: BrowseContext): AgentNavig
 }
 
 const WEB = new Set(["http:", "https:", "ws:", "wss:"]);
-/** Schemes that never reach the network: the page's own data and blobs. */
 const LOCAL = new Set(["data:", "blob:"]);
 
 /**
@@ -115,7 +106,6 @@ export function actRefusal(access: PaneAccess, limits: PaneLimits): "loopbackOnl
 export const submitNeedsConfirmation = (access: PaneAccess, confirmed: boolean): boolean =>
   access !== "loopback" && !confirmed;
 
-/** Methods that only read, which a public page may send without the user's confirmation. */
 const READS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** Whether a request writes: any method but a read, which off loopback waits for a card. */
@@ -123,7 +113,6 @@ export const isWrite = (method: string): boolean => !READS.has(method.toUpperCas
 
 /** Whether `origin` (a request's initiator, or the hop before a redirect) is off loopback. */
 export const offLoopback = (origin: string | undefined): boolean =>
-  // An opaque origin (a sandboxed frame, a data: page) could have come from anywhere.
   origin !== undefined && (origin === "null" || browseTarget(origin).kind !== "loopback");
 
 /**
@@ -192,22 +181,17 @@ const point = (value: unknown): value is readonly [number, number] =>
   value.length === 2 &&
   value.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 100_000);
 const flag = (value: unknown) => value === true;
-/** A confirmation token, kept only in the shape the shell makes them. */
 const tokenOf = (c: Record<string, unknown>): { confirmToken?: string } => {
   const token = c["confirmToken"];
   return typeof token === "string" && /^[\w-]{8,64}$/.test(token) ? { confirmToken: token } : {};
 };
 
-/** A whole number from `min` to `max`. */
 const int = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
-/** An optional field: absent, or valid. */
 const optional = (value: unknown, valid: (value: unknown) => boolean) =>
   value === undefined || valid(value);
-/** `{ [key]: value }` when `value` is present, else nothing, for a command's optional fields. */
 const some = <K extends string, V>(key: K, value: V | undefined) =>
   (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
-/** A ref or a coordinate, exactly one of them. */
 const pointOf = (raw: unknown): PanePoint | undefined => {
   if (typeof raw !== "object" || raw === null) return undefined;
   const p = raw as Record<string, unknown>;
@@ -216,7 +200,6 @@ const pointOf = (raw: unknown): PanePoint | undefined => {
   if (point(p["coordinate"])) return { coordinate: p["coordinate"] };
   return undefined;
 };
-/** An optional ref or coordinate, never both; `null` when malformed. */
 const optionalPoint = (c: Record<string, unknown>): Partial<PanePoint> | null => {
   if (c["ref"] === undefined && c["coordinate"] === undefined) return {};
   return pointOf({ ref: c["ref"], coordinate: c["coordinate"] }) ?? null;
@@ -235,16 +218,11 @@ const viewportSize = (value: unknown): value is { width: number; height: number 
     int(v["height"], BROWSER_VIEWPORT_MIN, BROWSER_VIEWPORT_MAX)
   );
 };
-/**
- * The command's `actionSummary`, made safe to show: `{}` when absent, `null` when malformed, which
- * refuses the command.
- */
 const labelOf = (c: Record<string, unknown>): { actionSummary?: string } | null => {
   const raw = c["actionSummary"];
   if (raw === undefined) return {};
   if (typeof raw !== "string" || raw.length > PANE_ACTION_SUMMARY_MAX) return null;
   const summary = visibleText(raw)
-    // Tag characters, variation selectors and blank-looking letters, which can hide text.
     .replace(/[\u{E0000}-\u{E007F}\u3164\u2800\u115F\u1160\uFFA0]|\p{Variation_Selector}/gu, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -362,10 +340,8 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
           colorScheme === undefined)
       )
         return undefined;
-      // Mobile emulation is a phone's: a width below 768, never the pane's own size.
       const width =
         preset === undefined || preset === "pane" ? size?.width : BROWSER_VIEWPORTS[preset].width;
-      // Without a size here, the driver holds it to the size already emulated.
       if (
         mobile === true &&
         (preset === "pane" || (width !== undefined && width >= BROWSER_MOBILE_MAX_WIDTH))
@@ -528,7 +504,6 @@ export function parsePaneRequest(raw: unknown): PaneRequest | undefined {
   const command = parsePaneCommand(r["command"]);
   if (!str(r["threadId"], 200) || r["threadId"] === "" || command === undefined) return undefined;
   if (typeof limits !== "object" || limits === null) return undefined;
-  // Anything but an explicit `false` holds the caller to loopback.
   const loopbackOnly = (limits as Record<string, unknown>)["actOnLoopbackOnly"] !== false;
   const origins: unknown = (limits as Record<string, unknown>)["appOrigins"];
   const appOrigins = Array.isArray(origins)
@@ -565,10 +540,8 @@ export interface AgentRequest {
 
 /** What happens to one request of an agent's page. */
 export type AgentRequestVerdict =
-  /** The preview's own loopback rules decide. */
   | { readonly kind: "defer" }
   | { readonly kind: "allow" }
-  /** Allowed if `host` doesn't resolve to a private address. */
   | { readonly kind: "resolve"; readonly host: string }
   | {
       readonly kind: "block";
@@ -577,10 +550,6 @@ export type AgentRequestVerdict =
         | { readonly host: string; readonly reason?: BrowseRefusal | undefined }
         | undefined;
     }
-  /**
-   * A write, held until the user's card: then sent as a `resolve` is, only if `host` doesn't
-   * resolve to a private address.
-   */
   | { readonly kind: "hold"; readonly host: string };
 
 /**
@@ -595,8 +564,6 @@ export function agentRequest(request: AgentRequest, context: BrowseContext): Age
   if (request.mainFrame) {
     const target = browseTarget(url);
     if (target.kind === "loopback") {
-      // A page's link or a redirect into Gram's own listeners, unless the user drives: a
-      // load the app starts, such as a file card's Open, has no initiator and is the preview's.
       const fromPage = request.initiator !== undefined || request.before !== undefined;
       const own = agentNavigation(url, context);
       if (fromPage && !request.mayWrite && own.kind === "refuse") {
@@ -627,7 +594,6 @@ export function agentRequest(request: AgentRequest, context: BrowseContext): Age
   if (publicPageRequest(url) === "block") return { kind: "block" };
   if (url.startsWith("data:") || url.startsWith("blob:")) return { kind: "allow" };
   const host = new URL(url).hostname;
-  // A form can target a frame in the page as well as the page itself.
   const submits = isWrite(request.method) || request.formSubmission === true;
   if (submits && !request.mayWrite) return { kind: "hold", host };
   return { kind: "resolve", host };

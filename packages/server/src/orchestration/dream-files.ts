@@ -1,34 +1,3 @@
-/**
- * A dream's folder on disk, and the only door to it.
- *
- * ```
- * <root>/<workspaceId>/
- *   dreams/<dreamId>/            the dream thread's cwd; an `acceptEdits` session may write all of it
- *     input/memory/…             a disposable copy of memory, written read-only
- *     input/sessions/NNN-….md    one rendered, scrubbed transcript each, written read-only
- *     input/INDEX.md             one line per session, newest first, for the dream to choose from
- *     input/INSTRUCTIONS.md      the user's steering, when there is any
- *     input/seed/NNN-….md        Claude Code's own memory for the repos, on an import that asked
- *     work/                      the agent's scratch notes, if it wants any
- *     work/digests/<session>.md  its rolling digest of each thread, kept with the watermark on adopt
- *     output/…                   starts as a copy of memory; the agent updates it as it goes
- *     output/REPORT.md           what was merged, dropped and added; never memory
- *   dream-manifests/<dreamId>.json   input hashes and the baseline memory, OUTSIDE the dream folder
- *   dream-merges/<dreamId>/<runId>/  one empty cwd per merge run, removed after it; nothing is read back
- * ```
- *
- * Invariants. Every path comes from memory's resolver (`confinedTree`), so a symlink the agent
- * plants is refused, never followed. **Nothing the dream could write is ever trusted as the
- * baseline**: a prompt-injected transcript can rewrite `input/` before producing `output/`, so the
- * manifest, which holds the hashes `verifyInputs` checks and the memory text `reviewDream` diffs
- * against, lives beside the dream folders rather than inside one. The read-only bit on the inputs
- * is a speed bump, not the boundary. And what `collectOutput` returns has met the same path rules
- * and caps as a live memory write, scrubbed, before anyone is shown it.
- *
- * The baseline is the manifest's copy and not `versions/<n>/` because live writes change the
- * adopted version in place: by the time a dream ends, that folder is the current memory, not what
- * the dream started from.
- */
 import { DREAM_SESSIONS_MAX, InvalidState, NotFound, type DreamFileDiff } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -53,15 +22,12 @@ import {
   type MemorySetFile,
 } from "./memory.ts";
 
-/** Cap on one rendered transcript as written; `renderTranscript` stays well under it. */
 const DREAM_SESSION_MAX_BYTES = 1024 * 1024;
 /** Cap on one seed file; Claude Code's memory files are a few KB each. */
 export const DREAM_SEED_MAX_BYTES = 64 * 1024;
 /** The most seed files one dream is given, so a folder of notes can't crowd out the sessions. */
 export const DREAM_SEEDS_MAX = 40;
-/** Cap on `output/REPORT.md` as read back. */
 const DREAM_REPORT_MAX_BYTES = 256 * 1024;
-/** Cap on one digest as read back; it is kept at a fraction of this. */
 const DREAM_DIGEST_READ_MAX_BYTES = 64 * 1024;
 /** The report's name in `output/`; the one file there that is not memory. */
 export const DREAM_REPORT = "REPORT.md";
@@ -99,19 +65,15 @@ export interface PrepareDream {
   readonly seeds?: ReadonlyArray<DreamSessionFile> | undefined;
 }
 
-/** What the server remembers of a dream's start, where the dream can't write. */
 const DreamManifest = Schema.Struct({
   dreamId: Schema.String,
   memoryVersion: Schema.String,
-  /** Epoch ms. */
   createdAt: Schema.Number,
-  /** sha256 of every file under `input/`, by POSIX path relative to the dream folder. */
   inputs: Schema.Record(Schema.String, Schema.String),
   baseline: Schema.Array(Schema.Struct({ path: Schema.String, content: Schema.String })),
 });
 type DreamManifest = typeof DreamManifest.Type;
 
-/** Whether a dream's inputs are still what the server wrote; `changed` lists what isn't, sorted. */
 type DreamInputCheck =
   | { readonly ok: true }
   | { readonly ok: false; readonly changed: ReadonlyArray<string> };
@@ -123,11 +85,6 @@ export interface DreamOutput {
   readonly report?: string;
 }
 
-/**
- * The output can't become memory. `failure` is the `DreamFailure` it maps to: `over_caps` for
- * anything that breaks memory's path rules or caps (a symlink, a file that isn't Markdown, one too
- * big, too many), `no_output` for an output with no memory file in it.
- */
 class DreamOutputRefused extends Data.TaggedError("DreamOutputRefused")<{
   readonly failure: "over_caps" | "no_output" | "missing_report";
   readonly message: string;
@@ -233,8 +190,6 @@ export const reviewDream = (input: {
   return paths.flatMap((path): ReadonlyArray<DreamFileDiff> => {
     const before = baseline.get(path);
     const now = current.get(path);
-    // The user's standing decisions are their own words: what a dream writes there, read from
-    // sessions any worker or page could shape, is never adopted. Memory's own text stands.
     const after = path === DECISIONS_FILE ? now : output.get(path);
     const dreamt = after !== before;
     const live = now !== before;
@@ -249,8 +204,6 @@ export const reviewDream = (input: {
         },
       ];
     }
-    // From here the dream either left the file alone or landed where the live write did, so what
-    // memory holds now is the honest "before".
     const result = dreamt ? after : now;
     if (result === undefined) {
       return now === undefined ? [] : [{ path, status: "removed", before: now }];
@@ -295,7 +248,6 @@ const mergeRel = (dreamId: string): string => `dream-merges/${dreamId}`;
 const noDream = (dreamId: string) =>
   new NotFound({ entity: "file", id: dreamId, message: `No dream ${dreamId} on disk` });
 
-/** Runs `run` once the workspace id and the dream id are both ones the disk may be touched with. */
 const guarded = <A, E, R = never>(
   workspaceId: string,
   dreamId: string,
@@ -303,19 +255,12 @@ const guarded = <A, E, R = never>(
 ): Effect.Effect<A, E | InvalidState, R> =>
   Effect.gen(function* () {
     yield* validateWorkspaceId(workspaceId);
-    // The id becomes a folder name and a file name; the contract's pattern, checked again here
-    // because this is the layer that touches the disk.
     if (!DREAM_ID.test(dreamId)) return yield* refuse("Not a dream id a folder can be named after");
     return yield* withAnchoredFiles(run());
   });
 
-/** The refusal of a dream's output for breaking memory's caps. */
 const overCaps = (message: string) => new DreamOutputRefused({ failure: "over_caps", message });
 
-/**
- * `effect` with the resolver's refusals turned into the dream's: when reading `output/`, they are
- * about what the agent left there, not the caller's mistake.
- */
 const asRefusal = <A>(effect: Effect.Effect<A, MemoryError>) =>
   effect.pipe(Effect.catchTag("InvalidState", (error) => Effect.fail(overCaps(error.message))));
 
@@ -332,7 +277,6 @@ const make = (root: string): DreamFilesShape => {
         rel,
         "dream-manifests",
         "the dream's manifest",
-        // Forty files of 32 KB, JSON-escaped, plus a hundred hashes.
         4 * 1024 * 1024,
       );
       return yield* Effect.try({
@@ -344,10 +288,6 @@ const make = (root: string): DreamFilesShape => {
       });
     });
 
-  /**
-   * Every entry below `rel`, files as POSIX paths relative to it. `other` entries (symlinks,
-   * sockets) and folders past `maxDepth` are reported, not entered, for the caller to refuse.
-   */
   const walk = (workspaceId: string, rel: string, within: string, maxDepth: number) =>
     Effect.gen(function* () {
       const files: Array<string> = [];
@@ -380,7 +320,6 @@ const make = (root: string): DreamFilesShape => {
               `${input.sessions.length} transcripts; a memory update reads at most ${DREAM_SESSIONS_MAX}. Run more memory updates for more.`,
             );
           }
-          // An import starts from no memory at all, which no memory set is allowed to be.
           const checked =
             input.memory.length === 0
               ? { ok: true as const, files: [] }
@@ -439,8 +378,6 @@ const make = (root: string): DreamFilesShape => {
             inputs: Object.fromEntries(inputs.map((file) => [file.rel, sha256(file.text)])),
             baseline: checked.files,
           };
-          // The manifest first: a folder without one can't be verified, so it can't be adopted; a
-          // manifest without a folder is only litter `discard` clears.
           yield* tree.writeAtomic(
             workspaceId,
             manifestRel(dreamId),
@@ -497,7 +434,6 @@ const make = (root: string): DreamFilesShape => {
           const manifest = yield* readManifest(workspaceId, dreamId);
           const within = dreamRel(dreamId);
           const changed = new Set<string>();
-          // A swapped-in symlink anywhere on the way is tampering too, not an error to report.
           const found = yield* walk(workspaceId, `${within}/input`, within, 8).pipe(
             Effect.catchTag("InvalidState", () => Effect.succeed(undefined)),
           );
@@ -637,7 +573,6 @@ const make = (root: string): DreamFilesShape => {
       guarded(workspaceId, dreamId, () =>
         Effect.succeed(`${mergeRel(dreamId)}/${randomUUID()}`),
       ).pipe(
-        // The folder belongs to the caller's merge scope, beyond the helper batch's lifetime.
         Effect.flatMap((rel) =>
           Effect.acquireRelease(tree.ensureDir(workspaceId, rel, "dream-merges"), () =>
             Effect.ignore(tree.removeTree(workspaceId, rel, "dream-merges")),

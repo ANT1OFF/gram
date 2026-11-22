@@ -1,9 +1,3 @@
-// An orchestrator's questions for the user: the entries of its
-// memory's `questions.md`, read out of whatever an agent, a dream or a person wrote there, and the
-// edits `ask_user`, `close_question` and an answer from the UI make to it. The file is the store:
-// the server writes it back in one canonical shape, which this module also reads, so the web app
-// and the server share one parser. A leaf: it imports only `ids.ts` and `mock-visuals.ts`.
-
 import * as Schema from "effect/Schema";
 import { WorkspaceId } from "./ids.ts";
 import {
@@ -89,19 +83,11 @@ export interface MemoryQuestion {
   readonly pending?: string | undefined;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Reading
-
-// Every pattern here runs on text an agent or a person wrote, so none may backtrack across a run of
-// spaces: a single `\s` before a rest-of-line capture, which the caller trims, and no leading `\s*`
-// on a pattern that is searched for rather than anchored (CodeQL's polynomial-regex rule).
 const HEADING = /^(#{1,6})\s(.*)$/;
 const LIST_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s(.*)$/;
 const CHECKBOX = /^\[([ xX])\]\s*/;
 const ID_TEXT = String.raw`[A-Za-z]{1,4}(?:-[A-Za-z]{1,6})*-?\d{1,5}`;
-/** `Q3`, `q-12`, `OQ7`, `Q-C1`, `Q-REL-040`: a few letters and a number, at the head of an entry. */
 const ID = new RegExp(String.raw`^[\s*_[(#]*(${ID_TEXT})\b[\s\])*_:.·—–|-]*`);
-/** An entry that is a paragraph of its own, led by its id in bold: `**Q1 · …** …`. */
 const PARAGRAPH_HEAD = new RegExp(String.raw`^(?:\*\*|__)${ID_TEXT}\b`);
 /** What an id given to `ask_user` must look like, so the file reads it back as one. */
 export const QUESTION_ID = new RegExp(`^${ID_TEXT}$`);
@@ -112,32 +98,23 @@ const STATUS_WORDS = `${CLOSED_WORDS}|open|opened|reopened`;
 const CLOSED_WORD = new RegExp(String.raw`\b(${CLOSED_WORDS})\b`, "i");
 const OPEN_WORD = /\bopen\b/i;
 const QUESTIONS_WORD = /\bquestions?\b/i;
-/** One clause of a status: a word, maybe hedged (`partly answered`), maybe dated. */
 const STATUS_CLAUSE = new RegExp(
   String.raw`^(partly\s+|partially\s+)?(${STATUS_WORDS})(?:\s+(?:on\s+)?${DATE})?$`,
   "i",
 );
-/** A bracketed group at the start of what follows a bold lead. */
 const LEAD_BRACKET = /^[[(]([^()[\]]*)[\])]\s*:?/;
-/**
- * A status marker: a bracketed group, or a word set off by a separator (`· answered`), so prose using
- * the word isn't one. One pattern for both, so markers are read in the order they are written.
- */
 const MARKER = new RegExp(
   String.raw`(?:[[(]([^()[\]]*)[\])]|[·—–|]\s*(${STATUS_WORDS})\b)\s*:?`,
   "gi",
 );
-/** A body line that records how the entry was closed: `Answer: …`, `Dropped 2026-09-25: …`. */
 const CLOSING_LINE = new RegExp(
   String.raw`^(?:(?:answer(?:ed)?|resolved|closed|decided)\b|(?:${CLOSED_WORDS})(?:\s+(?:on\s+)?${DATE})?\s*:)`,
   "i",
 );
-/** The same line with its answer taken out: `Decided: yes`, `Answered 2026-09-19: web`. */
 const ANSWER_LINE = new RegExp(
   String.raw`^(answer|${CLOSED_WORDS})(?:\s+(?:on\s+)?${DATE})?\s*:(.*)$`,
   "i",
 );
-/** `Q7 · superseded: …`: a status word straight after the id, closed off by a colon. */
 const LEADING = new RegExp(String.raw`^(?:${STATUS_WORDS})(?:\s+(?:on\s+)?${DATE})?\s*:`, "i");
 const BARE = new RegExp(String.raw`^(?:${STATUS_WORDS})$`, "i");
 const DATE_MARKER = new RegExp(String.raw`(?:[·—–|(]\s*)?\b${DATE}\b\)?`, "g");
@@ -145,12 +122,9 @@ const DATES = new RegExp(DATE, "g");
 const OPTIONS_LINE = /^options\s*\(pick (one|any)\)\s*:?$/i;
 const DELIVERY_LINE = /^delivery:\s*pending\s+([A-Za-z0-9-]{4,64})$/i;
 const OPTION_MARKER = /^(?:\d+[.)]|[-*+])\s/;
-/** A line under a choice naming what it shows: `Image: …/a-inbox-dark.png`, `Preview: …/v1.html#a-inbox`. */
 const VISUAL_LINE = /^(image|preview):\s?(.*)$/i;
-/** The line naming the mock the question is about: `Mock: …/mock.json`. */
 const MOCK_LINE = /^mock:\s?(.*)$/i;
 
-/** A choice's visual line taken apart, when its path is of the kind it names. */
 const visualOf = (line: string): { kind: "image" | "preview"; path: string } | undefined => {
   const said = VISUAL_LINE.exec(line);
   if (said === null) return undefined;
@@ -161,7 +135,6 @@ const visualOf = (line: string): { kind: "image" | "preview"; path: string } | u
   return path !== "" && fits ? { kind, path } : undefined;
 };
 
-/** The mock a `Mock:` line names, when it names a `mock.json` or a page. */
 const mockOf = (line: string): string | undefined => {
   const path = MOCK_LINE.exec(line)?.[1]?.trim();
   return path !== undefined && path !== "" && mockRefKind(path) !== undefined ? path : undefined;
@@ -169,7 +142,6 @@ const mockOf = (line: string): string | undefined => {
 const RECOMMENDED = "(recommended)";
 const EDGE = new Set(" \t:·—–|-");
 
-/** `text` without the separators and spaces an id or a marker leaves at its edges. */
 const trimEdges = (text: string): string => {
   let start = 0;
   let end = text.length;
@@ -178,7 +150,6 @@ const trimEdges = (text: string): string => {
   return text.slice(start, end);
 };
 
-/** A choice's line, `1. Label — description (recommended)`, taken apart by hand rather than by one pattern. */
 const optionOf = (
   line: string,
 ): { label: string; description: string | undefined; recommended: boolean } | undefined => {
@@ -195,12 +166,6 @@ const optionOf = (
 
 type Status = "closed" | "open" | "opened";
 
-/**
- * What a bracketed group says of its entry, or `undefined` when it isn't a status: that takes a first
- * clause that is one, as in `(decided 2026-09-25)`, `(OPEN, future idea)` or `(opened 2026-09-22,
- * closed 2026-09-24)`. The last status clause wins, and a hedged one (`partly answered`) is open.
- * `opened` is when the entry was asked, not a claim that it still is, so it is told apart.
- */
 const bracketStatus = (inner: string): { status: Status; word: string } | undefined => {
   const clauses = inner.split(/[,;]/).map((clause) => clause.trim());
   if (!STATUS_CLAUSE.test(clauses[0]!)) return undefined;
@@ -224,16 +189,12 @@ interface Head {
   readonly id: string | undefined;
   readonly text: string;
   readonly closed: boolean | undefined;
-  /** The status word that decided `closed`, when a word did. */
   readonly word: string | undefined;
   readonly date: string | undefined;
-  /** What follows a bold lead on its line, which starts the entry's detail. */
   readonly rest: string | undefined;
-  /** The bold lead runs on past the end of the line. */
   readonly unclosedBold: boolean;
 }
 
-/** An entry's first line taken apart: its id, whether it says open or closed, and what is left. */
 const headOf = (raw: string): Head => {
   let text = raw.trim();
   let closed: boolean | undefined;
@@ -247,7 +208,6 @@ const headOf = (raw: string): Head => {
     closed = true;
     text = text.slice(2, -2);
   }
-  // `**Q1 · The question?** Opened …`: the bold part is the question, the rest of the line detail.
   let bold = /^(\*\*|__)/.exec(text)?.[1];
   const id = ID.exec(text);
   if (id !== null) {
@@ -275,7 +235,6 @@ const headOf = (raw: string): Head => {
     word = /^[a-z]+/i.exec(leading[0])![0].toLowerCase();
     text = text.slice(leading[0].length);
   }
-  // The last status written wins: `(closed 2026-09-20) (reopened 2026-09-25)` is open again.
   text = text.replaceAll(MARKER, (marker, inner: string | undefined, said: string | undefined) => {
     const status =
       inner !== undefined
@@ -289,14 +248,12 @@ const headOf = (raw: string): Head => {
             word: said!.toLowerCase(),
           };
     if (status === undefined) return marker;
-    // `opened` dates the entry and says nothing of it now, so the box, the detail or the section decides.
     if (status.status !== "opened") {
       closed = status.status === "closed";
       word = status.word;
     }
     return " ";
   });
-  // `## Q1 closed`: a bare status word is a marker only when it is all that is left of the line.
   const bare = text.replace(DATE_MARKER, "").trim();
   if (BARE.test(bare)) {
     closed = CLOSED_WORD.test(bare);
@@ -319,22 +276,17 @@ const headOf = (raw: string): Head => {
   };
 };
 
-/** One entry as read, with the lines it was read from, so it can be written back in the canonical shape. */
 interface ParsedEntry {
   readonly question: MemoryQuestion;
-  /** Its detail as written, markers and indentation kept, less what became `options` or `answer`. */
   readonly source: readonly string[];
 }
 
 interface ParsedFile {
-  /** The file's opening text, before its first entry, less any trailing section headings. */
   readonly preamble: string;
   readonly entries: readonly ParsedEntry[];
-  /** What stands after the first entry outside any entry: a heading of the user's and its text. */
   readonly loose: readonly (readonly string[])[];
 }
 
-/** An entry's body split into its detail, its offered choices and its recorded answer. */
 const structured = (shown: readonly string[], source: readonly string[]) => {
   const detail: string[] = [];
   const kept: string[] = [];
@@ -354,7 +306,6 @@ const structured = (shown: readonly string[], source: readonly string[]) => {
       multiSelect = head[1]!.toLowerCase() === "any";
       return;
     }
-    // A choice is a list item under the options line; anything else ends the list.
     const option = inOptions && LIST_ITEM.test(source[index]!) ? optionOf(trimmed) : undefined;
     if (option !== undefined) {
       options.push({
@@ -364,7 +315,6 @@ const structured = (shown: readonly string[], source: readonly string[]) => {
       if (option.recommended) recommended = option.label;
       return;
     }
-    // What a choice shows, on the lines under it, belongs to the last choice and keeps the list going.
     const visual = inOptions && options.length > 0 ? visualOf(trimmed) : undefined;
     if (visual !== undefined) {
       options[options.length - 1] = { ...options.at(-1)!, [visual.kind]: visual.path };
@@ -403,7 +353,6 @@ const structured = (shown: readonly string[], source: readonly string[]) => {
 
 type EntryKind = "heading" | "item" | "paragraph";
 
-/** Lines with the indentation they share taken off. */
 const dedent = (lines: readonly string[]): string[] => {
   const indent = Math.min(
     ...lines.filter((line) => line.trim() !== "").map((line) => /^\s*/.exec(line)![0].length),
@@ -411,7 +360,6 @@ const dedent = (lines: readonly string[]): string[] => {
   return Number.isFinite(indent) ? lines.map((line) => line.slice(indent)) : [...lines];
 };
 
-/** The status word a closing line starts with, `Answer` read as `answered`. */
 const wordOf = (line: string): string => {
   const word = /^[a-z]+/i.exec(line)![0].toLowerCase();
   return word === "answer" ? "answered" : word;
@@ -421,7 +369,6 @@ const parseFile = (content: string): ParsedFile => {
   const out: ParsedEntry[] = [];
   const lines = content.split(/\r?\n/);
   let section: boolean | undefined;
-  /** Under a heading about questions, or none yet: where a list item without an id is one. */
   let inQuestions = true;
   let firstEntry: number | undefined;
   let entry:
@@ -431,13 +378,11 @@ const parseFile = (content: string): ParsedFile => {
         body: string[];
         source: string[];
         kind: EntryKind;
-        /** Under an `Options (pick …):` line, whose numbered items are choices, not entries. */
         options: boolean;
       }
     | undefined;
   const loose: string[][] = [];
   let block: string[] | undefined;
-  /** A line after the first entry that no entry holds, kept to be written back as it was. */
   const keep = (line: string) => {
     if (firstEntry === undefined) return;
     if (block === undefined) {
@@ -446,7 +391,6 @@ const parseFile = (content: string): ParsedFile => {
     }
     block.push(line);
   };
-  /** A line of the current entry: `shown` is what its detail reads, `line` what is written back. */
   const add = (shown: string, line: string) => {
     if (entry === undefined) return keep(line);
     entry.body.push(shown);
@@ -461,12 +405,10 @@ const parseFile = (content: string): ParsedFile => {
   const flush = () => {
     if (entry === undefined) return;
     const shown = [...entry.body];
-    // The lines under a list item are indented to it; what followed its bold lead on its own line isn't.
     const source = [
       ...(entry.head.rest === undefined ? [] : [entry.head.rest]),
       ...dedent(entry.source),
     ];
-    // A heading that is only an id and a status keeps its question on the line below.
     let text = entry.head.text;
     if (text === "") {
       const first = shown.findIndex((line) => line.trim() !== "");
@@ -530,7 +472,6 @@ const parseFile = (content: string): ParsedFile => {
 
   let fenced = false;
   lines.forEach((line, index) => {
-    // A fence and what is in it is never an entry, but it is written back where it stood.
     if (/^\s*(```|~~~)/.test(line)) {
       fenced = !fenced;
       add("", line);
@@ -548,12 +489,10 @@ const parseFile = (content: string): ParsedFile => {
       } else {
         block = undefined;
         keep(line);
-        // "## Notes" and the like hold the user's own lists, which are kept as they are.
         inQuestions =
           CLOSED_WORD.test(heading[2]!) ||
           OPEN_WORD.test(heading[2]!) ||
           QUESTIONS_WORD.test(heading[2]!);
-        // A section heading: "Open", "Closed questions". It sets the default for what is under it.
         section = CLOSED_WORD.test(heading[2]!)
           ? true
           : OPEN_WORD.test(heading[2]!)
@@ -578,7 +517,6 @@ const parseFile = (content: string): ParsedFile => {
       return;
     }
     if (entry?.head.unclosedBold === true && entry.body.length === 0 && line.trim() !== "") {
-      // A bold lead that wraps: `**Q1 · the question` on one line, `goes on?** Detail` on the next.
       const { raw, kind } = entry;
       entry = undefined;
       begin(index, `${raw} ${line.trim()}`, kind);
@@ -589,7 +527,6 @@ const parseFile = (content: string): ParsedFile => {
   flush();
 
   const opening = lines.slice(0, firstEntry ?? lines.length);
-  // A section heading at the end of the opening text headed entries that are written back by status.
   for (;;) {
     const last = opening.at(-1);
     if (last === undefined) break;
@@ -598,7 +535,6 @@ const parseFile = (content: string): ParsedFile => {
       opening.pop();
     } else break;
   }
-  // A block that is only a status heading ("## Closed") is said again by each entry's own status.
   const kept = loose.filter((held) =>
     held.some((line) => {
       const heading = HEADING.exec(line);
@@ -628,9 +564,6 @@ export const parseQuestions = (content: string): MemoryQuestion[] =>
 export const openQuestions = (content: string | undefined): MemoryQuestion[] =>
   content === undefined ? [] : parseQuestions(content).filter((question) => question.open);
 
-// ---------------------------------------------------------------------------------------------
-// Writing
-
 const pad = (n: number): string => String(n).padStart(2, "0");
 
 /** The local calendar date an entry is dated with, `2026-09-25`. */
@@ -655,10 +588,6 @@ const oneLine = (text: string): string => text.replaceAll(/\s+/g, " ").trim();
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 
-/**
- * Detail lines as written, trimmed of blank edges, with a line that would read as a heading escaped
- * (outside a fence, where it would).
- */
 const detailLines = (source: readonly string[]): string[] => {
   const lines = source.map((line) => line.trimEnd());
   while (lines.length > 0 && lines[0] === "") lines.shift();
@@ -702,7 +631,6 @@ const renderEntry = ({ question, source }: Draft): string => {
   return lines.join("\n");
 };
 
-/** The next free `Q<n>` past every numbered `Q` id in the file. */
 const nextId = (questions: readonly Pick<MemoryQuestion, "id">[]): string => {
   const numbers = questions.flatMap((question) => {
     const match = /^Q(\d+)$/i.exec(question.id ?? "");
@@ -711,11 +639,6 @@ const nextId = (questions: readonly Pick<MemoryQuestion, "id">[]): string => {
   return `Q${Math.max(0, ...numbers) + 1}`;
 };
 
-/** The file in the canonical shape: its opening text, then the open entries, then the closed ones. */
-/**
- * The file in the canonical shape: its opening text, the open entries, the closed ones, then what
- * stood outside any entry (a section of notes, say), as it was written.
- */
 const render = (file: ParsedFile, drafts: readonly Draft[]): string => {
   const open = drafts.filter((draft) => draft.question.open);
   const closed = drafts.filter((draft) => !draft.question.open);
@@ -728,7 +651,6 @@ const render = (file: ParsedFile, drafts: readonly Draft[]): string => {
   return `${blocks.join("\n\n")}\n`;
 };
 
-/** Every entry with an id, an entry that had none given the next free one. */
 const withIds = (entries: readonly ParsedEntry[]): Draft[] => {
   const drafts: Draft[] = [];
   const seen: MemoryQuestion[] = entries.map((entry) => entry.question);
@@ -806,7 +728,6 @@ const askProblem = (input: AskInput): string | undefined => {
   return visualsProblem(options, input.mock);
 };
 
-/** A choice as the file can hold it: on one line, and without the separator its line splits on. */
 const choiceOf = (option: QuestionChoice): QuestionChoice => {
   const description = oneLine(option.description ?? "").replaceAll(" (recommended)", "");
   const image = oneLine(option.image ?? "");
@@ -866,7 +787,6 @@ export const askQuestion = (
     date: before === undefined || reopened ? today : (before.question.date ?? today),
     ...(hasOptions ? { options, multiSelect, recommended } : {}),
     ...(mock === undefined ? {} : { mock }),
-    // An answer on its way keeps its key through an update, or a retry would send it again.
     ...(before?.question.open === true && before.question.pending !== undefined
       ? { pending: before.question.pending, answer: before.question.answer }
       : {}),
@@ -883,11 +803,6 @@ export const askQuestion = (
   };
 };
 
-/**
- * Finds the entry an edit is for: by id when there is one, else by its words, an open entry first.
- * An entry the file gave no id is given one when the file is written back, so the UI's copy of it
- * may still have none.
- */
 const find = (
   drafts: readonly Draft[],
   id: string | undefined,
@@ -911,7 +826,6 @@ const closeAt = (
 ): QuestionEdit => {
   const before = drafts[index]!;
   drafts[index] = {
-    // The choices are what was asked; once closed, the answer says which was taken.
     question: {
       id: before.question.id,
       text: before.question.text,
@@ -973,10 +887,12 @@ export const findQuestion = (
   content: string | undefined,
   input: { readonly questionId?: string | undefined; readonly question: string },
 ): (MemoryQuestion & { readonly id: string }) | undefined => {
-  const file = parseFile(content ?? "");
-  const drafts = withIds(file.entries);
+  const drafts = withIds(parseFile(content ?? "").entries);
   return drafts[find(drafts, input.questionId, input.question)]?.question;
 };
+
+/** What the server's store of the questions is read and written with (`questions-doc.ts`). */
+export const questionsFileParts = { parse: parseFile, withIds, render, nextId };
 
 /** The answer as the file keeps it: on one line, clipped. */
 export const keptAnswer = (answer: string): string => clip(oneLine(answer), QUESTION_ANSWER_KEPT);

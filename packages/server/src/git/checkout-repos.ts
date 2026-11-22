@@ -1,9 +1,3 @@
-// The repository each folder Gram works in is, for the PR lookups that read its branch's PR
-// (`CheckoutRepos` in `@gram/git`): a thread's checkout by the clone Gram recorded as it made it,
-// or by its project's recorded origin; a project's folder by that origin. Never the `origin` the
-// folder's git config names now, which an agent working there can rewrite with `git remote
-// set-url` and so point the server's lookups at another repository.
-
 import { CheckoutRepos, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";

@@ -1,16 +1,8 @@
-// Server events are applied a frame at a time. Each event used to reach the stores on its own
-// microtask, and React committed between every two: 150 threads arriving at once were 150 commits
-// in one long task. Held until the next frame and then applied in order in one task, they still
-// reach every store and every store subscriber one by one, exactly as before, but React renders
-// once for the lot.
-
 /** Calls `run` later (`nextFrame`); returns what cancels it. */
 export type Schedule = (run: () => void) => () => void;
 
-/** How long a batch may wait for a frame that is late. */
 const FALLBACK_MS = 50;
 
-/** Calls `run` in a task of its own, soon: a message to itself, which no hidden window throttles. */
 const nextTask: Schedule = (run) => {
   const channel = new MessageChannel();
   let live = true;
@@ -77,7 +69,6 @@ export function createFrameBatch<T>(
   const flush = () => {
     cancel?.();
     cancel = undefined;
-    // Taken whole first: whatever `apply` causes to be pushed waits for the next flush, behind it.
     const items = queued;
     queued = [];
     if (items.length === 0) return;

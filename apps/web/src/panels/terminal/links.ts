@@ -10,7 +10,6 @@ export interface PathLink {
   readonly column?: number;
 }
 
-// A file with an extension and a `:line` (optionally `:column`), relative or absolute (POSIX or `C:\`).
 const PATH_LINE =
   /(?:[A-Za-z]:[\\/]|\/|\.{1,2}\/)?(?:[\w@+.-]+[\\/])*[\w@+.-]*\.[A-Za-z0-9]+:(\d+)(?::(\d+))?/g;
 
@@ -24,7 +23,6 @@ export function findPathLinks(text: string, root: string | undefined): PathLink[
   const links: PathLink[] = [];
   for (const match of text.matchAll(PATH_LINE)) {
     const start = match.index;
-    // Part of a URL (`https://host/a.ts:3`) or glued to a longer word.
     if (/:\/\/\S*$/.test(text.slice(0, start)) || /[\w@+-]$/.test(text.slice(0, start))) continue;
     const target = match[0].replace(/:\d+(?::\d+)?$/, "");
     const relative = checkoutRelative(target, base);

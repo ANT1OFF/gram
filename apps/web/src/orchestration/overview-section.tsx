@@ -9,8 +9,6 @@ import { overviewSectionFolded, useLayoutStore, type OverviewSection } from "@/s
 
 import { foldByKey } from "./overview-model";
 
-// The overview sidebar's pieces its sections share: a foldable section and the row's grid.
-
 /** A stop for the arrow keys: every row and section title. */
 export const STOP = OVERVIEW_STOP;
 
@@ -85,7 +83,6 @@ export function Section({
   const folded = useLayoutStore((s) => overviewSectionFolded(s, id));
   const toggle = useLayoutStore((s) => s.toggleOverviewSection);
   const body = `overview-${id}`;
-  // ← folds and → unfolds, as a tree row's do; anything else is the overview's.
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const to = foldByKey(event, folded);
     if (to === undefined) return;
@@ -104,7 +101,6 @@ export function Section({
             aria-label={`${title}, ${count}`}
             aria-description={hint}
             title={hint === undefined ? `${title}, ${count}` : `${title}, ${count}\n${hint}`}
-            // The hover that shows `hint` is its first use; a native title has no open event.
             onPointerEnter={term === undefined ? undefined : () => seeTerm(term)}
             onFocus={term === undefined ? undefined : () => seeTerm(term)}
             onClick={() => toggle(id)}

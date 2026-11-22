@@ -1,19 +1,3 @@
-// Ends what a kept-running host's runs started that its service manager's own stop may miss. Each
-// start of the service carries a run token in its environment, which its agents, shells and tools
-// inherit. A stop finds this user's processes whose environment carries one of the service's
-// outstanding tokens and ends them: asked first, then killed.
-//
-// It acts on structured process facts only: the effective user, the token as an entry of the
-// environment (never text in the command line), and the process's start time, checked again right
-// before each signal so a pid reused since the scan is never signalled. A scan that can't read all
-// of this user's processes is a failure, never an empty result: a stop then fails and keeps its
-// records for another try.
-//
-// This is not containment. A process that clears its environment (`env -i`) carries no token. On
-// Linux the systemd unit's control group holds such a process anyway, and the stop is verified on
-// that group (`stopLocalService`); on macOS nothing holds it once it has left the job's process
-// group, and the docs say so.
-
 import { execFile } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import * as Effect from "effect/Effect";
@@ -23,7 +7,6 @@ export const RUN_TOKEN_ENV = "GRAM_LOCAL_HOST_RUN";
 
 const TOKEN = /^[0-9a-f]{32,64}$/;
 
-/** How long processes asked to end get before they are killed. */
 const GRACE_MS = 2_000;
 
 /** One process carrying a token: who it is, by pid and start time, so a reused pid isn't it. */
@@ -69,7 +52,6 @@ export const procScan = (
     if (!/^\d+$/.test(entry) || Number(entry) === self) continue;
     try {
       const status = readFileSync(`${proc}/${entry}/status`, "utf8");
-      // Real, effective, saved and filesystem user ids; the effective one is whose it is.
       const euid = Number(/^Uid:\s+\d+\s+(\d+)/m.exec(status)?.[1] ?? Number.NaN);
       if (Number.isNaN(euid)) return { ok: false, reason: `unreadable status for ${entry}` };
       if (euid !== uid) continue;
@@ -98,9 +80,6 @@ export const procScan = (
   return { ok: true, carriers };
 };
 
-// Each column ends where the next begins, whatever padding `ps` puts between them: its own
-// right-aligned pid and uid, and the blanks after `lstart`, which macOS pads to a fixed width.
-// The command is everything from its first non-blank on, in both listings alike.
 const PLAIN = /^\s*(\d+)\s+(\d+)\s+(\w{3} \w{3}\s+\d+ \d\d:\d\d:\d\d \d{4})\s+(\S.*)$/;
 const WITH_ENV = /^\s*(\d+)\s+(\S.*)$/;
 
@@ -134,7 +113,6 @@ export const psScan = (
     if (Number(match[2]) !== uid || pid === self) continue;
     const command = match[4]!;
     const full = env.get(pid);
-    // Gone between the two listings: not one of ours any more.
     if (full === undefined) continue;
     if (!full.startsWith(command))
       return { ok: false, reason: `process ${pid} changed between the two listings` };
@@ -176,9 +154,7 @@ export type Signaller = (pid: number, signal: NodeJS.Signals) => void;
 const systemSignal: Signaller = (pid, signal) => {
   try {
     process.kill(pid, signal);
-  } catch {
-    // Gone already.
-  }
+  } catch (_goneAlready) {}
 };
 
 const scanOrFail = (scanner: Scanner, tokens: ReadonlyArray<string>, when: string) =>
@@ -192,7 +168,6 @@ const scanOrFail = (scanner: Scanner, tokens: ReadonlyArray<string>, when: strin
         ),
   );
 
-/** Signals `signal` to each of `earlier` still the same process (pid and start) in a fresh scan. */
 const signalSame = (
   scanner: Scanner,
   tokens: ReadonlyArray<string>,

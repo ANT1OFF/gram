@@ -1,7 +1,3 @@
-// The repository and the open PR of a thread whose worktree Gram made on a joined machine, found
-// from here. Its host publishes only the local tier of its git state (no `origin`, no PR badge),
-// so a branch's PR there was found only once bound; a PR just opened from that worktree read as
-// none, and the PR tools refused it.
 import { effectiveCheckout, isLocalHost, type PrStatus, type Thread } from "@gram/contracts";
 import { gh, git, isSameRepoHead, originOwnerRepo, Proc, repoFromPrUrl } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -11,7 +7,6 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { isBadgeOf } from "./extra-prs.ts";
 import { GitStatePublisher } from "./publisher.ts";
 
-/** Whether `a` names `owner/repo` `b`; GitHub's names don't go by case. */
 const sameRepo = (a: string | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
 
 /** A project here whose origin is the one a worktree on another machine cloned. */
@@ -49,7 +44,6 @@ export const cloneProjectOf = (
     );
     for (const project of projects) {
       const root = project.repoRoot ?? project.root;
-      // As stored, not as `insteadOf` rewrites it.
       const out = yield* git(root, ["config", "--get", "remote.origin.url"], {
         timeoutMs: 2_000,
       }).pipe(Effect.orElseSucceed(() => undefined));
@@ -61,7 +55,6 @@ export const cloneProjectOf = (
     return undefined;
   });
 
-/** The number of the open PR whose head is `branch` in `repo` itself, asked of GitHub from `root`. */
 const openPrNumber = (root: string, repo: string, branch: string) =>
   gh(
     root,
@@ -85,7 +78,6 @@ const openPrNumber = (root: string, repo: string, branch: string) =>
       try {
         const listed: unknown = JSON.parse(out.stdout);
         if (!Array.isArray(listed)) return undefined;
-        // A fork's PR from a branch of the same name isn't this worktree's.
         const own = listed.find(
           (entry: unknown): entry is { readonly number: number } =>
             isSameRepoHead(entry) && typeof (entry as { number?: unknown }).number === "number",
@@ -110,29 +102,14 @@ export const MachineBranchPr = Effect.gen(function* () {
   const here = <A>(effect: Effect.Effect<A, never, ThreadStore | Proc>) =>
     effect.pipe(Effect.provideService(ThreadStore, store), Effect.provideService(Proc, proc));
 
-  /**
-   * The thread's origin as `owner/repo`: its clone's project's here, and only that. Whatever its
-   * host published of an origin is never taken (`localTierOf` drops it at the boundary as well).
-   */
   const origin = (thread: Thread): Effect.Effect<string | undefined> =>
     Effect.map(here(cloneProjectOf(thread)), (project) => project?.repo);
 
-  /**
-   * The badge of a PR bound to the thread here: as the publisher has it, looked up on GitHub by
-   * the binding (a joined machine's own PR fields never reach it, `localTierOf`). Only a badge of
-   * that very PR, whatever repository it is in and whether or not the worktree's clone was
-   * recorded; never the branch's PR in its place.
-   */
   const boundBadge = (thread: Thread, bound: { readonly repo: string; readonly number: number }) =>
     Effect.map(publisher.stateForThread(thread), (state) =>
       state?.pr !== undefined && isBadgeOf(state.pr, bound) ? state.pr : undefined,
     );
 
-  /**
-   * Finds the open PR of an unbound thread's branch, in its clone's project's repository: as
-   * published when the badge is of that repository (looked up here, never the host's word), else
-   * from GitHub. Nothing without a recorded clone a project here matches.
-   */
   const discover = (thread: Thread): Effect.Effect<PrStatus | undefined> =>
     Effect.gen(function* () {
       const project = yield* here(cloneProjectOf(thread));
@@ -147,17 +124,11 @@ export const MachineBranchPr = Effect.gen(function* () {
       const found = Option.getOrUndefined(
         yield* publisher.lookupPr(thread, { repo: project.repo, number }),
       );
-      // Only a badge of the asked repository counts.
       return found !== undefined && sameRepo(repoFromPrUrl(found.url), project.repo)
         ? found
         : undefined;
     });
 
-  /**
-   * The PR the thread's tools act on: its bound PR's badge when one is bound (`boundBadge`), else
-   * the branch's PR found from the recorded clone (`discover`). The two never stand in for each
-   * other.
-   */
   const pr = (thread: Thread): Effect.Effect<PrStatus | undefined> =>
     thread.boundPr === undefined ? discover(thread) : boundBadge(thread, thread.boundPr);
 

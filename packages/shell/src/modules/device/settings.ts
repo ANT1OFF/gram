@@ -5,30 +5,19 @@ import { dirname, join } from "node:path";
 import * as Schema from "effect/Schema";
 import type { DeviceLogHead } from "./log.ts";
 
-/**
- * The lending settings: which folders are lent to which workspace on which server, whether a
- * server is paused, and where the local log stood. One file, authenticated with a key from the
- * keychain, in the app's own data folder, which no lent folder may contain. A file that fails the
- * check is ignored and lending is off, so a command that edits the file can't lend more than the
- * person did. Whether lending is on is never kept: it turns off when the app quits.
- */
-
 const LentFolderSetting = Schema.Struct({
   id: Schema.String.check(Schema.isPattern(/^f-[a-f0-9]{16}$/)),
   label: Schema.String.check(Schema.isMaxLength(128)),
   path: Schema.String.check(Schema.isMaxLength(4096)),
   device: Schema.Number,
   inode: Schema.Number,
-  /** When the folder was made, in nanoseconds; absent where the file system doesn't keep it. */
   born: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9]{1,24}$/))),
-  /** The person chose, in the lending sheet, to pass this folder's commands the whole environment. */
   fullEnvironment: Schema.Boolean,
 });
 
 const WorkspaceSetting = Schema.Struct({
   id: Schema.String.check(Schema.isMaxLength(128)),
   folders: Schema.Array(LentFolderSetting).check(Schema.isMaxLength(32)),
-  /** The person allowed only reads here, whatever the organisation allows. */
   readOnly: Schema.Boolean,
 });
 
@@ -58,9 +47,7 @@ export const EMPTY_DEVICE_SETTINGS: DeviceSettings = { v: 1, servers: [] };
 
 export type DeviceSettingsRead =
   | { readonly ok: true; readonly settings: DeviceSettings; readonly logHead?: DeviceLogHead }
-  /** No file yet: nothing is lent. */
   | { readonly ok: true; readonly settings: DeviceSettings; readonly fresh: true }
-  /** The file is there and isn't as this app wrote it: lending is off until the person decides. */
   | { readonly ok: false; readonly why: "edited" | "unreadable" };
 
 /** Far more than any real settings take: a file larger than this wasn't written by the app. */
@@ -145,7 +132,6 @@ export const writeDeviceSettings = async (
   try {
     try {
       await handle.writeFile(text);
-      // On disk before it takes the old file's place, so a crash can't leave an empty one.
       await handle.sync();
     } finally {
       await handle.close();
@@ -155,7 +141,6 @@ export const writeDeviceSettings = async (
     await fs.rm(next, { force: true });
     throw error;
   }
-  // The rename itself is on disk too, so a power loss can't bring the old settings back.
   await syncFolder(dirname(file));
 };
 
@@ -169,8 +154,7 @@ export const syncFolder = async (folder: string): Promise<void> => {
   }
   try {
     await handle.sync();
-  } catch {
-    // Some file systems refuse to sync a folder; the file itself already is.
+  } catch (_someFileSystemsRefuseToSyncAFolderThe) {
   } finally {
     await handle.close();
   }

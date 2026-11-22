@@ -65,19 +65,8 @@ import { neighbour, rowsInOrder, type PanelRow, type StatusGroup } from "./worke
 import { useOpenWorker, useWorkerGroups } from "./workers-panel";
 import { liveTools, recordTools, type Tool } from "./worker-tools";
 
-// A worker open in the right pane, under "‹ Workers › its title": its state on one line, its own
-// tools in one row under that (Conversation, Changes, PR, Proof where the repository names checks,
-// Terminal, Files), and its composer, which
-// steers it. The orchestrator's chat stays in the main view beside it. Back (‹, the crumb, or Esc
-// with the keys in the pane and nothing typed) returns to the list where it was; ↑ ↓ step to the
-// worker before or after it in the list's order, and its title opens a switcher of every worker,
-// by group. A finished worker is read only: no composer, its Terminal and Files off and saying why,
-// and its Changes what its PR (or, its worktree cleaned up, its record) kept. Opening it from the
-// pane's list, its switcher or ↑ ↓ puts the keys on its title, so Esc and ↑ ↓ work at once.
-
 export { WORKER_PANE_TEST_ID };
 
-/** A worker kept only as its record, from what Gram kept of it. */
 function useRecord(worker: ThreadId, record: boolean) {
   const api = useApi();
   return useQuery({
@@ -89,7 +78,6 @@ function useRecord(worker: ThreadId, record: boolean) {
   });
 }
 
-/** Whether a key press is typing: in a field that holds something, where Esc is the field's. */
 const typedIn = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) return false;
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
@@ -98,7 +86,6 @@ const typedIn = (target: EventTarget | null): boolean => {
   return target.isContentEditable && (target.textContent ?? "").trim() !== "";
 };
 
-/** Whether the keys are on something of the pane's, other than the pane itself or a disabled button. */
 const heldInPane = (root: HTMLElement | null): boolean => {
   const held = document.activeElement;
   return (
@@ -109,7 +96,6 @@ const heldInPane = (root: HTMLElement | null): boolean => {
   );
 };
 
-/** Whether a key press is in a field at all, where the arrows move the caret. */
 const inField = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
   (target instanceof HTMLInputElement ||
@@ -119,7 +105,6 @@ const inField = (target: EventTarget | null): boolean =>
 /** Back to the list, which puts back its place and the keys on the current worker's row. */
 export const goBackToWorkers = backToWorkers;
 
-/** The files a finished worker's PR changed, from the query (and cache) the PR panel reads. */
 function usePrFiles(worker: ThreadId, enabled: boolean) {
   const api = useApi();
   const git = useThreadsStore((s) => s.byId[worker]?.git);
@@ -133,7 +118,6 @@ function usePrFiles(worker: ThreadId, enabled: boolean) {
   return files === undefined || files.length === 0 ? undefined : files;
 }
 
-/** Whether a key press in the pane would lose something typed: its composer holds a draft. */
 const draftIn = (root: HTMLElement | null): boolean =>
   [...(root?.querySelectorAll<HTMLTextAreaElement>("textarea") ?? [])].some(
     (field) => field.value.trim() !== "",
@@ -168,7 +152,6 @@ export function WorkerPane({
   const titleRef = useRef<HTMLButtonElement>(null);
   const git = summary?.git;
   const row = order.find((each) => each.threadId === worker);
-  // Done in the list (merged, completed), else completed by its thread: read only either way.
   const finished =
     !record &&
     (row !== undefined ? row.source.tab === "done" : summary?.thread.completedAt !== undefined);
@@ -183,16 +166,12 @@ export function WorkerPane({
         prFiles: prFiles?.length,
         verify,
       });
-  // A tool that is off shows nothing: its conversation does instead.
   const shownTab = tools.find((tool) => tool.id === tab && tool.off === undefined)?.id ?? "thread";
   const before = neighbour(order, worker, -1);
   const after = neighbour(order, worker, 1);
-  // Stepping keeps the tool shown, where the next worker has it.
   const step = (next: PanelRow | undefined) => {
     if (next !== undefined) openWorker(next, PLAIN, KEEP_TOOL);
   };
-  // Opened from the pane's list, its switcher or ↑ ↓: the keys on its title once drawn, unless
-  // they are on something of the pane's already (the tool they stepped from).
   const takeKeys = useBesideStore((s) => s.takeKeys);
   useEffect(() => {
     if (!takeKeys) return;
@@ -200,8 +179,6 @@ export function WorkerPane({
     if (heldInPane(root.current)) return;
     void focusWhenRendered(() => titleRef.current);
   }, [takeKeys]);
-  // A link in the pane opened one of its tools: the keys stay where they were, and if the link went
-  // with the view it was in, they go to the shown tool's tab, where Esc and ↑ ↓ work.
   const toolKeys = useBesideStore((s) => s.toolKeys);
   useEffect(() => {
     if (!toolKeys) return;
@@ -211,7 +188,6 @@ export function WorkerPane({
       return root.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? null;
     });
   }, [toolKeys]);
-  // Its keys while focus or the last press is in it; a press anywhere else gives them back.
   useEffect(() => {
     const away = (event: PointerEvent) => {
       if (!root.current?.contains(event.target as Node | null)) setFocused(false);
@@ -223,16 +199,12 @@ export function WorkerPane({
     };
   }, [setFocused]);
 
-  // Esc goes back, with the keys in the pane and nothing typed; a menu or field that took it first
-  // keeps it. It is marked as handled, never stopped: an app around Gram skips a handled Esc.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Escape" || event.defaultPrevented || event.repeat) return;
-    // Something typed keeps it, in the field or in the composer below.
     if (typedIn(event.target) || draftIn(root.current)) return;
     event.preventDefault();
     goBackToWorkers();
   };
-  // ↑ ↓ on its head (the crumb, the state line, the tools): the worker before or after.
   const onHeadKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey) return;
@@ -266,7 +238,6 @@ export function WorkerPane({
         className="flex shrink-0 flex-col gap-1 border-b border-border px-section pt-list pb-1.5"
       >
         <div className="flex min-w-0 items-center gap-0.5">
-          {/* ‹ and the list's name are one way back: one target, one stop for the keys. */}
           <Hint
             label="Back (Esc)"
             side="bottom"
@@ -374,7 +345,6 @@ export function WorkerPane({
 const ICON_BUTTON =
   "grid size-7 shrink-0 place-items-center rounded-sm text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40";
 
-/** ↗: the worker in the main view, in the orchestrator's place; the pane closes. */
 function MainViewButton({ worker }: { worker: ThreadId }) {
   const open = useOpenThread();
   return (
@@ -399,12 +369,6 @@ function MainViewButton({ worker }: { worker: ThreadId }) {
   );
 }
 
-/**
- * A live worker's state in one line, in its sidebar row's order: its mark, its PR chips, then its
- * status in the list's own words less the PRs the chips name (each said once), then its agent and
- * when it was last active, kept together so they wrap as one. At work, what its thread runs. The
- * chip of the PR its PR tab names leaves the number to the tab; its plan is the next line's.
- */
 function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefined }) {
   const summary = useThreadsStore((s) => s.byId[worker]);
   const detail = useThreadsStore((s) => s.statusDetail[worker]);
@@ -450,10 +414,6 @@ function StateLine({ worker, row }: { worker: ThreadId; row: PanelRow | undefine
   );
 }
 
-/**
- * Its agent's mark (named on hover and to a screen reader) and "active 14m ago": one short piece
- * that never breaks, so it fits the state line beside the words and chips.
- */
 function AgentAge({
   agent,
   at,
@@ -463,7 +423,6 @@ function AgentAge({
   agent: string | undefined;
   at: number | undefined;
   now: number;
-  /** The time it was, for a finished worker, rather than how long ago. */
   stamp?: boolean;
 }) {
   if (agent === undefined && at === undefined) return null;
@@ -484,7 +443,6 @@ function AgentAge({
   );
 }
 
-/** A record's state in one line: merged or cleaned up and when, its PRs, its agent. */
 function RecordLine({ detail }: { detail: FinishedWorkerDetail | undefined }) {
   const now = useNow(true, undefined, 60_000);
   if (detail === undefined) return <div className="h-lh text-meta" />;
@@ -516,10 +474,6 @@ function RecordLine({ detail }: { detail: FinishedWorkerDetail | undefined }) {
   );
 }
 
-/**
- * The worker's tools, one row: each named, with its count; one that is off says why on hover and
- * to a screen reader, and stays reachable by the keys so the reason is too. ← → move along it.
- */
 function ToolRow({
   tools,
   shown,
@@ -571,8 +525,6 @@ function ToolRow({
             aria-disabled={off || undefined}
             aria-describedby={off ? `${reasons}-${tool.id}` : undefined}
             tabIndex={selected ? 0 : -1}
-            // A click leaves the keys in a field outside the pane (the chat's composer), where
-            // someone types; anywhere else they go to the tab clicked, so ← → move on from it.
             onMouseDown={(event) => {
               if (!keepsKeys(document.activeElement, row.current)) return;
               event.preventDefault();
@@ -612,11 +564,9 @@ function ToolRow({
   );
 }
 
-/** A tool picked by pointer leaves the keys where they are when they are in a field outside the pane. */
 const keepsKeys = (held: Element | null, row: HTMLElement | null): boolean =>
   inField(held) && row?.closest(`[data-testid="${WORKER_PANE_TEST_ID}"]`)?.contains(held) !== true;
 
-/** What a tool shows for the worker; a record's from what Gram kept. */
 function ToolBody({
   tool,
   worker,
@@ -634,7 +584,6 @@ function ToolBody({
   record: boolean;
   finished: boolean;
   prFiles: readonly { path: string; additions: number; deletions: number }[] | undefined;
-  /** Its committed head, which its Proof is read for. */
   head: string | undefined;
   detail: FinishedWorkerDetail | undefined;
   loading: boolean;
@@ -695,7 +644,6 @@ function ToolBody({
     case "terminal":
       return <TerminalPanel key={worker} threadId={worker} focusOnOpen={false} />;
     case "changes":
-      // A finished worker's, as its PR lists them: its branch is merged, its tree clean.
       if (finished && prFiles !== undefined) {
         return (
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -737,18 +685,11 @@ function Note({ children }: { children: ReactNode }) {
 
 const NO_PRS: readonly never[] = [];
 
-/** Its head's PR chip opens its PR tool here, the PR the tool names, the orchestrator staying. */
 const openPrTool = () => useBesideStore.getState().setTab("pr");
 
-/** An open with no ⌘ or Ctrl held: in the pane. */
 const PLAIN = { metaKey: false, ctrlKey: false } as const;
-/** ↑ ↓ and the switcher keep the tool shown. */
 const KEEP_TOOL = { keepTool: true } as const;
 
-/**
- * The open worker's title, which opens every worker of the orchestrator by group: a box to type in
- * narrows them, ↑ ↓ move, ⏎ opens, Esc closes and gives the keys back to the title.
- */
 function Switcher({
   trigger,
   title,
@@ -769,7 +710,6 @@ function Switcher({
   const [active, setActive] = useState<ThreadId | undefined>(undefined);
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
-  // The option the keys are on stays in the list's view as they move.
   useEffect(() => {
     if (!open || active === undefined) return;
     listRef.current

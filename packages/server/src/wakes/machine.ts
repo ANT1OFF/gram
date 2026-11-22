@@ -1,14 +1,3 @@
-/**
- * `machine`: this machine's own state, read in the server's process with no command run. `load` is
- * the 1-minute load average (`os.loadavg`), absolute as `uptime` shows it, staying below a number for
- * some minutes: for heavy checks to wait for a quiet machine. `diskFree` is the free space on the
- * volume holding a path (`fs.statfs`), the waiting thread's repo by default, dropping below some
- * GB: for cleanup to start before the disk fills.
- *
- * The kind polls every 30 seconds while a wake waits on it; a volume's free space is read at most
- * every five minutes. How long the load has stayed low is kept in memory, so a restart starts the
- * count again: the app can't say what the load was while it was down.
- */
 import { statfs } from "node:fs/promises";
 import { availableParallelism, loadavg } from "node:os";
 import { isAbsolute } from "node:path";
@@ -61,7 +50,6 @@ export const MachineStateLive = Layer.succeed(MachineState, {
     ),
 });
 
-/** How long one volume's free space answers for every wake on it. */
 const DISK_READ_EVERY_MS = 5 * 60_000;
 const GB = 1e9;
 const MAX_MINUTES = 24 * 60;
@@ -74,10 +62,6 @@ const ON_ANOTHER_MACHINE =
 const met = (facts: Readonly<Record<string, string>>): ConditionLook => ({ met: true, facts });
 const gb = (bytes: number) => (bytes / GB).toFixed(1);
 
-/**
- * Whether the load averages say it has been below `below` for `forMinutes` already: the averages
- * over at least that long all are. Beyond 15 minutes they can't say.
- */
 const quietAlready = (
   [one, five, fifteen]: readonly [number, number, number],
   below: number,
@@ -89,7 +73,6 @@ const quietAlready = (
 
 export const machineSource = Effect.gen(function* () {
   const machine = yield* MachineState;
-  /** Per wake id, since when every look has found the load below. */
   const belowSince = new Map<string, number>();
   const disks = new Map<string, { readonly at: number; readonly space: DiskSpace }>();
 
@@ -143,11 +126,8 @@ export const machineSource = Effect.gen(function* () {
   const source: WakeConditionSource<"machine"> = {
     kind: "machine",
     pollEvery: Duration.seconds(30),
-    // The load's hold is `forMinutes`, and free space doesn't flicker.
     debounce: Duration.zero,
     arm: (caller, spec) =>
-      // This machine's load and disks say nothing about the one a thread elsewhere runs on, and
-      // its folders aren't here to read the space of.
       !isLocalHost(caller.checkout)
         ? Effect.fail(refuse(ON_ANOTHER_MACHINE))
         : spec.metric === "load"

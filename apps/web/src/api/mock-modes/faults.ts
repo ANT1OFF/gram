@@ -1,13 +1,3 @@
-/**
- * The mock's fault profile (`VITE_MOCK_FAULTS=<rate>`, with `VITE_MOCK_FAULT_SEED`): that share of
- * the api's async calls is slowed, by a bounded delay, or fails the way a real server or socket
- * fails. Bombadil's `bombadil/faults.ts` then checks that the app stays usable. It wraps the api
- * the app is given, not `window.gramMock`, so specs that drive the mock directly are untouched.
- *
- * Streams and synchronous members pass through: only a call that returns a promise is a request.
- * A server or network failure of an `async` member stops it before it runs, so it changes nothing;
- * a timeout, or a failure of a member that only returns a promise, runs it and loses the reply.
- */
 import { sleep } from "@/lib/sleep";
 
 import { seeded } from "./prng";
@@ -35,7 +25,6 @@ export interface FaultOptions {
   readonly maxDelayMs?: number;
 }
 
-/** What each disturbed call becomes, by weight. */
 const KINDS: readonly (readonly [FaultKind, number])[] = [
   ["slow", 0.5],
   ["server", 0.2],
@@ -44,24 +33,13 @@ const KINDS: readonly (readonly [FaultKind, number])[] = [
 ];
 const DEFAULT_MAX_DELAY_MS = 4000;
 const MIN_DELAY_MS = 150;
-/** The faults kept on `window.gramMockFaults`, newest last. */
 const KEEP = 50;
-/** A call this soon after a press or a key counts as one the person asked for. */
 const ASKED_MS = 1000;
-/**
- * Members that change something. A read that fails is retried and may stay quiet; a change the
- * person asked for that fails must say so.
- */
 const WRITE =
   /^(add|answer|apply|approve|archive|cancel|clear|close|commit|create|delete|dismiss|edit|fork|import|install|interrupt|mark|merge|move|open|pin|push|remove|rename|reply|reset|resolve|restore|retry|revert|rewind|save|send|set|snooze|start|steer|stop|submit|undo|unpin|update|upsert)(?:[A-Z]|$)/;
 
-/**
- * A failure as the app would get it, with the api member it came from on top of its stack: an
- * async stack stops at this wrapper, and a report of an unhandled one should say which call it was.
- */
 const failure = (kind: Exclude<FaultKind, "slow">, method: string): Error => {
   const error = failureOf(kind, method);
-  // The frame goes under the message line, the first of the stack, ahead of the frames below it.
   const [message = String(error), ...frames] = (error.stack ?? String(error)).split("\n");
   error.stack = [message, `    at api.${method} (mock fault)`, ...frames].join("\n");
   return error;
@@ -96,7 +74,6 @@ const isPromise = (value: unknown): value is Promise<unknown> =>
 
 declare global {
   interface Window {
-    /** The faults the mock's fault profile injected, for Bombadil's properties and the console. */
     gramMockFaults?: InjectedFault[];
   }
 }
@@ -144,7 +121,6 @@ export function withFaults<T extends object>(api: T, options: FaultOptions): T {
     return function faulty(...args: unknown[]) {
       if (random() >= options.rate) return fn.apply(api, args);
       const kind = pick();
-      // An `async` member is a request before it runs: a server or network failure stops it there.
       if (isAsync && (kind === "server" || kind === "network")) {
         record(method, kind);
         return sleep(MIN_DELAY_MS).then(() => Promise.reject(failure(kind, method)));
@@ -153,7 +129,6 @@ export function withFaults<T extends object>(api: T, options: FaultOptions): T {
       if (!isPromise(result)) return result;
       record(method, kind);
       if (kind === "slow") {
-        // Settled now, delivered later: a rejection held for the delay is still handled.
         const settled = result.then(
           (value) => ({ ok: true as const, value }),
           (error: unknown) => ({ ok: false as const, error }),
@@ -162,7 +137,6 @@ export function withFaults<T extends object>(api: T, options: FaultOptions): T {
           .then(() => settled)
           .then((outcome) => (outcome.ok ? outcome.value : Promise.reject(outcome.error)));
       }
-      // The request ran and its reply is lost; its own outcome goes nowhere.
       result.catch(() => {});
       return sleep(kind === "timeout" ? maxDelay : MIN_DELAY_MS).then(() =>
         Promise.reject(failure(kind, method)),

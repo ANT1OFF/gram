@@ -29,12 +29,6 @@ import { errors, threadRef } from "./shared.ts";
  */
 export const OrchestrationRpcs = RpcGroup.make(
   Rpc.make("workspace.list", { success: Schema.Array(WorkspaceState), error: errors() }),
-  /**
-   * Creates a workspace, or with `id` renames one and replaces its projects. A new workspace takes
-   * `charter` whole, or starts with the default charter and the app's roster; with `id` a charter is
-   * refused, since `orchestrator.setCharter` is what changes one.
-   * Names must be unique after trimming and ignoring case; a conflict is `InvalidState`.
-   */
   Rpc.make("workspace.save", {
     payload: {
       id: Schema.optionalKey(WorkspaceId),
@@ -48,25 +42,13 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: WorkspaceState,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Refused while an orchestrator holds the workspace's slot. The workspace's memory directory is
-   * left on disk, under the data dir's `orchestration/<workspaceId>`: what an orchestrator
-   * learned is the user's, and removing a workspace is no request to delete it.
-   */
   Rpc.make("workspace.remove", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The workspace's orchestrator thread, created if nobody holds the slot. Exactly one of the two:
-   * `projectId` names the one-project workspace of that project, made on first use.
-   * An automatically created workspace uses the project's name with a numbered suffix if taken.
-   */
   Rpc.make("orchestrator.open", {
     payload: {
       workspaceId: Schema.optionalKey(WorkspaceId),
@@ -75,11 +57,6 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: Thread,
     error: errors(NotFound, InvalidState, AgentUnavailable),
   }),
-  /**
-   * ⌘N's New task. Opens the target's orchestrator as `orchestrator.open` does, then hands it the
-   * input as the user's message, steered while it runs; the orchestrator decides how to run it.
-   * The thread to open is the orchestrator.
-   */
   Rpc.make("workspace.startTask", {
     payload: StartTaskInput,
     success: Thread,
@@ -99,7 +76,6 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: WorkspaceState,
     error: errors(NotFound, InvalidState),
   }),
-  /** Pausing is the user's (`reason: "user"`); resuming clears a pause of any reason. */
   Rpc.make("orchestrator.setPaused", {
     payload: { workspaceId: WorkspaceId, paused: Schema.Boolean },
     success: WorkspaceState,
@@ -108,61 +84,37 @@ export const OrchestrationRpcs = RpcGroup.make(
   Rpc.make("orchestrator.ledger", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: OrchestratorLedger,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The ledger now, then again whenever it changes: a worker's status, requests, report, git or
-   * PR state, a stage or a group. Debounced, and a ledger that reads the same as the last one sent
-   * (its `builtAt` aside) is not sent again. Ends when the client unsubscribes.
-   */
   Rpc.make("orchestrator.watchLedger", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: OrchestratorLedger,
     error: errors(NotFound),
     stream: true,
   }),
-  /**
-   * The workspace's live feature cards, oldest first, brought up to date with the ledger: each
-   * feature once, its `version` grown whenever anything it shows changed. Persisted, so they
-   * survive a reload.
-   */
   Rpc.make("orchestrator.featureCards", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: FeatureCards,
     error: errors(NotFound, InvalidState),
   }),
-  /** The cards now, then again whenever one changes. Debounced; ends when the client unsubscribes. */
   Rpc.make("orchestrator.watchFeatureCards", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: FeatureCards,
     error: errors(NotFound),
     stream: true,
   }),
-  /**
-   * The user sets a feature's or a group's stage: exactly one of `feature` and `group`. Without a
-   * `plan` the target keeps the plan it has, and `stage` must then be one of it. The orchestrator
-   * reads the change in its next digest. `InvalidState` carries why a stage was refused.
-   */
   Rpc.make("orchestrator.setStage", {
     payload: {
       workspaceId: WorkspaceId,
@@ -175,7 +127,6 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: WorkspaceState,
     error: errors(NotFound, InvalidState),
   }),
-  /** Puts a feature in a group, making the group if need be; without `group`, takes it out of its group. */
   Rpc.make("orchestrator.setGroup", {
     payload: {
       workspaceId: WorkspaceId,
@@ -185,63 +136,31 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: WorkspaceState,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The user archives a feature: each of its workers is parked, so the ledger reads it archived and
-   * it leaves the Board. `InvalidState` while one of them runs or waits on the user, or when it has
-   * no worker left to park. The orchestrator reads it in its next digest. The threads parked.
-   */
   Rpc.make("orchestrator.archiveFeature", {
     payload: { workspaceId: WorkspaceId, feature: Schema.String },
     success: Schema.Array(ThreadId),
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The user pauses a feature, or resumes it. Paused, its running workers are interrupted, the
-   * orchestrator isn't woken for them, can't message them and spawns none for it; the Board and the
-   * sheet say "Paused". The orchestrator reads either in its next digest. `InvalidState` for a name
-   * that isn't a slug or a feature the workspace doesn't know. The workspace as it is now.
-   */
   Rpc.make("orchestrator.setFeaturePaused", {
     payload: { workspaceId: WorkspaceId, feature: Schema.String, paused: Schema.Boolean },
     success: WorkspaceState,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The user renames a feature: its slug changes at once everywhere it keys (its workers, stage,
-   * group, pause, card, held briefs and the orchestrator's last snapshot), and the orchestrator is
-   * told the new name in its next digest. Branches keep their names. `InvalidState` for a name that
-   * isn't a slug or one another feature has. The new slug.
-   */
   Rpc.make("orchestrator.renameFeature", {
     payload: { workspaceId: WorkspaceId, feature: Schema.String, to: Schema.String },
     success: Schema.String,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Replaces the orchestrator's agent session with a fresh one under the same thread, the memory
-   * as the bridge. Returns once it is under way. `InvalidState` while the setting is off, without
-   * an orchestrator, and while another handoff is running. `checkpoint: false` skips the turn that
-   * saves to memory first: the running turn is stopped, as Stop does (its open cards are
-   * declined), and the fresh session starts at once (on by default). With `model`, the fresh
-   * session opens on it and it becomes the workspace's orchestrator model: the one way onto a
-   * model the running session can't carry over to (`orchestrator.switch` refuses those).
-   */
   Rpc.make("orchestrator.handoff", {
     payload: {
       workspaceId: WorkspaceId,
       checkpoint: Schema.optionalKey(Schema.Boolean),
       model: Schema.optionalKey(ModelRef),
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: Thread,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Explicit user action. Completes asynchronously after checkpoint, graceful exit and target
-   * acknowledgement. `note: false` leaves the handoff note out of the checkpoint (on by default).
-   */
   Rpc.make("orchestrator.switch", {
     payload: {
       workspaceId: WorkspaceId,
@@ -254,40 +173,23 @@ export const OrchestrationRpcs = RpcGroup.make(
   Rpc.make("orchestrator.retrySwitch", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: Thread,
     error: errors(NotFound, InvalidState),
   }),
-  /** Cancels a requested switch only before shutdown starts. */
   Rpc.make("orchestrator.cancelSwitch", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * Spawns a low-priority brief held until a usage limit resets (`OrchestratorLedger.held`) now,
-   * without waiting for the reset; the orchestrator reads it in its next digest. The worker made.
-   * `InvalidState` for a brief no longer held, or when the spawn itself is refused.
-   */
-  /**
-   * The user's answer to a worker's question (docs/design/worker-questions.md), from any surface:
-   * sent straight to the worker, steered while it runs and queued while it is idle, with a copy in
-   * the orchestrator's next digest. The user may answer one still in triage too: their word outranks
-   * the orchestrator's. `InvalidState` for a question already closed; `NotFound` for none by that id.
-   */
   Rpc.make("workerQuestion.answer", {
     payload: AnswerWorkerQuestionInput,
     success: WorkerQuestion,
     error: errors(NotFound, InvalidState, ThreadNotFound, AgentUnavailable),
   }),
-  /** The user's dismissal of a worker's question, with an optional reason; the worker is told too. */
   Rpc.make("workerQuestion.dismiss", {
     payload: DismissWorkerQuestionInput,
     success: WorkerQuestion,
@@ -298,57 +200,27 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: Thread,
     error: errors(NotFound, InvalidState),
   }),
-  /**
-   * The workspace's workers that were closed with their worktree, newest first: those still on the
-   * reopen list, then those only its transcript archive keeps. Live workers are the ledger's.
-   */
   Rpc.make("orchestrator.finishedWorkers", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: Schema.Array(FinishedWorker),
     error: errors(),
   }),
-  /**
-   * `orchestrator.finishedWorkers` a page at a time. The first page (no `after`) holds what that
-   * call returns; each later one the archive-only workers past `after`. Done reads it to list every
-   * finished worker, back to the oldest transcript the archive keeps.
-   */
   Rpc.make("orchestrator.finishedWorkersPage", {
     payload: {
       workspaceId: WorkspaceId,
-      // `FinishedWorkersCursor`, spelled out: named here, it widens every RPC client's type to
-      // `any`-ish overloads (TS2722 across the web), while the same struct inline does not.
       after: Schema.optionalKey(Schema.Struct({ at: Schema.Number, threadId: Schema.String })),
     },
     success: FinishedWorkersPage,
     error: errors(),
   }),
-  /**
-   * One closed worker, read-only, from what Gram kept of it: its record, reports and conversation,
-   * or the archived transcript alone. `ThreadNotFound` once neither has it.
-   */
   Rpc.make("orchestrator.finishedWorker", {
     payload: threadRef,
     success: FinishedWorkerDetail,
     error: errors(ThreadNotFound),
   }),
-  /**
-   * Makes a thread a worker of the workspace's orchestrator: a plain
-   * thread joins, and a worker of another workspace moves, leaving that one. `feature` is the one
-   * it goes under, else it is named from its branch or title. `addRepos` adds the thread's repos to
-   * the workspace when they aren't in it, which without it is `InvalidState` naming them. So is a
-   * workspace with no orchestrator, an orchestrator or dream thread, one already a worker there, and
-   * one in a repo's main checkout or outside git.
-   */
-  /**
-   * The workspaces the thread can join or move to: each with an orchestrator open, its own left out
-   * for a worker, none for an orchestrator or a dream or while workspaces are off. `adds` names the
-   * thread's repos, its extra worktrees' included, that joining would add.
-   */
   Rpc.make("thread.joinTargets", {
     payload: threadRef,
     success: Schema.Array(JoinTarget),
@@ -365,27 +237,16 @@ export const OrchestrationRpcs = RpcGroup.make(
     success: Thread,
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),
-  /** Makes a worker a plain thread: clears `spawnedBy` and `workspaceId`, so delegation ends. */
   Rpc.make("thread.detach", {
     payload: threadRef,
     success: Thread,
     error: errors(ThreadNotFound, InvalidState),
   }),
-  /**
-   * The workspace's routines as its charter has them, each with how its runs stand: the next run,
-   * the last one, and whether one waits on a pause. Routines are changed through the charter
-   * (`orchestrator.setCharter`), whose write path gives each an id.
-   */
   Rpc.make("routine.list", {
     payload: { workspaceId: WorkspaceId },
     success: Schema.Array(RoutineStatus),
     error: errors(NotFound),
   }),
-  /**
-   * The user's Run now, off the schedule, under the same rules as a due run: a paused workspace, or
-   * a worker or held brief of its last run still going, refuses it with `InvalidState`. The routine
-   * with the run recorded.
-   */
   Rpc.make("routine.run", {
     payload: { workspaceId: WorkspaceId, id: RoutineId },
     success: RoutineStatus,

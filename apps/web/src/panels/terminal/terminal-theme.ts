@@ -13,7 +13,6 @@ import { resolveContrast, resolveMode, type SystemPrefs, type ThemePrefs } from 
 import type { TerminalSearchColors, TerminalTheme } from "./ghostty-loader";
 import { terminalFont } from "./terminal-font";
 
-/** The active palette after light/dark pairing and the contrast preference. */
 const activePalette = (
   prefs: Pick<ThemePrefs, "palette" | "mode" | "contrast">,
   customPalettes: readonly Palette[],

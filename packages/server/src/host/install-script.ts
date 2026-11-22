@@ -1,21 +1,3 @@
-/**
- * The installer a new machine runs to join this Gram, as one command:
- *
- *   curl -fsSL 'https://<device>.<tailnet>.ts.net/host/install' | sh -s -- '<join link>'
- *
- * Gram's own app carries `gram-host` (`gram-host.js` beside the server, which the app's binary runs
- * in host mode, `launch.ts`), so the machine needs no Node, checkout or package of its own. The script uses a Gram
- * app installed there when it is this Gram's version (or, for a Gram run from source, any that has
- * `gram-host.js`); otherwise it downloads this Gram's release from GitHub, checks it against the
- * release's `SHA256SUMS.txt`, and keeps it beside the host's folder. On Linux that list must carry
- * the publisher's Ed25519 signature under the key pinned in `@gram/git/release-signature`, checked
- * with OpenSSL 3; on macOS the unpacked app must be Gram signed by the publisher's Developer ID
- * team and accepted by Gatekeeper, before anything in it runs. It then writes a `gram-host`
- * command to `~/.local/bin` and joins with the link on stdin; run again on a joined machine, it
- * moves the service to the new app instead. The script holds no secret: the link is the user's to
- * pass, and it sits in that shell's history and `sh`'s arguments until the script ends.
- */
-
 import { GRAM_MAC_TEAM_ID, macDesignatedRequirement, validTeamId } from "@gram/git/mac-signature";
 import { GRAM_RELEASE_PUBLIC_KEY, releaseKeyPem } from "@gram/git/release-signature";
 import { LINUX_HOST_SWITCHES } from "./launch.ts";
@@ -45,7 +27,6 @@ export const RELEASES = "https://github.com/ANT1OFF/gram/releases/download";
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
 const ORIGIN = /^https:\/\/[0-9A-Za-z.-]+(?::\d+)?$/;
 
-/** The installer's URL, quoted for the shell so nothing in the origin is read as a command. */
 const installUrl = (origin: string): string => `'${origin.replaceAll("'", "")}/host/install'`;
 
 /** The one command Settings → Machines shows, for this Gram at `origin` and its join link. */

@@ -1,6 +1,3 @@
-// `gh api rate_limit`, the one GitHub endpoint that reports the quota without spending any of it.
-// Free to poll, so callers can log headroom and slow down before GitHub refuses rather than after.
-
 import * as Clock from "effect/Clock";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";

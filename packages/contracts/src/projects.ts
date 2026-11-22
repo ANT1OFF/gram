@@ -106,7 +106,6 @@ const withoutGit = (name: string) =>
   name.toLowerCase().endsWith(".git") ? name.slice(0, -4) : name;
 const isName = (name: string) => NAME.test(name) && name !== "." && name !== "..";
 
-/** A URL's path as its segments; `undefined` for `..` or an empty segment. */
 const segmentsOf = (path: string): string[] | undefined => {
   const segments = path.replace(/\/$/, "").split("/");
   return segments.every((segment) => SEGMENT.test(segment) && segment !== "." && segment !== "..")
@@ -114,7 +113,6 @@ const segmentsOf = (path: string): string[] | undefined => {
     : undefined;
 };
 
-/** The remote at `host`/`segments`, spelled back as `url` builds it; GitHub's over https is `gh`'s. */
 const remoteAt = (
   host: string,
   segments: readonly string[] | undefined,
@@ -141,7 +139,6 @@ export const parseRepoRemote = (input: string): RepoRemote | { readonly error: s
   const text = input.trim();
   if (text === "") return { error: "Type a GitHub repository, such as owner/repo, or its URL." };
   const invalid = { error: `${text} isn't a GitHub repository or a git URL.` };
-  // Printable ASCII only, which also keeps out whitespace; `?`, `#` and `\\` have no place in one.
   if (/[^\x21-\x7e]|[\\?#]/.test(text) || text.startsWith("-")) return invalid;
   if (text.startsWith("http://")) return { error: "Use the repository's https URL." };
 
@@ -186,8 +183,7 @@ export const parseRepoRemote = (input: string): RepoRemote | { readonly error: s
 export const remoteKey = (remote: RepoRemote): string =>
   remote.kind === "github"
     ? `github.com/${remote.owner}/${remote.repo}`.toLowerCase()
-    : // GitHub's names don't depend on case; another server's may, so only its host is folded.
-      GITHUB_HOSTS.has(remote.host)
+    : GITHUB_HOSTS.has(remote.host)
       ? `github.com/${remote.path}`.toLowerCase()
       : `${remote.host}/${remote.path}`;
 

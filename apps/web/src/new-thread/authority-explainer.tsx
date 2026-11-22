@@ -2,12 +2,6 @@ import { SquareTerminal, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-/**
- * The other authority over what agents do, beside the autonomy choice it is shown with: a
- * thread's permission mode governs what runs and changes where the agent works. The autonomy
- * choice says what its own levels allow, so it isn't said again here. Neither widens the other.
- * Its words hold wherever an agent works (this machine, or an embedding app's sandbox).
- */
 const ROWS: readonly { icon: LucideIcon; term: string; line: string }[] = [
   {
     icon: SquareTerminal,
@@ -28,7 +22,6 @@ export function AuthorityExplainer({ className }: { className?: string }) {
       className={cn("flex flex-col gap-2", className)}
     >
       {ROWS.map(({ icon: Icon, term, line }) => (
-        // The term and its line are the row's own children, as a list of terms is read.
         <div key={term} className="relative flex min-w-0 flex-col pl-6">
           <Icon
             aria-hidden

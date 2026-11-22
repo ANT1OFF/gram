@@ -153,24 +153,15 @@ const BUSY: ReadonlySet<ThreadStatus> = new Set([
   "needsApproval",
   "needsInput",
 ]);
-/** A turn held at the user's answer: nothing runs, and the card's answer is the step to take. */
 const WAITING_ON_YOU: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 const HINT_MS = 2500;
-/**
- * The threads with a send or steer waiting for the connection, across every composer: a thread's
- * pane is remounted when the user leaves and comes back, and a second press there must not queue a
- * second send of the same draft beside the first mount's.
- */
 const waitingThreads = new Set<string>();
-/** Shown while a send waits for the connection to come back. */
 const RECONNECT_HINT = "Waiting for the connection — sends once it's back";
 
 type ComposerProps = {
   threadId: ThreadId;
   focused: boolean;
-  /** In place of "Message…", e.g. beside the chat, where it steers a worker. */
   placeholder?: string | undefined;
-  /** The thread is a live worker of an orchestrator: the placeholder names "this worker". */
   toWorker?: boolean;
 };
 
@@ -190,7 +181,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const surfaceRef = useRef<HTMLDivElement>(null);
-  // The thread `/new` just created: its composer moves in from where the hero's prompt box was.
   const handoff = useSlabHandoff((s) => (s.threadId === threadId ? s.from : undefined));
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const identity = useThreadsStore((s) => s.byId[threadId]?.identity);
@@ -225,41 +215,25 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   const status = summary?.status ?? "cold";
   const running = RUNNING.has(status);
   const busy = BUSY.has(status);
-  // Unknown until settings load, and Enter doesn't send till then: assuming the default would post
-  // the first line of someone who chose "Shortcut only" and started typing at once.
   const sendKey = useServerSettings((s) => (s.settings ? sendKeyOf(s.settings) : undefined));
-  // The turn is over but a background subagent is still working. To the user that is the agent
-  // running, so Stop stays: between turns it stops those subagents, which an interrupt can't reach.
   const background = useThreadsStore((s) =>
     backgroundWorking(status, activityLine(status, s.statusDetail[threadId], summary?.activity)),
   );
-  // Stop steps back while the turn only waits on an answer; a background agent still works.
   const waitingOnYou = WAITING_ON_YOU.has(status) && !background;
-  // A turn held at a card (an approval, a question) still takes the user's steer: the agent reads it
-  // with the card's answer, once the tool call the card is on returns. An interrupt there stops the
-  // turn, withdrawing the card, and the message goes first once it has ended.
   const atCard = WAITING_ON_YOU.has(status);
   const folderGone = worktreeMissing(summary?.git);
-  // A turn whose folder is gone is being stopped: the server's steer would hand the message to an
-  // agent that can't run there, while its send refuses and says why, so the send key sends.
   const steerable = busy && summary?.capabilities?.steer === true && !folderGone;
-  // Codex can't stop its turn for a message: there an interrupt goes in as a steer. At a card it is
-  // a stop, then the message, which every agent can do.
   const interruptible = steerable && (atCard || summary?.capabilities?.steerInterrupt === true);
-  // Why nothing goes into the open turn now, said on Steer and Interrupt rather than dropping them.
   const steerRefusal =
     !busy || steerable
       ? undefined
       : folderGone
         ? "This thread's folder is gone, so its turn takes nothing more"
         : "This agent can't take a message mid-turn, so it waits for the turn to end";
-  // The way the next message goes into the running turn, as the delivery chip says it. It holds for
-  // one message: a delivery, or the turn ending, puts it back to a steer.
   const [picked, setPicked] = useState<Delivery>("steer");
   useEffect(() => {
     if (!steerable) setPicked("steer");
   }, [steerable]);
-  // Some tests render a thread with no model.
   const agent = summary?.thread.model?.agent ?? "claude";
   const canFork = summary?.capabilities?.fork === true;
   const reported = identity?.commands;
@@ -268,8 +242,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     [agent, reported, canFork],
   );
   const query = slashDismissed ? undefined : slashQuery(text);
-  // In the Orchestrator layout the orchestrator's `/` opens its verbs first; a name none of them
-  // starts falls through to the agent's commands and Gram's, as everywhere else.
   const orchestrator = useOrchestratorVerbs(threadId);
   const verbs =
     query === undefined || orchestrator === undefined ? [] : filterVerbs(orchestrator.verbs, query);
@@ -306,7 +278,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
 
   const fieldRef = mentions.textareaProps.ref;
   const mirrorRef = useRef<HTMLDivElement>(null);
-  // Settings → AI helpers can switch them off, which hides what's already here too.
   const suggestOn = useServerSettings(
     (s) => s.settings !== undefined && helperOn(s.settings, "suggest"),
   );
@@ -315,7 +286,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   const [fieldFocused, setFieldFocused] = useState(false);
   const [composing, setComposing] = useState(false);
   const [caretAtEnd, trackCaret] = useCaretAtEnd();
-  /** An insertion of ours, which `onChange` mustn't treat as the user editing. */
   const inserting = useRef(false);
 
   const dictation = useComposerDictation({
@@ -341,7 +311,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       editing !== undefined ||
       dictation.active,
   });
-  /** What the last whole acceptance left in the box, to tell whether it was edited before sending. */
   const accepted = useRef<{ turnId: string; text: string } | undefined>(undefined);
   const record = (event: SuggestEvent) =>
     void api
@@ -349,24 +318,15 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       .catch((error: unknown) => console.warn("suggestions", error));
 
   const shown = ghost !== undefined;
-  // The reply and its keys sit in a mirror laid over the field, which sizes from the draft alone: a
-  // reply longer than the empty field would hide its keys again, so the field grows to hold it, but
-  // never past its own cap, which keeps the transcript's share of a short pane. A reply that still
-  // doesn't fit pins the keys to the field's corner instead. Measured afresh each time, the field
-  // back at its own height first, so a shorter reply shrinks it.
-  // Dictated words not yet committed sit in the same mirror, and the field grows to hold them too.
   const partialInline = ghost === undefined && dictation.partial !== "" && caretAtEnd;
   const ghostRest = ghost?.rest ?? (partialInline ? dictation.partial : undefined);
   const ghostPosition = ghost?.position;
   const hintPinned = useMirrorFit(fieldRef, mirrorRef, ghostRest, ghostPosition, text);
   useEffect(() => {
     if (shown && useSuggestionsStore.getState().count(threadId)) record("shown");
-    // `record` is recreated every render and only reads `api`.
     // oxlint-disable-next-line react/exhaustive-deps -- `record` is recreated every render and only reads `api`
   }, [shown, threadId]);
 
-  // Turns started in this thread since the composer mounted: an answer asked for before the latest
-  // one started belongs to a turn that's over, even if that one has ended too by now.
   const turns = useRef(0);
   useSubscription(
     () =>
@@ -379,15 +339,11 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     [threadId],
   );
 
-  // A thread opened idle without suggestions for its last turn asks for them, once per turn, and
-  // only in front of the user: a pane focused in a window behind another app isn't watched.
   const looking = focused && attended;
   const lastActivityAt = summary?.thread.lastActivityAt;
   const askedFor = useRef<string | undefined>(undefined);
-  // A snapshot after a reconnect drops what was held, and so asks again even with no new activity.
   const generation = useSuggestionsStore((s) => s.generation);
   useEffect(() => {
-    // Taken back for an edited plan, they're asked for again, once each time.
     const key = `${threadId}:${lastActivityAt}:${generation}:${suggestions?.takenBack ?? 0}`;
     const held = suggestions !== undefined && !suggestions.stale;
     if (!suggestOn || !looking || busy || held || askedFor.current === key) {
@@ -406,11 +362,9 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       .catch((error: unknown) => console.warn("suggestions", error));
   }, [api, busy, generation, looking, lastActivityAt, suggestOn, suggestions, threadId]);
 
-  /** Types `insert` after what's there, as the user would have, so ⌘Z undoes it. Never sends. */
   const acceptSuggestion = (current: Ghost, insert: string, whole: boolean) => {
     const field = fieldRef.current;
     if (field === null || suggestions === undefined) return;
-    // Taking a word keeps to the suggestion it came from, though what's typed may now fit others.
     useSuggestionsStore.getState().choose(threadId, current.suggestion);
     inserting.current = true;
     try {
@@ -431,14 +385,12 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   };
 
   const flash = (message: string) => {
-    // An in-flight action can finish after its composer has gone.
     if (!hintMounted.current) return;
     clearTimeout(hintTimer.current);
     setHint(message);
     hintTimer.current = setTimeout(() => setHint(undefined), HINT_MS);
   };
 
-  /** The message to send, and how to give its draft back if it doesn't go. */
   const take = ():
     | {
         input: UserInput;
@@ -478,15 +430,12 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     };
     history.push(typed);
     setText("");
-    // Whatever was sent answered them. Only a starting turn clears them, and a queued message
-    // starts none, so they came back into the emptied box and → ↵ sent the same reply again.
     useSuggestionsStore.getState().dismiss(threadId);
     attachments.clear();
     setSlashDismissed(false);
     mentions.reset();
     const giveBack = () => {
       if (!files.restore()) return;
-      // Whatever was typed while the message was in flight stays, after the one given back.
       const since = (useDraftStore.getState().text[threadId] ?? "").trim();
       setText([typed, since].filter(Boolean).join("\n\n"));
       useDiffCommentsStore.getState().restore(threadId, reviewed);
@@ -500,7 +449,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     };
   };
 
-  /** Ends that wait when the composer goes, as switching threads unmounts it. */
   const waitAborts = useRef(new Set<AbortController>());
   useMountEffect(() => {
     const aborts = waitAborts.current;
@@ -508,21 +456,11 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       for (const abort of aborts) abort.abort();
     };
   });
-  /** The draft as it is now, for a send that waited to see whether it is still the one pressed. */
-  // Every chip, uploading ones too: `ready` leaves those out, and one pasted while the send waited
-  // would be dropped by the send and its chip cleared.
   const latestDraft = useLatest({ text, items: attachments.items });
-  /**
-   * Waits for a dropped connection, up to two minutes, with the message still in the box, so a
-   * reload meanwhile keeps it; said until it is back, never a silent spin.
-   * `false` when it didn't come back, the composer went, or the draft (its text or attachments)
-   * changed meanwhile: the action would send what was pressed, so the user sends what is there.
-   */
   const connected = async (): Promise<boolean> => {
     if (!attachments.active) return false;
     if (api.connection.get().status !== "reconnecting") return true;
     if (waitingThreads.has(threadId)) {
-      // Untimed, as the first press's: the wait still under way clears it when it ends.
       clearTimeout(hintTimer.current);
       setHint(RECONNECT_HINT);
       return false;
@@ -574,13 +512,11 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       const result = await api.send(threadId, input);
       if (!active()) return;
       if (result.queued) {
-        // A thread that waits for its machine has no turn to end.
         const waits =
           useThreadsStore.getState().byId[threadId]?.thread.awaitingMachine !== undefined;
         flash(waits ? WAIT_WORDS.queued : "Queued — sends when the turn ends");
       }
     } catch (error) {
-      // Give the text and diff comments back rather than lose them; a failed rewind keeps the edit.
       giveBack();
       if (active()) flash(`Couldn't send: ${errorMessage(error)}`);
       return;
@@ -590,7 +526,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     if (newDraft && attachments.active) void navigate({ to: "/new" });
   };
 
-  /** Into the running turn: after its tool calls, or with `interrupt` stopping it now. */
   const steer = async (interrupt = false) => {
     if (intercept()) return;
     if (!(await connected())) return;
@@ -614,7 +549,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
         );
       }
     } catch (error) {
-      // The turn can end between the click and the call, so give the message back rather than lose it.
       giveBack();
       if (active()) flash(`Couldn't steer: ${errorMessage(error)}`);
     } finally {
@@ -622,10 +556,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     }
   };
 
-  /**
-   * Sends the draft as `action` says: at rest a send, into a running turn a steer (after its tool
-   * calls, cancelling nothing), a queue (after the turn) or an interrupt (stopping it now).
-   */
   const deliver = (action: Exclude<SendAction, "stop">) => {
     setPicked("steer");
     switch (action) {
@@ -638,7 +568,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
         return void steer(true);
     }
   };
-  /** What the send key does now: what the chip says while a turn takes input, else a send or a queue. */
   const sendNow = () => {
     const action = sendAction({
       hasDraft: true,
@@ -685,7 +614,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   const refreshStashes = () =>
     void queryClient.invalidateQueries({ queryKey: stashesQueryKey(threadId) });
 
-  /** Sets the draft aside and clears the composer; `false` when there was nothing to stash. */
   const stash = async (): Promise<boolean> => {
     const files = attachments.claim("stash");
     if (files === undefined) return false;
@@ -698,13 +626,11 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       files.release();
       return false;
     }
-    // The id travels with the request, so a retried add can't store the draft twice.
     const draft = {
       id: crypto.randomUUID() as StashId,
       text: currentText,
       attachments: files.ready,
     };
-    // As a send does: consume the captured draft now, so the next one can be typed independently.
     setText("");
     files.consume();
     setSlashDismissed(false);
@@ -724,7 +650,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     }
   };
 
-  /** Puts a stash back in the composer; a draft already there is stashed first, so none is lost. */
   const restore = async (saved: DraftStash) => {
     const files = attachments.claim("restore");
     if (files === undefined) return;
@@ -756,7 +681,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       keys: "mod+s",
       label: "Stash the draft",
       group: "Composer",
-      // Only from this composer: not while typing in the terminal, a settings form or elsewhere.
       when: () => surfaceRef.current?.contains(document.activeElement) === true,
       run: () => {
         void stash().then((stashed) => stashed && flash("Draft stashed"));
@@ -765,10 +689,8 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     focused,
   );
 
-  /** Does what Gram has for `action`, which the box held as `typedText`. */
   const runNative = async (action: NativeAction, args: string, typedText: string) => {
     const failed = (what: string) => (error: unknown) => {
-      // As a rejected send does: whatever was typed while it was in flight stays, after it.
       const since = (useDraftStore.getState().text[threadId] ?? "").trim();
       setText([typedText, since].filter(Boolean).join("\n\n"));
       flash(`${what}: ${errorMessage(error)}`);
@@ -818,15 +740,10 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     }
   };
 
-  /**
-   * Answers a command Gram handles, or holds back one its note explains; `false` leaves the
-   * draft to be sent as typed.
-   */
   const intercept = (): boolean => {
     const typedText = text.trim();
     const resolved = resolveTyped(agent, typedText, reported ?? [], canFork);
     if (resolved.kind === "agent") return false;
-    // The note above the box says why; nothing is sent.
     if (resolved.kind === "unavailable") return true;
     if (resolved.action === "addDirectory" && resolved.args === "") {
       flash("Name the folder after it: /add-dir ~/code/other");
@@ -844,7 +761,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     setSlashIndex(0);
   };
 
-  /** A verb runs as it is picked: the `/` typed for it goes, as a sent command's does. */
   const chooseVerb = (verb: Verb) => {
     setText("");
     setSlashIndex(0);
@@ -873,9 +789,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       }
     }
     if (mentions.onKeyDown(event)) return;
-    // After the menus, which hide the suggestion while open, and before Send, which sends only what
-    // is typed. Each key acts only while a suggestion shows, and the caret is then at the end, where
-    // → and ⌥→ do nothing anyway.
     if (ghost !== undefined) {
       const native = event.nativeEvent;
       const step = shortcutPressed("composer.nextSuggestion", native)
@@ -902,12 +815,8 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
         return record("dismissed");
       }
     }
-    // After the slash menu and mentions, whose Enter picks an item. Inside an open code fence Enter
-    // is a new line under either setting: nobody sends half a code block on purpose.
     const caret = event.currentTarget.selectionStart;
     const fenced = inOpenFence(event.currentTarget.value.slice(0, caret));
-    // The Send shortcut is answered here as well as in the registry, which keeps a binding without
-    // ⌘/Ctrl out of fields; here it reaches this text area and no other.
     if (
       (!fenced && enterSends(event.nativeEvent, sendKey)) ||
       shortcutPressed("composer.send", event.nativeEvent)
@@ -915,12 +824,10 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       event.preventDefault();
       return sendNow();
     }
-    // ⌥↵ queues for after the turn, under either send key setting; at rest it sends.
     if (shortcutPressed("composer.queue", event.nativeEvent)) {
       event.preventDefault();
       return void send();
     }
-    // ⌘. with a draft for a turn that takes input stops the turn for it; bare, the registry's Stop.
     if (steerable && hasDraft && shortcutPressed("composer.stop", event.nativeEvent)) {
       event.preventDefault();
       return deliver("interrupt");
@@ -956,7 +863,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     setDragging(false);
     attachments.add(event.dataTransfer.files);
   };
-  // Enter and leave fire for every child the pointer crosses, so the tint follows a depth count.
   const onDragEnter = (event: DragEvent<HTMLDivElement>) => {
     if (!event.dataTransfer.types.includes("Files")) return;
     dragDepth.current += 1;
@@ -970,15 +876,12 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
 
   const model = summary?.thread.model;
   const models = useModels(model?.agent ?? "claude", model?.profileId);
-  // Claude's built-in list is no fallback for a gateway agent's models.
   const refreshModels = useRefreshModels(model?.agent ?? "claude", model?.profileId);
-  // A rate-limited turn's "Try another model" opens this thread's picker, whichever pane has focus.
   const onModelAsked = useCallback(
     (open: () => void) => onModelPickerAsked(threadId, open),
     [threadId],
   );
   const provider = useProviderLabel(model?.agent ?? "claude", model?.profileId);
-  // A thread stored on a pinned id or a name shows as the catalogue row it runs, check and efforts.
   const pickedModel = pickerModelId(models, model?.model);
   const modelChoices = modelOptions(
     models,
@@ -988,7 +891,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     provider,
   );
   const efforts = effortOptions(models, pickedModel);
-  // The model's own default heads the list, so the current effort always has its check.
   const effortChoices = efforts.length > 0 ? [DEFAULT_EFFORT_OPTION, ...efforts] : [];
   const modelWarning =
     model?.profileId !== undefined
@@ -997,9 +899,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
         ? accountModelWarning(models, model.model)
         : undefined;
   const isFavourite = useIsFavourite(model?.agent ?? "claude");
-  // The other agent's models, a group of their own below this one's: a pick opens "Continue in
-  // Codex" and changes nothing by itself. Only while the other CLI is installed, and not on the
-  // orchestrator, which continues in the other agent from its menu and its workspace's settings.
   const offer = useSwitchOffer(threadId);
   const otherAgent =
     offer.offered && summary?.thread.role !== "orchestrator" ? offer.to : undefined;
@@ -1035,12 +934,10 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
           },
         };
 
-  // The composer holds something, even if it can't go yet: a draft waiting on an upload isn't Stop.
   const hasDraft = canSend || attachments.uploading;
   const stopLabel = background ? "Stop the background agents" : "Stop";
   const held = useHeldDelivery(steerable && hasDraft);
   const action = sendAction({ hasDraft, busy, background, steerable, held, picked });
-  // The way a message goes into the open turn, as the delivery button shows it, typed or not.
   const way: Delivery = steerable ? (held ?? picked) : "queue";
   const sendKeyHint = sendKey === "enter" ? "↵" : sendHint;
   const deliveryKeys: Record<Delivery, string> = {
@@ -1048,7 +945,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     queue: (steerable ? queueHint : sendKeyHint) ?? "⌥↵",
     interrupt: stopHint ?? "",
   };
-  // What each way does now, as the delivery menu and the button's hint say it.
   const deliveryLines: Record<Delivery, string> = {
     steer:
       steerRefusal ??
@@ -1077,7 +973,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     queue: { aria: "Queue", hint: deliveryHint("queue") },
     steer: { aria: "Steer", hint: deliveryHint("steer") },
     interrupt: { aria: "Interrupt", hint: deliveryHint("interrupt") },
-    // The word and its key, "Stop (⌘.)": an icon button's tooltip names it and its shortcut.
     stop: {
       aria: "Stop",
       hint: withHint(waitingOnYou ? "Stop the turn instead of answering" : stopLabel, stopHint),
@@ -1089,13 +984,10 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       keys: "mod+.",
       label: "Stop the turn (with a draft: interrupt with it)",
       group: "Composer",
-      // With a draft for a turn that takes input, the turn stops for it: one step, not stop then send.
       run: () => (hasDraft && steerable ? deliver("interrupt") : void stopTurn(api, threadId)),
     },
     focused && (busy || background),
   );
-  // While a turn is open the round button is Stop, and the delivery button beside it sends; at rest
-  // the round button sends, or with only background agents at work and nothing typed, stops them.
   const roundAction: "send" | "stop" = busy || action === "stop" ? "stop" : "send";
   const runAction = (event: MouseEvent<HTMLButtonElement>) => {
     const clicked = sendAction({
@@ -1107,16 +999,13 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       picked,
     });
     if (clicked !== "stop") return deliver(clicked);
-    // The second click of a double click on Send lands here once the composer has emptied.
     if (event.detail > 1) return;
     return void stopTurn(api, threadId);
   };
-  // The delivery button with nothing typed says the way in and puts the caret in the field.
   const runDelivery = (event: MouseEvent<HTMLButtonElement>) => {
     if (!hasDraft) return void fieldRef.current?.focus();
     return runAction(event);
   };
-  /** The send control's right-click menu: every way to send, and Stop, which a draft can hide. */
   const withSendMenu = (trigger: ReactElement) => (
     <ContextMenu>
       <ContextMenuTrigger data-testid="send-menu-trigger" render={<span className="inline-flex" />}>
@@ -1174,8 +1063,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
     }
     const { variant: current, ...rest } = model;
     const variant = effortAfterSwitch(models, value, current);
-    // The server's refusal is the whole message: for a worker it names the charter's list, and for
-    // a gated Codex thread the gateway profile it lacks.
     void api
       .setModel(threadId, {
         ...rest,
@@ -1187,7 +1074,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       })
       .catch((error: unknown) => flash(errorMessage(error)));
   };
-  /** Says a pick took, in words beside the glyph that changed: "Effort set to Extra high". */
   const confirmPick = (label: string, options: readonly PickerOption<string>[], value: string) => {
     const option = options.find((o) => o.value === value);
     flash(`${label} set to ${option?.short ?? option?.label ?? value}`);
@@ -1217,12 +1103,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       .then(() => confirmPick("Mode", MODE_OPTIONS, mode))
       .catch((error: unknown) => flash(`Couldn't switch mode: ${errorMessage(error)}`));
   };
-  // One chip in every composer, the orchestrator's chat, a solo thread's and `/new` alike, and one
-  // popover with a section for each of model · effort · mode · speed. The chip says the values
-  // that aren't at their defaults in short words ("Opus · High · Auto"); short of room, in
-  // compact ones, then the model's alone, and only at the narrowest the agent's mark. Its name and
-  // tooltip say every value and its shortcut, and a dimension that doesn't apply is greyed in its
-  // section, saying why.
   const choices: ChoiceSection[] = [
     modelSection({
       value: pickedModel,
@@ -1261,7 +1141,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   return (
     <div
       className="shrink-0 bg-thread px-3 pt-1 pb-3"
-      // Escape discards what dictation heard from anywhere in the composer, the mic button included.
       onKeyDownCapture={dictation.onKeyDownCapture}
     >
       <SharedSlab
@@ -1314,9 +1193,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
                 <span className="text-transparent">{text}</span>
                 <span className="text-subtle">{ghost.rest}</span>
               </span>
-              {/* Right after the reply rather than in the toolbar, which a narrow pane leaves no
-                  room in: there the keys were cut to a sliver, and the reply read as a draft. */}
-              {/* Kept in the flow while pinned, only hidden, so every measure counts its lines. */}
               <GhostHint position={ghost.position} count={ghost.count} hidden={hintPinned} />
             </div>
           )}
@@ -1340,13 +1216,10 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
             aria-activedescendant={listOpen ? `${listId}-${listActiveIndex}` : undefined}
             aria-autocomplete="list"
             value={text}
-            // Dictation's partial is drawn behind the field from its first character, where the
-            // placeholder sits; cleared from the start, so the first words don't land on it.
             placeholder={
               ghost !== undefined || dictation.active
                 ? ""
                 : (placeholder ??
-                  // A phone's line holds the words alone: no keys to hint at on a touch keyboard.
                   `${placeholderLead({ toWorker, busy, steerable, picked })}…${
                     phone ? "" : " (/ for commands, @ for files)"
                   }`)
@@ -1376,12 +1249,9 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
               typing();
               dictation.typed();
               trackCaret(event.target);
-              // What the user types picks the first suggestion it fits, not the one cycled to before.
               if (!inserting.current && suggestions?.chosen !== undefined) {
                 useSuggestionsStore.getState().choose(threadId, undefined);
               }
-              // Editing ends ↑/↓ navigation, so the next ↑ starts from the newest prompt again rather
-              // than staying stuck past the oldest.
               history.reset();
               setSlashIndex(0);
               if (event.target.value === "") setSlashDismissed(false);
@@ -1391,15 +1261,10 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
             onPaste={onPaste}
           />
         </div>
-        {/* With the caret mid-draft the words can't show where they'll land, so they wait here; and
-            here too once they run past the field's cap, where the mirror behind it can't scroll. */}
-        {/* With the caret mid-draft the words can't show where they'll land, so they wait here; and
-            here too once they run past the field's cap. */}
         {dictation.partial !== "" && (!caretAtEnd || (partialInline && hintPinned)) && (
           <DictationStrip partial={dictation.partial} />
         )}
         <DictationError state={dictation.state} />
-        {/* The model by name, the rest icons with their words on hover; the name truncates first. */}
         <div
           data-testid="composer-toolbar"
           className="flex flex-nowrap items-center gap-1 px-2 pb-2"
@@ -1437,9 +1302,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
             )}
             <PendingRestart threadId={threadId} />
             <ContextRing threadId={threadId} countUp={focused} />
-            {/* While a turn is open, typed or not, one delivery button says which way a message goes
-                in (Steer, Queue or Interrupt) and sends that way; its chevron picks among the three.
-                Stop keeps the round button beside it. */}
             {busy &&
               withSendMenu(
                 <DeliveryButton
@@ -1487,17 +1349,12 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
                       data-waiting={waitingOnYou ? "" : undefined}
                       className={cn(ROUND, waitingOnYou ? STOP_QUIET : STOP_FILL)}
                       onClick={(event) => {
-                        // The second click of a double click on Send lands here once the composer
-                        // has emptied.
                         if (event.detail > 1) return;
                         void stopTurn(api, threadId);
                       }}
                     />
                   }
                 >
-                  {/* While it runs, the ring turns round the square: the button says the agent is
-                      at work, not only how to end it. Still under Reduced and Off. Its word and key
-                      are in its tooltip, as every icon button's are. */}
                   <span aria-hidden className="relative grid size-4 place-items-center">
                     {!waitingOnYou && (
                       <RingSpinner
@@ -1517,7 +1374,6 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   );
 }
 
-/** Send, Queue, Steer and Interrupt's glyph; the button's own label says it in words, on hover. */
 function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
   return action === "send" ? (
     <ArrowUp aria-hidden className="size-icon-row" />
@@ -1526,11 +1382,9 @@ function SendGlyph({ action }: { action: Exclude<SendAction, "stop"> }) {
   );
 }
 
-/** The three ways into a running turn, in the order the delivery menu lists them. */
 const DELIVERIES = ["steer", "queue", "interrupt"] as const;
 type Delivery = (typeof DELIVERIES)[number];
 
-/** Each way's word, as the delivery button, its menu and the button's hint say it. */
 const DELIVERY_WORDS: Record<Delivery, string> = {
   steer: "Steer",
   queue: "Queue",
@@ -1553,13 +1407,6 @@ function DeliveryGlyph({ action }: { action: Delivery }) {
 const DELIVERY_ITEM =
   "flex cursor-default items-center gap-2.5 rounded-sm px-2 py-1.5 text-body outline-none select-none data-[disabled]:opacity-50 data-[highlighted]:row-cursor phone:min-h-11";
 
-/**
- * The send control while a turn is open, beside Stop: one button in two parts. Its face says the way
- * a message goes in (Steer, Queue or Interrupt), in a word, and sends that way, the accent's fill
- * once there is something to send; its chevron opens the three, each with what it does now and its
- * key. A way the turn can't take now stays listed, greyed, with why in its line. With nothing typed
- * the face puts the caret in the field. Each part is its own 44 px target on a phone.
- */
 function DeliveryButton({
   mode,
   hasDraft,
@@ -1579,7 +1426,6 @@ function DeliveryButton({
   steerable: boolean;
   lines: Record<Delivery, string>;
   keys: Record<Delivery, string>;
-  /** The field, where focus goes back once a way is picked, ready to type. */
   focusAfter: RefObject<HTMLTextAreaElement | null>;
   onPick: (delivery: Delivery) => void;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
@@ -1598,7 +1444,6 @@ function DeliveryButton({
       data-mode={mode}
       data-filled={filled ? "" : undefined}
       className={cn(
-        // No clipping here: each part rounds its own outer end, so a focus ring shows whole.
         "inline-flex h-8 shrink-0 items-stretch rounded-full border text-meta font-medium transition-[background-color,color,border-color] phone:h-11",
         filled
           ? "border-transparent bg-primary text-primary-foreground shadow-raised shadow-primary/24"
@@ -1606,7 +1451,6 @@ function DeliveryButton({
       )}
     >
       <Hint
-        // With nothing typed the face only puts the caret in the field, and says so.
         label={hasDraft ? label.hint : `${label.hint}. Type a message first`}
         render={
           <button
@@ -1649,7 +1493,6 @@ function DeliveryButton({
           <ChevronDown aria-hidden className="size-icon-chip" />
         </Hint>
         <Menu.Portal>
-          {/* Above the whole composer, as the choices popover is, so it never covers the draft. */}
           <Menu.Positioner
             side="top"
             align="end"
@@ -1667,7 +1510,6 @@ function DeliveryButton({
                     key={delivery}
                     value={delivery}
                     closeOnClick
-                    // A turn that can't take a message now still lists the way, saying why not.
                     disabled={delivery !== "queue" && !steerable}
                     data-testid={`delivery-${delivery}`}
                     className={cn(DELIVERY_ITEM, "data-[checked]:bg-accent")}
@@ -1679,7 +1521,6 @@ function DeliveryButton({
                         {lines[delivery]}
                       </span>
                     </span>
-                    {/* A way the turn can't take has no key: the one it would go by sends otherwise. */}
                     {(delivery === "queue" || steerable) && (
                       <kbd className="pl-3 font-mono text-caption text-muted-foreground phone:hidden">
                         {keys[delivery]}
@@ -1696,7 +1537,6 @@ function DeliveryButton({
   );
 }
 
-/** The empty field's words: where a typed message will go, as the delivery button says. */
 function placeholderLead({
   toWorker,
   busy,
@@ -1723,10 +1563,6 @@ function placeholderLead({
   return toWorker ? "Message this worker" : "Message";
 }
 
-/**
- * What the keys do while a suggestion shows: `→ accept · ⌥↓ 1/3 · esc`, in the keys as bound. Each
- * key stays whole, and a narrow field wraps them onto the lines below the reply.
- */
 function GhostHint({
   position,
   count,
@@ -1734,7 +1570,6 @@ function GhostHint({
 }: {
   position: number;
   count: number;
-  /** Laid out but not shown, holding its lines while the pinned copy shows instead. */
   hidden?: boolean;
 }) {
   const accept = useShortcutHint("composer.acceptSuggestion");

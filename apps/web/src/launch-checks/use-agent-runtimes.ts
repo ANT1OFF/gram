@@ -32,14 +32,11 @@ export function useAgentRuntimes(): {
     queryFn: () => api.agentRuntimes(),
     retry: false,
     staleTime: 5 * 60_000,
-    // A cold registry metadata read can be slow; the server answers at once
-    // with what it has, and this asks again until the read lands.
     refetchInterval: (query) => (query.state.data?.releasesChecking === true ? 5_000 : false),
   });
   const recheck = useCallback(async () => {
     const next = await api.agentRuntimes(true);
     client.setQueryData(AGENT_RUNTIMES_KEY, next);
-    // Also retire stale local model/auth caches after the user changes a CLI or signs in.
     await recheckLaunch();
   }, [api, client, recheckLaunch]);
   const byAgent = useCallback(
@@ -71,13 +68,10 @@ export function useRuntimeInstall(agent: RuntimeAgent, enabled: boolean) {
           last = next.state;
         }
       } catch (e) {
-        // A store that doesn't serve this agent, or a server without one: no live state to show.
         if (!abort.signal.aborted) console.warn("agent runtime: install feed", e);
       }
     })();
     return () => abort.abort();
-    // A replaced connection brings a new `api`, which must resubscribe, and the query client is used
-    // inside; the rule treats both as stable context values and can't see that.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `api` and `client` are context values the rule takes for stable, and a new `api` must resubscribe
   }, [api, client, watched]);
   return { state };
@@ -99,8 +93,6 @@ export function useCliUpdate(agent: RuntimeAgent) {
       try {
         for await (const next of api.watchCliUpdate(agent, abort.signal)) {
           setState(next);
-          // Settled while this page wasn't watching (it is route-mounted, and the run carries on
-          // without it): the first state seen is the outcome, and the listing may predate it.
           const settled = next.state === "succeeded" || next.state === "failed";
           if ((last === "running" && next.state !== "running") || (last === undefined && settled)) {
             void client.invalidateQueries({ queryKey: AGENT_RUNTIMES_KEY });
@@ -113,8 +105,6 @@ export function useCliUpdate(agent: RuntimeAgent) {
       }
     })();
     return () => abort.abort();
-    // A replaced connection brings a new `api`, which must resubscribe, and the query client is used
-    // inside; the rule treats both as stable context values and can't see that.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `api` and `client` are context values the rule takes for stable, and a new `api` must resubscribe
   }, [api, client, agent]);
   return { state };

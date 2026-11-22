@@ -52,7 +52,6 @@ export interface FilesMockControls {
   ): string;
 }
 
-/** What a thread's Write calls put in `path`, as `simulateWrittenFile` left it; latest wins. */
 const writtenBy = (
   messages: readonly { readonly parts: readonly unknown[] }[],
   path: string,
@@ -72,7 +71,6 @@ const writtenBy = (
   return content;
 };
 
-/** The server's `InvalidState`, as a rejection. */
 const invalid = (message: string) => Object.assign(new Error(message), { _tag: "InvalidState" });
 
 /** `FilesApi` over the mock's fixture tree, scoped to threads' checkouts as the server scopes it. */
@@ -84,10 +82,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
   const thread = (threadId: ThreadId) => world.summary(threadId).thread;
   const threadPath = (path: string, threadId: ThreadId | undefined) =>
     threadId ? resolveInCheckout(path, thread(threadId).checkout.path) : path;
-  /**
-   * Whether `threadId`'s messages name `path`, in their text or a finished Write, as the server
-   * checks before reading outside.
-   */
   const mentioned = (threadId: ThreadId, path: string) => {
     const forms = [path, expandMockHome(path), path.replace(/^\/Users\/dev(?=\/)/, "~")];
     return (
@@ -100,7 +94,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
         ) || writtenBy(world.messages(threadId), expandMockHome(path)) !== undefined
     );
   };
-  /** Whether `path` is absolute and in none of `threadId`'s checkouts. */
   const outsideCheckouts = (path: string, threadId: ThreadId) => {
     const expanded = expandMockHome(path);
     return (
@@ -110,11 +103,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
       )
     );
   };
-  /**
-   * As the server scopes `fs.file` and `fs.image`: a relative path in the first root (for an image
-   * the thread's own checkout), an absolute one in whichever root holds it, and one in none only
-   * when the thread's messages name it and it's no credential file.
-   */
   const rootedPath = (path: string, threadId: ThreadId | undefined, image = false) => {
     if (threadId === undefined) throw invalid("Open a file from a thread to preview it");
     const expanded = expandMockHome(path);
@@ -149,7 +137,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
       await world.delay(20);
       return browseMockFs(path, limit);
     },
-    // Every joined machine in the mock has the same synthetic Linux home.
     browseOn: async (_hostId, path, limit) => {
       await world.delay(20);
       return browseMockMachine(path, limit);
@@ -164,7 +151,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
     },
     fsFile: async (path, options = {}) => {
       await world.delay(20);
-      // A document the Files view lists, as the thread "wrote" it.
       const made = mockOutputText(world, options.threadId, path);
       if (made !== undefined) {
         return { path, size: made.length, binary: false, tooLarge: false, content: made };
@@ -180,7 +166,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
           content: placed,
         };
       }
-      // A file the agent wrote outside the fixture tree reads as it wrote it, as on disk.
       const written =
         options.threadId === undefined
           ? undefined
@@ -230,7 +215,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
       const kind = previewFileKind(path);
       if (kind === undefined) throw invalid(`${path} isn't Markdown or HTML`);
       const written = writtenBy(world.messages(threadId), path);
-      // The server holds a file outside the thread's folders to a Write, not a mention.
       if (written === undefined && outsideCheckouts(path, threadId)) {
         throw invalid(`${path} is outside this thread's folders, and the thread didn't write it`);
       }
@@ -249,7 +233,6 @@ export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls 
     },
     fsImage: async (path, options = {}) => {
       await world.delay(20);
-      // A picture the Files view lists, drawn for the thread that "made" it.
       const made = mockOutputImage(world, options.threadId, path, "image");
       if (made !== undefined) return made;
       const target = rootedPath(path, options.threadId, true);

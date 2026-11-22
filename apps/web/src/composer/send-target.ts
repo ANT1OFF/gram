@@ -12,10 +12,6 @@ import { useSubscription } from "@/lib/effects";
 import { useServerSettings } from "@/settings-sync/store";
 import { withOriginKey } from "../api/origin-key";
 
-// New task sending a task to a hosted workspace (docs/design/mocks/hosted-send-and-move, v1,
-// board 1): where it may go, the three checks before it goes, and the send. The local server asks
-// the desktop app, which holds the sign-in; this page decides nothing for the server's sake.
-
 /** A hosted workspace New task may send to. */
 export interface SendTarget {
   readonly origin: string;
@@ -146,7 +142,6 @@ export const sendCheckRows = (
       title: "Couldn't check that the server reaches the repository",
       detail: `${check.reach.reason ?? `${target.server} didn't say.`} The send still asks it.`,
     });
-  // A server that couldn't be asked says nothing here: the send still asks it.
   const { base, ahead, current } = check.local;
   if (base === undefined)
     rows.push({

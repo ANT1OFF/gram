@@ -1,5 +1,3 @@
-// Workspaces: saving, naming and removing one, the workspace a
-// project opens into, and `open`, which gives a workspace its orchestrator thread.
 import {
   admitThread,
   callerPerson,
@@ -68,7 +66,6 @@ export interface WorkspacesDeps {
   readonly afterCharter: Charter["afterCharter"];
 }
 
-/** Whether two reads of a workspace agree in all an approval was given against. */
 const sameWorkspace = (a: WorkspaceState, b: WorkspaceState) =>
   a.workspace.name === b.workspace.name &&
   a.workspace.homeProjectId === b.workspace.homeProjectId &&
@@ -105,16 +102,8 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
   } = kit;
   const { forgetReasons, openModel, endRecovery, deliveryFor, checkCharter, afterCharter } = deps;
 
-  /** One membership sync at a time per workspace. */
   const membershipLock = makeKeyedLock<WorkspaceId>();
 
-  /**
-   * The orchestrator's folders after its workspace's projects changed from `before`, made to
-   * agree with the workspace as it is stored when this runs, never with a copy taken earlier: a
-   * repo that left takes its folder with it, the others are granted, and the session reloads to
-   * read them. One at a time per workspace, so a sync that runs late only applies what is true
-   * then, and can't grant again a folder a later change took away.
-   */
   const followMembership = (workspaceId: WorkspaceId, before: ReadonlyArray<ProjectId>) =>
     membershipLock.withLock(
       workspaceId,
@@ -128,11 +117,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       }),
     );
 
-  /**
-   * The folders an orchestrator reads `projects` in: their folders on this machine, or, for one a
-   * headless Gram placed on the joined machine `hostId`, that machine's own clones of them. A
-   * project the machine can't clone is left out, and logged.
-   */
   const foldersFor = (hostId: HostId | undefined, projects: ReadonlyArray<Project>) =>
     hostId === undefined
       ? Effect.succeed(projects.map((project) => project.root))
@@ -148,12 +132,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           ),
         ).pipe(Effect.map((folders) => folders.flat()));
 
-  /**
-   * Refused unless this call's reader may act on the workspace (`embedding/readable-by.ts`),
-   * answered as for one that doesn't exist, and may reach its orchestrator (`host/ownership.ts`):
-   * an edit of a workspace changes its orchestrator's folders and session, and an orchestration
-   * has one owner. Asked before anything is written, whether by `workspace.save` or an agent's edit.
-   */
   const admitHolder = (workspaceId: WorkspaceId | undefined) =>
     Effect.gen(function* () {
       if (workspaceId === undefined) return;
@@ -161,15 +139,12 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       if (Option.isSome(state)) yield* admitWorkspaceReader(state.value);
       const holder = Option.isSome(state) ? state.value.workspace.orchestratorThreadId : undefined;
       if (holder !== undefined) return yield* admitThread(store.getThread, ownerOf, holder);
-      // Closed, it is held to the machines it last ran on, as kept; a record that can't be read
-      // establishes nobody, and is refused.
       const ran = yield* store.closedHolderOf(workspaceId);
       if (ran === undefined) return;
       const reachable = ran !== "unreadable" && (yield* mayReachMachinesOf(ownerOf, ran));
       if (!reachable) return yield* new InvalidState({ message: NOT_YOUR_MACHINE });
     });
 
-  /** The workspaces this fiber's reader may see. */
   const visibleWorkspaces = Effect.flatMap(store.listWorkspaces, (all) =>
     readableWorkspacesOnly(all, (state) => state.workspace),
   );
@@ -180,8 +155,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       const all = yield* store.listProjects;
       const hostId = (yield* findThread(holder))?.checkout.hostId;
       if (hostId !== undefined) {
-        // On a joined machine the folders are its clones, so the set is made again from the
-        // workspace as it is: what left goes, what joined is cloned there.
         const folders = yield* foldersFor(
           hostId,
           all.filter((project) => projectIds.includes(project.id) && project.id !== homeProjectId),
@@ -192,7 +165,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         yield* reload(holder);
         return;
       }
-      // A repo that left takes its folder with it: the grant outlives the session otherwise.
       const left = all
         .filter((project) => before.includes(project.id) && !projectIds.includes(project.id))
         .map((project) => project.root);
@@ -206,7 +178,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           }))
           .pipe(Effect.ignore);
       }
-      // The orchestrator reads the other repos as extra folders, and its prompt names them.
       const roots = all
         .filter((project) => projectIds.includes(project.id) && project.id !== homeProjectId)
         .map((project) => project.root);
@@ -214,11 +185,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       yield* reload(holder);
     });
 
-  // Under the workspace's spawn lock: a spawn joining a repo to the workspace, and an edit taking
-  // one out, each leave the workspace and the orchestrator's folders agreeing only when neither
-  // interleaves. A new workspace has no spawns to wait for. Then under `registryLock`, since names
-  // are unique across workspaces and a failed spawn's project mustn't be forgotten as this takes
-  // it in.
   const saveWorkspaceWithName = (
     input: Parameters<OrchestrationShape["saveWorkspace"]>[0],
     namePolicy: "exact" | "available",
@@ -229,12 +195,9 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         input.id === undefined ? [] : [input.id],
         registryLock.withPermits(1)(
           Effect.gen(function* () {
-            // Names are unique among the workspaces the caller may see: a clash with one they may
-            // not would tell them it is there.
             const others = (yield* visibleWorkspaces).filter(
               ({ workspace }) => workspace.id !== input.id,
             );
-            // Automatic opens pick a free name under the same lock that reserves explicit names.
             const name =
               namePolicy === "available"
                 ? availableWorkspaceName(
@@ -258,7 +221,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
                 message: "The home project has to be one of the workspace's projects.",
               });
             }
-            // Every one of them a project Gram knows.
             yield* projectsOf(projectIds);
             const given = input.charter;
             if (given !== undefined) {
@@ -351,7 +313,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             message: "The home project has to be one of the workspace's projects.",
           });
         }
-        // Read before anything is checked, and compared again inside the write's transaction.
         const standing = expected === undefined ? undefined : yield* store.getWorkspace(id);
         if (expected !== undefined && !sameWorkspace(standing!, expected)) return undefined;
         const holder = standing?.workspace.orchestratorThreadId;
@@ -368,8 +329,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           });
         }
         yield* checkCharter(standing, change.charter);
-        // Every folder the workspace will grant, checked again now, under the locks: kept, added
-        // and home alike. The transaction then holds each project to the root checked here.
         const known = yield* store.listProjects;
         const roots: Record<string, string> = {};
         for (const each of change.projects) {
@@ -420,11 +379,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           holds: (settings) => settingsHold(settings, change.requires ?? []),
         });
       });
-      /**
-       * What a committed change sets off: the windows told, a charter change's notes and reloads,
-       * and the orchestrator's folders made to follow its projects, so a repo that left takes its
-       * grant with it.
-       */
       const follow = (done: { readonly state: WorkspaceState }) =>
         Effect.gen(function* () {
           yield* workspacesChanged;
@@ -438,10 +392,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             yield* followMembership(id, expected.workspace.projectIds);
           }
         });
-      // Task startups, spawns and saves of this workspace, then names across workspaces: the
-      // order every other path takes them in. Once the write has begun, neither it nor what it
-      // sets off can be cut short: a call cancelled after the commit still takes a removed repo's
-      // folder from the orchestrator.
       const done = yield* Effect.uninterruptible(
         (expected === undefined
           ? registryLock.withPermits(1)(write)
@@ -464,7 +414,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     removalLock.withLock(
       workspaceId,
       Effect.gen(function* () {
-        // The store refuses an open orchestrator too; asked first, so a refusal stops no dream.
         const { workspace } = yield* store.getWorkspace(workspaceId);
         const holder =
           workspace.orchestratorThreadId === undefined
@@ -476,8 +425,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
             threadId: holder.id,
           });
         }
-        // Every dream's thread, running or finished and however it was started, since its review
-        // goes with the workspace; the store refuses a delete while one is still open.
         const dreamThreads = new Set<ThreadId>();
         for (const dream of yield* store.listDreams(workspaceId)) {
           if (dream.threadId !== undefined) dreamThreads.add(dream.threadId);
@@ -498,7 +445,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       }),
     );
 
-  /** The one-project workspace of `projectId`, made on first use at `autonomy` when given. */
   const workspaceOfProject = (
     projectId: ProjectId,
     autonomy: Autonomy | undefined,
@@ -514,8 +460,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           yield* store.listProjects,
         );
         if (existing !== undefined) {
-          // Made meanwhile, by another window say: it keeps its own level, and the task must not
-          // start under one the draft promised and this workspace doesn't have.
           if (autonomy !== undefined && autonomyOf(existing.charter) !== autonomy) {
             return yield* new InvalidState({
               message: `${existing.workspace.name} already has a workspace, at ${autonomyOf(existing.charter)} autonomy, which it keeps. Send again to start the task there.`,
@@ -571,7 +515,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       }
       const { model, mode, note } = yield* openModel(state.charter, selected);
       const others = projects.filter((project) => project.id !== home.id);
-      // A workspace with an environment of its own runs on a machine of its own, started for it.
       const hostId = yield* deps.workspaceHost(workspace);
       const thread = yield* creator
         .prepare({ kind: "current", ...(hostId === undefined ? {} : { hostId }) }, home.root)
@@ -588,7 +531,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
                 role: "orchestrator",
                 workspaceId: workspace.id,
                 additionalDirectories,
-                // The session policy asks for the slot, which can only be claimed once the row exists.
                 deferOpen: true,
               });
             }),
@@ -603,11 +545,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       return yield* seat(workspace.id, thread, mode, note, requireNew);
     });
 
-  /**
-   * `thread`, just made with `deferOpen` as `workspaceId`'s orchestrator, given the slot and set
-   * going: its outbox, its memory, and the boot digest that opens its session. Another thread that
-   * won the slot meanwhile is answered instead, and `thread` leaves no trace.
-   */
   const seat = (
     workspaceId: WorkspaceId,
     thread: Thread,
@@ -618,8 +555,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
     Effect.gen(function* () {
       const workspace = { id: workspaceId };
       if (!(yield* store.claimOrchestratorSlot(workspace.id, thread.id))) {
-        // Another open won the slot while this thread was being made; it must leave no trace,
-        // not even on the reopen list.
         yield* runtimes.close(thread.id).pipe(Effect.ignore);
         yield* store.forgetClosed(thread.id);
         const winner = (yield* store.getWorkspace(workspace.id)).workspace.orchestratorThreadId;
@@ -631,8 +566,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
       }
       orchestrators.set(thread.id, workspace.id);
       if (mode === "auto") openedInAuto.add(thread.id);
-      // A pause for an orchestrator that couldn't be reached, or that was parked, was about the
-      // thread this one replaces; the user's own pause, and the one a re-enable starts with, stay.
       let endedSetAside = false;
       const claimed = yield* store.updateWorkspace(workspace.id, (current) => {
         if (current.paused?.reason !== "deliveryFailed" && current.paused?.reason !== "parked") {
@@ -643,10 +576,8 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         return rest;
       });
       yield* endRecovery(workspace.id);
-      // Opening another orchestrator ends the set-aside pause as Resume would, and lets go too.
       if (endedSetAside) yield* releaseSetAside(workspace.id);
       const latestSeq = yield* store.latestWorkerReportSeq(workspace.id);
-      // A slot it couldn't open on is told to it, as a roster change is, so it can tell the user.
       yield* updateOutbox(workspace.id, (outbox) => [
         withNotes(outboxForNewOrchestrator(outbox, latestSeq), note === undefined ? [] : [note]),
         undefined,
@@ -674,8 +605,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
   const openFromProfile: OrchestrationShape["openFromProfile"] = (input) =>
     Effect.gen(function* () {
       const id = input.workspaceId;
-      // Made once, under the id its start gave it: a start asked for again finds it, and a start
-      // that failed after making it leaves one to try again in.
       const made = yield* registryLock.withPermits(1)(
         Effect.gen(function* () {
           const existing = yield* store.getWorkspace(id).pipe(Effect.option);
@@ -708,7 +637,6 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           : yield* findThread(workspace.orchestratorThreadId);
       if (holder !== undefined) return holder;
       const { model, mode, note } = yield* openModel(made.state.charter);
-      // The profile's model or none: a stand-in would run work its supplier never chose.
       if (!sameTaskModel(model, input.model))
         return yield* new InvalidState({
           message: `The profile's orchestrator can't run on ${input.model.model} here${note === undefined ? "." : `: ${note}`}`,

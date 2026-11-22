@@ -19,7 +19,6 @@ const ignoring: AcpHandlers = {
   request: () => Promise.reject(new AcpError(-32601, "Not supported")),
 };
 
-/** How long a model listing is kept before the CLI is asked again. */
 const MODELS_TTL_MS = 5 * 60_000;
 
 /** Runs `run` on a short-lived agent in `cwd`, after `initialize`, and stops it after. */
@@ -72,7 +71,6 @@ export const makeAcpHost = (
     return list;
   });
 
-  /** A past session of `cwd`, replayed by `session/load` into a process of its own. */
   const readPast = (cwd: string, agentSessionId: string) =>
     Effect.gen(function* () {
       const replayed: Array<Json> = [];

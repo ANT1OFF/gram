@@ -1,5 +1,3 @@
-// The releases joined machines run and update to: a host's own, as it says it, and this Gram's.
-
 import type { HostHello } from "@gram/contracts";
 
 /** The release a host said it runs, kept only when it reads as a release: it is shown as text. */

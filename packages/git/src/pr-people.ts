@@ -1,6 +1,3 @@
-// Who reviews a PR and how it's labelled, over `gh`: review requests, reviewer suggestions and
-// label edits. Writes are the caller's explicit action.
-
 import type { PrLabel } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -110,7 +107,6 @@ export const reviewerSuggestions = (
           ],
           { timeoutMs: 15_000 },
         ).pipe(Effect.option),
-        // Needs push access; a 403 simply leaves collaborators out.
         ghApi(workTree, [`repos/${repo}/collaborators?per_page=100`, "--jq", ".[].login"], {
           timeoutMs: 15_000,
         }).pipe(Effect.option),
@@ -153,7 +149,6 @@ export const listRepoLabels = (
     }
   });
 
-// `gh` reads each label flag as CSV, so a comma or quote needs quoting.
 const labelArg = (name: string) => (/[",]/.test(name) ? `"${name.replaceAll('"', '""')}"` : name);
 
 /** `gh pr edit --add-label` / `--remove-label`, one flag per label. */

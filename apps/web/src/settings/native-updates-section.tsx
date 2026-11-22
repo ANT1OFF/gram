@@ -9,11 +9,9 @@ import { notesPreview, statusLine } from "@/updates/update-pill-view";
 
 import { Toggle } from "./fields";
 
-/** The one next step for the state, as the pill offers it, with its button's words. */
 function nextStep(state: AppUpdateState): { label: string; run: () => void } | undefined {
   const available = state.availableVersion;
   const downloaded = state.downloadedVersion;
-  // A .deb never downloads or installs: apt does, from the release page.
   if (state.target === "deb") {
     const page = state.releaseUrl;
     return state.status === "available" && page
@@ -31,7 +29,6 @@ function nextStep(state: AppUpdateState): { label: string; run: () => void } | u
   return undefined;
 }
 
-/** What Settings → Updates says about how this install updates, below the buttons. */
 function trustNote(state: AppUpdateState): string {
   switch (state.target) {
     case "deb":
@@ -139,7 +136,6 @@ export function NativeUpdatesSection({
       {state.status === "installing" && state.message && (
         <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5" data-testid="update-held">
           <p className="min-w-0 flex-1 text-muted-foreground">{state.message}</p>
-          {/* A held restart or a pending earlier install: try again to remove what macOS holds. */}
           <Button size="xs" variant="ghost" onClick={() => void nativeUpdates.dismiss()}>
             Retry
           </Button>

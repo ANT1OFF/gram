@@ -55,11 +55,6 @@ export interface SentFromMachines {
   readonly dir: string;
 }
 
-/**
- * The files a thread on another machine sends, read there and copied into the thread's own
- * attachments here, which the transcript reads them from: a path of this machine's is never
- * looked up for them. Every file is fetched before any is shown.
- */
 const sendFromMachine = (
   threadId: ThreadId,
   thread: Thread,
@@ -77,7 +72,6 @@ const sendFromMachine = (
     const copies: Array<{ path: string; copy: string; size: number; mediaType: string }> = [];
     for (const file of fetched) {
       const named = sanitizeAttachmentName(basename(file.path));
-      // A folder of its own keeps the file's name, which the card shows.
       const copy = join(machines.dir, threadId, "sent", randomUUID().slice(0, 8), named);
       yield* Effect.tryPromise({
         try: async () => {
@@ -100,7 +94,6 @@ const sendFromMachine = (
 export const sendFileTool = (
   runtimes: Pick<ThreadRuntimesShape, "emitChunk">,
   store: Pick<ThreadStoreShape, "getThread">,
-  /** For threads on other machines; without it, such a thread's files are refused. */
   machines?: SentFromMachines,
 ) =>
   defineAppTool({
@@ -139,7 +132,6 @@ export const sendFileTool = (
         }
         const root = effectiveCheckout(thread).path;
         const sent: Array<{ path: string; size: number; mediaType: string }> = [];
-        // Every path is checked before anything is shown, so a typo doesn't leave half the cards.
         for (const file of files) {
           const path = resolve(root, expandHome(file.trim()));
           const info = yield* Effect.tryPromise({

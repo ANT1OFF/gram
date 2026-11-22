@@ -98,16 +98,9 @@ export const installedTarget = async (
   };
 };
 
-/**
- * The tones of the dictation under way: the start one plays once capture is live and the start is
- * confirmed, and the stop one only after a start one, so a discard makes no sound.
- */
 interface Tones {
-  /** Not a press that may yet turn out to be a tap or part of a shortcut. */
   confirmed: boolean;
-  /** Capturing. */
   live: boolean;
-  /** The start tone played. */
   started: boolean;
 }
 
@@ -181,7 +174,6 @@ export function useDictation(
   useEffect(() => {
     if (settings !== undefined) cleanup.current = dictationCleanupOf(settings);
   }, [settings]);
-  /** Set by the first prewarm or start, which is when the project's names are worth reading. */
   const [vocabularyWanted, setVocabularyWanted] = useState(false);
   const vocabulary = useVocabularyIndex(threadId, on && vocabularyWanted);
   const spelling = useRef(vocabulary);
@@ -196,12 +188,10 @@ export function useDictation(
   useEffect(() => {
     if (bridge === undefined) return;
     target.current = rememberedTarget(api);
-    /** Once the system says yes it stays yes for a press; `getUserMedia` reports a later no. */
     let allowed = false;
     const created = createDictation(
       {
         preflight: (wanted) => target.current.check(wanted.performance ?? "balanced"),
-        // A start begun before Settings queued a change goes no further than its lookups.
         open: (request) =>
           lifecyclePending()
             ? Promise.resolve(STOPPED)
@@ -234,7 +224,6 @@ export function useDictation(
           setState(next);
         },
         onPartial: setPartial,
-        // Cleaned up first, so a spoken "dot" is already a `.` when names are spelled.
         onCommit: (text) => {
           const cleaned = committedText(text, cleanup.current);
           if (cleaned !== undefined) commit.current(applyVocabulary(cleaned, spelling.current));
@@ -251,7 +240,6 @@ export function useDictation(
   const active =
     state.phase === "starting" || state.phase === "listening" || state.phase === "stopping";
   const begin = (confirmed: boolean) => {
-    // Settings is installing or deleting models; a session now could outlive a turn-off.
     if (lifecyclePending()) return;
     if (performance === undefined) return;
     setVocabularyWanted(true);
@@ -280,8 +268,6 @@ export function useDictation(
       startTone(tones.current, volume.current);
     },
     prewarm: () => {
-      // Not while Settings changes what's installed: a prewarm after its `shutdown` would start
-      // the speech process again.
       if (bridge === undefined || performance === undefined || active || lifecyclePending()) return;
       setVocabularyWanted(true);
       const mark = lifecycleMark();
@@ -294,7 +280,6 @@ export function useDictation(
             : undefined,
         )
         .catch((error: unknown) => console.warn("dictation", error));
-      // Never the first ask for the microphone: that belongs to a press.
       if (keepReady)
         void bridge
           .microphoneAccess()

@@ -1,10 +1,3 @@
-/**
- * The installed versions a `versionChanged` wake waits on: Gram's own, as the running app reports
- * it, and each CLI's, as Gram's launch checks last found it on the login-shell PATH. It starts no
- * probe of its own: a CLI's version is read off the launch checks' runs (at start, on the user's
- * Re-check, after a CLI update from Settings), and Gram's changes only with a restart into a new
- * build.
- */
 import type { LaunchChecks, VersionTarget } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

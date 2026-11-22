@@ -12,7 +12,6 @@ export const askedByOf = (messages: ReadonlyArray<GramUIMessage>): AskedBy | und
   for (const message of messages.slice(-ASKED_BY_LOOK_BACK).toReversed()) {
     const origin = message.parts.find((part) => part.type === "data-thread-origin")?.data;
     if (origin === undefined) return undefined;
-    // A worker's message carries its feature: the orchestrator's own work, not an ask from outside.
     if (origin.feature !== undefined) continue;
     return { threadId: origin.threadId, title: origin.title };
   }

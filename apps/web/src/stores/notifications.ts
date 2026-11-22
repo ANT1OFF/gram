@@ -27,8 +27,6 @@ const digest = (value: unknown): value is string =>
 const timestamp = (value: unknown, now: number): value is number =>
   typeof value === "number" && Number.isFinite(value) && value > now - RETENTION_MS && value <= now;
 const OMITTED_DETAILS = "Sensitive notification details omitted";
-// Header/config values have no reliable delimiter (cookies, arbitrary auth schemes and multiline
-// keys). Omit the entire field rather than guessing where a credential ends. Names are bounded.
 const SENSITIVE_CONTENT =
   /\b[\w.-]{0,64}(?:cookie|auth(?:orization|entication)?|private[-_ .]?key|credential|token|secret|password|passphrase|api[-_ .]?key|(?:http|request|response)[-_ .]?headers)[\w.-]{0,64}["'\\\s]*[:=]|-----BEGIN [^-]*PRIVATE KEY-----/i;
 const text = (value: unknown, max: number): string | undefined => {
@@ -42,7 +40,6 @@ const threadId = (value: unknown): value is ThreadId =>
 type Quiet = Readonly<Record<string, number>>;
 interface Retained {
   readonly entries: readonly NotificationEntry[];
-  /** Independent of read/clear: clearing history must not turn recurring warnings back into spam. */
   readonly quiet: Quiet;
 }
 const boundedQuiet = (quiet: Quiet, now: number): Quiet =>
@@ -141,7 +138,6 @@ export function createNotificationHistory(storage: () => Storage | undefined) {
       );
       return true;
     } catch {
-      // Disabled storage or quota: the bounded in-memory center still works.
       return false;
     }
   };
@@ -149,8 +145,6 @@ export function createNotificationHistory(storage: () => Storage | undefined) {
     try {
       const raw = storage()?.getItem(NOTIFICATIONS_KEY) ?? null;
       const retained = restoreNotifications(raw, Date.now());
-      // Remove old unsafe fields from the stored cache too, without waiting for a new notification
-      // or for the user to open the center. A failed rewrite still keeps sanitized in-memory data.
       const rewrite = raw !== null && raw !== JSON.stringify({ version: 1, ...retained });
       return { ...retained, storageUnavailable: rewrite && !save(retained) };
     } catch {
@@ -163,8 +157,6 @@ export function createNotificationHistory(storage: () => Storage | undefined) {
       const state = get();
       const key =
         n.kind === "info" && digest(n.startupDiagnostic?.key) ? n.startupDiagnostic.key : undefined;
-      // A notice about what is installed (`once`) stays quiet as long as it keeps recurring; one
-      // about a start comes back after the cooldown.
       const once = key !== undefined && n.startupDiagnostic?.once === true;
       const quiet = boundedQuiet(state.quiet, at);
       const alert =

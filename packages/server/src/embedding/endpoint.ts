@@ -8,10 +8,6 @@ export class EndpointFailed extends Data.TaggedError("EndpointFailed")<{
   readonly message: string;
 }> {}
 
-/**
- * The bearer token for one call: the configured one, or what the token file holds now. A file
- * that can't be read, or holds anything but one header value, fails the call without its text.
- */
 const bearerOf = async (endpoint: EndpointConfig): Promise<string | undefined> => {
   if (endpoint.tokenFile === undefined) return endpoint.token;
   let text: string;
@@ -25,7 +21,6 @@ const bearerOf = async (endpoint: EndpointConfig): Promise<string | undefined> =
   return token;
 };
 
-/** The largest answer read from an endpoint: both answers are a few fields. */
 const MAX_ANSWER_BYTES = 64 * 1024;
 
 /**
@@ -55,7 +50,6 @@ export const postJson = (
         await response.body?.cancel();
         throw new Error(`status ${response.status}`);
       }
-      // Read with the bound, not after it: an answer that never ends is dropped at the cap.
       const chunks: Array<Uint8Array> = [];
       let size = 0;
       for await (const chunk of response.body ?? []) {
@@ -66,13 +60,11 @@ export const postJson = (
       try {
         return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
       } catch {
-        // The parser's own message can quote the answer.
         throw new Error("the answer was not JSON");
       }
     },
     catch: (error) =>
       new EndpointFailed({
-        // A TypeError is `fetch`'s own: its message can quote a header it wouldn't send.
         message:
           error instanceof TypeError
             ? "the request could not be made"

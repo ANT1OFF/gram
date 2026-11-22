@@ -76,7 +76,6 @@ export function ReviewThreadCard({
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
   const [first, ...replies] = thread.comments;
-  // A person's thread carries no severity tag; say who raised it instead.
   const severityLabel = thread.byBot ? SEVERITY_LABEL[thread.severity] : "Reviewer";
   const canApply = first?.suggestion !== undefined && !thread.isOutdated && !thread.isResolved;
 

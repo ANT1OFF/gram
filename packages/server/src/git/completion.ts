@@ -1,9 +1,3 @@
-// When a thread completes on a merge, and when that completion is undone. A merge settles a thread
-// once; work since (a commit, new uncommitted changes) or a PR of its still open reopens it; the
-// next merge settles it again. Pure over what the publisher last sent the thread, so each case is a
-// unit test. The completion rules shared with the web app and the ledger are `completion.ts` in
-// contracts; this is only the server's side of them.
-
 import {
   anyPrOpen,
   isBoundBadge,
@@ -21,11 +15,8 @@ import { repoFromPrUrl } from "@gram/git";
 
 /** What the publisher does about a thread's completion after sending it a state. */
 export type CompletionStep =
-  /** Complete it (`prMerged`) and tell the user `prs` merged. */
   | { readonly kind: "settle"; readonly prs: ReadonlyArray<PrMark>; readonly merge: MergeSettle }
-  /** Clear a completion the server made: work resumed, or a PR of its is open. */
   | { readonly kind: "reopen" }
-  /** Record `merge` alone: a completion somebody else made. */
   | { readonly kind: "record"; readonly merge: MergeSettle }
   | { readonly kind: "none" };
 
@@ -65,7 +56,6 @@ export const workSince = (
   state: Pick<GitState, "repo" | "head" | "changesToken" | "changedFiles" | "aheadBase">,
 ): boolean => {
   if (!state.repo || merge.head === undefined) return false;
-  // A checkout on the default branch has no base (`resolveBase`), and nothing ahead of one.
   if (state.head !== merge.head && state.aheadBase > 0) return true;
   return (
     merge.changesToken !== undefined &&
@@ -100,8 +90,6 @@ export const completionStep = (
   }
 
   if (anyPrOpen(prs)) return NONE;
-  // The checkout's PR merged is this thread's merge only if it is the one bound, or the branch
-  // still stands where it merged; a followed PR's merge counts whatever the main one did.
   const badge = state.pr;
   const matches =
     thread.boundPr === undefined ? badge?.headMatches : isBoundBadge(badge, thread.boundPr);
@@ -111,7 +99,6 @@ export const completionStep = (
   const fresh = prs.flatMap((pr) =>
     pr?.state === "MERGED" && !seen.some((mark) => samePrMark(mark, pr)) ? [markOf(pr)] : [],
   );
-  // What it already settled on stays, the PRs it was bound to before a rebind included.
   const merge: MergeSettle = {
     merged: [...seen, ...fresh].slice(-MAX_SETTLED_MERGES),
     ...(state.repo ? { head: state.head, changesToken: state.changesToken } : {}),

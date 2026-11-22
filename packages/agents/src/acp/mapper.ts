@@ -218,8 +218,6 @@ export const makeAcpMapper = (options: AcpMapperOptions): AcpMapper => {
 
   const update = (input: Json): ReadonlyArray<AgentEvent> => {
     const out: Array<AgentEvent> = [];
-    // A resumed session replays its past turns' updates, prices included; only a turn Gram
-    // started is this thread's.
     const t = turn;
     if (t === undefined) return out;
     switch (input["sessionUpdate"]) {

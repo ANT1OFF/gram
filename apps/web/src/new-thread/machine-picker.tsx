@@ -16,7 +16,6 @@ import {
   machinesApi,
 } from "@/settings/machines-api";
 
-/** The picker's value for this machine. */
 const THIS_MACHINE = "__this__";
 
 /**
@@ -47,7 +46,6 @@ export const machineBlocker = (machine: JoinedMachine): string | undefined => {
     .join(" ");
 };
 
-/** The muted words after a machine's name in the menu. */
 const stateOf = (machine: JoinedMachine): string | undefined =>
   machine.onlineSince === undefined
     ? machine.offline?.kind === "mismatch"
@@ -130,7 +128,6 @@ export function MachinePicker({
               )}
             </>
           );
-          // An offline machine says why, and the fix, on hover: as Settings → Machines does.
           const hint = m.onlineSince === undefined ? healthHint(machineHealth(m, {})) : undefined;
           return hint === undefined ? (
             <SelectItem key={m.id} value={m.id}>

@@ -39,7 +39,6 @@ export const isUndoReceipt = (message: GramUIMessage): boolean =>
  * failed partway also lists, as text, the files that may have changed.
  */
 export function TurnUndoMarker({ undo }: { undo: TurnUndoData }) {
-  // Only to tell today from another day, so read once rather than on a clock.
   const now = useNow(false);
   const label = turnUndoLabel(undo, now);
   const divider = (

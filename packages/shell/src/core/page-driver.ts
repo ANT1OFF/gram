@@ -1,10 +1,3 @@
-// How an agent reads and acts on its thread's page, over the Chrome DevTools Protocol: Electron's
-// `webContents.debugger` in the shells, a Playwright CDP session in its e2e spec. It reads what a
-// person would see, the accessibility tree and the visible text, never the raw DOM, and acts as a
-// person would, through mouse and keyboard input at an element's place on screen. The questions
-// it asks the page (is this a submit control, which form does Enter send) run in an isolated world
-// of its own, so a page that redefines the DOM's methods can't answer them.
-
 import {
   BROWSER_INSPECTION_CAPABILITIES,
   BROWSER_MOBILE_MAX_WIDTH,
@@ -172,28 +165,21 @@ export class UserControlError extends Error {}
 export class PageAccessError extends Error {}
 export class StalePageError extends StaleRefError {}
 
-/** How long a form submission the renderer reported names the navigation that follows it. */
 const SUBMISSION_FRESH_MS = 5_000;
 
-/** `url` without its fragment, which a navigation's request never carries. */
 const withoutHash = (url: string) => {
   const at = url.indexOf("#");
   return at === -1 ? url : url.slice(0, at);
 };
 
-/** The most requests the network log keeps, across documents. */
 const NETWORK_KEPT = 500;
-/** How many requests a listing shows. */
 const NETWORK_SHOWN = 100;
 /** A response body or an evaluation result longer than this is cut. */
 export const BODY_MAX_CHARS = 50_000;
-/** How long an evaluation may run. */
 const EVALUATE_TIMEOUT_MS = 5_000;
 
-/** One request the page made, as the network log keeps it. */
 interface NetworkEntry {
   readonly id: string;
-  /** The document it was made for, so a listing shows only the current one's. */
   readonly loader: string;
   readonly method: string;
   readonly url: string;
@@ -240,7 +226,6 @@ export interface AxNode {
   readonly parentId?: string;
 }
 
-/** Roles that only group, shown only when they carry a name of their own. */
 const STRUCTURAL = new Set([
   "generic",
   "none",
@@ -254,9 +239,7 @@ const STRUCTURAL = new Set([
   "LayoutTableCell",
 ]);
 const TEXT_ROLES = new Set(["StaticText", "text"]);
-/** The document itself, whose title a result names already. */
 const PAGE_ROLES = new Set(["RootWebArea", "WebArea"]);
-/** States worth showing beside an element, in the order they're shown. */
 const SHOWN_STATES = [
   "level",
   "checked",
@@ -303,7 +286,6 @@ export class RefTable {
   }
 }
 
-/** Roles an agent acts on, which `interactive` snapshots keep. */
 const INTERACTIVE = new Set([
   "button",
   "link",
@@ -372,7 +354,6 @@ export function renderAxTree(
     lines.push(line);
     size += line.length + 1;
   };
-  /** `named` is the nearest shown ancestor's name, which a text run repeating it adds nothing to. */
   const visit = (node: AxNode, depth: number, seen: Set<string>, named = "") => {
     if (cut || seen.has(node.nodeId)) return;
     seen.add(node.nodeId);
@@ -395,7 +376,6 @@ export function renderAxTree(
       const focusable =
         !PAGE_ROLES.has(role) &&
         node.properties?.find((p) => p.name === "focusable")?.value.value === true;
-      // An interactive outline keeps what takes focus, a nameless `div` with a tabindex included.
       const listed = interactive ? INTERACTIVE.has(role) || focusable : shown;
       if ((shown || listed) && maxDepth !== undefined && depth >= maxDepth) {
         deeper = true;
@@ -455,7 +435,6 @@ export function findInOutline(outline: string, query: string): string {
     : shown.join("\n");
 }
 
-// Run in the driver's isolated world on the element (`this`); they read the DOM, never write it.
 const CLICK_SUBMITS = `function () {
   const el = this.nodeType === 1 ? this : this.parentElement;
   const control = el && el.closest("button, input[type=submit], input[type=image]");
@@ -501,7 +480,6 @@ const KEY_SUBMITS = `function (key) {
   if (key !== "Enter" || !el.form || el instanceof HTMLTextAreaElement) return null;
   return { action: el.form.action || location.href, control: "Enter in " + (el.name || el.type || el.tagName.toLowerCase()) };
 }`;
-/** Whether the element is in the document and laid out where it can be seen. */
 const IS_SHOWN = `function () {
   const el = this.nodeType === 1 ? this : this.parentElement;
   if (!el || !el.isConnected) return false;
@@ -511,23 +489,16 @@ const IS_SHOWN = `function () {
 const USER_AGENT = `function () { return navigator.userAgent; }`;
 const VISIBLE_TEXT = `function () { return document.body ? document.body.innerText : ""; }`;
 
-/** A phone's user agent on the engine the pane runs, for mobile emulation. */
 const mobileUserAgent = () =>
   `Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions["chrome"] ?? "130.0.0.0"} Mobile Safari/537.36`;
 
-/** CDP's modifier bits. */
 const MODIFIER_BITS: Record<PaneKeyModifier, number> = { alt: 1, ctrl: 2, meta: 4, shift: 8 };
-/** How far one wheel notch scrolls, in CSS pixels. */
 const WHEEL_NOTCH = 100;
-/** How many moves a drag makes between its ends, so pointer-driven drags see it travel. */
 const DRAG_STEPS = 8;
-/** How often a wait looks again. */
 const WAIT_POLL_MS = 150;
 
-/** The key event `key` makes: its DOM key and code, its virtual key code and the text it types. */
 const keyEvent = (key: string, modifiers: number) => {
   const named = Object.hasOwn(PANE_NAMED_KEYS, key) ? PANE_NAMED_KEYS[key] : undefined;
-  // Ctrl, Alt and Meta make a shortcut, which types nothing.
   const types = (modifiers & (MODIFIER_BITS.ctrl | MODIFIER_BITS.alt | MODIFIER_BITS.meta)) === 0;
   if (named !== undefined) {
     const text = named.key === "Enter" ? "\r" : named.key === " " ? " " : undefined;
@@ -555,7 +526,6 @@ const keyEvent = (key: string, modifiers: number) => {
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 
-/** A submission the page described, or `undefined` for anything else. */
 const asSubmit = (value: unknown): PageSubmit | undefined => {
   const found = record(value);
   return typeof found["action"] === "string" && typeof found["control"] === "string"
@@ -563,7 +533,6 @@ const asSubmit = (value: unknown): PageSubmit | undefined => {
     : undefined;
 };
 
-/** What `perform` records as an action's target. */
 const targetOf = (target: PageTarget): BrowserTarget =>
   "ref" in target
     ? { source: "dom-ref", ref: target.ref }
@@ -580,7 +549,6 @@ export async function createPageDriver(
   validateOperation: (mutating: boolean) => void = () => {},
 ): Promise<PageDriver> {
   const refs = new RefTable();
-  /** When the page last submitted a form to each URL. */
   const submissions = new Map<string, number>();
   const observations = browserObservations(cdp, heldFrom);
   let documentId = randomUUID();
@@ -588,13 +556,9 @@ export async function createPageDriver(
   let action: BrowserAction | undefined;
   let viewportPreset: BrowserViewportPreset | undefined = "pane";
   let emulation: BrowserEmulation = { mobile: false };
-  /** The page's own user agent, kept to restore after mobile emulation. */
   let userAgent: string | undefined;
-  /** The isolated world's context, made once per document. */
   let worldId: number | undefined;
-  /** The requests the page made, by CDP request id, oldest first. */
   const requests = new Map<string, NetworkEntry>();
-  /** The main frame's current document's loader, which its requests name. */
   let loader: string | undefined;
   const resetDocument = () => {
     refs.clear();
@@ -608,13 +572,11 @@ export async function createPageDriver(
       resetDocument();
       loader = typeof frame["loaderId"] === "string" ? frame["loaderId"] : undefined;
     }),
-    // The page's requests, by the document they were made for; bodies only on asking.
     cdp.on("Network.requestWillBeSent", (params) => {
       const event = record(params);
       const request = record(event["request"]);
       if (typeof event["requestId"] !== "string" || typeof request["url"] !== "string") return;
       const known = requests.get(event["requestId"]);
-      // A redirect reuses the id: the hop it left is kept under its own key.
       if (known !== undefined) requests.set(`${known.id}#${requests.size}`, known);
       requests.delete(event["requestId"]);
       requests.set(event["requestId"], {
@@ -643,8 +605,6 @@ export async function createPageDriver(
       const entry = requests.get(String(event["requestId"]));
       if (entry !== undefined) entry.failed = oneLine(event["errorText"], 80);
     }),
-    // The renderer names a navigation's reason as it asks for it, which is the only place a form
-    // submission is told from a link: the request itself is a plain GET.
     cdp.on("Page.frameRequestedNavigation", (params) => {
       const event = record(params);
       const reason = event["reason"];
@@ -656,14 +616,10 @@ export async function createPageDriver(
   await cdp.send("Accessibility.enable");
   await cdp.send("DOM.enable");
   await cdp.send("Page.enable");
-  // Bodies are buffered so a local page's responses can be read (`responseBody`), which only a
-  // loopback page may do; nothing else reads them.
   await cdp.send("Network.enable", {
     maxTotalBufferSize: 20_000_000,
     maxResourceBufferSize: 2_000_000,
   });
-  // Electron delivers CDP's mouse and keyboard input only to a page that has focus, which a page in
-  // a hidden or detached pane never does: the clicks landed nowhere until the page was told it has.
   await cdp.send("Emulation.setFocusEmulationEnabled", { enabled: true });
 
   unsubscribe.push(
@@ -674,8 +630,6 @@ export async function createPageDriver(
       if (record(params)["executionContextId"] === worldId) worldId = undefined;
     }),
   );
-  // Recheck around protocol reads: neither renderer data nor capture bytes may leave after
-  // the command's document/authorization changed while the transport was awaited.
   const read = async (method: string, params?: Record<string, unknown>) => {
     validateOperation(false);
     const expected = documentId;
@@ -709,7 +663,6 @@ export async function createPageDriver(
     return node;
   };
 
-  /** Calls `fn` on a node in the isolated world; a node the page dropped is a stale ref. */
   const callOn = async (
     backendNodeId: number | undefined,
     fn: string,
@@ -947,7 +900,6 @@ export async function createPageDriver(
     });
   };
 
-  /** Where a target is in the viewport, scrolled into view when it is a ref. */
   const pointOf = async (target: PageTarget): Promise<readonly [number, number]> => {
     const point = "ref" in target ? await centerOf(nodeOf(target.ref)) : target.coordinate;
     const v = await viewport(true);
@@ -968,16 +920,10 @@ export async function createPageDriver(
     extra: Record<string, unknown> = {},
   ) => dispatch("Input.dispatchMouseEvent", { type, x, y, ...extra });
 
-  /** Applies `emulation` to the page; each part only when it changed from `before`. */
-  /** A layout change, held to the same ownership and limits as input, but not an action. */
   const layout = (method: string, params: Record<string, unknown>) => {
     checkDispatch();
     return read(method, params);
   };
-  /**
-   * What the page has applied, part by part, so a change that failed halfway is diffed against
-   * what actually took and undone in full by the next.
-   */
   const applied: {
     metrics: string | undefined;
     touch: boolean;
@@ -986,7 +932,6 @@ export async function createPageDriver(
     scheme: BrowserColorScheme | undefined;
   } = { metrics: undefined, touch: false, phone: false, scheme: undefined };
   const emulate = async (next: BrowserEmulation) => {
-    // Read before anything changes, so a page gone meanwhile leaves nothing half applied.
     if (next.mobile !== applied.phone)
       userAgent ??= String((await callOn(undefined, USER_AGENT)) ?? "");
     const metrics =
@@ -1005,7 +950,6 @@ export async function createPageDriver(
         });
       applied.metrics = metrics;
     }
-    // Touch and the user agent are tracked apart: either may take while the other fails.
     if (next.mobile !== applied.touch) {
       await layout("Emulation.setTouchEmulationEnabled", {
         enabled: next.mobile,
@@ -1060,7 +1004,6 @@ export async function createPageDriver(
                 ? undefined
                 : { width: emulation.width, height: emulation.height }));
       const resized = change.preset !== undefined || change.size !== undefined;
-      // A new size drops mobile emulation unless asked for again; a phone is narrower than 768.
       const mobile = change.mobile ?? (resized ? false : emulation.mobile);
       if (mobile && (size === undefined || size.width >= BROWSER_MOBILE_MAX_WIDTH))
         throw new Error(`Mobile emulation needs a width below ${BROWSER_MOBILE_MAX_WIDTH}.`);
@@ -1160,8 +1103,6 @@ export async function createPageDriver(
     evaluate: async (expression) => {
       let outcome: Record<string, unknown> = {};
       await perform("evaluate", undefined, async () => {
-        // The protocol's timeout covers synchronous work only: a promise that never settles is
-        // given up on here, so it can't hold the thread's pane.
         let timer: NodeJS.Timeout | undefined;
         const late = new Promise<never>((_, reject) => {
           timer = setTimeout(
@@ -1333,7 +1274,6 @@ export async function createPageDriver(
     drag: async (from, to) =>
       perform("drag", targetOf(from), async () => {
         await viewport(true);
-        // The destination is scrolled to first, then the start, which must still be on screen.
         const end = await pointOf(to);
         const start = await pointOf(from);
         if ("ref" in to) {
@@ -1350,8 +1290,6 @@ export async function createPageDriver(
             toPoint: end,
           },
         };
-        // A page's HTML drag-and-drop isn't run by synthetic mouse input: the protocol hands it
-        // over (`Input.dragIntercepted`) for the driver to drop where the drag ends.
         let dragged: unknown;
         const off = cdp.on("Input.dragIntercepted", (params) => {
           dragged = record(params)["data"];
@@ -1403,7 +1341,6 @@ export async function createPageDriver(
       }),
     formInput: async (ref, value) =>
       perform("formInput", { source: "dom-ref", ref }, async () => {
-        // Runtime mutation may throw after dispatch; retain unknown outcome in that case.
         nodeOf(ref);
         await callOn(nodeOf(ref), SET_VALUE, [value], true);
       }),

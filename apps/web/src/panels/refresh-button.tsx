@@ -26,7 +26,6 @@ export function RefreshButton({
 }) {
   const api = useApi();
   const refresh = () => {
-    // The panel's own refetch surfaces any failure, so the server-side refresh stays best-effort.
     api.refreshGit(threadId).catch(() => undefined);
     void refetch();
   };

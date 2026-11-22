@@ -24,7 +24,6 @@ import { ReviewBotReposField } from "./review-bot-repos-field";
 import { SETTINGS_STACK, SettingsGroup } from "./settings-group";
 import { useSaveSettings } from "./use-save-settings";
 
-/** Where review requests and open PRs show until moved: the sidebar. Kept on this computer. */
 const DEFAULT_PLACEMENT = "sidebar";
 
 const SOUNDS = Object.keys(CHIME_SOUNDS) as ChimeSound[];
@@ -80,7 +79,6 @@ export function NotificationsSection() {
     apply("sound", sound === undefined ? { sounds: false } : { sounds: true, chime: sound });
   };
 
-  // One tab stop for the group; arrows move and choose, like native radios.
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step =
       event.key === "ArrowRight" || event.key === "ArrowDown"
@@ -140,7 +138,6 @@ export function NotificationsSection() {
           error={errorOf("sound")}
           detail={
             <div className="flex flex-col items-start gap-1">
-              {/* One named preview, of the sound chosen: pick a sound, then hear it. */}
               {current !== undefined && (
                 <Button
                   size="sm"

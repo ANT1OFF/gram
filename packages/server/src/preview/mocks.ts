@@ -1,8 +1,3 @@
-// Mocks as pictures (docs/orchestration/playbooks/mock-first.md): the paths a question's options
-// and `show_mock` name are confined to the asking thread's folders, its checkouts, before anything
-// is kept or shown, so a card can't be made into a viewer for any file on the machine. The web app
-// then reads them through `fs.image` and `fs.preview`, which hold them to the same folders again.
-
 import {
   isCredentialPath,
   isMockImagePath,
@@ -32,7 +27,6 @@ export class MockRefused extends Data.TaggedError("MockRefused")<{ readonly mess
 
 const refuse = (message: string) => new MockRefused({ message });
 
-/** The longest `mock.json` read: a record of versions, not a document. */
 const RECORD_MAX_BYTES = 64 * 1024;
 
 type Want = "file" | "dir";
@@ -69,7 +63,6 @@ export const confinedPath = (
     return target;
   });
 
-/** A page and its board, the page confined and the board kept as it was given. */
 const confinedTarget = (target: string, roots: ReadonlyArray<string>) => {
   const { path, board } = splitPreviewTarget(target);
   return confinedPath(path, roots).pipe(Effect.map((page) => joinPreviewTarget(page, board)));
@@ -122,7 +115,6 @@ export const confineQuestionVisuals = <
     };
   });
 
-/** The pictures in a mock's `shots/`, by file name; none when it has no such folder. */
 const shotNames = (folder: string) =>
   Effect.promise(() =>
     readdir(join(folder, MOCK_SHOTS), { withFileTypes: true }).then(
@@ -131,7 +123,6 @@ const shotNames = (folder: string) =>
     ),
   );
 
-/** A path inside the mock's folder that `confinedPath` allows, or nothing: a card skips it. */
 const optional = (path: string, roots: ReadonlyArray<string>) =>
   confinedPath(path, roots).pipe(
     Effect.map((confined): string | undefined => confined),

@@ -16,16 +16,9 @@ import * as Effect from "effect/Effect";
 /** `[user@]host` as `ssh` takes it, or a `Host` alias from the SSH config; never an option. */
 export const SSH_TARGET = /^(?:[A-Za-z0-9._-]+@)?[A-Za-z0-9_][A-Za-z0-9._-]*$/;
 
-/** How long a join may take: the release download is the slow part. */
 const SSH_JOIN_TIMEOUT_MS = 10 * 60_000;
-/** How much of the session's output is kept for a failure's message. */
 const OUTPUT_KEPT = 4_000;
 
-/**
- * The command the remote side runs: the user's own login shell, so its PATH is the one their
- * terminal has (Homebrew, `~/.local/bin`), which the service then keeps; and `sh -s` reads the
- * installer from stdin. Quoted for any login shell, fish included.
- */
 const REMOTE_COMMAND = `sh -c 'exec "\${SHELL:-/bin/sh}" -l -c "exec sh -s"'`;
 
 export class SshJoinFailed extends Error {
@@ -59,7 +52,6 @@ export const runOverSsh = (
   options: { readonly ssh?: string; readonly timeoutMs?: number } = {},
 ): Effect.Effect<string, SshJoinFailed> =>
   Effect.callback<string, SshJoinFailed>((answer) => {
-    // A failed spawn emits both `error` and `close`: the first answer stands.
     let answered = false;
     const resume = (result: Effect.Effect<string, SshJoinFailed>) => {
       if (answered) return;
@@ -92,8 +84,6 @@ export const runOverSsh = (
     };
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
-    // ssh catches SIGTERM and exits 255 itself, so the timeout is remembered rather than read from
-    // the exit; one that ignores it is killed a few seconds later.
     let timedOut = false;
     let kill: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {

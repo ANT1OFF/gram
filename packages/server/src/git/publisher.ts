@@ -1,6 +1,3 @@
-// Push-based git state for every open thread's checkout: a watcher per checkout (local tier), network
-// sweeps (PR badge, throttled fetch), `git.state` events, auto-settle, and the PR check monitor.
-
 import {
   agentOwnsPrEvents,
   anyPrOpen,
@@ -169,10 +166,6 @@ export interface GitStatePublisherShape {
 
 export { pushedEventTouches, type PushedRepoEvent };
 
-/**
- * How long after a pushed event its checkout is read: GitHub sends a check suite's events in a
- * burst, and one read after it shows all of them.
- */
 const PUSHED_EVENT_SETTLE = Duration.seconds(1);
 
 /**
@@ -268,13 +261,8 @@ export const sweepTier = (checkout: {
   return checkout.gated ? "watch" : "full";
 };
 
-/** How long a checkout is asked about on every sweep after something GitHub will react to. */
 const EXPECT_CHANGE_FOR = Duration.minutes(3);
 
-/**
- * How fresh a thread's GitHub state has to be for moving into it not to refresh it: the sweep's own
- * answer from a moment ago is as good as a new one.
- */
 const FOCUS_FRESH_FOR = Duration.seconds(10);
 
 /**
@@ -314,44 +302,32 @@ export const localEvery = (attention: Attention, live = false): number => {
   return attention === "listed" ? LISTED_LOCAL_EVERY : Number.POSITIVE_INFINITY;
 };
 
-/** The refreshers key for a checkout's queued local or remote refresh. */
 const refresherKey = (key: string, remote: boolean) => `${key}|${remote}`;
 
-/** A state a thread was sent, to decide its completion on (`completionStep`). */
 interface CompletionCheck {
   readonly threadId: ThreadId;
-  /** The bindings and checkout `state` was for (`bindingOf`): one queued before a rebind is stale. */
   readonly binding: string;
   readonly state: GitState;
   readonly prs: ReadonlyArray<PrStatus | undefined>;
 }
 
-/** An extra PR within its thread; GitHub treats `owner/repo` case-insensitively. */
 const extraKey = (extra: Pick<BoundPr, "repo" | "number">) =>
   `${extra.repo.toLowerCase()}#${extra.number}`;
 
-/** The PRs a thread is bound to: its main one, then the ones it follows beside it. */
 const targetsOf = (thread: Thread) => [
   ...(thread.boundPr === undefined ? [] : [thread.boundPr]),
   ...(thread.extraPrs ?? []),
 ];
 
-/** A thread's bound PRs as one comparable string. */
 const targetsKey = (thread: Thread) => targetsOf(thread).map(extraKey).toSorted().join(" ");
 
-/** What a thread's completion facts are about: its bound PRs and the checkout it works in. */
 const bindingOf = (thread: Thread) => `${targetsKey(thread)}@${checkoutKey(thread)}`;
 
-/** The CI watcher's key for one of a thread's extra PRs; a bare thread id is its `boundPr`. */
 const extraWatchKey = (threadId: ThreadId, extra: Pick<BoundPr, "repo" | "number">) =>
   `${threadId}|${extraKey(extra)}`;
 
 const CI_NOTICE = "ci:";
 
-/**
- * The CI rollup a monitor last saw of `head`, from the mark kept with its binding: a head it never
- * saw started out pending. `undefined` without a mark, when the first look is only a baseline.
- */
 const markedCi = (
   mark: MonitorMark | undefined,
   head: string | undefined,
@@ -360,10 +336,8 @@ const markedCi = (
   return head === undefined || mark.head === head ? mark.ci : "pending";
 };
 
-/** The `sendNotice` key of the CI message for `pr`, so a rebound thread drops the old PR's. */
 const ciNoticeKey = (pr: Pick<BoundPr, "repo" | "number">) => `${CI_NOTICE}${extraKey(pr)}`;
 
-/** A bound PR the branch lookup can't see: another number, or a repo other than `origin`. */
 const boundElsewhere = (thread: Thread, state: GitState) => {
   const bound = thread.boundPr;
   if (bound === undefined) return undefined;
@@ -372,19 +346,10 @@ const boundElsewhere = (thread: Thread, state: GitState) => {
   return state.pr?.number === bound.number && sameRepo ? undefined : bound;
 };
 
-/**
- * Whether the thread's bound PR is looked up with its reviews: its review monitor and a merge
- * waiting on the bot's approval need them, and a branch's PR has them anyway.
- */
 const wantsReviews = (thread: Thread) =>
   (thread.boundPr?.reviewMonitor === true || thread.boundPr?.mergeWhenReady !== undefined) &&
   !thread.parked;
 
-/**
- * About what a sweep of `checkouts` spends: a point a document, and review threads now and then. A
- * bound PR read with its reviews (`reviewed`) costs about what a checkout does, measured: its
- * reviews a twentieth of a point, its threads half a point every couple of minutes.
- */
 const sweepCost = (checkouts: number, reviewed = 0) =>
   Math.max(1, Math.ceil((checkouts + reviewed) * 0.15));
 
@@ -393,12 +358,9 @@ export const GitStatePublisherLive = Layer.effectContext(
     const store = yield* ThreadStore;
     const hub = yield* EventHub;
     const runtimes = yield* ThreadRuntimes;
-    // Each checkout's git state, read on the machine it is on: by its machine, never by its path,
-    // which another machine can hold too.
     const machines = yield* WorkerHosts;
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const gitOn = (spot: Spot) => machines.machine(spot.hostId).git;
-    // Only this machine's checkouts are looked at for PRs elsewhere (`publishElsewhere`).
     const worktrees = machines.machine(LOCAL_HOST_ID).worktrees;
     const pr = yield* Pr;
     const config = yield* GitServerConfig;
@@ -412,10 +374,6 @@ export const GitStatePublisherLive = Layer.effectContext(
     const visibility = yield* Effect.serviceOption(ThreadVisibility);
     const activity = yield* Effect.serviceOption(AppActivity);
     const embedding = yield* embeddingOption;
-    /**
-     * Whether repository events are pushed from outside just now (the hosted features setting, and
-     * `GRAM_REPO_EVENTS=pushed`): the sweeps then leave GitHub alone but for a slow reconcile.
-     */
     const eventsPushed =
       embedding === undefined || embedding.config.repoEvents !== "pushed"
         ? Effect.succeed(false)
@@ -423,62 +381,40 @@ export const GitStatePublisherLive = Layer.effectContext(
 
     const states = new Map<string, GitState>();
     const published = new Map<ThreadId, GitState>();
-    /** Keyed by thread for its `boundPr`, and by `extraWatchKey` for each extra PR it watches. */
     const checks = new Map<string, ChecksRollup>();
-    /**
-     * The latest completed bot review id seen per thread, and on which PR's badge: another PR's is
-     * a baseline, not a round.
-     */
     const rounds = new Map<ThreadId, { readonly url: string; readonly reviewId: string }>();
-    /** Rounds waiting out their quiet window, per thread. */
     const pendingRounds = new Map<ThreadId, string>();
     const roundTimers = yield* FiberMap.make<ThreadId>();
     const locks = makeKeyedLock<string>();
     const watched = new Set<string>();
-    /** Checkouts only lingering parked threads are on: their state is kept and swept, not watched. */
     const sweptOnly = new Set<string>();
     const syncLock = yield* Semaphore.make(1);
     const watchers = yield* FiberMap.make<string>();
-    // Runs before the map's own finalizer, which would interrupt every watch at once: releases them
-    // one at a time, each unsubscribe awaited. A Windows worker crashed with an access violation
-    // after tearing down five checkouts' @parcel/watcher subscriptions together.
     yield* Effect.addFinalizer(() =>
       Effect.forEach([...watched], (key) => FiberMap.remove(watchers, key), { discard: true }),
     );
     const refreshers = yield* FiberMap.make<string>();
     const ciNotices = yield* FiberMap.make<string>();
     const awaitingNotice = new Set<string>();
-    /** CI notices past their delay and on their way, whose settle isn't the mark's until sent. */
     const sendingNotice = new Set<string>();
-    /** Per thread: the badges of its `extraPrs`, by `extraKey`. */
     const extraBadges = new Map<ThreadId, Map<string, PrStatus>>();
-    /** Per thread: its bound PR when that isn't the checkout's own PR (another repo or number). */
     const boundPrs = new Map<ThreadId, PrStatus>();
     const prWatches = makePrWatches();
-    /** The user's CI notices: every open PR thread, once per head commit and outcome. */
     const userNotices = yield* FiberMap.make<ThreadId>();
     const userChecks = new Map<ThreadId, ChecksRollup>();
     const awaitingUserNotice = new Set<ThreadId>();
     const notifiedSettles = new Set<string>();
     const observers: Array<GitStateObserver> = [];
-    /** Checkouts held out of watching, sweeps and refreshes, with how many holds each has. */
     const held = new Map<string, number>();
-    /** Per checkout: sweeps in a row that left its network tier alone, for `sweepTier`. */
     const skippedSweeps = new Map<string, number>();
-    /** Sweeps started so far. */
     let sweeps = 0;
-    /** Per checkout: the sweep count at its last local read of its own, or by its watcher. */
     const localReadAt = new Map<string, number>();
-    /** Checkouts whose watcher's change stream says native watches cover them (`live`). */
     const liveWatched = new Set<string>();
-    /** What `publishElsewhere` last read of the open checkouts, from `elsewhereInputs`. */
     let elsewhereRead: string | undefined;
 
-    /** An open thread whose sweeps look up a PR it waits on. */
     const waitsOnPr = (thread: Thread) =>
       !thread.parked && prWatches.forThread(thread.id).length > 0;
 
-    /** Records the watched badge before telling observers, so a reentrant read sees it. */
     const noteWatched = (badge: PrStatus) =>
       Effect.gen(function* () {
         const next = prWatches.note(badge);
@@ -488,15 +424,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         }
       });
 
-    /**
-     * A parked (archived) thread whose last badge still has a PR open. It is swept until the PR
-     * merges or closes, or the badge it was archived with would never move: a thread is often
-     * archived the moment its PR merges, before any sweep has seen it. A PR it's bound to with no
-     * badge yet (every parked thread's after a restart, or one whose lookup failed) is swept until
-     * GitHub answers, completed or not: completing a thread says nothing about its PR. With nothing
-     * bound, one that has no state yet is swept for its branch's PR unless it's completed, since a
-     * merge settles its thread and idle ones are completed within days.
-     */
     const lingers = (thread: Thread) => {
       if (!thread.parked || answered.get(thread.id) === targetsKey(thread)) return false;
       const state = published.get(thread.id);
@@ -506,7 +433,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       const gone = missing.get(thread.id);
       const isGone = (target: Pick<BoundPr, "repo" | "number">) =>
         gone?.has(extraKey(target)) === true;
-      // Bound, only its PRs' badges count: the checkout's own PR, or a previous binding's, isn't it.
       const targets = targetsOf(thread);
       const open = badges.some(
         (badge) =>
@@ -522,22 +448,9 @@ export const GitStatePublisherLive = Layer.effectContext(
       return state === undefined && thread.completedAt === undefined;
     };
 
-    /**
-     * Parked threads a lookup has answered with nothing left open, with the PRs they were bound to
-     * then. Their state is then dropped like any parked thread's, and without this they would read
-     * as never answered and linger again; binding another PR while parked is a new question.
-     */
     const answered = new Map<ThreadId, string>();
-    /**
-     * Per thread: the bound PRs, by `extraKey`, that GitHub answered it has no such PR for. Kept for
-     * as long as the thread exists and is bound to them.
-     */
     const missing = new Map<ThreadId, Set<string>>();
 
-    /**
-     * Records whether GitHub has `target` for `thread`, from a lookup that succeeded; true when that
-     * changed what is known.
-     */
     const noteMissing = (
       thread: Thread,
       target: Pick<BoundPr, "repo" | "number">,
@@ -552,17 +465,10 @@ export const GitStatePublisherLive = Layer.effectContext(
       return was !== gone;
     };
 
-    /** The threads whose state is kept and published: the open ones, and the lingering parked ones. */
     const openThreads = store.listThreads.pipe(
       Effect.map((threads) => threads.filter((t) => !t.parked || lingers(t))),
     );
 
-    /**
-     * What a thread sees: its checkout's state, with a bound PR from elsewhere as the badge, and no
-     * work-elsewhere advisory for a worktree the thread follows. An orchestrator sees no PR at all:
-     * its checkout's branch PR is none of the ones it drives, and published, a merge would complete
-     * the orchestrator and a red build would wake it.
-     */
     const threadState = (thread: Thread, state: GitState): GitState => {
       if (thread.role === "orchestrator") {
         const { pr: _pr, extraPrs: _extras, prElsewhere: _elsewhere, ...rest } = state;
@@ -571,8 +477,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       let next = state;
       const boundTo = boundElsewhere(thread, state);
       if (boundTo !== undefined) {
-        // Until the bound PR's own badge is in, or once GitHub says it has none, the checkout's PR
-        // (or a previous binding's badge) isn't the thread's and mustn't stand in for it.
         const bound = boundPrs.get(thread.id);
         if (bound !== undefined && isBadgeOf(bound, boundTo)) next = { ...next, pr: bound };
         else {
@@ -601,7 +505,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         void workElsewhere;
         next = followed;
       }
-      // The cue is kept per checkout, and an ordinary thread may share one with the orchestrator.
       if (next.prElsewhere !== undefined && !wantsPrElsewhere(thread, next)) {
         const { prElsewhere, ...rest } = next;
         void prElsewhere;
@@ -610,10 +513,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       return next;
     };
 
-    /**
-     * Looks up the bound PRs from elsewhere for the threads on `key`, `inventory` when the sweep has
-     * them already; true when any changed.
-     */
     const refreshBound = (
       path: string,
       key: string,
@@ -626,7 +525,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           inventory ?? (yield* openThreads).filter((thread) => checkoutKey(thread) === key);
         const extras = affordsExtras(yield* budget.window("graphql"));
         let changed = false;
-        // Concurrent, so `Pr.status`'s resolver collapses these lookups into one `gh` document.
         yield* Effect.forEach(
           mine,
           (thread) =>
@@ -645,7 +543,6 @@ export const GitStatePublisherLive = Layer.effectContext(
                 .pipe(forThread(thread.id), Effect.option);
               if (Option.isNone(next)) return;
               changed = noteMissing(thread, bound, next.value === undefined) || changed;
-              // GitHub has no such PR: its last badge goes, as an extra PR's does.
               if (next.value === undefined) {
                 changed = boundPrs.delete(thread.id) || changed;
                 return;
@@ -656,7 +553,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             }),
           { concurrency: "unbounded", discard: true },
         );
-        // The extras ride the same pass, so they join that document instead of adding `gh` runs.
         yield* Effect.forEach(
           mine.flatMap((thread) => (thread.extraPrs ?? []).map((extra) => ({ thread, extra }))),
           ({ thread, extra }) =>
@@ -664,10 +560,7 @@ export const GitStatePublisherLive = Layer.effectContext(
               const next = yield* pr
                 .status(cwd, { repo: extra.repo, number: extra.number })
                 .pipe(forThread(thread.id), Effect.option);
-              // A failed lookup carries the last badge, as the branch badge does; a lookup that
-              // succeeds with no PR means GitHub no longer has it, and its badge goes.
               if (Option.isNone(next)) return;
-              // A PR GitHub turns out not to have stops holding the thread's completion open.
               changed = noteMissing(thread, extra, next.value === undefined) || changed;
               if (next.value === undefined) {
                 changed = extraBadges.get(thread.id)?.delete(extraKey(extra)) === true || changed;
@@ -682,9 +575,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             }),
           { concurrency: "unbounded", discard: true },
         );
-        // The PRs these threads wait on ride the same document. A failed lookup, or one finding
-        // no such PR, leaves the last badge: the wait times out by its own fallback.
-        // One lookup per PR a thread waits on, made for that thread.
         const waited = mine
           .filter((thread) => !thread.parked)
           .flatMap((thread) => prWatches.forThread(thread.id));
@@ -722,11 +612,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         return changed;
       });
 
-    /**
-     * `badge` with the names of its failing gating checks and when they were read, from the last
-     * checks read made under its head and rollup (`Pr.seenChecks`, no request), and without names
-     * when there is none. A reader ages them out: the state isn't sent again while nothing moves.
-     */
     const withCheckNames = (badge: PrStatus) =>
       Effect.gen(function* () {
         const unnamed = () => {
@@ -750,7 +635,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           : { ...badge, failingChecks: { names, readAt: seen.at } };
       });
 
-    /** `state` with `withCheckNames` applied to each of its badges. */
     const namedChecks = (state: GitState) =>
       Effect.gen(function* () {
         if (state.pr === undefined && state.extraPrs === undefined) return state;
@@ -766,10 +650,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         };
       });
 
-    /**
-     * Sends `threadId`'s last state again once a checks read has named what failed, so the UI has
-     * the names before the next sweep. Nothing else moved, so the observers aren't told again.
-     */
     const publishCheckNames = (threadId: ThreadId) =>
       Effect.gen(function* () {
         const last = published.get(threadId);
@@ -778,7 +658,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         if (JSON.stringify(named) === JSON.stringify(last)) return;
         yield* Effect.uninterruptible(
           Effect.suspend(() => {
-            // A newer state went out while the names were looked up: it has its own.
             if (published.get(threadId) !== last) return Effect.void;
             published.set(threadId, named);
             return hub.publish({ type: "git.state", threadId, state: named });
@@ -786,7 +665,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         );
       });
 
-    /** Names of the failing check runs of `badge`'s PR; `repo` for a PR bound from another repo. */
     const failingRuns = (thread: Thread, badge: PrStatus, repo?: string) =>
       pr
         .checks(effectiveCheckout(thread).path, badge.number, repo, { stamp: prChecksStamp(badge) })
@@ -797,15 +675,9 @@ export const GitStatePublisherLive = Layer.effectContext(
               .map((run) => run.name),
           ),
           Effect.tap(() => publishCheckNames(thread.id)),
-          // The notice still goes out, without the names, when GitHub won't say just now.
           Effect.orElseSucceed((): ReadonlyArray<string> => []),
         );
 
-    /**
-     * Tells the user when an open PR's checks settle: a toast, and a native notification while the
-     * window is in the background. Once per head commit and outcome, and a flip back to pending
-     * within the delay cancels it, as for the agent's notice.
-     */
     const notifyCi = (thread: Thread, state: GitState) =>
       Effect.gen(function* () {
         const badge = state.pr;
@@ -836,8 +708,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             const failing = failed
               ? yield* failingRuns(thread, badge, boundElsewhere(thread, state)?.repo)
               : [];
-            // A worker's CI is its own to fix: it's woken with the failure, unless a watch it
-            // set already tells it, and the user isn't told either way.
             if (agentOwnsPrEvents(thread)) {
               if (!failed || hasWatch(thread)) return;
               return yield* runtimes
@@ -864,7 +734,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       return FiberMap.remove(ciNotices, key);
     };
 
-    /** Keeps what a monitor of `ref` saw with the binding, when that isn't what is kept already. */
     const rememberMark = (
       threadId: ThreadId,
       ref: PrRef,
@@ -880,7 +749,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           .pipe(Effect.ignore);
       });
 
-    /** Sends one message into `thread` when `badge`'s checks settle; `repo` for a PR from elsewhere. */
     const watchChecks = (
       key: string,
       thread: Thread,
@@ -889,8 +757,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       repo: string | undefined,
     ) =>
       Effect.gen(function* () {
-        // The first look since a restart compares against what the monitor saw before it, so a
-        // settle while the app was down is still told.
         const previous = checks.get(key) ?? markedCi(target.seen, badge.headRefOid);
         checks.set(key, badge.checks);
         const head = badge.headRefOid;
@@ -904,16 +770,11 @@ export const GitStatePublisherLive = Layer.effectContext(
           yield* mark;
           return yield* FiberMap.remove(ciNotices, key);
         }
-        // A settle that replaces a notice still waiting out its delay counts as settling from pending.
         const from = awaitingNotice.has(key) ? "pending" : previous;
-        // A settle owed a notice is kept as seen only once the notice is sent: a restart during
-        // the delay still finds it pending, and tells it.
         if (ciMessage(from, badge.checks, [], badge.number) === undefined) {
           return sendingNotice.has(key) ? undefined : yield* mark;
         }
         awaitingNotice.add(key);
-        // Checks that flip back to pending within the delay cancel the notice, so one settle sends
-        // one message.
         yield* FiberMap.run(
           ciNotices,
           key,
@@ -922,7 +783,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             awaitingNotice.delete(key);
             sendingNotice.add(key);
             yield* Effect.gen(function* () {
-              // Archived during the delay: `sync` cancels this, but may not have run yet.
               const latest = yield* store.getThread(thread.id).pipe(Effect.option);
               if (Option.isSome(latest) && latest.value.parked) return;
               const failing =
@@ -932,7 +792,6 @@ export const GitStatePublisherLive = Layer.effectContext(
               yield* runtimes
                 .sendNotice(thread.id, ciNoticeKey(target), { text })
                 .pipe(Effect.ignore);
-              // The settle this notice told, not whatever was seen while it went.
               yield* mark;
             }).pipe(Effect.ensuring(Effect.sync(() => sendingNotice.delete(key))));
           }),
@@ -943,7 +802,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       Effect.gen(function* () {
         const bound = thread.boundPr;
         const badge = state.pr;
-        // With the review monitor on, a CI settle joins its review notice instead.
         if (
           bound === undefined ||
           !bound.monitor ||
@@ -969,27 +827,16 @@ export const GitStatePublisherLive = Layer.effectContext(
         }
       });
 
-    /**
-     * The thread's PRs as `completionStep` reads them: what it was sent (`threadPrBadges`), then its
-     * branch's own PR when the badge is one bound from elsewhere.
-     */
     const completionPrs = (thread: Thread, state: GitState) => {
       const branchPr = branchPrOf(thread, states.get(checkoutKey(thread)));
       return [...threadPrBadges(thread, state), ...(branchPr === undefined ? [] : [branchPr])];
     };
 
-    /**
-     * Settles a thread on a merge and reopens it when work resumes (`completionStep`). The step is
-     * decided inside the store's transaction, on the thread as it is then, so a completion the user
-     * set meanwhile is judged too.
-     */
     const applyCompletion = ({ threadId, binding, state, prs }: CompletionCheck) =>
       Effect.gen(function* () {
         const decided: { step: CompletionStep } = { step: { kind: "none" } };
         const now = yield* Clock.currentTimeMillis;
         const { thread, changed } = yield* runtimes.updateCompletion(threadId, (current) => {
-          // Rebound or moved since it was queued: these facts were another binding's, and a PR of
-          // the same number elsewhere would settle on them. The rebind publishes its own.
           if (bindingOf(current) !== binding) return undefined;
           const step = completionStep(current, state, prs);
           decided.step = step;
@@ -1010,7 +857,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           }
         });
         const applied = decided.step;
-        // A worker's merge is reported by the worker or its orchestrator, not as a notification.
         if (!changed || applied.kind !== "settle" || agentOwnsPrEvents(thread)) return;
         yield* hub.publish({
           type: "notify",
@@ -1021,13 +867,7 @@ export const GitStatePublisherLive = Layer.effectContext(
         });
       }).pipe(Effect.ignore);
 
-    /**
-     * Completion is decided off the refresh, one state at a time in the order they were published: a
-     * refresh is interrupted by releasing its checkout or shutting down, and a state is never
-     * published to the thread twice.
-     */
     const completions = yield* Queue.unbounded<CompletionCheck>();
-    /** Per thread: the PRs its last completion check was queued with, as `JSON.stringify`ed. */
     const checkedPrs = new Map<ThreadId, string>();
     yield* Queue.take(completions).pipe(
       Effect.flatMap(applyCompletion),
@@ -1035,10 +875,8 @@ export const GitStatePublisherLive = Layer.effectContext(
       Effect.forkScoped,
     );
 
-    /** Publishes the round if, after the quiet window, it's still the latest and nothing is running. */
     const publishRound = (threadId: ThreadId, reviewId: string) =>
       Effect.gen(function* () {
-        // The thread's own badge: a PR bound from elsewhere isn't the checkout's.
         const badge = published.get(threadId)?.pr;
         const review = badge?.review;
         if (badge === undefined || review === undefined) return;
@@ -1055,12 +893,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         for (const observer of observers) yield* observer.onRound(threadId, round);
       });
 
-    /**
-     * A completed round is a new latest bot summary review with no round running. The first review a
-     * thread sees of a PR is only a baseline, so a restart or a rebind doesn't replay old rounds.
-     * Every state change while a round is pending restarts its quiet window, so the event carries
-     * the settled counts.
-     */
     const detectRound = (thread: Thread, state: GitState) =>
       Effect.gen(function* () {
         const badge = state.pr;
@@ -1069,8 +901,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         if (badge === undefined || review === undefined || reviewId === undefined) return;
         if (review.roundInFlight) return;
         const url = badge.url.toLowerCase();
-        // The first look since a restart has the review monitor's mark to go on, if it kept one.
-        // A mark that read the reviews and found none is a baseline too: the first round is new.
         const seen = thread.boundPr?.seen;
         const kept =
           seen !== undefined &&
@@ -1105,16 +935,12 @@ export const GitStatePublisherLive = Layer.effectContext(
           prs: completionPrs(thread, state),
         };
         const checkKey = JSON.stringify([check.binding, check.prs]);
-        // The branch's own PR isn't in what a thread bound elsewhere is sent, and can move alone:
-        // the ledger reads it, so that is news to the hub and the observers as well.
         if (
           checkedPrs.get(thread.id) === checkKey &&
           (last === state || (last !== undefined && JSON.stringify(last) === JSON.stringify(state)))
         )
           return;
         checkedPrs.set(thread.id, checkKey);
-        // Recorded, sent and queued for its completion together: an interrupt between them would
-        // drop this state for the UI, or for the settle.
         yield* Effect.uninterruptible(
           Effect.suspend(() => {
             published.set(thread.id, state);
@@ -1124,17 +950,12 @@ export const GitStatePublisherLive = Layer.effectContext(
           }),
         );
         if (thread.parked && !lingers(thread)) answered.set(thread.id, targetsKey(thread));
-        // The folder just went: an agent still running there fails every tool it calls.
-        // Not while its machine's resume is still to put it back: a session waiting for that resume
-        // would be stopped under it, and the thread fail with its folder about to return.
         if (
           state.missing === true &&
           last?.missing !== true &&
           !(remoteHosts !== undefined && folderOwedResume(remoteHosts.stops, thread))
         )
           yield* runtimes.stopInMissingFolder(thread.id);
-        // An archived thread's badge is kept true for the user; nobody is told what its CI or
-        // review did, and its agent isn't woken over them.
         if (!thread.parked) {
           yield* Effect.all([
             monitor(thread, state),
@@ -1143,24 +964,17 @@ export const GitStatePublisherLive = Layer.effectContext(
           ]).pipe(forThread(thread.id));
         }
         for (const observer of observers) yield* observer.onState(thread, state);
-        // A PR some other thread waits on may be this one's: its badge serves them too.
         for (const badge of [state.pr, ...(state.extraPrs ?? [])]) {
           if (badge !== undefined) yield* noteWatched(badge);
         }
       });
 
-    /**
-     * The state of a checkout whose folder is gone: the last one read, marked `missing`, with its PR
-     * looked up again by number from `root`, the repo's main checkout, on a network tier. A branch
-     * lookup needs the folder; the number is what the last read found.
-     */
     const missingState = (
       previous: GitState | undefined,
       recorded: { readonly root?: string | undefined; readonly branch?: string | undefined },
       remote: boolean,
     ) =>
       Effect.gen(function* () {
-        // With nothing read since the app started, the branch is the one the thread recorded.
         const last =
           previous ??
           (recorded.branch === undefined
@@ -1173,9 +987,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           const next = yield* pr
             .status(root, { repo: last.origin, number: carried.number, reviews: true })
             .pipe(Effect.option);
-          // A lookup by number isn't anchored to the branch. The folder can't move any more, so
-          // the anchoring the branch lookup verified stands while the PR's head is the one it saw,
-          // and otherwise it is the last HEAD read that the PR's head must equal.
           if (Option.isSome(next) && next.value !== undefined) {
             const same = next.value.headRefOid === carried.headRefOid;
             badge = {
@@ -1190,7 +1001,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         return { ...rest, ...(badge === undefined ? {} : { pr: badge }), missing: true } as const;
       });
 
-    /** The repo's main checkout and the branch the threads on `key` recorded for their checkout. */
     const recordedOf = (key: string, inventory: ReadonlyArray<Thread> | undefined) =>
       Effect.gen(function* () {
         for (const thread of inventory ?? (yield* store.listThreads)) {
@@ -1201,11 +1011,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         return {};
       });
 
-    /**
-     * `refresh`, with `reuseLocal` for a checkout nothing has changed since its last local read, and
-     * the open threads on it when the caller has them, so a sweep reads the thread list once rather
-     * than for every checkout it refreshes.
-     */
     const refreshIn = (
       spot: Spot,
       options: Parameters<GitStatePublisherShape["refresh"]>[1] & {
@@ -1219,14 +1024,12 @@ export const GitStatePublisherLive = Layer.effectContext(
       return locks.withLock(
         key,
         Effect.gen(function* () {
-          // A held checkout may be being deleted: no git runs in it and no state is put back.
           if (held.has(key)) return;
           const previous = states.get(key);
           if (options.remote) {
             lastRemoteAt.set(key, yield* Clock.currentTimeMillis);
             yield* reviewBots.set(reviewBotsOf(yield* store.getSettings));
           }
-          // Deleted outside Gram: no git runs in it, and the state says so.
           const present = yield* gitState.present(path);
           const recorded = present ? {} : yield* recordedOf(key, inventory);
           const root = recorded.root;
@@ -1254,7 +1057,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           if (Option.isNone(next)) return;
           if (options.remote) reconciledAt.set(key, yield* Clock.currentTimeMillis);
           if (options.reuseLocal !== true) localReadAt.set(key, sweeps);
-          // The lookup below can settle an archived thread, which still has to be sent its answer.
           const tracked = new Set(open.map((t) => t.id));
           const boundChanged =
             options.remote && (present || root !== undefined)
@@ -1263,7 +1065,6 @@ export const GitStatePublisherLive = Layer.effectContext(
                   key,
                   next.value,
                   inventory,
-                  // gh runs here: another machine's folder is none to start it in.
                   spot.hostId !== LOCAL_HOST_ID ? tmpdir() : (root ?? path),
                 )
               : false;
@@ -1273,7 +1074,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             JSON.stringify(previous) === JSON.stringify(next.value)
           )
             return;
-          // The hold may have started while git ran.
           if (held.has(key)) return;
           states.set(key, next.value);
           const threads = (yield* store.listThreads).filter(
@@ -1287,10 +1087,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       );
     };
 
-    /**
-     * The open checkouts at `path`: one per machine whose thread holds it, this machine's among them
-     * when one of its threads does or no thread elsewhere does. A path alone can name more than one.
-     */
     const spotsAt = (path: string) =>
       Effect.map(store.listThreads, (threads): ReadonlyArray<Spot> => {
         const lexical = nodePath.resolve(path);
@@ -1319,30 +1115,15 @@ export const GitStatePublisherLive = Layer.effectContext(
         Effect.forEach(spots, (spot) => refreshIn(spot, options), { discard: true }),
       );
 
-    /** When each checkout's network tier last ran, for a focus that needn't refresh what is fresh. */
     const lastRemoteAt = new Map<string, number>();
-    /**
-     * When each checkout's network tier last gave an answer: what the reconcile of a checkout whose
-     * events are pushed goes by, so a read that failed is not counted as one.
-     */
     const reconciledAt = new Map<string, number>();
-    /** Until when each checkout is asked about on every sweep, because GitHub is about to react. */
     const expectingUntil = new Map<string, number>();
 
-    /**
-     * The running queued refresh per refresher key, whether a request came in during it, and who
-     * for: the user's if any of the requests it answers was.
-     */
     const queuedRuns = new Map<string, { dirty: boolean; priority: GhPriority }>();
 
-    /**
-     * Runs a queued refresh, never replacing one that's running: that would kill its observers mid-
-     * flight. Requests during a run coalesce into a single rerun after it, which reads the latest state.
-     */
     const requestRefresh = (spot: Spot, remote: boolean, priority: GhPriority = "interactive") =>
       Effect.suspend(() => {
         const checkout = spotKey(spot);
-        // A held checkout may be being deleted: git mustn't run in it. Its watch refreshes on release.
         if (held.has(checkout)) return Effect.void;
         const key = refresherKey(checkout, remote);
         const running = queuedRuns.get(key);
@@ -1353,8 +1134,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         }
         const run = { dirty: false, priority };
         queuedRuns.set(key, run);
-        // The priority is put back on the refresh itself: it runs in a fiber of the map's, which
-        // inherits nothing from whoever asked. Read per pass, so a rerun the user joined is theirs.
         const loop: Effect.Effect<void> = Effect.suspend(() =>
           refreshIn(spot, { remote }).pipe(Effect.provideService(GhPriority, run.priority)),
         ).pipe(
@@ -1372,7 +1151,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         return FiberMap.run(
           refreshers,
           key,
-          // Interrupted by a release or shutdown: no rerun is owed. A newer run may own the key already.
           loop.pipe(
             Effect.ensuring(
               Effect.sync(() => {
@@ -1383,7 +1161,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         ).pipe(Effect.asVoid);
       });
 
-    /** Drops what the thread's CI, round and user notices remember, and cancels any still pending. */
     const silence = (id: ThreadId) =>
       Effect.gen(function* () {
         rounds.delete(id);
@@ -1397,7 +1174,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         yield* FiberMap.remove(userNotices, id);
       });
 
-    /** Drops everything remembered about a checkout, and cancels its queued refreshes. */
     const forget = (key: string) =>
       Effect.gen(function* () {
         states.delete(key);
@@ -1408,19 +1184,15 @@ export const GitStatePublisherLive = Layer.effectContext(
         pushedReadAt.delete(key);
         expectingUntil.delete(key);
         yield* FiberMap.remove(pushedReads, key);
-        // A queued refresh left running, or its rerun, would put the dropped state back.
         yield* FiberMap.remove(refreshers, refresherKey(key, true));
         yield* FiberMap.remove(refreshers, refresherKey(key, false));
       });
 
-    /** Align the watchers with the open threads, and hand known states to newly opened threads. */
     const sync = syncLock.withPermits(1)(
       Effect.gen(function* () {
         const allThreads = yield* store.listThreads;
         const parked = new Set(allThreads.filter((t) => t.parked).map((t) => t.id));
         for (const id of answered.keys()) if (!parked.has(id)) answered.delete(id);
-        // An open thread keeps them too: its state says which PRs GitHub doesn't have
-        // (`missingPrs`), and dropping them would hold its completion open again.
         const live = new Map(allThreads.map((t) => [t.id, new Set(targetsOf(t).map(extraKey))]));
         for (const [id, keys] of missing) {
           const targets = live.get(id);
@@ -1428,8 +1200,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           if (keys.size === 0) missing.delete(id);
         }
         const threads = yield* openThreads;
-        // Parking frees the thread's folder: a lingering parked thread's checkout is swept, never
-        // watched.
         const wanted = new Map(
           threads
             .filter((t) => !t.parked)
@@ -1459,7 +1229,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             watchers,
             key,
             refreshIn(spot, { remote: config.sweepInterval !== undefined }).pipe(
-              // The watcher has just read the checkout, so the refresh takes that read.
               Effect.andThen(
                 Stream.runForEach(gitOn(spot).watch([spot.path]), (change) =>
                   Effect.suspend(() => {
@@ -1470,7 +1239,6 @@ export const GitStatePublisherLive = Layer.effectContext(
                   }),
                 ),
               ),
-              // However the watcher ends, its checkout is polled as an unwatched one again.
               Effect.ensuring(Effect.sync(() => liveWatched.delete(key))),
             ),
           );
@@ -1484,7 +1252,6 @@ export const GitStatePublisherLive = Layer.effectContext(
           extraBadges.delete(id);
           yield* silence(id);
         }
-        // A notice already waiting out its delay when the thread was archived would wake its agent.
         for (const thread of threads) if (thread.parked) yield* silence(thread.id);
         for (const thread of threads) {
           const state = states.get(checkoutKey(thread));
@@ -1493,10 +1260,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       }),
     );
 
-    /**
-     * No one can see this checkout's badge or sync chip, so the sweep leaves its rebase tier alone
-     * until something puts the chips back on screen, and its network tier too but for a watch.
-     */
     const unwatched = (threads: ReadonlyArray<Thread>) =>
       Option.isNone(visibility)
         ? Effect.succeed(false)
@@ -1504,14 +1267,9 @@ export const GitStatePublisherLive = Layer.effectContext(
             Effect.map((gated) => gated.length > 0 && gated.every(Boolean)),
           );
 
-    /**
-     * Points checkouts without a PR at an open PR on another worktree of their repo. A read that
-     * failed forgets `elsewhereRead`, so the next sweep asks again.
-     */
     const publishElsewhere = (threads: ReadonlyArray<Thread>) =>
       Effect.gen(function* () {
         const found = yield* discoverPrsElsewhere(
-          // Its git runs here, so only this machine's checkouts.
           threads.filter((thread) => isLocalHost(effectiveCheckout(thread))),
           (key) => states.get(key),
           () => {
@@ -1543,11 +1301,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         }
       });
 
-    /**
-     * What the PR-elsewhere cue reads of the open checkouts: which want one, and the PRs the tracked
-     * ones show. While it holds still, the cue can only move with a worktree no thread is on, or the
-     * repo's list of open PRs, and the work-elsewhere passes look at those.
-     */
     const elsewhereInputs = (threads: ReadonlyArray<Thread>) =>
       JSON.stringify(
         threads.map((thread) => {
@@ -1570,21 +1323,17 @@ export const GitStatePublisherLive = Layer.effectContext(
         }),
       );
 
-    /** Takes one hold off `key`. */
     const unhold = (key: string) => {
       const left = (held.get(key) ?? 1) - 1;
       if (left > 0) held.set(key, left);
       else held.delete(key);
     };
 
-    /** Holds the checkout `key`, as `hold` does, until the effect it returns runs. */
     const holdKey = (key: string) =>
       Effect.gen(function* () {
         held.set(key, (held.get(key) ?? 0) + 1);
-        // Then waits out a refresh already running git there; its checks keep it from publishing.
         yield* sync.pipe(
           Effect.andThen(locks.withLock(key, Effect.void)),
-          // An interrupted hold is undone and the checkout watched again.
           Effect.onInterrupt(() => Effect.sync(() => unhold(key)).pipe(Effect.andThen(sync))),
         );
         let released = false;
@@ -1596,10 +1345,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         });
       });
 
-    /**
-     * Every open checkout at `path` is held: a path alone can't say which machine's is about to go,
-     * and holding one that isn't only pauses its reads.
-     */
     const hold = (path: string) =>
       Effect.gen(function* () {
         const keys = [...new Set((yield* spotsAt(path)).map(spotKey))];
@@ -1607,7 +1352,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         return Effect.forEach(releases, (release) => release, { discard: true });
       });
 
-    /** Open checkouts by key, less the held ones. */
     const checkoutsOf = (threads: ReadonlyArray<Thread>) => {
       const byPath = new Map<string, { spot: Spot; threads: Array<Thread> }>();
       for (const thread of threads) {
@@ -1620,7 +1364,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       return byPath;
     };
 
-    /** How closely the most-watched of `threads` is being looked at; listed, with no windows known. */
     const attentionOf = (threads: ReadonlyArray<Thread>) =>
       Option.isNone(visibility)
         ? Effect.succeed("listed" as const)
@@ -1628,7 +1371,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             Effect.map(closestAttention),
           );
 
-    /** When the user was last in one of `threads`, or one last saw activity: whichever is latest. */
     const lastTouched = (threads: ReadonlyArray<Thread>) =>
       Effect.forEach(threads, (t) =>
         Option.isNone(visibility)
@@ -1638,19 +1380,12 @@ export const GitStatePublisherLive = Layer.effectContext(
               .pipe(Effect.map((focusedAt) => Math.max(t.lastActivityAt, focusedAt ?? 0))),
       ).pipe(Effect.map((each) => Math.max(0, ...each)));
 
-    /**
-     * Asks GitHub about every PR the checkouts in `entries` are about to look up, in one document.
-     * The refreshes that follow reach `Pr.status` one checkout at a time, which asked that way is a
-     * document each, and GitHub charges a point a document however little it carries.
-     */
     const primeBadges = (entries: Iterable<{ spot: Spot; threads: ReadonlyArray<Thread> }>) =>
       Effect.gen(function* () {
-        // As `refreshBound` will ask, or what is primed isn't what it reads.
         const extras = affordsExtras(yield* budget.window("graphql"));
         yield* pr.prime(
           [...entries].flatMap(({ spot, threads }) => {
             const state = states.get(spotKey(spot));
-            // gh runs here, so another machine's checkout has no branch of its own to ask about.
             const reads = checkoutReads(threads, true);
             const here = spot.hostId === LOCAL_HOST_ID && reads.remote;
             const path = spot.hostId === LOCAL_HOST_ID ? spot.path : tmpdir();
@@ -1682,13 +1417,10 @@ export const GitStatePublisherLive = Layer.effectContext(
         );
       });
 
-    /** Whether a checkout whose events are pushed is due its fallback read from the network. */
     const reconcileDue = (key: string, now: number) =>
       now - (reconciledAt.get(key) ?? -Infinity) >= Duration.toMillis(PUSHED_RECONCILE_EVERY);
 
-    /** The read each pushed event's checkout is owed, so a burst of events is one read. */
     const pushedReads = yield* FiberMap.make<string>();
-    /** When each checkout's last pushed read began, which the next keeps its distance from. */
     const pushedReadAt = new Map<string, number>();
 
     const pushed: RepoEvents["Service"]["pushed"] = (event) =>
@@ -1714,55 +1446,41 @@ export const GitStatePublisherLive = Layer.effectContext(
             Effect.sleep(Duration.millis(wait)).pipe(
               Effect.andThen(
                 Effect.gen(function* () {
-                  // GitHub is refusing: no read goes into that, and the next sweep that is let
-                  // through reads this checkout first.
                   if ((yield* backoff.consecutive) > 0) {
                     reconciledAt.delete(key);
                     return;
                   }
                   pushedReadAt.set(key, yield* Clock.currentTimeMillis);
-                  // What the caches hold was read before the event: the read must reach GitHub.
                   invalidatePrBadges();
                   yield* requestRefresh(entry.spot, true, "background");
                 }),
               ),
             ),
-            // An event during the wait is covered by the read already owed.
             { onlyIfMissing: true },
           );
         }
         return touched.length;
       });
 
-    /**
-     * `catchUp`: the app is back on screen after being hidden or asleep. However cool a thread had
-     * gone, its badge is about to be looked at, so everything that is ever asked about is asked now.
-     */
     const sweepAt = (level: ActivityLevel, catchUp = false) =>
       Effect.gen(function* () {
         const threads = yield* openThreads;
         const byPath = checkoutsOf(threads);
         const pass = sweeps++;
         const scanElsewhere = pass % WORK_ELSEWHERE_SWEEPS === 0;
-        // Refused, or down to the share kept for other tools: the local tier still runs, and the
-        // badges keep what they show until the allowance resets.
         const quotaHeld = !(yield* budget.admit("graphql", "background")).allowed;
         const now = yield* Clock.currentTimeMillis;
         const pushedNow = yield* eventsPushed;
         const tiered = yield* Effect.forEach(byPath, ([key, entry]) =>
           Effect.gen(function* () {
-            // Nobody may be looking at an archived thread's row, and it's asked about anyway.
             const parked = entry.threads.every((t) => t.parked);
             const attention = parked ? "listed" : yield* attentionOf(entry.threads);
-            // Its last read is due again, or it has none: what that read showed may have changed.
             const live = liveWatched.has(key);
             const localDue =
               catchUp ||
               sweeps - (localReadAt.get(key) ?? -Infinity) >= localEvery(attention, live) ||
-              // Only the sweep's read sees a folder deleted: its watcher's reads just fail.
               (live && !(yield* thereHere(entry.spot)));
             if (quotaHeld) return { entry, parked, localDue, tier: "local" as const };
-            // Its events are pushed: the network tier is the reconcile's alone.
             if (pushedNow && !reconcileDue(key, now)) {
               return { entry, parked, localDue, tier: "local" as const };
             }
@@ -1778,8 +1496,6 @@ export const GitStatePublisherLive = Layer.effectContext(
               watched: entry.threads.some((t) => hasWatch(t) || waitsOnPr(t)),
               idleMs: now - (yield* lastTouched(entry.threads)),
               burst,
-              // A lingering thread's PR is open whatever the checkout's own badge says, and that one
-              // merged at HEAD would never be asked about again: an archived checkout goes by idleness.
               ...(parked ? {} : { pr: state?.pr, head: state?.head }),
               level,
             });
@@ -1794,8 +1510,6 @@ export const GitStatePublisherLive = Layer.effectContext(
             return { entry, parked, localDue, tier };
           }),
         );
-        // Nothing but its PR changes an archived checkout's badge: no local tier between lookups,
-        // and none at all once its folder is gone. An open one's waits until its read is due.
         const swept = yield* Effect.filter(tiered, ({ entry, parked, localDue, tier }) =>
           !parked
             ? Effect.succeed(tier !== "local" || localDue)
@@ -1813,15 +1527,12 @@ export const GitStatePublisherLive = Layer.effectContext(
                 remote: tier !== "local",
                 rebase: tier === "full",
                 scanElsewhere: scanElsewhere && tier === "full",
-                // A checkout only archived threads are on has no watcher to keep its read current.
                 reuseLocal: !parked && !localDue,
               },
               entry.threads,
             ),
           { concurrency: config.sweepConcurrency, discard: true },
         );
-        // A worktree list per repo and its commit times: on the scan passes, back on screen, when a
-        // tracked checkout's branch or PR moved and the cue may with it, or after a failed read.
         const inputs = elsewhereInputs(threads);
         if (catchUp || scanElsewhere || inputs !== elsewhereRead) {
           elsewhereRead = inputs;
@@ -1831,10 +1542,6 @@ export const GitStatePublisherLive = Layer.effectContext(
 
     const sweep = sweepAt("active");
 
-    /**
-     * The sweep while no window is showing: the PR lookup alone, and only for checkouts a watch is
-     * on. Whether a chip is on screen doesn't gate it, since a notification is what it is for.
-     */
     const sweepWatched = Effect.gen(function* () {
       if (!(yield* budget.admit("graphql", "background")).allowed) return;
       const watchedThreads = (yield* openThreads).filter(
@@ -1842,12 +1549,10 @@ export const GitStatePublisherLive = Layer.effectContext(
       );
       const all = [...checkoutsOf(watchedThreads).values()];
       const now = yield* Clock.currentTimeMillis;
-      // Their events are pushed: only a checkout the reconcile is due for is asked about.
       const entries = (yield* eventsPushed)
         ? all.filter((entry) => reconcileDue(spotKey(entry.spot), now))
         : all;
       yield* primeBadges(entries);
-      // Their watchers keep the local reads current, and the first sweep back on screen reads anew.
       yield* Effect.forEach(
         entries,
         (entry) =>
@@ -1870,9 +1575,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       Stream.runForEach(() => sync),
       Effect.forkScoped,
     );
-    // A CI message still queued when its monitor is turned off is for work the user turned off. The
-    // thread is read again rather than taken from the event, which may be older than the message.
-    // Only an upsert that moved what it reads: the archive and the PRs with their monitors.
     yield* hub.serverEvents(Effect.succeed({ type: "threads.snapshot", threads: [] })).pipe(
       Stream.filter(
         upsertsChanging((t) => JSON.stringify([t.parked, t.boundPr ?? null, t.extraPrs ?? null])),
@@ -1882,11 +1584,9 @@ export const GitStatePublisherLive = Layer.effectContext(
           ? Effect.void
           : Effect.gen(function* () {
               const thread = yield* store.getThread(event.thread.id);
-              // A monitor turned off forgets what it saw, so turned on again it starts afresh.
               if (prunedMarks(thread) !== thread) {
                 yield* runtimes.updateThread(thread.id, prunedMarks);
               }
-              // Nor is one queued for a thread that's been archived since.
               const monitored = new Set(
                 thread.parked
                   ? []
@@ -1924,13 +1624,6 @@ export const GitStatePublisherLive = Layer.effectContext(
     const backoff = yield* makePollBackoff("gitstate", config.sweepInterval ?? Duration.zero);
     let announced = false;
 
-    /**
-     * How long until the next sweep. A pass GitHub refused waits out the backoff, or the reset time
-     * when GitHub gave one; a clean pass waits the base cadence, stretched for an app at `level` that
-     * nobody is looking at and again for an allowance running low. `refusedBefore` is the refusal
-     * count as the pass began: a click refused while the loop slept raised the count as well, and
-     * counted against the pass that followed it, that backed a sweep off which GitHub had answered.
-     */
     const nextSweepDelay = (
       level: ActivityLevel,
       refusedBefore: number,
@@ -1964,11 +1657,9 @@ export const GitStatePublisherLive = Layer.effectContext(
         );
       });
 
-    /** The last pass left the app hidden or asleep, so the next one on screen catches up. */
     let away = false;
     if (config.sweepInterval !== undefined) {
       yield* Effect.gen(function* () {
-        // Asleep as this pass comes due: the wait above ended in the suspension, not before it.
         if (Option.isSome(activity) && !onScreen(yield* activity.value.level)) away = true;
         const level = Option.isNone(activity)
           ? "active"
@@ -1982,16 +1673,12 @@ export const GitStatePublisherLive = Layer.effectContext(
         const wait = Effect.sleep(
           yield* nextSweepDelay(after, refusedBefore, checkoutsOf(open).size, reviewed),
         );
-        // A window coming back cuts the long wait short, so its badges are fresh when it's looked at.
-        // Not a backoff, though: that wait is GitHub's, and a sweep into a live 403 extends it.
         const healthy = (yield* backoff.consecutive) === 0;
         yield* Option.isSome(activity) && healthy && !onScreen(after)
           ? Effect.raceFirst(wait, activity.value.awaitActive)
           : wait;
       }).pipe(asBackground, Effect.forever, Effect.forkScoped);
     }
-    // Moving into a thread is the moment its state matters most, and a thread gone cool may not have
-    // been asked about for minutes. Not as background work: the user is waiting on this one.
     if (Option.isSome(visibility) && config.sweepInterval !== undefined) {
       yield* visibility.value.focusChanges.pipe(
         Stream.runForEach((threadId) =>
@@ -2008,8 +1695,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         Effect.forkScoped,
       );
     }
-    // A sidebar expanding or a pane showing a thread brings the skipped tiers up to date now. The
-    // network tier waits when we're backed off: an expand mustn't fire a burst into a live 403.
     if (Option.isSome(visibility)) {
       yield* visibility.value.revealed.pipe(
         Stream.runForEach((revealed) =>
@@ -2041,7 +1726,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         return elsewhere ? boundPrs.get(thread.id) : state?.pr;
       });
 
-    // Named as `git.state` sends it, so a snapshot or a reload has the names the stream had.
     const stateForThread: GitStatePublisherShape["stateForThread"] = (thread) =>
       Effect.suspend(() => {
         const state = states.get(checkoutKey(thread));
@@ -2060,7 +1744,6 @@ export const GitStatePublisherLive = Layer.effectContext(
         const until = (yield* Clock.currentTimeMillis) + Duration.toMillis(EXPECT_CHANGE_FOR);
         expectingUntil.set(key, until);
         skippedSweeps.delete(key);
-        // The lookup cache would answer with the badge being corrected for up to its TTL.
         invalidatePrBadges();
         yield* requestRefresh(spotOf(effectiveCheckout(thread)), true);
       });
@@ -2083,15 +1766,11 @@ export const GitStatePublisherLive = Layer.effectContext(
 
     const lookupPr: GitStatePublisherShape["lookupPr"] = (thread, ref) =>
       Effect.gen(function* () {
-        // `--repo` names the repo, so gh only needs a folder that exists to start in.
         const cwd = yield* ghFolderOf(effectiveCheckout(thread));
-        // `Pr.status` answers no PR, not a failure, while gh isn't signed in: that says nothing.
         if (Option.isSome(tools) && !(yield* tools.value.ghReady)) return Option.none();
         const found = yield* pr
           .status(cwd, { repo: ref.repo, number: ref.number, reviews: ref.reviews === true })
           .pipe(forThread(thread.id), Effect.option);
-        // Through the watchers' own door when it is watched already: an answer cached here unheard
-        // would make the sweep's same answer no news, and those waiting on it would never be told.
         if (Option.isSome(found) && found.value !== undefined) {
           if (prWatches.has(ref)) yield* noteWatched(found.value);
           else prWatches.remember(ref, found.value);
@@ -2100,7 +1779,6 @@ export const GitStatePublisherLive = Layer.effectContext(
       });
 
     const service: GitStatePublisherShape = {
-      // Only when the path names one checkout: two machines' states are never mixed up.
       stateFor: (path) =>
         Effect.map(spotsAt(path), (spots) =>
           spots.length === 1 ? states.get(spotKey(spots[0]!)) : undefined,

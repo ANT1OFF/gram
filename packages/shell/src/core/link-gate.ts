@@ -48,13 +48,11 @@ export interface LinkGate<W> {
   open(url: string, window?: W): Promise<boolean>;
 }
 
-/** A URL longer than this is cut in the dialog; the browser still gets all of it. */
 const SHOWN_URL_CHARS = 600;
 
 /** The dialog's text for `url`: the host it really goes to first, then the whole link. */
 export function linkPrompt(url: string, link: LinkHost): LinkPrompt {
   const shown = url.length > SHOWN_URL_CHARS ? `${url.slice(0, SHOWN_URL_CHARS)}…` : url;
-  // The renderer hands over links already parsed, so an IDN arrives as punycode alone.
   const unicode = domainToUnicode(link.host);
   const spelled = link.written ?? (unicode !== "" && unicode !== link.host ? unicode : undefined);
   const notes = [
@@ -75,8 +73,6 @@ export function linkPrompt(url: string, link: LinkHost): LinkPrompt {
 
 export function createLinkGate<W>(deps: LinkGateDeps<W>): LinkGate<W> {
   let hosts = trustedHostsOf(deps.load());
-  // One question at a time, so a burst of links can't stack dialogs, and a host trusted in one
-  // answer opens the links queued behind it.
   let queue: Promise<unknown> = Promise.resolve();
 
   const setHosts = (next: string[]) => {

@@ -35,15 +35,12 @@ export function formatLogTime(at: number, intl: { readonly timeZone?: string } =
   }).format(at);
 }
 
-/** A zone to read a time in, for tests; the viewer's own when absent. */
 interface ZoneOption {
   readonly timeZone?: string;
 }
 
-/** English month abbreviations, so `Sep` reads the same in every engine and locale. */
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** `at`'s day and 24-hour clock in the viewer's zone (or `intl.timeZone`), in Latin digits. */
 function stampParts(at: number, intl: ZoneOption) {
   const parts = dateTimeFormat("en-GB", {
     numberingSystem: "latn",
@@ -100,7 +97,6 @@ export function formatRelative(epochMs: number, now = Date.now()): string {
   return "";
 }
 
-/** `formatRelative`'s units, spelled out. */
 const UNIT_WORDS: Readonly<Record<string, string>> = {
   m: "minute",
   h: "hour",
@@ -139,14 +135,11 @@ const MESSAGE_TIME = {
   timeZoneName: "longOffset",
 } as const;
 
-/** One formatter per zone: a transcript formats every message it renders, and builds are slow. */
 const messageTimeFormats = new Map<string | undefined, Intl.DateTimeFormat>();
 
-/** `epochMs` split into `MESSAGE_TIME`'s parts in the viewer's zone, or `intl.timeZone`'s. */
 function messageTimeParts(epochMs: number, intl: { readonly timeZone?: string }) {
   let format = messageTimeFormats.get(intl.timeZone);
   if (format === undefined) {
-    // `en-US` only for its Latin digits: callers put the parts back in an order of their own.
     format = new Intl.DateTimeFormat("en-US", {
       ...MESSAGE_TIME,
       ...(intl.timeZone === undefined ? {} : { timeZone: intl.timeZone }),
@@ -167,7 +160,6 @@ export function formatMessageTime(
   intl: { readonly timeZone?: string } = {},
 ): string {
   const part = messageTimeParts(epochMs, intl);
-  // Engines differ on UTC itself, `GMT` or `GMT+00:00`: both read as the latter.
   const zone = part("timeZoneName");
   const offset = zone === "GMT" ? "UTC+00:00" : zone.replace(/^GMT/, "UTC");
   return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}:${part("second")} ${offset}`;

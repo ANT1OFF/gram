@@ -15,17 +15,11 @@ const keyOf = (headline: PlanHeadline | undefined): string =>
     ? ""
     : `${headline.phase}|${headline.text}|${headline.pr ?? ""}|${headline.prUrl ?? ""}|${headline.done}/${headline.total}`;
 
-/**
- * `headline` as the screen shows it: a change settles in after `HYSTERESIS_MS`, so a row doesn't
- * flicker through every step of a busy turn. Needing the user, and a headline appearing or going,
- * show at once.
- */
 function useSteadyHeadline(headline: PlanHeadline | undefined): PlanHeadline | undefined {
   const key = keyOf(headline);
   const [shown, setShown] = useState({ key, headline });
   const instant =
     shown.headline === undefined || headline === undefined || headline.phase === "needsYou";
-  // Derived during render, as React asks for state that follows a prop.
   if (shown.key !== key && instant) setShown({ key, headline });
   const [pending, setPending] = useState(headline);
   if (keyOf(pending) !== key) setPending(headline);
@@ -43,7 +37,6 @@ function useSteadyHeadline(headline: PlanHeadline | undefined): PlanHeadline | u
  */
 export function useThreadHeadline(
   threadId: ThreadId,
-  /** Words for its activity line in place of the raw one, as the overview's plain lines have it. */
   wordActivity?: (activity: string) => string,
 ): {
   readonly headline: PlanHeadline | undefined;
@@ -53,7 +46,6 @@ export function useThreadHeadline(
   const turnPlan = useThreadsStore((s) => s.plans[threadId]);
   const detail = useThreadsStore((s) => s.statusDetail[threadId]);
   const planned = hasPlan(summary?.plan, turnPlan);
-  // Only the idle rule reads the clock, in days, so a slow tick will do.
   const now = useNow(summary !== undefined, undefined, 10 * 60_000);
   const raw =
     summary === undefined ? undefined : activityLine(summary.status, detail, summary.activity);

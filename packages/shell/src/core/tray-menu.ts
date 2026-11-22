@@ -1,6 +1,3 @@
-// The tray's (macOS menu bar's) menu: what a page sent, held to the rules again, and laid out as
-// plain entries the module turns into Electron's menu. No Electron here.
-
 import {
   EMPTY_TRAY_MENU,
   TRAY_ASKS_MAX,
@@ -15,7 +12,6 @@ import {
   type TrayWorkspace,
 } from "@gram/contracts/desktop-bridge";
 
-/** A page-made token: never text the menu shows. */
 const TOKEN = /^[\w:-]{1,128}$/;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -31,13 +27,11 @@ const askOf = (input: unknown): TrayAsk | undefined => {
   if (typeof title !== "string" || typeof context !== "string") return undefined;
   if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) return undefined;
   const shown = lines as string[];
-  // An answer only under lines shown whole, by the notifications' rule, whatever the page asked.
   const answers = trayAnswerable(shown, answer);
   return {
     id,
     title: trayText(title),
     context: trayText(context),
-    // Otherwise read-only lines, plain and short; the submenu sends them to the window.
     lines: answers
       ? shown
       : shown.slice(0, TRAY_LINES_MAX).map((line) => trayText(line, TRAY_LINE_MAX)),
@@ -71,7 +65,6 @@ export function parseTrayMenu(input: unknown): TrayMenu {
     asks: asks.slice(0, TRAY_ASKS_MAX),
     more: count(input["more"]) + Math.max(0, asks.length - TRAY_ASKS_MAX),
     workspaces,
-    // Only a true or false, and only beside workspaces it could pause.
     ...(workspaces.length > 0 && typeof input["allPaused"] === "boolean"
       ? { allPaused: input["allPaused"] }
       : {}),
@@ -113,10 +106,8 @@ export const workspaceStatus = (workspace: TrayWorkspace): string => {
   return parts.length === 0 ? "idle" : parts.join(" · ");
 };
 
-/** An ask's submenu: who asks, the exact lines, then its answer and Open. */
 const askEntries = (ask: TrayAsk): TrayEntry[] => {
   const lines: TrayEntry[] = ask.lines.map((line) => ({ kind: "item", label: line }));
-  // Lines with no answer under them may be cut short for the menu: the window shows them whole.
   if (lines.length > 0 && ask.answer === undefined) {
     lines.push({ kind: "item", label: "Open to review" });
   }
@@ -151,7 +142,6 @@ export function trayEntries(menu: TrayMenu, productName: string): TrayEntry[] {
     run: { kind: "workspace", id: workspace.id },
   }));
   if (menu.allPaused !== undefined) {
-    // The pick says what the item said, so a menu opened before a change does what it showed.
     workspaces.push({
       kind: "item",
       label: menu.allPaused ? "Resume all" : "Pause all",
@@ -187,7 +177,6 @@ export function trayGlyphBitmap(size: number): Buffer {
   const gap = size * 0.12;
   const side = (size - 2 * pad - gap) / 2;
   const radius = side * 0.28;
-  /** Coverage of one rounded square at a pixel's centre, anti-aliased over a pixel. */
   const cover = (x: number, y: number, left: number, top: number) => {
     const cx = Math.min(Math.max(x, left + radius), left + side - radius);
     const cy = Math.min(Math.max(y, top + radius), top + side - radius);
@@ -201,7 +190,6 @@ export function trayGlyphBitmap(size: number): Buffer {
       for (const top of origins) {
         for (const left of origins) a = Math.max(a, cover(x + 0.5, y + 0.5, left, top));
       }
-      // Black, premultiplied: only alpha carries the shape.
       buf[(y * size + x) * 4 + 3] = Math.round(a * 255);
     }
   }

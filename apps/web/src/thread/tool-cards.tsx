@@ -61,7 +61,6 @@ export function ToolCard(props: ToolCardProps) {
   );
 }
 
-/** A tool's answer as a value: JSON a tool sent as text is parsed, anything else is as it came. */
 const answered = (output: unknown): unknown => {
   const text =
     typeof output === "string"
@@ -80,10 +79,6 @@ const answered = (output: unknown): unknown => {
   }
 };
 
-/**
- * The embedding app's own card for this tool, under its row, once the call has answered: nothing
- * on Gram's own, or for a tool no card is for.
- */
 function HostToolCard({ part }: { part: AnyToolPart }) {
   const name = toolNameOf(part);
   const Card = useHostToolCard(name);
@@ -102,9 +97,7 @@ function ToolCardRow({
   streamingIds,
   renderSubagent,
 }: ToolCardProps) {
-  // Claude's and Codex's file changes alike, by tool name: Codex's calls are dynamic parts.
   if (FILE_EDIT_TOOLS.has(toolNameOf(part))) return <FileEditCard part={part} />;
-  // Native web parts retain their opaque provider results in GenericCard.
   if (part.type === "tool-WebSearch") return <WebSearchCard part={part} />;
   if (part.type === "tool-WebFetch") return <WebFetchCard part={part} />;
   switch (part.type) {
@@ -155,13 +148,10 @@ function ToolShell({
   children,
 }: {
   part: AnyToolPart;
-  /** The tool's name, as the row's `data-tool` keeps it; also its words unless `label` gives some. */
   name: string;
-  /** The row's words for the call in a phase, with the raw tool id its details show instead. */
   label?: (phase: ToolPhase) => ToolLabel;
   summary?: ReactNode;
   meta?: ReactNode;
-  /** Overrides what `part.state` implies, e.g. for a background subagent that is still running. */
   phase?: ReturnType<typeof toolPhase>;
   defaultOpen?: boolean;
   children?: ReactNode;
@@ -180,18 +170,11 @@ function ToolShell({
   const cutOff = part.state === "output-error" && cutOffByInterrupt(part.errorText);
   const display = cutOff ? { ...PHASE_DISPLAY[phase], label: "Interrupted" } : PHASE_DISPLAY[phase];
   const words = labelOf?.(phase) ?? { label: name, raw: undefined };
-  // In the orchestrator's chat, one of Gram's own calls that went through ("Started a worker",
-  // "Queued to merge when ready") is an event, not work to inspect: a line of muted meta like an
-  // update's, its chevron first, so the reply around it stays the strongest thing in the pane. A
-  // call still running, waiting on you or failed keeps its card.
   const quiet =
     useOrchestratorStreamContext() !== undefined &&
     phase === "done" &&
     isGramTool(toolNameOf(part));
   const [open, setOpen] = useState(defaultOpen);
-  // A closed body is inert and zero-height, so it isn't rendered until first opened: a long
-  // transcript would otherwise lay out every tool's full output. It stays mounted once opened, so
-  // closing still animates.
   const [opened, setOpened] = useState(defaultOpen);
   const bodyId = useId();
   return (
@@ -233,8 +216,6 @@ function ToolShell({
             aria-controls={bodyId}
             className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left text-reading"
           >
-            {/* The mark stays mounted from pending to done, so its arc can close into the check. */}
-            {/* A native title: a tooltip trigger inside the row's toggle would take its click. */}
             <span title={display.label} className="flex shrink-0">
               <Swap swapKey={isMarkPhase(phase) ? "mark" : phase}>
                 {isMarkPhase(phase) ? (
@@ -245,14 +226,10 @@ function ToolShell({
               </Swap>
             </span>
             <span className="shrink-0 font-medium">{words.label}</span>
-            {/* Waiting on an approval, the card right under the row says what is asked in full:
-                the row names the tool and the wait, and does not say the command a second time. */}
             <span className="min-w-0 flex-1 truncate font-mono text-meta text-muted-foreground">
               {phase === "awaiting" ? null : summary}
             </span>
             {meta}
-            {/* A finished row is the common case: its check says so, and the word is for a reader.
-            A waiting row's card is right under it. */}
             <span className={cn("shrink-0 text-meta", phase === "done" ? "sr-only" : display.tone)}>
               {display.label}
             </span>
@@ -283,7 +260,6 @@ function ToolShell({
                 Tool <code className="font-mono text-foreground">{words.raw}</code>
               </p>
             )}
-            {/* A subagent's calls inside hold their approvals only while this body is open. */}
             <ApprovalSlotsOpen open={open}>{children}</ApprovalSlotsOpen>
             <ToolImages part={part} size="large" className="flex flex-wrap items-start gap-2" />
             {cutOff ? (
@@ -315,11 +291,6 @@ const Pre = ({ children, className }: { children: ReactNode; className?: string 
   </pre>
 );
 
-/**
- * A tool result as a card reads it: the structured output, or the plain text that stands in for
- * it. The Claude Code SDK puts no `tool_use_result` on a sidechain message, so the Claude mapper
- * falls back to the result text for every tool a subagent runs. A card renders whichever it got.
- */
 const splitOutput = <T,>(output: T | string | undefined) =>
   typeof output === "string" ? { output: undefined, text: output } : { output, text: undefined };
 
@@ -417,21 +388,14 @@ function SearchCard({ part }: { part: ToolPartOf<"Glob"> | ToolPartOf<"Grep"> })
 
 const TASK_CHIP = "shrink-0 rounded-sm border border-border px-1 text-meta text-muted-foreground";
 
-/** A run's counts: there while the card is hovered or focused, kept in place so nothing jumps. */
 const USAGE_LINE =
   "text-meta text-muted-foreground opacity-0 transition-opacity duration-(--dur-fast) group-focus-within/tool:opacity-100 group-hover/tool:opacity-100";
 
-/**
- * The model the run actually used: its transcript reports the wire id even when the model was
- * inherited, and the input only carries an alias the caller asked for explicitly. They are shown as
- * they come, not reconciled into one name.
- */
 const subagentModel = (
   part: ToolPartOf<"Task"> | ToolPartOf<"Agent">,
   messages: readonly GramUIMessage[],
 ) => messages.find((message) => message.metadata?.model)?.metadata?.model ?? part.input?.model;
 
-/** `Haiku` for `claude-haiku-4-5-20251001` or `haiku`; an id from no known family as it came. */
 const modelFamily = (model: string): string => {
   const family = /(opus|sonnet|haiku|fable)/iu.exec(model)?.[1];
   return family === undefined ? model : family[0]!.toUpperCase() + family.slice(1).toLowerCase();
@@ -439,7 +403,6 @@ const modelFamily = (model: string): string => {
 
 const toolUses = (n: number) => `${n} tool ${n === 1 ? "use" : "uses"}`;
 
-/** `3 tool uses · 12.4s · 8,120 tokens`, dropping whatever the agent didn't report. */
 const usageCounts = (usage: SubagentUsageData) =>
   [
     usage.toolUses === undefined ? undefined : toolUses(usage.toolUses),
@@ -463,7 +426,6 @@ function TaskCard({
   renderSubagent: (message: GramUIMessage) => ReactNode;
 }) {
   const { output, text } = splitOutput(part.state === "output-available" ? part.output : undefined);
-  // A background launch returns at once; the card runs until the subagent's transcript is done.
   const background = output?.status === "async_launched";
   const running =
     background &&
@@ -471,9 +433,7 @@ function TaskCard({
       ? streamingIds.size > 0
       : messages.some((message) => streamingIds.has(message.id)));
   const model = subagentModel(part, messages);
-  // A finished foreground run reports richer totals with its result; the snapshot covers the rest.
   const counts = output?.status === "completed" || usage === undefined ? "" : usageCounts(usage);
-  // What a live run is on; a finished card's last snapshot can still say "running".
   const live = running || part.state === "input-streaming" || part.state === "input-available";
   const note =
     live && usage?.status === "running" ? (usage.summary ?? usage.lastToolName) : undefined;

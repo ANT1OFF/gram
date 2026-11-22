@@ -1,5 +1,3 @@
-// Pure helpers of this machine as a personal device (`hosted-device.ts`), apart from its wiring.
-
 import { randomBytes } from "node:crypto";
 
 import type { DeviceCapability, HostedWorkspace } from "@gram/contracts";
@@ -46,7 +44,6 @@ export const markTaker = <
       marked = { machineMark, formerMarks };
       if (server === undefined) return;
       Object.assign(server, marked);
-      // The server here is told, so it moves what the former marks hold now.
       changed();
     },
     take: (made: S) => {

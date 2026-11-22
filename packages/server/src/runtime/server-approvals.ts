@@ -1,5 +1,3 @@
-// Approval cards the server raises and answers itself (`requestApproval`), rather than an agent session.
-
 import { AnswerProofRef } from "../embedding/answer-proof.ts";
 import type { EventSinkShape } from "../embedding/event-sink.ts";
 import { ActingPerson } from "../embedding/person.ts";
@@ -88,8 +86,6 @@ export const approvalResolution = (
     };
     yield* Effect.logInfo("app tool approval resolved").pipe(
       Effect.annotateLogs({ ...resolution, toolName }),
-      // Logger defects are diagnostic failures, never a reason to strand a decision. The
-      // essential receipt has no database dependency and is still delivered to the waiter.
       Effect.catchCause(() =>
         Effect.sync(() => {
           if (origin === "runtime" && !resolution.reason.endsWith("-cleanup-failed")) {
@@ -120,18 +116,12 @@ export interface ServerApprovalsDeps {
   readonly becomeIdle: (rt: Runtime) => Effect.Effect<void>;
 }
 
-/**
- * Cards the server raises and answers itself, and `respond`, which takes an answer to the server's
- * card or the agent session's.
- */
-/** A person's answer as the agent is to get it, and the card and hook record it was given for. */
 interface Confirmed {
   readonly answer: RequestAnswer;
   readonly asked: AskedRequest | undefined;
   readonly card: PendingRequest | undefined;
 }
 
-/** Whether two cards under one id ask the same thing: what's raised again can't change it. */
 const sameCard = (a: PendingRequest, b: PendingRequest | undefined): boolean =>
   b !== undefined && JSON.stringify(a) === JSON.stringify(b);
 
@@ -152,7 +142,6 @@ export const makeServerApprovals = ({
 }: ServerApprovalsDeps) => {
   const clearPendingRequests = (rt: Runtime, reason: string) =>
     Effect.gen(function* () {
-      // What the decision hook still holds of the thread's goes with its cards.
       hooked.forget(rt.threadId);
       const cancelled: Array<[RequestId, ServerApprovalRequest]> = [];
       for (const [requestId, request] of serverRequests) {
@@ -179,8 +168,6 @@ export const makeServerApprovals = ({
       }).pipe(
         Effect.onExit((exit) =>
           Effect.gen(function* () {
-            // Withdraw cards before waking calls. A cleanup failure must still fail closed and
-            // release every waiter; it cannot turn a runtime withdrawal into a user rejection.
             for (const [requestId, request] of cancelled) {
               const resolution = yield* approvalResolution(
                 rt.threadId,
@@ -202,14 +189,11 @@ export const makeServerApprovals = ({
       );
     });
 
-  /** Called with the runtime lock held, after a request was removed. */
   const restoreStatusAfterRequest = (rt: Runtime) =>
     Effect.gen(function* () {
       if ((yield* store.listRequests(rt.threadId)).length > 0) return;
       if (rt.turn !== undefined) return yield* setStatus(rt, "running");
       if (rt.status === "needsApproval") {
-        // A server-raised card on an idle thread ends without a turn end, so nothing else would
-        // get to what was queued or delivered while it was up.
         if (rt.session !== undefined && !rt.closing && !rt.reserved) return yield* becomeIdle(rt);
         yield* setStatus(rt, rt.session === undefined ? "cold" : "idle");
         yield* pumpDeliveries(rt);
@@ -285,12 +269,6 @@ export const makeServerApprovals = ({
       );
     });
 
-  /**
-   * Tells the sink who is answering `requestId` and how, for its `ask.resolved`. Called under the
-   * thread's lock, once the card is known to be still waiting and this answer is the one taken,
-   * so the note (and the signed request it may carry) is always the delivered answer's. Taken back
-   * when the delivery fails.
-   */
   const noteAnswer = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     Effect.gen(function* () {
       if (eventSink === undefined) return;
@@ -315,7 +293,6 @@ export const makeServerApprovals = ({
   const unnoteAnswer = (threadId: ThreadId, requestId: RequestId) =>
     eventSink === undefined ? Effect.void : eventSink.noteAnswer(requestId, undefined, threadId);
 
-  /** Answers a card the server raised with `requestApproval`. */
   const respondToServer = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
@@ -360,8 +337,6 @@ export const makeServerApprovals = ({
                         : "rejected",
                     pending.permissionMode,
                   );
-                  // Copy only client fields. Withdrawal failure propagates, but still releases the
-                  // captured waiter fail-closed; diagnostics cannot erase a successful user answer.
                   yield* Deferred.succeed(pending.answer, {
                     kind: "approval",
                     decision: failed ? "deny" : answer.decision,
@@ -374,21 +349,10 @@ export const makeServerApprovals = ({
               ),
             );
           }),
-        ).pipe(
-          // Only withdrawal and decision completion are atomic. Restoring idle can drain a
-          // queued delivery into provider I/O, which must stay cancellable and release the lock.
-          Effect.andThen(restoreStatusAfterRequest(rt)),
-        ),
+        ).pipe(Effect.andThen(restoreStatusAfterRequest(rt))),
       );
     });
 
-  /**
-   * A person's answer to a card the decision hook sent them, as the agent gets it. An approval is
-   * put to the hook once more, naming the first call and the card, so the endpoint has the last
-   * word (and, once the server knows who answered, can check them); anything but `allow` turns it
-   * into a denial that says why. A rejection, and an
-   * answer to any other card, pass as they are.
-   */
   const confirmedByHook = (
     threadId: ThreadId,
     requestId: RequestId,
@@ -397,13 +361,10 @@ export const makeServerApprovals = ({
   ) =>
     Effect.gen(function* () {
       const asked = hooked.asked.get(hookedKey(threadId, requestId));
-      // The card as it stood when answered: the answer is for it, and for no other under its id.
       const card = yield* store.listRequests(threadId).pipe(
         Effect.map((requests) => requests.find((request) => request.id === requestId)),
         Effect.orElseSucceed(() => undefined),
       );
-      // Given for another card under the id: the hook is never asked to approve this one for it.
-      // Checked again under the lock (`deliverToSession`).
       if (shown !== undefined && card?.shown !== shown)
         return yield* new RequestNotFound({ threadId, requestId });
       if (shown === undefined && card?.shown !== undefined)
@@ -413,8 +374,6 @@ export const makeServerApprovals = ({
         return confirmed(answer);
       }
       if (asked === undefined) {
-        // A card for what the hook governs, with nothing kept of what it said: never let through
-        // unasked, however the hook's word on it was lost.
         const governed =
           card === undefined ||
           (card.kind === "approval" &&
@@ -429,7 +388,6 @@ export const makeServerApprovals = ({
         });
       }
       const thread = yield* store.getThread(threadId).pipe(Effect.option);
-      // This runs in the call of whoever answered the card.
       const answeredBy = yield* ActingPerson;
       for (const each of asked.actions) {
         const decided: Decided = Option.isNone(thread)
@@ -468,23 +426,15 @@ export const makeServerApprovals = ({
     given: RequestAnswer,
     shown: string | undefined,
   ) =>
-    // The hook is asked before the lock is taken, so a slow endpoint holds up nothing else of
-    // the thread; whether the card still waits is read under the lock, as it always was.
     confirmedByHook(threadId, requestId, given, shown).pipe(
       Effect.flatMap((confirmed) => deliverToSession(threadId, requestId, confirmed, given, shown)),
     );
 
-  /**
-   * `given` is the person's own answer, which the sink reports; `confirmed.answer` is what the
-   * agent gets, and only while the card it was given for is the one still waiting under its id:
-   * an agent that asked again meanwhile, with something else, never gets the first one's answer.
-   */
   const deliverToSession = (
     threadId: ThreadId,
     requestId: RequestId,
     confirmed: Confirmed,
     given: RequestAnswer = confirmed.answer,
-    /** The card's key as the person saw it, when the answer names one. */
     shown?: string,
   ) =>
     withSession(threadId, (rt, session) =>
@@ -505,8 +455,6 @@ export const makeServerApprovals = ({
           return yield* new RequestNotFound({ threadId, requestId });
         }
         yield* noteAnswer(threadId, requestId, given);
-        // Removed only once the agent has the answer: one that didn't arrive leaves the card up,
-        // to be answered again, rather than a thread that reads running while the agent waits.
         yield* session.respond(requestId, answer).pipe(
           Effect.mapError(
             (error) => new InvalidState({ message: error.message, threadId, status: rt.status }),
@@ -514,7 +462,6 @@ export const makeServerApprovals = ({
           Effect.tapError(() => unnoteAnswer(threadId, requestId)),
         );
         hooked.asked.delete(hookedKey(threadId, requestId));
-        // The adapter may have reported it resolved already, which published the event.
         if (yield* store.removeRequest(threadId, requestId)) {
           yield* hub.publish({ type: "thread.requestResolved", threadId, requestId });
         }
@@ -529,7 +476,6 @@ export const makeServerApprovals = ({
     answer: RequestAnswer,
     shown?: string,
   ) =>
-    // A card the server raised has an id of its own, never asked again.
     serverApprovalOrigins.has(requestId)
       ? respondToServer(threadId, requestId, answer)
       : respondToSession(threadId, requestId, answer, shown);

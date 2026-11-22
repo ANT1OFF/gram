@@ -20,7 +20,6 @@ import { workerEntryOf } from "./workers-model";
 const CHIP =
   "rounded-sm border border-border px-1.5 py-0.5 text-meta text-foreground/80 outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-/** Puts a nudge in the worker's own composer, in the pane `from` is in, to edit and send. */
 function fillWorkerComposer(threadId: ThreadId, text: string, from: HTMLElement) {
   const drafts = useDraftStore.getState();
   const current = drafts.text[threadId] ?? "";
@@ -73,7 +72,6 @@ export function StuckCard({ thread }: { thread: Thread }) {
     const orchestrator = thread.spawnedBy?.threadId;
     if (orchestrator !== undefined) startOrchestratorMessage(orchestrator, choice.text, open);
   };
-  // The server has the last word on whether it is stalled: once it says no, the card goes.
   const show = due && (isPending || view != null);
   return (
     <ExpandPresence open={show}>
@@ -121,7 +119,6 @@ export function StuckCard({ thread }: { thread: Thread }) {
               {choice.label}
             </button>
           ))}
-          {/* Away on this machine for a day, however it moves meanwhile; Dismiss is until it moves. */}
           <button
             type="button"
             data-testid="stuck-snooze"

@@ -89,13 +89,9 @@ export const appHandlers = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const log = yield* ServerLog;
   const ports = yield* ThreadPorts;
-  // Absent in runtime-only test layers, which watch no checkouts.
   const publisher = yield* Effect.serviceOption(GitStatePublisher);
-  // Absent in runtime-only test layers, which keep no limit readings.
   const limits = yield* Effect.serviceOption(UsageLimitReadings);
-  // Absent where no machine can join: every thread is then this machine's.
   const machines = yield* Effect.serviceOption(RemoteHosts);
-  // Absent in handler-only test layers; only the headless browser host is watched from a client.
   const serverBrowser =
     Option.getOrUndefined(yield* Effect.serviceOption(PanePort))?.view !== undefined;
   if (Option.isSome(machines)) {
@@ -113,10 +109,6 @@ export const appHandlers = Effect.gen(function* () {
     };
   };
 
-  /**
-   * The thread's git state as last seen, since `git.state` is only sent when it changes: without it
-   * a reloaded window showed no PR badges, and a change published as it reconnected was lost.
-   */
   const withGit = (summary: ThreadSummary) =>
     Option.match(publisher, {
       onNone: () => Effect.succeed(summary),
@@ -130,7 +122,6 @@ export const appHandlers = Effect.gen(function* () {
           ),
     });
 
-  /** What a subscriber is sent first, and again after falling too far behind. */
   const snapshot = Effect.gen(function* () {
     const threads = yield* runtimes.snapshot.pipe(
       Effect.flatMap((all) => Effect.forEach(all, withGit)),
@@ -138,16 +129,13 @@ export const appHandlers = Effect.gen(function* () {
     const events: Array<ServerEvent> = [
       { type: "threads.snapshot", threads: threads.map(withPorts) },
     ];
-    // The machines its threads run on, so a row names one before any of them changes.
     if (Option.isSome(machines))
       events.push({ type: "machines.snapshot", machines: machines.value.states() });
-    // The limit readings the server kept, so the meter shows them before any agent reports.
     if (Option.isSome(limits))
       events.push({ type: "usageLimits.snapshot", limits: yield* limits.value.current });
     return events;
   });
 
-  // Every tag this build serves: `RpcHandlersLayer` has a handler for each.
   const handshake: ServerHandshake = {
     version: config.appVersion ?? DEV_VERSION,
     ...(config.appBuild === undefined ? {} : { build: config.appBuild }),
@@ -158,12 +146,9 @@ export const appHandlers = Effect.gen(function* () {
     "app.handshake": () => Effect.succeed(handshake),
     "app.diagnostics": () => makeDiagnostics({ runtimes, config, log, ports, serverBrowser }),
 
-    // The native shell owns the link dialog when present.
     "app.openExternal": ({ url }) => openExternal(url, config.shellOpensLinks === true),
 
     "events.subscribe": () =>
-      // Whose connection it is, read as the stream starts: what is one person's own reaches only
-      // their connections (`EventHub.publishTo`).
       Stream.unwrap(
         Effect.gen(function* () {
           const person = personKey(yield* ActingPerson);

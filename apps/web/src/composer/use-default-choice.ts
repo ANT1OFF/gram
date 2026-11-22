@@ -23,12 +23,10 @@ export function useDraftAgentChoice(saved: ModelSlot | undefined) {
   const pending = lists && (!claude.settled || !codex.settled);
   const here =
     resolving && !pending ? slotHere(saved, { claude: claude.models, codex: codex.models }) : {};
-  // Captured once, during render, like discovery below; a choice the user made since stands.
   if (here.model !== undefined) setChoice(choiceFromModel(here.model));
   if (here.missing !== undefined && unavailable === undefined) setUnavailable(here.missing);
   const local = useLocalDefaultChoice(picked === undefined && !pending && here.model === undefined);
   const choice = picked ?? local.choice;
-  // Capture the first settled result during render; later query errors cannot change harness.
   if (
     picked === undefined &&
     !pending &&
@@ -42,7 +40,6 @@ export function useDraftAgentChoice(saved: ModelSlot | undefined) {
     choice,
     setChoice,
     discovering: picked === undefined && (pending || local.discovering),
-    /** Why the saved default can't run here, when what stands in is discovery's pick. */
     ...(unavailable === undefined ? {} : { unavailable }),
   };
 }

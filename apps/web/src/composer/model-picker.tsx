@@ -33,11 +33,6 @@ export interface GroupHead {
 }
 export type GroupHeads = Readonly<Record<string, GroupHead>>;
 
-/**
- * The fold of superseded models (`PickerOption.legacy`): shut until opened or a search runs, which
- * finds them as it finds the rest. Starred ones stay with the favourites, and the model in use with
- * its own section, so neither ever hides.
- */
 function useLegacyFold(options: readonly Option[], favourite: (value: string) => boolean) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -57,12 +52,7 @@ function useLegacyFold(options: readonly Option[], favourite: (value: string) =>
 
 type LegacyFold = ReturnType<typeof useLegacyFold>["fold"];
 
-/**
- * Legacy models' fold: a chevron, its name and its count, as the overview's folds are. Opened, it
- * heads the section it opened and brings it into view, since it opens past the list's end.
- */
 function LegacyFoldButton({ fold }: { fold: LegacyFold }) {
-  // Once, as the opened heading mounts: on every render it would undo the user's own scrolling.
   const reveal = useCallback(
     (node: HTMLButtonElement | null) => {
       if (fold.open) node?.scrollIntoView?.({ block: "start" });
@@ -75,7 +65,6 @@ function LegacyFoldButton({ fold }: { fold: LegacyFold }) {
       aria-expanded={fold.open}
       data-testid="legacy-models"
       ref={reveal}
-      // The search box keeps focus, so typing and the arrow keys carry on.
       onPointerDown={(event) => event.preventDefault()}
       onClick={fold.onToggle}
       className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-left text-caption font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:text-foreground"
@@ -146,8 +135,6 @@ export function ModelCombobox({
   const trigger = useRef<HTMLButtonElement>(null);
   const legacy = useLegacyFold(options, favourite);
   const groups = legacy.groups;
-  // A single unnamed section needs no heading; an agent's or a gateway's name always says whose.
-  // With a Legacy fold the list's own section is named too, so it doesn't gain a heading on opening.
   const headed =
     groups.length > 1 ||
     legacy.fold.count > 0 ||
@@ -155,14 +142,12 @@ export function ModelCombobox({
   const selected = options.find((option) => option.value === value);
   const confirm = usePickConfirm(value);
   const shown = selected?.label ?? label;
-  // In full the trigger says the name itself; shorter, its name and tooltip say it whole.
   const whole = labelSize(labelled) === "full";
 
   const triggerProps = {
     ref: trigger,
     "aria-label": whole ? label : `${label}: ${shown}`,
     "aria-description": description,
-    // A form's field says it natively; on a toolbar the instant tooltip says it, whatever the size.
     title: field ? title : undefined,
     "data-warning": warning ? "true" : undefined,
     className: cn(
@@ -188,7 +173,6 @@ export function ModelCombobox({
         compact={field ? undefined : (selected?.compact ?? compactModelName(shown))}
         labelled={labelled}
       />
-      {/* Only beside the name in full, or in a form's field. */}
       {(whole || field) && (
         <ChevronDownIcon aria-hidden className="size-icon-chip shrink-0 text-muted-foreground" />
       )}
@@ -221,8 +205,6 @@ export function ModelCombobox({
       {field ? (
         <Combobox.Trigger {...triggerProps}>{triggerContent}</Combobox.Trigger>
       ) : (
-        // One element whatever its size: a trigger that changed shape between its full and short
-        // forms remounted as the row re-laid itself out, and closed the list it had just opened.
         <Hint
           label={tip ?? (whole ? title : `${label}: ${shown}`)}
           render={<Combobox.Trigger {...triggerProps} />}
@@ -231,7 +213,6 @@ export function ModelCombobox({
         </Hint>
       )}
       <Combobox.Portal>
-        {/* On a toolbar, above the whole composer: over it, the list hid the draft being written. */}
         <Combobox.Positioner
           side={field ? "bottom" : "top"}
           {...(field ? {} : { anchor: () => aboveComposer(trigger.current) })}
@@ -260,11 +241,6 @@ export function ModelCombobox({
   );
 }
 
-/**
- * The model list's search box, its empty state and its sections: favourites first, then a section
- * per agent or gateway, each row with its mark, its description and a star. Inside a
- * `Combobox.Root`, in its popup or inline.
- */
 function ModelSearchBody({
   headed,
   rowIcon,
@@ -281,7 +257,6 @@ function ModelSearchBody({
   onToggleFavourite: ((value: string) => void) | undefined;
   highlighted: RefObject<Option | undefined>;
   heads?: GroupHeads | undefined;
-  /** The list's first group, whose heading has no hairline above it. */
   firstGroup?: string | undefined;
   legacy: LegacyFold;
 }) {
@@ -294,7 +269,6 @@ function ModelSearchBody({
           placeholder="Search models…"
           className="h-9 w-full bg-transparent text-reading outline-none placeholder:text-muted-foreground"
           onKeyDown={(event) => {
-            // An IME takes ⇧↵ to accept a candidate; 229 is how some browsers report it.
             const composing = event.nativeEvent.isComposing || event.keyCode === 229;
             if (event.key !== "Enter" || !event.shiftKey || composing) return;
             if (!highlighted.current || !onToggleFavourite) return;
@@ -320,7 +294,6 @@ function ModelSearchBody({
                   {group.label}
                 </Combobox.GroupLabel>
               ) : (
-                // The agent's mark alone, its words on hover and to a screen reader.
                 <Combobox.GroupLabel
                   data-testid="model-group-head"
                   className={cn(
@@ -360,7 +333,6 @@ function ModelSearchBody({
                 if (option.headingOnly === true) return null;
                 const starred = favourite(option.value);
                 return (
-                  // Named by the model alone: the star inside would otherwise join its name.
                   <Combobox.Item
                     key={option.value}
                     value={option}
@@ -388,7 +360,6 @@ function ModelSearchBody({
                     <Combobox.ItemIndicator>
                       <CheckIcon aria-hidden className="size-icon-row" />
                     </Combobox.ItemIndicator>
-                    {/* Out of the tab order: the input keeps focus, and ⇧↵ stars from there. */}
                     {onToggleFavourite && option.opens !== true && (
                       <button
                         type="button"
@@ -402,7 +373,6 @@ function ModelSearchBody({
                         title={keyLabel(starred ? "Remove from favourites (⇧↵)" : "Favourite (⇧↵)")}
                         className={cn(
                           "grid size-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:text-foreground",
-                          // Every row shows its star, faint until the row is under the pointer.
                           !starred &&
                             "opacity-40 group-hover/row:opacity-100 group-data-[highlighted]/row:opacity-100",
                         )}
@@ -426,8 +396,6 @@ function ModelSearchBody({
           </Combobox.Group>
         )}
       </Combobox.List>
-      {/* Shut, the fold closes the list; open, it heads its section in the list instead. A search
-          lists the superseded models it finds, so the fold has nothing to open then. */}
       {legacy.count > 0 && !legacy.searching && !legacy.open && <LegacyFoldButton fold={legacy} />}
     </>
   );
@@ -459,7 +427,6 @@ export function ModelSearch({
   const highlighted = useRef<Option | undefined>(undefined);
   const legacy = useLegacyFold(options, favourite);
   const groups = legacy.groups;
-  // With a Legacy fold the list's own section is named too, so it doesn't gain a heading on opening.
   const headed =
     groups.length > 1 ||
     legacy.fold.count > 0 ||

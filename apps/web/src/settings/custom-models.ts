@@ -62,7 +62,6 @@ export function validateCustomModels(
   const rows = drafts.map((draft) => {
     const id = draft.id.trim();
     if (id === "") return "Enter the model's id, as the agent expects it.";
-    // An id goes to the agent as one argument; a space in it is a paste error, not a model.
     if (/\s/.test(id)) return "A model id can't contain spaces.";
     const key = `${draft.agent}\n${id}`;
     if (seen.has(key)) return "This model is already in the list.";

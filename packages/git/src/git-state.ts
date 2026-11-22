@@ -1,7 +1,3 @@
-// Per-checkout git state. The local tier (branch, head, changes fingerprint) is network-free and cheap;
-// the rebase tier (behind/ahead a base, upstream divergence, merge-tree conflicts) reads remote-tracking
-// refs; the network tier adds the PR badge and a throttled background fetch.
-
 import type { GitState, PrStatus, UpstreamState } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -34,9 +30,6 @@ export const isLinkedWorktree = (gitDir: string): boolean =>
  */
 export const localGitState = (cwd: string): Effect.Effect<GitState, ProcError, Proc> =>
   Effect.gen(function* () {
-    // One spawn for the checkout, its git dir, the commit and the branch. An unborn HEAD stops at
-    // the commit (git echoes "HEAD" and exits non-zero) and a detached one prints "HEAD" for the
-    // branch, so the commit is whichever third line is an object id and the branch follows it.
     const info = yield* git(cwd, [
       "rev-parse",
       "--show-toplevel",
@@ -54,8 +47,6 @@ export const localGitState = (cwd: string): Effect.Effect<GitState, ProcError, P
     const headOid = born ? oidLine : "";
     const status = (yield* git(top, ["-c", "core.quotepath=false", "status", "--porcelain"]))
       .stdout;
-    // Staging another hunk of an already-staged file leaves the porcelain and the working tree as
-    // they were, so what is staged is read too, by blob, whenever anything is.
     const stagedAny = status
       .split("\n")
       .some((line) => line.length > 2 && line[0] !== " " && line[0] !== "?");
@@ -93,20 +84,14 @@ const parseCounts = (stdout: string) => {
   };
 };
 
-/** How many commit pairs `countsBetween` and `conflictsBetween` remember. */
 const PAIR_MEMO_MAX = 1024;
 
-/**
- * Answers about two commits, by their object names. What `rev-list --left-right --count` and a
- * trial merge say of a pair never changes, so an idle sweep asks git again only once a tip moves.
- */
 const pairMemo = <A>() => {
   const memo = new Map<string, A>();
   return {
     get: (key: string) => {
       const hit = memo.get(key);
       if (hit === undefined) return undefined;
-      // Refresh its place: the oldest-asked pair goes first.
       memo.delete(key);
       memo.set(key, hit);
       return hit;
@@ -120,15 +105,9 @@ const pairMemo = <A>() => {
 const counted = pairMemo<{ readonly behind: number; readonly ahead: number }>();
 const merged = pairMemo<boolean>();
 
-/** A full object name, which names one commit for good; anything else is a ref that can move. */
 const isOid = (name: string | undefined): name is string =>
   name !== undefined && /^[0-9a-f]{40}([0-9a-f]{24})?$/.test(name);
 
-/**
- * Commits on `left` and not `right`, and on `right` and not `left`. Asked of git by object name and
- * remembered, so a sweep that finds both tips where they were spawns nothing. Undefined when git
- * can't tell (a missing object, an error); that is never remembered.
- */
 const countsBetween = (cwd: string, left: string, right: string) =>
   Effect.gen(function* () {
     const key = `${left}...${right}`;
@@ -141,15 +120,12 @@ const countsBetween = (cwd: string, left: string, right: string) =>
     return counts;
   });
 
-/** Whether merging the two commits conflicts, from a trial `merge-tree`, remembered by name. */
 const conflictsBetween = (cwd: string, base: string, head: string) =>
   Effect.gen(function* () {
     const key = `${base} ${head}`;
     const known = merged.get(key);
     if (known !== undefined) return known;
     const trial = yield* git(cwd, ["merge-tree", "--write-tree", base, head]).pipe(Effect.option);
-    // Exit 1 = conflicts, 0 = clean. Anything else (an old git, an error, a timeout) never
-    // false-alarms, and is asked again next time.
     if (Option.isNone(trial) || (trial.value.status !== 0 && trial.value.status !== 1))
       return false;
     const conflicts = trial.value.status === 1;
@@ -157,10 +133,6 @@ const conflictsBetween = (cwd: string, base: string, head: string) =>
     return conflicts;
   });
 
-/**
- * HEAD vs `origin/<branch>`, deliberately not `@{upstream}`: `checkout -b feat origin/main` points that
- * at the BASE, which would misread "has commits, base advanced" as diverged. No such ref: no signal.
- */
 const upstreamState = (cwd: string, branch: string, head: string, tip: string | undefined) =>
   Effect.gen(function* () {
     if (tip === undefined) return undefined;
@@ -178,10 +150,6 @@ const upstreamState = (cwd: string, branch: string, head: string, tip: string | 
     return { upstream: classifyUpstream(counts.behind, counts.ahead), ahead: counts.ahead };
   });
 
-/**
- * The ref the rebase signal measures against: the PR's merge target when there is a PR (absent if not
- * fetched; we don't guess), else the repo default, skipped when the branch IS the default.
- */
 const resolveBase = (
   branch: string,
   prBase: string | undefined,
@@ -207,10 +175,6 @@ export const clearRebaseTier = (state: GitState): GitState => {
   return { ...rest, behindBase: 0, aheadBase: 0, conflicts: false };
 };
 
-/**
- * Whether a remote-tracking ref contains HEAD (`GitState.headOnRemote`): read off the tier when it
- * tells, HEAD on or behind `origin/<branch>` or nothing past the base, and asked of git otherwise.
- */
 const headOnRemote = (cwd: string, state: GitState) =>
   Effect.gen(function* () {
     if (state.head === "") return false;
@@ -245,7 +209,6 @@ export const fillRebase = (
     const cleared: Mutable<GitState> = { ...clearRebaseTier(state) };
     const branch = state.branch;
     if (branch === undefined || state.head === "") return yield* withHeadOnRemote(cwd, cleared);
-    // The default base is looked up first, so the one `for-each-ref` reads its tip with the branch's.
     const localBase = prBase === undefined ? yield* localBaseRef(cwd) : undefined;
     const baseName =
       prBase ?? (localBase?.startsWith("origin/") ? localBase.slice("origin/".length) : undefined);
@@ -260,7 +223,6 @@ export const fillRebase = (
     }
     const base = resolveBase(branch, prBase, localBase, tips);
     if (base === undefined) return yield* withHeadOnRemote(cwd, cleared);
-    // By object name when both are known, so an unmoved pair is remembered; else as refs, as before.
     const baseTip = baseName === undefined ? undefined : tips.get(baseName);
     const named = isOid(baseTip) && isOid(state.head);
     const counts = named
@@ -278,8 +240,6 @@ export const fillRebase = (
           ? yield* conflictsBetween(cwd, baseTip, state.head)
           : yield* git(cwd, ["merge-tree", "--write-tree", base, "HEAD"]).pipe(
               Effect.option,
-              // Exit 1 = conflicts. Anything else (an old git, an error, a timeout) never
-              // false-alarms.
               Effect.map((trial) => Option.isSome(trial) && trial.value.status === 1),
             )
         : false;
@@ -341,7 +301,6 @@ export const carryRebaseTier = (next: GitState, carried: GitState | undefined): 
   if (carried.base !== undefined) tier.base = carried.base;
   if (carried.upstream !== undefined) tier.upstream = carried.upstream;
   if (carried.aheadUpstream !== undefined) tier.aheadUpstream = carried.aheadUpstream;
-  // Of the carried head: a new commit since may not be on any remote.
   if (carried.headOnRemote !== undefined && carried.head === next.head)
     tier.headOnRemote = carried.headOnRemote;
   return { ...clearRebaseTier(next), ...tier };

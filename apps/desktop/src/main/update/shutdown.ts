@@ -1,7 +1,6 @@
 import type { UpdateEssential, UpdateTeardown } from "@gram/contracts";
 import type { ServerHost, StopOutcome, UpdateStopReport } from "../server-host.ts";
 
-/** Why an essential stops the update, as the cancellation names it. */
 const ESSENTIAL_FAILURE: Readonly<Record<UpdateEssential, string>> = {
   sessions: "Agent sessions did not stop and save their state in time.",
   agents:

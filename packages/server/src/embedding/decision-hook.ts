@@ -1,17 +1,3 @@
-// The decision hook: before an outward action (a spawn, a push, opening or merging a pull request,
-// a connector's call), ask a configured endpoint, which answers allow, refuse or ask a person.
-//
-// Off unless an endpoint is configured (`ServerConfigShape.decisionHook`) and hosted features are
-// on in the settings. It is asked where the server already hears of the action: the approval an
-// agent session raises for a command or a connector call (`runtime/hooked-requests.ts`), the app
-// tools that spawn and merge (`app-tools/registry.ts`), and the app's own push and pull request
-// calls. It sees what those see and no more: like the outward gate, it is no boundary against a
-// push made by a route Gram can't read. What must hold against an agent is enforced where the
-// credentials are.
-//
-// Every failure is a refusal: an endpoint that is down, slow or answers something else never lets
-// an action through, and never hands the choice to a person the endpoint didn't name.
-
 import {
   type DecisionAction,
   type DecisionApproval,
@@ -117,8 +103,6 @@ export const makeDecisionHook = (
   enabled: on,
   decide: (question) =>
     Effect.gen(function* () {
-      // The signed-in person this call is made for, when there is one. Who approved a card is
-      // the caller's to say (`approval.answeredBy`): it is not always this call's person.
       const person = yield* ActingPerson;
       const approval = question.approval;
       const request: DecisionRequest = {
@@ -178,8 +162,6 @@ export class DecisionHook extends Context.Service<DecisionHook, DecisionHookShap
         if (config.decisionHook === undefined) return DecisionHook.off;
         const store = yield* ThreadStore;
         if (config.decisionHook === ENDPOINT_UNUSABLE) {
-          // A hook that was asked for and can't be reached refuses, as an endpoint that is down
-          // does: allowing everything because of a typing mistake would be the wrong way to fail.
           yield* Effect.logError(
             "decision hook: GRAM_DECISION_HOOK_URL or its token can't be used; refusing every action it would be asked about",
           );

@@ -14,7 +14,6 @@ export const checkShell = (
   const value = shell.trim();
   if (value === "") return { found: false, message: "Enter a shell profile or a path." };
   const command = shellCommand(undefined, value, {}, "win32");
-  // Only Windows reads `terminal.shell`; elsewhere a terminal starts the login shell.
   if (platform !== "win32") return { found: true, file: command.file };
   const resolved = resolveShell(command.file, platform, pathValue, exists);
   return resolved.found

@@ -3,10 +3,6 @@ import { createHash } from "node:crypto";
 
 export const SIGNED_MAC_BUNDLE_ID = "io.github.ant1off.gram";
 
-// ---------------------------------------------------------------------------------------------
-// Developer ID publisher identity. Shared by the signer (apps/desktop/scripts/sign-mac.mjs), the
-// release script and the updater, so all three hold builds to one requirement.
-
 /**
  * The Apple Developer Team ID that signs Gram, from its `Developer ID Application` identity. Null
  * would switch signing off: the release script then builds unsigned and the updater refuses every
@@ -63,15 +59,12 @@ export interface MacNotarizationOptions {
   readonly notarization: boolean;
 }
 
-/** The first CodeDirectory line's last complete flags field, as codesign's display spells it. */
 const codesignFlags = (text: string): ReadonlyArray<string> => {
   const lastClose = text.lastIndexOf(")");
   for (const line of text.matchAll(/^CodeDirectory (.*)$/gm)) {
     let open: number | undefined;
     for (const candidate of line[1]!.matchAll(/flags=0x[0-9a-f]+\(/g)) {
       const after = line.index + "CodeDirectory ".length + candidate.index + candidate[0].length;
-      // The previous capture [^)]* could cross a line boundary. Keep that behavior, and the
-      // greedy prefix's choice of the last complete field on the first matching line.
       if (after <= lastClose) open = after;
     }
     if (open !== undefined) return text.slice(open, text.indexOf(")", open)).split(",");

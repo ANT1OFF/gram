@@ -1,13 +1,5 @@
 import { isNoticeActionLabel, noticeBodyFits, noticePlain } from "./notice.ts";
 
-// The menu bar's (tray's) asks and workspace status, as the page sends them and the shell shows
-// them. Schema-free, for the shells' main processes.
-//
-// The menu bar can approve a command from outside the window, so it follows the notifications' rule
-// (`notice.ts`): an Allow or Merge sits only under the exact command and its extras, shown whole
-// (`noticeBodyFits`). Anything else offers Open only. The page builds the menu by that rule
-// (`awayAsk`) and the shell holds it to it again.
-
 /** The longest line a menu item shows; longer read-only lines end in "…". */
 export const TRAY_LINE_MAX = 96;
 /** The most lines an ask's submenu shows. */

@@ -1,17 +1,3 @@
-/**
- * The routine tools, `routine_create` and `routine_update` (which also removes one), which change the
- * routines in the workspace's charter through its one write path (`Orchestration.editCharter`). A
- * routine is a standing change to the charter: it starts work later with nobody there. So adding one,
- * turning one back on, or widening one (its schedule or event, brief, project, model or target) always asks
- * the user, from an orchestrator as from a worker, on a card for that one call that shows the
- * routine in full, at every autonomy and in every mode (a forced card: `bypassPermissions` and Full
- * autonomy don't lift it). Turning one off or removing one only takes autonomy away, so the
- * orchestrator does that without a card. A worker is bound `routine_create` alone. The user changes
- * routines in Settings, or by chat through `settings_propose`'s `workspace.routines` on its card.
- *
- * What a routine starts is gated where it starts (`routines.ts`): its worker is the orchestrator's,
- * spawned under the workspace's autonomy, cap and approvals like any other.
- */
 import {
   AppToolError,
   parseRoutineSchedule,
@@ -56,7 +42,6 @@ const TargetKind = Schema.Literals(["worker", "orchestrator"]);
 
 const decodeRoutines = Schema.decodeUnknownResult(WorkspaceRoutines);
 
-/** A tool call's `schedule` or `on`, exactly one, parsed. */
 const whenOf = (input: {
   readonly schedule?: string | undefined;
   readonly on?: string | undefined;
@@ -72,7 +57,6 @@ const whenOf = (input: {
     : parseRoutineTrigger(input.on!);
 };
 
-/** A routine's row in a tool's result: when it runs in words, where it runs, and its next run. */
 const shown = (routine: WorkspaceRoutine, nextRunAt: number | undefined) => ({
   name: routine.name,
   ...(routine.on === undefined
@@ -89,11 +73,8 @@ const shown = (routine: WorkspaceRoutine, nextRunAt: number | undefined) => ({
   ...(nextRunAt === undefined ? {} : { nextRunAt: new Date(nextRunAt).toISOString() }),
 });
 
-/** One of the charter's worker models, by `agent:model` or a bare id one entry has. */
 const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
   Effect.gen(function* () {
-    // A routine records a concrete model, so it names a pinned entry; one that follows a tier is
-    // resolved on each spawn instead, and a routine without `model` gets the default that way.
     const roster = (charter.workerModels ?? []).filter(
       (entry): entry is PinnedWorkerModel => !("tier" in entry),
     );
@@ -112,7 +93,6 @@ const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
     return model as ModelRef;
   });
 
-/** A routine whole, as a card shows it: its schedule, where it runs, whether it is off, and its brief. */
 const routineText = (routine: WorkspaceRoutine): string =>
   [
     `"${routine.name}", ${routineWhenText(routine)}`,
@@ -122,11 +102,6 @@ const routineText = (routine: WorkspaceRoutine): string =>
     ...(routine.off === true ? ["off"] : []),
   ].join(", ") + `: ${routine.brief}`;
 
-/**
- * Whether a `routine_update` call only narrows what runs: it removes the routine, or turns it off and
- * changes nothing else. Anything else (on again, a new schedule, brief, project, model, target or
- * name) is a charter change the user approves.
- */
 const onlyNarrows = (input: {
   readonly remove?: boolean | undefined;
   readonly off?: boolean | undefined;
@@ -138,7 +113,6 @@ const onlyNarrows = (input: {
   return changed.length === 1 && changed[0]![0] === "off" && input.off === true;
 };
 
-/** `edit`, refused when the routines it makes wouldn't be kept: too many, or a name twice. */
 const checked =
   (
     edit: (
@@ -163,7 +137,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
 
-    /** The caller's workspace: the one it orchestrates, or the one it is a worker of. */
     const callerWorkspace = (tool: string, caller: ThreadId) =>
       Effect.gen(function* () {
         const authority = yield* orchestration.authorityOf(caller);
@@ -179,7 +152,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         return state;
       });
 
-    /** One of the workspace's projects, by name or id. */
     const projectOf = (tool: string, state: WorkspaceState, named: string) =>
       Effect.gen(function* () {
         const projects = (yield* store.listProjects).filter((project) =>
@@ -198,10 +170,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         return found.id;
       });
 
-    /**
-     * The charter's routines with `edit` made, stored through the charter's write path. `edit`
-     * runs on the routines standing at the write, and its refusal fails the tool.
-     */
     const editRoutines = (
       tool: string,
       state: WorkspaceState,
@@ -211,7 +179,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
     ) =>
       Effect.gen(function* () {
         const check = checked(edit);
-        // Checked once here, for the refusal's words; again inside the write, on what stands then.
         const first = check(state.charter.routines ?? []);
         if ("error" in first) return yield* toolError(tool, first.error);
         const saved = yield* orchestration
@@ -227,7 +194,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         return saved;
       });
 
-    /** The saved routine `name`, with its next run as the engine reckoned it. */
     const result = (tool: string, saved: WorkspaceState, name: string) =>
       Effect.gen(function* () {
         const routine = (saved.charter.routines ?? []).find(
@@ -237,9 +203,7 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         const status = (yield* routines
           .list(saved.workspace.id)
           .pipe(Effect.orElseSucceed(() => []))).find((each) => each.id === routine.id);
-        // The engine reckons it once it hears of the change; until then, as it will.
         const now = yield* Clock.currentTimeMillis;
-        // An event routine has no next run to name: it runs when the event comes.
         const nextRunAt =
           routine.off === true || routine.schedule === undefined
             ? undefined
@@ -266,7 +230,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         project: Schema.optionalKey(Schema.String),
         model: Schema.optionalKey(Schema.String),
       }),
-      // A new standing routine is the user's to allow, whoever asks.
       needsApproval: () => Effect.succeed(true),
       describe: (caller, input) =>
         Effect.succeed(
@@ -278,7 +241,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           const state = yield* callerWorkspace(tool, caller);
           const parsed = whenOf(input);
           if ("error" in parsed) return yield* toolError(tool, parsed.error);
-          // A repository the routine would read on GitHub is one the asking thread works in.
           const on = "on" in parsed ? parsed.on : undefined;
           yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(on)] });
           const project =
@@ -326,8 +288,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
         off: Schema.optionalKey(Schema.Boolean),
         remove: Schema.optionalKey(Schema.Boolean),
       }),
-      // Pinned before any card: the routine by its id, and exactly what it is and will be. The card
-      // shows that, and the handler applies it only to that routine, as it was then.
       resolve: (caller, input) =>
         Effect.gen(function* () {
           const tool = "routine_update";
@@ -347,7 +307,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           if (parsed !== undefined && "error" in parsed) {
             return yield* toolError(tool, parsed.error);
           }
-          // Any change, to it or of what it reads: the repository it reads afterwards is checked.
           const on = parsed === undefined ? before.on : "on" in parsed ? parsed.on : undefined;
           yield* refuseOutOfReach(tool, store, caller, { repos: [triggerRepo(on)] });
           const project =
@@ -357,7 +316,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
               ? undefined
               : yield* modelOf(tool, state.charter, input.model);
           const { target: _target, off: _off, project: _project, model: _model, ...kept } = before;
-          // A new schedule or event replaces whichever it ran on.
           const { schedule: _schedule, on: _on, ...unwhen } = kept;
           const rest = parsed === undefined ? kept : unwhen;
           const target =
@@ -378,7 +336,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
           return { workspaceId: state.workspace.id, id: before.id, before, after };
         }),
       approvalRequiresResolvedTarget: true,
-      // Off or removed only takes autonomy away; anything else adds or widens what runs.
       needsApproval: (caller, input) =>
         Effect.map(orchestration.authorityOf(caller), (authority) =>
           authority === undefined ? true : !onlyNarrows(input),
@@ -405,7 +362,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
             JSON.stringify(each) === JSON.stringify(pinned.before);
           const saved = yield* editRoutines(tool, state, (current) => {
             const now = current.find((each) => each.id === pinned.id);
-            // Changed, renamed or removed since the card: nothing is applied to what it is now.
             if (now === undefined || !same(now)) {
               return {
                 error: `The routine "${pinned.before.name}" changed after this was asked; nothing was changed. Look again and ask anew.`,
@@ -429,7 +385,6 @@ export const RoutineAppToolsLive = Layer.effectDiscard(
     });
 
     yield* registry.register([createTool, updateTool]);
-    // Only now: a run opens a worker's session, which keeps the tools it opened with.
     yield* routines.start;
   }),
 );

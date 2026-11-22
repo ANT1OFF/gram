@@ -1,13 +1,9 @@
-// The fonts shell module's main half: the installed font families, for the font fields
-// (`listFonts`). Listed by each platform's own tool, once per run.
-
 import { win32 } from "node:path";
 
 import { Channels } from "../../channels.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { boundedRun, type RunCommand } from "../run.ts";
 
-// `system_profiler` takes a few seconds and its JSON runs to megabytes on a well-stocked Mac.
 const runCommand = boundedRun({ timeoutMs: 20_000, maxOutputBytes: 64 * 1024 * 1024 });
 
 const uniqueSorted = (names: readonly unknown[]): string[] =>
@@ -16,7 +12,6 @@ const uniqueSorted = (names: readonly unknown[]): string[] =>
       names
         .filter((name): name is string => typeof name === "string")
         .map((name) => name.trim())
-        // Dot-prefixed families (`.SF NS`) are macOS-private and can't be referenced from CSS.
         .filter((name) => name !== "" && !name.startsWith(".")),
     ),
   ].toSorted((a, b) => a.localeCompare(b));
@@ -37,7 +32,6 @@ export function parseLineFonts(output: string): string[] {
 }
 
 const WINDOWS_SCRIPT =
-  // Redirected, Windows PowerShell writes the OEM code page, which garbles non-ASCII family names.
   "[Console]::OutputEncoding=[Text.Encoding]::UTF8; " +
   "Add-Type -AssemblyName System.Drawing; " +
   "(New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }";

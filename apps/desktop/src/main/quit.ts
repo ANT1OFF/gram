@@ -1,10 +1,3 @@
-// The quit, from the first ⌘Q (or Quit in a menu, or the last window closing off macOS) to the
-// app's exit. Main hides its windows and this runs its steps in order, each within its own
-// timeout and all of them within `QUIT_DEADLINE_MS`, logging what each took. Past the deadline, or
-// when the user asks (Quit now, or a second quit), it forces: what main started is killed with
-// everything under it (`process-tree.ts`), and the app exits. Electron stays out of this module,
-// so tests drive it with fakes.
-
 /** The whole quit's bound; past it, the quit is forced. */
 export const QUIT_DEADLINE_MS = 10_000;
 /** A quit still running after this shows its progress, with Quit now. */
@@ -82,7 +75,6 @@ export interface QuitOptions {
   readonly showAfterMs?: number;
 }
 
-/** `idle` before the quit, `stopping` while its steps run, `exited` once it has called `exit`. */
 type QuitState = "idle" | "stopping" | "exited";
 
 export interface Quit {

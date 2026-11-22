@@ -2,7 +2,6 @@ import type { AppUpdateState } from "@gram/contracts";
 
 import { formatStamp } from "@/lib/time";
 
-/** What clicking the pill does; `release` opens the release page, for a .deb install. */
 type PillAction = "check" | "download" | "install" | "settings" | "release" | "none";
 
 type PillKind =
@@ -30,22 +29,18 @@ export interface PillView {
 
 const RESTART_NOTE = "Gram saves sessions and stops running agents first.";
 
-/** Why this install can't replace itself, and what a click does then. */
 const elsewhere = (state: AppUpdateState) =>
   state.target === "appimage"
     ? "Gram updates only an AppImage file it can replace. Click for Settings → About."
     : "Gram updates itself only from Applications. Click for Settings → About.";
 
-/** What the last step of a download checks, as the pill says it. */
 const verifying = (state: AppUpdateState, version: string | undefined) =>
   state.target === "appimage"
     ? `Verifying Gram ${version}: its checksums and version.`
     : `Verifying Gram ${version}: its signature, notarization and version.`;
 
-/** The zone and moment the pill's times are read in, for tests; the viewer's own when absent. */
 type TimeOptions = { readonly timeZone?: string; readonly now?: number };
 
-/** `Published 16 Oct 10:00` (`formatStamp`); undefined for no or a malformed date. */
 function published(date: string | null, intl?: TimeOptions) {
   const at = date === null ? Number.NaN : Date.parse(date);
   return Number.isFinite(at) ? `Published ${formatStamp(at, intl?.now, intl)}` : undefined;
@@ -110,7 +105,6 @@ export function pillView(
       });
     case "downloading": {
       const percent = Math.floor(state.percent ?? 0);
-      // At 100% the download is whole and Gram is checking it before offering a restart.
       return withNotes({
         kind: "downloading",
         label: percent >= 100 ? "Verifying…" : `${percent}%`,
@@ -124,7 +118,6 @@ export function pillView(
       });
     }
     case "available":
-      // A .deb downloads nothing itself: the click opens the release, for apt to install.
       if (state.target === "deb")
         return withNotes({
           kind: "available",
@@ -170,7 +163,6 @@ export function pillView(
           action: "download",
           ...(available ? { version: available } : {}),
         };
-      // A timer's failed check stays in Settings; a manual one says so here too.
       if (!state.manual) break;
       return {
         kind: "error",
@@ -218,7 +210,6 @@ export function statusLine(state: AppUpdateState, intl?: TimeOptions): string {
     case "installing":
       return state.message ?? `Restarting into Gram ${state.downloadedVersion}…`;
     case "error":
-      // The reason itself shows once, below the buttons.
       return state.errorStep === "install"
         ? `Gram ${state.downloadedVersion} is downloaded · the restart didn't go ahead`
         : state.errorStep === "download"

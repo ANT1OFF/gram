@@ -1,6 +1,3 @@
-// A thread waiting out a provider limit (`Thread.limitWait`): when it waits, when its account lifts,
-// and the resume, which the holds other services register can keep back.
-
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Clock from "effect/Clock";
@@ -46,7 +43,6 @@ import type { NotifyObservers } from "./runtime-observer.ts";
 import type { UsageLimitReadingsShape } from "../usage/limit-readings.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
-/** The `noticeKeys` key of the queued "continue" a limit's resume sends. */
 const LIMIT_RESUME_KEY = "limit-resume";
 const admissionKey = (account: string, model: string) => JSON.stringify([account, model]);
 
@@ -120,13 +116,7 @@ export const makeLimitResume = ({
   pumpDeliveries,
   reopenWhenIdle,
 }: LimitResumeDeps) => {
-  // Admission is evidence even when a usage snapshot remains full or has aged out.
   const admissions = new Map<string, number>();
-  /**
-   * When a turn on `account` last met its limit: this run's latest, or, with none this run (a
-   * restart), the latest a thread waiting on it began waiting. A thread that waits with the account
-   * (`waitWithAccount`) met no limit, so it never makes a turn opened before it say nothing.
-   */
   const hitAt = (account: string): number => {
     const hit = limitHits.get(account);
     if (hit !== undefined) return hit;
@@ -138,12 +128,6 @@ export const makeLimitResume = ({
     return at;
   };
 
-  /**
-   * Whether `account`'s waits may end early now: readings since its latest limit show every window
-   * below it (`limitClearedBy`), and no early release of it is too recent (`earlyReleaseDue`), unless
-   * the readings are of other windows than that release went on (`limitTurnedOver`: another login,
-   * or a window reset early).
-   */
   const releasable = (account: string, now: number): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       if (Option.isNone(limitReadings)) return false;
@@ -155,10 +139,6 @@ export const makeLimitResume = ({
       return limitClearedBy(readings, account, hitAt(account), now);
     });
 
-  /**
-   * Whether a new turn on `account` goes despite the waits recorded on it: its waits ended early
-   * already (or may now), and nothing met the limit since the readings that say so.
-   */
   const goesAhead = (account: string, now: number, model?: string): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       const admittedAt =
@@ -193,7 +173,6 @@ export const makeLimitResume = ({
       );
     });
 
-  /** The latest reset of `account`'s `rejected` readings still to come, the CLI's own word. */
   const rejectedUntil = (account: string, now: number): Effect.Effect<number | undefined> =>
     Effect.gen(function* () {
       if (Option.isNone(limitReadings)) return undefined;
@@ -207,12 +186,10 @@ export const makeLimitResume = ({
       return until;
     });
 
-  /** The latest reset a thread still waiting on `account` was told, still to come. */
   const waitsUntil = (account: string, now: number): number | undefined => {
     let until: number | undefined;
     for (const each of runtimes.values()) {
       const wait = each.limitWait;
-      // A wait released early no longer says the account is limited.
       if (
         wait?.kind === "limit" &&
         wait.cancelled !== true &&
@@ -228,13 +205,6 @@ export const makeLimitResume = ({
     return until;
   };
 
-  /**
-   * Epoch ms `account`'s limit lifts while one is known to hold it: the reset of its `rejected`
-   * reading in `UsageLimitReadings`, or, with none, the latest reset a thread waiting on it was
-   * told, which may be another window's or one long lifted, so never ahead of the CLI's own word.
-   * `undefined` once that is past, and when fresh data says the limit no longer applies
-   * (`goesAhead`): a wait recorded before it doesn't hold a new turn back.
-   */
   const limitedUntil = (
     account: string,
     now: number,
@@ -245,10 +215,6 @@ export const makeLimitResume = ({
       return (yield* rejectedUntil(account, now)) ?? waitsUntil(account, now);
     });
 
-  /**
-   * Writes `Thread.limitWait`, or with none clears it, and keeps the runtime's copy beside it. A new
-   * wait drops the note of one that ended early (`Thread.limitCleared`); `cleared` writes it.
-   */
   const storeWait = (rt: Runtime, wait: LimitWait | undefined, cleared?: LimitCleared) =>
     Effect.gen(function* () {
       rt.limitWait = wait;
@@ -264,10 +230,6 @@ export const makeLimitResume = ({
       return next;
     });
 
-  /**
-   * The wait a failed turn turns into, or `undefined` for a failure that stays an error: a limit
-   * with its reset, or a bare 429's next backoff, until `BACKOFF_MAX_ATTEMPTS` have failed.
-   */
   const limitWaitOf = (
     rt: Runtime,
     failure: AgentFailure,
@@ -283,7 +245,6 @@ export const makeLimitResume = ({
         failure,
         detail,
         now,
-        // The limit is met again: what the readings said before it no longer counts.
         yield* rejectedUntil(account, now),
         undefined,
         before?.resetsAt,
@@ -292,7 +253,6 @@ export const makeLimitResume = ({
       if (found === undefined) return undefined;
       const since = before?.since ?? now;
       const interrupted = before?.turnId ?? turnId;
-      // The provider's own words, shown under the wait's line in place of the raw error.
       const words = limitDetail(detail);
       const said = words === undefined ? {} : { detail: words };
       if (found.kind === "backoff") {
@@ -306,7 +266,6 @@ export const makeLimitResume = ({
         return {
           kind: "backoff",
           account,
-          // The reset already waited out, kept so a backoff never takes it for a new one.
           ...(before?.resetsAt === undefined ? {} : { resetsAt: before.resetsAt }),
           resumeAt: now + backoffDelay(rt.threadId, attempt),
           since,
@@ -316,7 +275,6 @@ export const makeLimitResume = ({
         } satisfies LimitWait;
       }
       const resetsAt = found.resetsAt ?? now + LIMIT_UNKNOWN_RESET_MS;
-      // The agent's own reset is what every wait on the account shares; a guess is not.
       if (found.resetsAt !== undefined) hitResets.set(account, found.resetsAt);
       else hitResets.delete(account);
       return {
@@ -331,10 +289,6 @@ export const makeLimitResume = ({
       } satisfies LimitWait;
     });
 
-  /**
-   * Called with the runtime lock held. The thread starts waiting; `scheduleAccount` times it.
-   * `hit` when its own turn met the limit, which readings must then postdate to release it.
-   */
   const enterWait = (rt: Runtime, wait: LimitWait, hit = false) =>
     Effect.gen(function* () {
       if (hit) limitHits.set(wait.account, yield* Clock.currentTimeMillis);
@@ -353,11 +307,6 @@ export const makeLimitResume = ({
       );
     });
 
-  /**
-   * Called with the runtime lock held, before something not the user's starts a turn on a thread at
-   * rest: while its account is known to be limited, the thread waits with it rather than meet the
-   * limit, and whatever was to start waits in the queue or the deliveries. `true` when it waits.
-   */
   const waitWithAccount = (rt: Runtime): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       if (rt.limitWait !== undefined) return true;
@@ -375,8 +324,6 @@ export const makeLimitResume = ({
         thread.sessionSwitch === undefined &&
         (yield* accountChanged(thread, rt.quota))
       ) {
-        // The old process keeps the login it opened with. Only a new process may
-        // claim the account we just identified through the CLI.
         rt.reopenOnIdle = rt.session !== undefined;
       }
       const now = yield* Clock.currentTimeMillis;
@@ -394,20 +341,12 @@ export const makeLimitResume = ({
       return true;
     });
 
-  /**
-   * Ends `account`'s limit waits early, as fresh data says the limit no longer applies: readings
-   * below it (`releasable`, which also spaces the releases out), or, with `byTurn`, a turn on the
-   * account that went through on that model, whose own waits it releases. They go on `resumePlan` from now, the orchestrator first, each
-   * marked `cleared` so its thread says so and a limit met again waits for its reset. A wait the
-   * user cancelled stays as it is. Run apart from any thread's lock, one at a time.
-   */
   const releaseEarly = (account: string, byTurn: string | undefined): Effect.Effect<void> =>
     releaseLock
       .withPermits(1)(
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
           if (byTurn !== undefined) admissions.set(admissionKey(account, byTurn), now);
-          // A turn proves only its own model: another may have met a limit of its own.
           let waiting = (yield* store.listThreads).filter(
             (thread) =>
               thread.limitWait?.account === account &&
@@ -429,7 +368,6 @@ export const makeLimitResume = ({
           if (byTurn === undefined && changed.size === 0 && Option.isSome(limitReadings)) {
             const readings = yield* limitReadings.value.all ?? limitReadings.value.current;
             const last = earlyReleases.get(account);
-            // Other windows than the last release went on start the spacing over.
             const count = limitTurnedOver(readings, account, last, now) ? 0 : (last?.count ?? 0);
             earlyReleases.set(account, {
               at: now,
@@ -473,7 +411,6 @@ export const makeLimitResume = ({
             );
             if (released === undefined) continue;
             yield* armResume(each.id, at, now);
-            // A worker's ledger row says when it now goes; an orchestrator's own wait isn't new.
             if (each.role !== "orchestrator") {
               yield* notifyObservers(each.id, "onLimitWait", (observer) =>
                 observer.onLimitWait?.(released.thread, released.wait),
@@ -490,13 +427,11 @@ export const makeLimitResume = ({
         ),
       );
 
-  /** `releaseEarly` in a fiber of its own, at most one per account at a time. */
   const startRelease = (account: string, byTurn?: string) =>
     FiberMap.run(releasing, account, releaseEarly(account, byTurn), {
       onlyIfMissing: byTurn === undefined,
     }).pipe(Effect.asVoid);
 
-  /** Starts, or restarts, the timer that resumes `threadId` at `at`. */
   const armResume = (threadId: ThreadId, at: number, now: number) =>
     FiberMap.run(
       limitTimers,
@@ -506,14 +441,6 @@ export const makeLimitResume = ({
       ),
     );
 
-  /**
-   * Times every resume of `account`'s limit waits, which share the account's latest reset and are
-   * staggered by `resumePlan`, the orchestrator first. A reset already past (a restart after it) is
-   * taken as now, so the batches keep their spacing rather than all falling due at once. With
-   * `only`, a backoff, just that thread's own time: the plan stays as it is, so the batches
-   * already under way keep their places. Never called from a resume timer for its own thread,
-   * whose wait is gone by then.
-   */
   const scheduleAccount = (account: string, only?: ThreadId): Effect.Effect<void> =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
@@ -530,8 +457,6 @@ export const makeLimitResume = ({
           thread.limitWait.cancelled !== true,
       );
       if (limits.length === 0) return;
-      // Released early (`releaseEarly`) with no limit met since: each keeps its time, and those a
-      // restart left past due go again in batches from now rather than all at once.
       const hit = limitHits.get(account) ?? -Infinity;
       const released = limits.filter(
         (thread) => thread.limitWait!.cleared !== undefined && thread.limitWait!.cleared >= hit,
@@ -556,10 +481,6 @@ export const makeLimitResume = ({
       }
       const holding = limits.filter((thread) => !released.includes(thread));
       if (holding.length === 0) return;
-      // The reset the account's latest limit named is the agent's latest word on when it lifts:
-      // a wait from before it (another window's, one lifted early, a thread a hold keeps back)
-      // takes it too, rather than keep the whole account waiting for a reset that no longer
-      // applies. Without one still to come this run (a restart), the latest any of them was told.
       const named = hitResets.get(account);
       const latest = named !== undefined && named > now ? named : undefined;
       const reset =
@@ -581,9 +502,6 @@ export const makeLimitResume = ({
       for (const thread of holding) {
         const at = plan.get(thread.id)!;
         const rt = yield* getRuntime(thread.id);
-        // Not under the thread's lock: this runs under the lock of whichever thread's limit
-        // called for the plan, which may be this one. A wait released early before the latest
-        // hit goes back to the reset with the rest: the limit was met again, so it applies.
         const wait = rt.limitWait;
         const resetsAt = latest ?? wait?.resetsAt;
         if (
@@ -601,17 +519,11 @@ export const makeLimitResume = ({
       }
     }).pipe(Effect.orDie);
 
-  /**
-   * Whether a queue hold keeps `rt`'s queued input and deliveries waiting. Asked only when there is
-   * something to send, so an idle thread with nothing queued reads no thread row; never when the
-   * user's own typed input is next.
-   */
   const queueHeld = (rt: Runtime) =>
     Effect.gen(function* () {
       if (queueHolds.size === 0 || (rt.queue.length === 0 && rt.deliveries.size === 0)) {
         return false;
       }
-      // The user's own word, first in line, goes through, as it ends a limit wait.
       const head = rt.queue[0];
       if (
         head !== undefined &&
@@ -624,10 +536,6 @@ export const makeLimitResume = ({
       return yield* queueHoldsFor(rt.threadId);
     });
 
-  /**
-   * Whether a queue hold holds what isn't the user's own word for `threadId`, whatever is queued:
-   * the holds asked, as `queueHeld` asks them; one that fails holds too.
-   */
   const queueHoldsFor = (threadId: ThreadId) =>
     Effect.gen(function* () {
       if (queueHolds.size === 0) return false;
@@ -639,7 +547,6 @@ export const makeLimitResume = ({
       return false;
     });
 
-  /** Whether a hold keeps the timed resume of `thread` back; one that fails holds it too. */
   const heldBack = (thread: Thread) =>
     Effect.gen(function* () {
       if (thread.parked) return true;
@@ -649,12 +556,6 @@ export const makeLimitResume = ({
       return false;
     });
 
-  /**
-   * A wait's timer: resumes the thread unless a hold keeps it back, asking again a minute on. A
-   * worker a hold kept back takes a slot in its account's release batches (`releaseSlot`) once
-   * let go, so a workspace resumed by the user doesn't send every worker at once; its
-   * orchestrator goes at once, ahead of them.
-   */
   const resumeWhenFree = (threadId: ThreadId): Effect.Effect<void> =>
     Effect.gen(function* () {
       let held = false;
@@ -689,12 +590,6 @@ export const makeLimitResume = ({
       ),
     );
 
-  /**
-   * Ends the wait and goes on from the last persisted state, as the user's "continue" would: an
-   * interrupted turn gets `LIMIT_RESUME_TEXT`, ahead of whatever queued meanwhile, unless a system
-   * delivery waits, which then carries the resume itself (an orchestrator's held digest, which says
-   * what changed meanwhile). Nothing sent before is sent again.
-   */
   const resumeWait = (threadId: ThreadId, byUser = false): Effect.Effect<void, ThreadNotFound> =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
@@ -713,16 +608,10 @@ export const makeLimitResume = ({
               ? { at: now, ...(wait.resetsAt === undefined ? {} : { resetsAt: wait.resetsAt }) }
               : undefined,
           );
-          // A wait released early never waited its reset out: met again, the same reset is a
-          // limit to wait for, not one outlasted.
           if (early) {
             const { resetsAt: _, ...rest } = wait;
             rt.resumedFrom = rest;
           } else rt.resumedFrom = wait;
-          // The user's "now" outranks what Gram knows of the account: a sibling still waiting, or
-          // a rejected reading, must not put the thread straight back.
-          // The timer's release is also an admission to retry, not an invitation
-          // for a sibling's stale record to put it back before the CLI is called.
           rt.admitted = true;
           if (byUser && rt.session !== undefined) rt.reopenOnIdle = true;
           yield* Effect.logInfo("thread resumes after a limit").pipe(
@@ -734,7 +623,6 @@ export const makeLimitResume = ({
               id,
               input: { text: early ? LIMIT_CLEARED_TEXT : LIMIT_RESUME_TEXT },
             });
-            // Gram's, not the user's word: a hold holds it, across a restart too.
             rt.noticeKeys.set(id, LIMIT_RESUME_KEY);
             rt.actors.set(id, "server");
             yield* syncQueue(rt);
@@ -752,18 +640,12 @@ export const makeLimitResume = ({
       );
     });
 
-  /**
-   * Called with the runtime lock held: the user's own input ends the wait, and goes now, and drops
-   * the note of a wait that ended early, which their word answers.
-   */
   const endWaitForUser = (rt: Runtime) =>
     Effect.gen(function* () {
       const wait = rt.limitWait;
       if (wait === undefined) {
         const thread = yield* store.getThread(rt.threadId).pipe(Effect.orDie);
         if (thread.limitCleared === undefined) return;
-        // Dropped from the row the update reads, not from `thread`: an edit committed since (a
-        // rename) would be written back over.
         const updated = yield* store
           .updateThread(rt.threadId, (current) => {
             const { limitCleared: _, ...rest } = current;
@@ -783,10 +665,6 @@ export const makeLimitResume = ({
       );
     });
 
-  /**
-   * The user stops waiting: no resume comes, and the thread stands as the limit left it, failed
-   * with its error, holding its queue and deliveries until the user sends again or resumes it.
-   */
   const cancelLimitWait = (threadId: ThreadId): Effect.Effect<void, ThreadNotFound> =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
@@ -794,9 +672,6 @@ export const makeLimitResume = ({
       const ended = yield* locked(
         rt,
         Effect.gen(function* () {
-          // A reset can have cleared the wait while its continuation is still held in the
-          // queue. Resume and drain use this same lock: either Stop removes the durable
-          // notice here, or the existing interrupt stops the turn that already took it.
           const kept = rt.queue.filter((item) => {
             if (rt.noticeKeys.get(item.id) !== LIMIT_RESUME_KEY) return true;
             rt.noticeKeys.delete(item.id);
@@ -808,8 +683,6 @@ export const makeLimitResume = ({
           }
           const wait = rt.limitWait;
           if (wait === undefined || wait.cancelled === true) return undefined;
-          // Kept, marked cancelled, so what waits behind it stays held across a restart and a
-          // later delivery can't start a turn or a new wait; only the user's own input ends it.
           yield* storeWait(rt, { ...wait, cancelled: true });
           const error = yield* recordFailure(
             rt,
@@ -830,7 +703,6 @@ export const makeLimitResume = ({
       );
     });
 
-  /** Whether a turn hold stops a turn the agent opened by itself; one that fails holds too. */
   const turnHeld = (threadId: ThreadId): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       if (turnHolds.size === 0) return false;
@@ -842,15 +714,10 @@ export const makeLimitResume = ({
       return false;
     });
 
-  /**
-   * Called with the runtime lock held, once a switch has moved the thread to the other agent: a
-   * wait on `account`, the one it left, ends with nothing resumed, as a cancel would leave it.
-   */
   const dropWaitForSwitch = (rt: Runtime, account: string) =>
     Effect.gen(function* () {
       const wait =
         rt.limitWait ?? (yield* store.getThread(rt.threadId).pipe(Effect.orDie)).limitWait;
-      // Only a wait on the account the thread left: a limit the new agent's account reported stays.
       if (
         wait === undefined ||
         (wait.account !== account && !wait.account.startsWith(`${account}/"`))

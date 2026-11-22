@@ -61,7 +61,6 @@ import { useSessionStart, type SessionStart } from "./connectors-start";
 import type { McpDraft } from "./mcp-config";
 import { PanelMessage } from "./panel-message";
 
-/** Scopes Gram can remove from; `claudeai`, plugin and managed servers are configured elsewhere. */
 const REMOVABLE: ReadonlySet<string> = new Set<McpScope>(["local", "project", "user"]);
 
 /**
@@ -73,12 +72,10 @@ export const CONNECTOR_HEALTH: Record<ConnectorHealth, { icon: LucideIcon; tone:
   connecting: { icon: CircleDashed, tone: "text-muted-foreground" },
   failed: { icon: CircleAlert, tone: "text-destructive" },
   disabled: { icon: CircleOff, tone: "text-muted-foreground" },
-  // Unused configured servers do not need to interrupt a coding session.
   "needs-auth": { icon: KeyRound, tone: "text-muted-foreground" },
   "not-given": { icon: CircleMinus, tone: "text-muted-foreground" },
 };
 
-/** How often the panel looks again while a server is still being checked. */
 const CHECKING_POLL_MS = 3_000;
 
 const CLAUDE_HOSTED_NOTE = "A claude.ai connector: it works in Claude threads only.";
@@ -87,13 +84,8 @@ const CLAUDE_HOSTED_NOTE = "A claude.ai connector: it works in Claude threads on
 export const claudeHostedElsewhere = (agentLabel: string) =>
   `claude.ai connectors reach Claude threads only. To use a server with ${agentLabel}, add it here by its URL.`;
 
-/** The agents a claude.ai connector's server can be given by its address. */
 const ELSEWHERE: ReadonlyArray<McpTarget> = ["codex"];
 
-/**
- * The form, open: blank from "Add server…" for this thread, or a claude.ai connector's server for
- * another agent, which is written user-wide and leaves this thread's session alone.
- */
 interface Adding {
   readonly target?: McpTarget;
   readonly draft?: Partial<McpDraft>;
@@ -128,9 +120,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
       return list;
     },
     retry: false,
-    // The answer from before the session started or stopped stands until the new one lands.
     placeholderData: keepPreviousData,
-    // "Checking…" is never the last word: the panel looks again until every server is known.
     refetchInterval: (current) =>
       signingIn
         ? SIGN_IN_POLL_MS
@@ -139,9 +129,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
           : false,
   });
   const asleep = query.data?.live === false && query.data.reason === "noSession";
-  /** Set by a refresh or a config write, so the next read of the configs is afresh. */
   const freshConfigured = useRef(false);
-  // Under the thread's key, so every refresh and action reads it again too.
   const configured = useQuery({
     queryKey: ["connectors", threadId, "configured"],
     queryFn: () => {
@@ -167,7 +155,6 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
   });
   const [adding, setAdding] = useState<Adding | undefined>();
   const [filter, setFilter] = useState("");
-  /** The user's own choice for the not-signed-in group; until they make one, its size decides. */
   const [signedOutOpen, setSignedOutOpen] = useState<boolean | undefined>();
   const signedOutId = useId();
 
@@ -212,11 +199,6 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
       );
     });
 
-  /**
-   * Opens the form for `other` with the connector's address, after reading afresh what that agent
-   * has user-wide (a config read, which connects nothing): its writers replace a server of the
-   * same name, so the name filled in is a free one, and one already at the address is said so.
-   */
   const giveTo = (name: string, other: McpTarget, url: string) =>
     action.mutate(async () => {
       setNotice(undefined);
@@ -260,7 +242,6 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
     );
 
   const groups = groupConnectors(connectors ?? [], filter);
-  // Said once for the group: every row of a Claude thread would repeat the same sentence.
   const signInHints = [
     ...new Set(
       groups.signedOut.flatMap((c) =>
@@ -353,7 +334,6 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
               target={target}
               servers={configured.data?.agents.find((a) => a.target === target)?.servers ?? []}
               wake={wake}
-              // The session is up, and its list is on the way.
               starting={wake.starting || (session === "up" && query.isPlaceholderData)}
             />
           ) : (
@@ -422,7 +402,6 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
   );
 }
 
-/** How a configured server reads while the session that would report it live isn't up. */
 const configuredState = (server: ConfiguredServer) =>
   server.disabled === true
     ? "Disabled"
@@ -432,11 +411,6 @@ const configuredState = (server: ConfiguredServer) =>
         ? "Not signed in"
         : "Configured";
 
-/**
- * A cold thread's tab: the session starting, or why it wasn't and a button to start it, over what
- * the agent's own config holds, read without connecting anything, and the claude.ai connectors as
- * a Claude thread last reported them, each "as of" then.
- */
 function SessionAsleep({
   target,
   servers: listed,
@@ -444,13 +418,11 @@ function SessionAsleep({
   starting,
 }: {
   target: McpTarget | undefined;
-  /** What the thread's agent's config holds, read without connecting anything. */
   servers: ReadonlyArray<ConfiguredServer>;
   wake: SessionStart;
   starting: boolean;
 }) {
   const now = useNow(true, undefined, 30_000);
-  // Put configured servers awaiting sign-in after the usable ones.
   const servers = listed.toSorted(
     (a, b) => Number(a.signedIn === false) - Number(b.signedIn === false),
   );
@@ -525,15 +497,12 @@ function ConnectorRow({
 }: {
   connector: Connector;
   busy: boolean;
-  /** Present while the user is signing in to this one in their browser. */
   signIn: PendingSignIn | undefined;
   onSignIn: () => void;
   onOpenSignIn: (url: string) => void;
   onReconnect: () => void;
   onToggle: () => void;
-  /** Absent for servers Gram can't remove (claude.ai, plugins, managed). */
   onRemove: (() => void) | undefined;
-  /** For a claude.ai connector with an address: give its server to another agent. */
   onUseWith: ((target: McpTarget, url: string) => void) | undefined;
 }) {
   const waiting = signIn !== undefined && connector.status === "needs-auth";
@@ -541,8 +510,6 @@ function ConnectorRow({
   const state = { ...CONNECTOR_HEALTH[health], label: CONNECTOR_HEALTH_LABEL[health] };
   const disabled = connector.status === "disabled";
   const signedOut = health === "needs-auth";
-  // Nothing here changes these: Settings → Workspaces lists an orchestrator's servers, and a
-  // server still loading has no session entry to act on yet.
   const settledElsewhere = health === "not-given" || connector.unconfirmed === true;
   const reasonsId = useId();
   const noteId = useId();
@@ -567,7 +534,6 @@ function ConnectorRow({
   const rejected = connector.claudeAi?.claudeSignInRejected === true;
   const [elsewhereOpen, setElsewhereOpen] = useState(false);
   const elsewhereId = useId();
-  // Keep the optional action compact when many servers are configured.
   const elsewhereToggle = onUseWith !== undefined && connector.url !== undefined && (
     <Button
       size="icon-sm"
@@ -617,8 +583,6 @@ function ConnectorRow({
     </Button>
   );
 
-  // One line each: a catalogue leaves dozens of these, and the group's heading already says what
-  // they are. Reconnect stays for an agent whose sign-in happens elsewhere, as the step after it.
   if (signedOut) {
     return (
       <li

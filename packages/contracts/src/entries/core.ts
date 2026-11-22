@@ -1,4 +1,3 @@
-// Ids, the core domain models, the wire errors and the UI message schema.
 export * from "../ids.ts";
 export * from "../domain.ts";
 export * from "../thread-status.ts";

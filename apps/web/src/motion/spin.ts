@@ -1,4 +1,3 @@
-/** How long a spinner takes to turn once, and how often it moves. */
 const SPIN_MS = 1000;
 const SPIN_STEP_MS = 50;
 
@@ -12,13 +11,11 @@ type Spinner = HTMLElement | SVGElement;
 export const clockPhase = (now: number, periodMs: number): number =>
   ((Math.floor(now / SPIN_STEP_MS) * SPIN_STEP_MS) % periodMs) / periodMs;
 
-/** What an element on the clock does at each step, and how it is put back when the clock stops. */
 interface Clocked {
   readonly step: (element: Spinner, now: number) => void;
   readonly rest: (element: Spinner) => void;
 }
 
-/** The elements attached, and those of them on screen, which are all that move. */
 const attached = new Map<Spinner, Clocked>();
 const onScreen = new Set<Spinner>();
 let observer: IntersectionObserver | undefined;
@@ -29,7 +26,6 @@ const turn = () => {
   for (const element of onScreen) attached.get(element)?.step(element, now);
 };
 
-/** Runs the one clock while anything on it is on screen, the window shown and motion Full. */
 const sync = () => {
   const run =
     onScreen.size > 0 &&
@@ -45,10 +41,6 @@ const sync = () => {
   }
 };
 
-/**
- * Off screen covers a row scrolled out of the sidebar and a hidden pane: under `display: none` an
- * element stops intersecting. An engine without `IntersectionObserver` counts every spinner as seen.
- */
 const watch = (element: Spinner) => {
   if (typeof IntersectionObserver === "undefined") {
     onScreen.add(element);
