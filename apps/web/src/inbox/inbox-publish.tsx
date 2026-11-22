@@ -1,15 +1,17 @@
 import type { ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
-import { FileDiff } from "lucide-react";
+import { Check, FileDiff, Undo2, X } from "lucide-react";
 import { useId } from "react";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/motion";
+import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import type { InboxEntry } from "@/orchestration/inbox-model";
 import { useThreadsStore } from "@/stores/threads";
 
 import { publishSummaryOf } from "./inbox-publish-model";
+import { rowAnswersBeside, useRowAnswers, type RowAnswer } from "./inbox-row-answers";
 
 /**
  * Under an approval that would push a branch or open its pull request, what each asking thread
@@ -28,17 +30,26 @@ export function InboxPublish({
 }) {
   const several = entries.length > 1;
   const heading = useId();
+  const all = useRowAnswers((s) => s.answers);
+  const answered = rowAnswersBeside(
+    all,
+    entries.map((entry) => entry.request.id),
+  );
   return (
     <section
       aria-labelledby={heading}
       data-testid="inbox-publish"
-      className="mx-2 mt-3 flex flex-col gap-1.5 rounded-(--radius-md) border border-border px-3 py-2"
+      className="mx-2 mt-5 flex flex-col gap-1.5 rounded-(--radius-md) border border-border px-3 py-2"
     >
       <h3 id={heading} className="text-meta text-muted-foreground">
-        {several
-          ? `What they would publish · Allow ${entries.length} answers ${entries.length === 2 ? "both" : `all ${entries.length}`}, or decide each one on its row`
-          : "What it would publish"}
+        {several ? "What they would publish" : "What it would publish"}
       </h3>
+      {several && (
+        <p data-testid="inbox-publish-hint" className="text-meta text-muted-foreground">
+          Decide each one on its row, or all {entries.length} at once with Allow {entries.length}{" "}
+          above.
+        </p>
+      )}
       <ul className="flex flex-col gap-1.5">
         {entries.map((entry) => (
           <PublishRow
@@ -46,13 +57,70 @@ export function InboxPublish({
             threadId={entry.threadId}
             title={entry.title}
             branch={entry.checkout?.branch}
-            named={several}
+            named={several || answered.length > 0}
             onReview={() => onReview(entry.threadId)}
             onDecide={several ? (decision) => onDecide(entry, decision) : undefined}
           />
         ))}
       </ul>
+      {answered.length > 0 && (
+        <ul
+          aria-label="Decided on their own"
+          className="flex flex-col gap-1 border-t border-border pt-1.5"
+        >
+          {answered.map((answer) => (
+            <AnsweredRow key={answer.key} answer={answer} />
+          ))}
+        </ul>
+      )}
     </section>
+  );
+}
+
+function AnsweredRow({ answer }: { answer: RowAnswer }) {
+  const held = useAskStackStore((s) => s.held.some((h) => h.key === answer.key));
+  const problem = useAskStackStore((s) => s.problems[answer.key]);
+  const allowed = answer.decision === "allow";
+  const Icon = allowed ? Check : X;
+  return (
+    <li
+      data-testid="inbox-publish-answered"
+      data-decision={answer.decision}
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta"
+    >
+      <Icon
+        aria-hidden
+        className={allowed ? "size-icon-row text-success" : "size-icon-row text-muted-foreground"}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground">
+          {allowed ? "Allowed" : "Denied"}: {answer.title}.
+        </span>{" "}
+        <span className="text-muted-foreground">
+          {problem ??
+            (held
+              ? "Goes to the worker in a few seconds."
+              : allowed
+                ? "It goes ahead with the push."
+                : "It won't push; the worker was told.")}
+        </span>
+      </span>
+      {held && (
+        <Button
+          size="xs"
+          variant="ghost"
+          data-testid="inbox-publish-undo"
+          onClick={() => {
+            if (useAskStackStore.getState().undo(answer.key) !== undefined) {
+              useRowAnswers.getState().remove(answer.key);
+            }
+          }}
+        >
+          <Undo2 aria-hidden />
+          Undo
+        </Button>
+      )}
+    </li>
   );
 }
 
@@ -143,7 +211,7 @@ function PublishRow({
               aria-label={`Allow only ${title}`}
               onClick={() => onDecide("allow")}
             >
-              Allow
+              Allow this one
             </Button>
             <Button
               size="xs"
@@ -152,7 +220,7 @@ function PublishRow({
               aria-label={`Deny only ${title}`}
               onClick={() => onDecide("deny")}
             >
-              Deny
+              Deny this one
             </Button>
           </>
         )}

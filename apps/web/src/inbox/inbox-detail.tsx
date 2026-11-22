@@ -50,6 +50,7 @@ import { WaitingItemRow } from "@/thread/waiting-tray";
 import { InboxContext } from "./inbox-context";
 import { InboxPublish } from "./inbox-publish";
 import { publishesBranch } from "./inbox-publish-model";
+import { useRowAnswers } from "./inbox-row-answers";
 
 const INBOX = '[data-testid="inbox"]';
 
@@ -527,7 +528,17 @@ export function InboxDetail({
           <InboxPublish
             entries={publishing}
             onReview={reviewChanges}
-            onDecide={(entry, decision) => holdOneAnswer(api, entry, decision)}
+            onDecide={(entry, decision) => {
+              holdOneAnswer(api, entry, decision);
+              useRowAnswers.getState().add({
+                key: entry.request.id,
+                title: entry.title,
+                decision,
+                beside: publishing
+                  .filter((other) => other.request.id !== entry.request.id)
+                  .map((other) => other.request.id),
+              });
+            }}
           />
         )}
         {!card && item.threadId !== undefined && item.owned && (
