@@ -199,6 +199,10 @@ export const replyAction = (
   return { kind: "answer", answer: replyAnswer(question, text) };
 };
 
+/** What the undo bar says once typed words are sent: a worker's question names the worker. */
+export const replyDone = (ask: Pick<Ask, "worker">): string =>
+  ask.worker === undefined ? "Replied" : `Sent to ${ask.worker.question.title}`;
+
 /**
  * Each worker an ask in the stack waits on, with that ask's key (the first, when several do): the
  * threads of a group's requests and the worker of a forwarded question. What the Board's chips,
@@ -484,7 +488,7 @@ export const workerAskOf = (workspaceId: WorkspaceId, question: WorkerQuestion):
     other: { question: question.question },
     options: ordered.map((option) => ({
       label: option.label,
-      done: option.label,
+      done: `${option.label} · sent to ${question.title}`,
       description: describe(option.description),
       recommended: option.label === question.recommended || undefined,
       action: { kind: "worker", answer: option.label },

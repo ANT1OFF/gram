@@ -16,7 +16,7 @@ import {
   type ModelRef,
 } from "@gram/contracts";
 
-import type { DreamPreviewInput } from "@/api/types";
+import type { DreamPreviewInput, StartDreamInput } from "@/api/types";
 import { canonicalJson } from "@/lib/canonical-json";
 import { known, type StatePresentation } from "@/thread/orchestration-model";
 
@@ -127,6 +127,29 @@ export const dreamFailureText = (
   if (dream.status === "failed") return "The update failed, and didn't say why.";
   return dream.status === "canceled" ? FAILURE_TEXT.canceled : undefined;
 };
+
+/**
+ * A failed update's agent error in its own words, after `dreamFailureText`'s sentence: the
+ * `agent_error` says only that the agent stopped, and its thread keeps why.
+ */
+export const dreamAgentErrorText = (
+  dream: Pick<Dream, "status" | "failure">,
+  threadError: { readonly text: string } | undefined,
+): string | undefined =>
+  dream.status === "failed" && dream.failure === "agent_error" && threadError !== undefined
+    ? threadError.text.trim()
+    : undefined;
+
+/** The same update again, for Try again on a failed one: its kind, mode, model, budget and inputs. */
+export const dreamRetryInput = (dream: Dream): StartDreamInput => ({
+  kind: dream.kind,
+  mode: dream.mode,
+  model: dream.model,
+  ...(dream.budgetTokens === undefined ? {} : { budgetTokens: dream.budgetTokens }),
+  ...(dream.instructions === undefined ? {} : { instructions: dream.instructions }),
+  ...(dream.inputs.threadIds.length === 0 ? {} : { threadIds: dream.inputs.threadIds }),
+  ...(dream.inputs.agentSessions.length === 0 ? {} : { agentSessions: dream.inputs.agentSessions }),
+});
 
 export const dreamKindLabel = (dream: Pick<Dream, "kind">): string =>
   dream.kind === "import" ? "From past sessions" : "From recent threads";

@@ -5,7 +5,7 @@ import { Brain, Columns3, FolderGit2, Pause, Repeat, Settings2 } from "lucide-re
 import { openWorkspaceSettings } from "@/settings/workspace-sheet";
 import { Hint } from "@/components/hint";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { focusOtherWindow } from "@/desktop/open-thread";
 import { useEmbedShell } from "@/embed/store";
 import { useLayoutStore } from "@/stores/layout";
@@ -13,6 +13,7 @@ import { useThreadsStore } from "@/stores/threads";
 import {
   pauseClock,
   pauseLeavesRunning,
+  pausedOnErrorText,
   pauseText,
   workerPauseLine,
 } from "@/thread/orchestration-model";
@@ -251,30 +252,76 @@ export function OrchestratorBanner({ thread }: { thread: Thread }) {
   const working = useThreadsStore((s) =>
     workspaceId === undefined ? 0 : midTurnWorkers(s.byId, workspaceId),
   );
+  const summary = useThreadsStore((s) => s.byId[thread.id]);
   if (state === undefined || workspaceId === undefined) return null;
   const paused = state.paused?.reason === "parked" ? undefined : state.paused;
+  const changed = summary?.git?.changedFiles ?? 0;
+  const onError =
+    paused === undefined || summary === undefined ? undefined : pausedOnErrorText(paused, summary);
 
   return (
     <>
       {paused !== undefined && (
         <div
           data-testid="orchestrator-banner-paused"
+          data-on-error={onError === undefined ? undefined : ""}
           role="status"
-          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1 text-meta text-foreground"
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-border px-3 py-1 text-meta text-foreground",
+            onError !== undefined && "items-start bg-destructive/5 py-2",
+          )}
         >
-          <Pause aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1">
-            {pauseText(paused)} since {pauseClock(paused.at)}. While paused, nothing wakes it and it
-            can't spawn or message workers. {pauseLeavesRunning(working, paused)}
-          </span>
-          <button
-            type="button"
-            data-testid="orchestrator-banner-resume"
-            className={`${ACTION} font-medium text-foreground`}
-            onClick={() => void resume()}
-          >
-            Resume
-          </button>
+          <Pause
+            aria-hidden
+            className={cn(
+              "size-icon-row shrink-0",
+              onError === undefined ? "text-muted-foreground" : "mt-0.5 text-destructive",
+            )}
+          />
+          {onError === undefined ? (
+            <span className="min-w-0 flex-1">
+              {pauseText(paused)} since {pauseClock(paused.at)}. While paused, nothing wakes it and
+              it can't spawn or message workers. {pauseLeavesRunning(working, paused)}
+            </span>
+          ) : (
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span data-testid="orchestrator-banner-error" className="font-medium">
+                Paused since {pauseClock(paused.at)}. {onError.reason}
+              </span>
+              <span className="text-muted-foreground">
+                {onError.next} {pauseLeavesRunning(working, paused)}
+              </span>
+              <span className="flex flex-wrap items-center gap-2 pt-1">
+                <Button
+                  size="xs"
+                  data-testid="orchestrator-banner-resume"
+                  onClick={() => void resume()}
+                >
+                  Resume
+                </Button>
+                {changed > 0 && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    data-testid="orchestrator-banner-changes"
+                    onClick={() => useLayoutStore.getState().revealPanel("diff")}
+                  >
+                    Show its {changed} changed {changed === 1 ? "file" : "files"}
+                  </Button>
+                )}
+              </span>
+            </span>
+          )}
+          {onError === undefined && (
+            <button
+              type="button"
+              data-testid="orchestrator-banner-resume"
+              className={`${ACTION} font-medium text-foreground`}
+              onClick={() => void resume()}
+            >
+              Resume
+            </button>
+          )}
         </div>
       )}
     </>

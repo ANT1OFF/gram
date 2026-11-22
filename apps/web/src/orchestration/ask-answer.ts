@@ -4,9 +4,9 @@ import type { Api } from "@/api/types";
 import { errorMessage } from "@/api/errors";
 import { respondToCard } from "@/api/respond-to-card";
 
-import type { Ask, AskAction } from "./ask-model";
+import { askOf, type Ask, type AskAction } from "./ask-model";
 import { useAskStackStore, type SendResult } from "./ask-stack-store";
-import { answerGroup, failureText } from "./inbox-model";
+import { answerGroup, failureText, type InboxEntry } from "./inbox-model";
 
 /** What an answer that is sent does; opening is the caller's. */
 export type SendAction = Extract<AskAction, { kind: "group" | "answer" | "memory" | "worker" }>;
@@ -71,4 +71,17 @@ export const holdAnswer = (
       failed: ask.ids,
       problem: errorMessage(error),
     })),
+  );
+
+/**
+ * Answers one thread's request of a group on its own, held for undo as the group's answer is: the
+ * group's other members still wait, as an ask of their own.
+ */
+export const holdOneAnswer = (api: Api, entry: InboxEntry, decision: "allow" | "deny"): void =>
+  holdAnswer(
+    api,
+    askOf({ key: entry.request.id, entries: [entry] }),
+    decision === "allow" ? `Allowed ${entry.title}` : `Denied ${entry.title}`,
+    { kind: "group", decision },
+    () => undefined,
   );

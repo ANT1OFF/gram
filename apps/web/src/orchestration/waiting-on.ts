@@ -68,6 +68,7 @@ export type WaitGlyph =
   | "limit"
   | "run"
   | "timer"
+  | "triage"
   | ConditionGlyph;
 
 /** A condition wake's glyph, one per kind of condition; `condition` for a kind this build lacks. */
@@ -443,6 +444,7 @@ export const triageReason = (hold: TriageHold, now: number, clock: WaitClock): W
       ? `It asked ${hold.id}. The orchestrator answers it if your brief or memory settles it; if not, it comes to your Inbox at ${clock(hold.until)}. Open the worker to answer it now.`
       : `It asked ${hold.id}, which is on its way to your Inbox. Open the worker to answer it now.`,
     at: hold.until,
+    edge: { glyph: "triage", token: due ? `to you ${clock(hold.until)}` : "to your Inbox" },
   };
 };
 

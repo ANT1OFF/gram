@@ -121,6 +121,9 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       unreadableSignalled.delete(workspaceId);
     });
 
+  const STOPPED_ON_ERROR_NEXT =
+    "Sort that out, then resume it from its chat. Gram also tries again by itself from time to time.";
+
   const PAUSE_TITLES: Record<PauseReason, string> = {
     user: "Orchestration paused",
     parked: "Orchestration paused: the orchestrator is parked",
@@ -194,15 +197,21 @@ export const makePauses = (kit: OrchestrationKit, deps: PausesDeps) => {
       if (recoverable) yield* armRecovery(workspaceId);
       else if (recovering.has(workspaceId)) yield* endRecovery(workspaceId);
       if (told) return;
+      const stoppedOn =
+        !recoverable || holder === undefined ? undefined : yield* findThread(holder);
+      const error = stoppedOn?.lastError?.text;
       const title =
         detail === OUTBOX_UNREADABLE_DETAIL
           ? "Orchestration paused: its delivery state can't be read"
-          : PAUSE_TITLES[reason];
+          : error === undefined
+            ? PAUSE_TITLES[reason]
+            : "Orchestration paused: the orchestrator stopped on an error";
+      const body = error === undefined ? detail : `${error} ${STOPPED_ON_ERROR_NEXT}`;
       const notice = {
         type: "notify" as const,
         kind: "needsInput" as const,
         title: `${title} (${state.workspace.name})`,
-        ...(detail === undefined ? {} : { body: detail }),
+        ...(body === undefined ? {} : { body }),
         ...(holder === undefined ? {} : { threadId: holder }),
       };
       const reader = readableByOfWorkspace(workspaceId, holder);

@@ -192,16 +192,18 @@ export const HANDOFF_GIVE_UP_MS = 10 * 60_000;
 
 /**
  * Whether the orchestrator is still between sessions: it is until its thread carries another
- * `agentSessionId` than the one it had when the handoff was asked for.
+ * `agentSessionId` than the one it had when the handoff was asked for, or an error newer than the
+ * ask, when the fresh session didn't open and the thread says why.
  */
 export const handoffRunning = (
   mark: HandoffMark | undefined,
-  thread: Pick<Thread, "agentSessionId"> | undefined,
+  thread: Pick<Thread, "agentSessionId" | "lastError"> | undefined,
   now: number,
 ): boolean =>
   mark !== undefined &&
   thread !== undefined &&
   thread.agentSessionId === mark.fromSession &&
+  (thread.lastError === undefined || thread.lastError.at < mark.startedAt) &&
   now - mark.startedAt < HANDOFF_GIVE_UP_MS;
 
 /**

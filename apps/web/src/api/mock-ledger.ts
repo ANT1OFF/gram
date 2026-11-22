@@ -25,14 +25,15 @@ type MockWorkerFacts = Pick<ThreadSummary, "thread" | "status" | "git"> &
   Partial<Pick<ThreadSummary, "pendingRequests">>;
 
 /**
- * The server's `WorkerStateInput` from what the mock knows about a worker's thread. The mock keeps
- * no input times or turn rows, so a report always stands; a turn has started once one ran
- * (`started`, as the server's memo records it) or once it reported.
+ * The server's `WorkerStateInput` from what the mock knows about a worker's thread. The only input
+ * time the mock keeps is an answer to the worker's questions (`lastInputAt`); a turn has started
+ * once one ran (`started`, as the server's memo records it) or once it reported.
  */
 export const mockStateInput = (
   summary: MockWorkerFacts,
   lastReport: WorkerReport | undefined,
   started = false,
+  lastInputAt?: number,
 ): WorkerStateInput => {
   const { thread, git } = summary;
   const badge = git?.pr;
@@ -43,6 +44,7 @@ export const mockStateInput = (
     ...(lastReport === undefined
       ? {}
       : { lastReport: { state: lastReport.state, at: lastReport.at } }),
+    ...(lastInputAt === undefined ? {} : { lastInputAt }),
     hasStartedTurn: started || lastReport !== undefined,
     pendingRequestCount: summary.pendingRequests?.length ?? 0,
     ...(badge === undefined ? {} : { pr: prFactsOf(badge) }),
@@ -73,6 +75,8 @@ export interface WorkerExtras {
   readonly lastReport?: WorkerReport | undefined;
   /** A turn of its has run in this mock session: no longer briefed. */
   readonly started?: boolean | undefined;
+  /** When the user's answer to its last open question reached it (the server's `lastInputAt`). */
+  readonly lastInputAt?: number | undefined;
   /** When each pending request was raised, epoch ms. */
   readonly askedAt: ReadonlyMap<string, number>;
   readonly overlapsWith: readonly ThreadId[];
@@ -135,6 +139,7 @@ export const ledgerEntry = (
     localGate,
     lastReport,
     started,
+    lastInputAt,
     askedAt,
     overlapsWith,
     userIntervened,
@@ -152,8 +157,8 @@ export const ledgerEntry = (
     threadId: thread.id,
     title: thread.title,
     ...(thread.checkout.branch === undefined ? {} : { branch: thread.checkout.branch }),
-    state: workerState(mockStateInput(summary, lastReport, started)),
-    stateBase: workerStateBase(mockStateInput(summary, lastReport, started)),
+    state: workerState(mockStateInput(summary, lastReport, started, lastInputAt)),
+    stateBase: workerStateBase(mockStateInput(summary, lastReport, started, lastInputAt)),
     status: summary.status,
     ...(summary.activity === undefined ? {} : { activity: summary.activity }),
     ...(thread.lastError === undefined

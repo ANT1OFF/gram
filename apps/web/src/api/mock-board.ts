@@ -11,6 +11,7 @@ import {
   WORKER_QUESTION_TRIAGE_MS,
 } from "@gram/contracts";
 
+import { seedCommittedBranches, setupGuideQuestion } from "./mock-board-fixtures";
 import type { MockBoardSimulation, MockFinishedSimulation, MockScenes } from "./mock-orchestration";
 
 /**
@@ -288,23 +289,9 @@ export async function simulateBoard(
   push(waitingDocs, 3, 0.9);
   progress(waitingApart, "The limiter is in, behind a flag. Ready to publish.", 2);
   push(waitingApart, 1, 0.6, { timeout: 600_000 });
+  seedCommittedBranches(scenes, [waitingWeb.id, waitingDocs.id, waitingApart.id]);
 
-  const question: PendingRequest = {
-    kind: "question",
-    id: `r-question-${ungrouped.id}` as RequestId,
-    toolUseId: `toolu_question_${ungrouped.id}`,
-    questions: [
-      {
-        question: "The setup guide covers both pip and uv. Keep both, or uv only?",
-        header: "Installer",
-        multiSelect: false,
-        options: [
-          { label: "uv only", description: "What the repo's own scripts use." },
-          { label: "Keep both", description: "Longer, but nobody is left out." },
-        ],
-      },
-    ],
-  };
+  const question = setupGuideQuestion(ungrouped.id);
   askedAt.set(question.id, Date.now() - 7 * 60_000);
   host.ask(ungrouped.id, question, () => {
     askedAt.delete(question.id);

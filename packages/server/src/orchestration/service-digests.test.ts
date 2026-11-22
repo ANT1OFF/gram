@@ -890,7 +890,12 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(reached.sent[0]?.text).toContain("the orchestrator could be reached again");
           yield* completeTurn(reached);
           const said = notifications(events);
-          expect(said.filter((title) => title.includes("couldn't be reached"))).toHaveLength(1);
+          expect(said.filter((title) => title.startsWith("Orchestration paused"))).toHaveLength(1);
+          // The notice gives the orchestrator's own error, as its chat does.
+          const paused = events.find(
+            (event) => event.type === "notify" && event.title.startsWith("Orchestration paused"),
+          );
+          expect(paused?.type === "notify" ? paused.body : undefined).toContain("PATH");
           expect(said.filter((title) => title.startsWith("Orchestration resumed"))).toHaveLength(1);
         }),
       );

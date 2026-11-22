@@ -379,11 +379,18 @@ export function registerMockTurnFiles(
   scenarioTurnFiles.set(`${threadId}:${turnId}`, files);
 }
 
-const scenarioDiffs = new Map<ThreadId, readonly DiffFile[]>();
+const scenarioDiffs = new Map<
+  ThreadId,
+  { readonly branch: string; readonly files: readonly DiffFile[] }
+>();
 
-/** A seeded thread's uncommitted changes are `files`, for the Diff panel. */
-export function registerMockThreadDiff(threadId: ThreadId, files: readonly DiffFile[]): void {
-  scenarioDiffs.set(threadId, files);
+/** A seeded thread's uncommitted changes on `branch` are `files`, for the Diff panel. */
+export function registerMockThreadDiff(
+  threadId: ThreadId,
+  files: readonly DiffFile[],
+  branch = "perf/scale",
+): void {
+  scenarioDiffs.set(threadId, { branch, files });
 }
 
 const scenarioBranches = new Map<
@@ -406,7 +413,7 @@ export function seedMockBranch(
 function mockDiffOf(threadId: ThreadId, scope: DiffScope): Diff {
   if (threadId === "t-grpc") return { repo: false };
   const seeded = scope.kind === "turn" ? undefined : scenarioDiffs.get(threadId);
-  if (seeded !== undefined) return { repo: true, branch: "perf/scale", files: [...seeded] };
+  if (seeded !== undefined) return { repo: true, branch: seeded.branch, files: [...seeded.files] };
   if (scope.kind === "turn") {
     const files =
       threadId === "t-deps" && scope.turnId === MOCK_DEPS_TURN

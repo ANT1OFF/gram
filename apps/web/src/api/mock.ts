@@ -1323,7 +1323,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   async send(threadId: ThreadId, input: UserInput) {
     const runtime = this.#runtime(threadId);
     this.#refuseMissingFolder(runtime);
-    if (input.origin === undefined && input.notice === undefined) {
+    if (input.origin === undefined && input.notice === undefined && input.author !== "server") {
       this.#orchestration.userTyped(threadId);
     }
     if (runtime.running || runtime.summary.thread.awaitingMachine !== undefined) {
@@ -1340,7 +1340,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   async steer(threadId: ThreadId, input: UserInput, options?: { interrupt?: boolean }) {
     const runtime = this.#runtime(threadId);
     this.#refuseMissingFolder(runtime);
-    if (input.origin === undefined && input.notice === undefined) {
+    if (input.origin === undefined && input.notice === undefined && input.author !== "server") {
       this.#orchestration.userTyped(threadId);
     }
     if (!runtime.running) {
@@ -2255,10 +2255,10 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     seedMemory: (workspaceId, projectIds) => this.#dreams.seed(workspaceId, projectIds),
     deliver: async (threadId, text) => {
       if (this.world.running(threadId)) {
-        await this.world.steer(threadId, { text });
+        await this.world.steer(threadId, { text, author: "server" });
         return "steered";
       }
-      await this.world.send(threadId, { text });
+      await this.world.send(threadId, { text, author: "server" });
       return "sent";
     },
   });

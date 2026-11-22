@@ -11,7 +11,7 @@ import { formatRelative } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ThreadMachineMarker } from "@/thread/machine-marker";
 import { askFingerprint } from "@/orchestration/ask-actions";
-import { holdAnswer, type SendAction } from "@/orchestration/ask-answer";
+import { holdAnswer, holdOneAnswer, type SendAction } from "@/orchestration/ask-answer";
 import {
   answerKey,
   clock,
@@ -23,6 +23,7 @@ import {
 import {
   otherIndex,
   replyAction,
+  replyDone,
   replyId,
   type ApprovalShortcut,
   type Ask,
@@ -40,12 +41,17 @@ import {
   useMemoryQuestionAnswer,
   useWorkerQuestionActions,
 } from "@/orchestration/question-entry";
+import { BRANCH_TARGET } from "@/panels/turn-diff";
+import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { AlwaysPreviewRequestCards, RequestCards, SheetRequestCards } from "@/thread/request-cards";
 import { waitLinkOf } from "@/thread/waiting-model";
 import { WaitingItemRow } from "@/thread/waiting-tray";
 
 import { InboxContext } from "./inbox-context";
+import { InboxPublish } from "./inbox-publish";
+import { publishesBranch } from "./inbox-publish-model";
+import { useRowAnswers } from "./inbox-row-answers";
 
 const INBOX = '[data-testid="inbox"]';
 
@@ -189,7 +195,7 @@ function AskInPlace({
     if (action === undefined) return;
     setPicked(undefined);
     useAskStackStore.getState().setReply(replyId(ask), "");
-    send("Replied", action);
+    send(replyDone(ask), action);
   };
   useInboxKeys((event) => {
     const target = event.target instanceof Element ? event.target : null;
@@ -365,6 +371,17 @@ export function InboxDetail({
     .join(" · ");
   const inPlace = !card || answersOnCard(item);
   const opens = !inPlace && item.threadId !== undefined;
+  const publishing = item.ask?.group?.entries.filter((entry) => publishesBranch(entry.request));
+  const reviewChanges = (threadId: ThreadId) => {
+    onOpenThread(
+      threadId === item.threadId
+        ? item
+        : { ...item, threadId, ask: undefined, messageId: undefined },
+    );
+    const layout = useLayoutStore.getState();
+    layout.requestPanel({ threadId, panel: "diff", target: BRANCH_TARGET }, threadId);
+    layout.revealPanel("diff", { thread: true });
+  };
   return (
     <section
       aria-label={kind.label}
@@ -508,6 +525,23 @@ export function InboxDetail({
             <FailureRowView item={item.failure} />
           </ul>
         ) : null}
+        {!card && publishing !== undefined && publishing.length > 0 && (
+          <InboxPublish
+            entries={publishing}
+            onReview={reviewChanges}
+            onDecide={(entry, decision) => {
+              holdOneAnswer(api, entry, decision);
+              useRowAnswers.getState().add({
+                key: entry.request.id,
+                title: entry.title,
+                decision,
+                beside: publishing
+                  .filter((other) => other.request.id !== entry.request.id)
+                  .map((other) => other.request.id),
+              });
+            }}
+          />
+        )}
         {!card && item.threadId !== undefined && item.owned && (
           <InboxContext key={item.threadId} threadId={item.threadId} />
         )}

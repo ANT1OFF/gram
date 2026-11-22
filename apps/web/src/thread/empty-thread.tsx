@@ -261,6 +261,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   const report = entry?.lastReport;
   const pr = outcomePr(thread, entry, git);
   const changed = entry?.changedFiles ?? git?.changedFiles ?? 0;
+  const ahead = git?.aheadBase ?? 0;
   const checks = checksOutcome(entry?.pr?.checks ?? git?.pr?.checks);
   const review =
     entry?.pr?.reviewDecision === undefined ? undefined : REVIEW[entry.pr.reviewDecision];
@@ -441,6 +442,24 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
             {changed > 0 ? (
               <>
                 <span className="tabular-nums">{filesChanged(changed)}</span>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  data-testid="thread-outcome-files"
+                  onClick={() => show("diff")}
+                >
+                  Show changes
+                </Button>
+              </>
+            ) : pr === undefined && ahead > 0 ? (
+              <>
+                <span>
+                  All committed: {ahead === 1 ? "1 commit" : `${ahead} commits`} not on{" "}
+                  <span className="font-mono">
+                    {git?.base?.replace(/^origin\//, "") ?? "its base"}
+                  </span>
+                </span>
                 <Button
                   type="button"
                   size="xs"

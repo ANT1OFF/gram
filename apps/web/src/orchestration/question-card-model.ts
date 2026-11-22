@@ -111,6 +111,30 @@ export const questionOutcome = (question: WorkerQuestion): string | undefined =>
 };
 
 /**
+ * A worker's latest report as the Board's second line: "Asked WQ6: …" once WQ6 is closed is what it
+ * came to instead ("Answered by you: Cursor"), at the time it closed, so an answered question no
+ * longer reads as one still asked.
+ */
+export const reportOrOutcome = (
+  report: { readonly summary: string; readonly at: number },
+  questions: readonly WorkerQuestion[],
+): { readonly summary: string; readonly at: number } => {
+  const id = /^Asked (WQ\d+)\b/.exec(report.summary)?.[1];
+  const question = questions.find((each) => each.id === id);
+  if (question === undefined || question.closedAt === undefined) return report;
+  if (question.stage !== "answered" && question.stage !== "dismissed") return report;
+  const { closedAt, ...undated } = question;
+  const status = questionStatusLine(undated);
+  const outcome = questionOutcome(question);
+  return {
+    summary: `${question.id} ${lowerFirst(status)}${outcome === undefined ? "" : `: ${outcome}`}`,
+    at: closedAt,
+  };
+};
+
+const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text.slice(1);
+
+/**
  * What a question's id names, in words: "WQ3" is a worker's question, forwarded to you; "Q1" is one
  * the orchestrator keeps in memory for you to decide.
  */
@@ -128,8 +152,8 @@ export const questionHolder = (
 ): string | undefined => {
   if (question.stage === "triage") {
     return question.triageUntil > now
-      ? `The orchestrator may settle it from your brief or memory; if not, it comes to your Inbox at ${questionTime(question.triageUntil)}. You can answer now.`
-      : "It is on its way to your Inbox. You can answer now.";
+      ? `The orchestrator may settle it from your brief or memory; if not, it comes to your Inbox at ${questionTime(question.triageUntil)}. Answer now to decide it yourself.`
+      : "It is on its way to your Inbox. Answer now to decide it yourself.";
   }
   if (question.stage === "forwarded") {
     const why =
