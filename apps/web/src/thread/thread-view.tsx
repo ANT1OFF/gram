@@ -71,7 +71,7 @@ import { messageMarkdown } from "./copy-markdown";
 import { sameCommand, toggleCommandView, useCommandViewStore } from "./command-view-store";
 import { useStopTask } from "./use-stop-task";
 import { FindBar } from "./find-bar";
-import { copyMarkdown } from "./message-actions";
+import { copyMarkdown } from "./copy-command";
 import { forkedFromText } from "./fork-text";
 import { trackWrappedChips } from "./header-chips";
 import { LabelChip, useThreadLabel } from "./label-chip";

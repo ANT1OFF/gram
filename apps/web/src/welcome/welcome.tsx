@@ -8,7 +8,6 @@ import {
   Circle,
   CircleAlert,
   CircleCheck,
-  CircleX,
   ExternalLink,
   FolderGit2,
   FolderOpen,
@@ -31,6 +30,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { ShortcutKbd } from "@/keyboard/use-shortcut-hint";
 import { CommandText } from "@/launch-checks/command-text";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
+import { CopyButton } from "@/thread/copy-command";
 import { MENU_ITEM, MENU_POPUP } from "@/lib/selection";
 import { focusLost } from "@/lib/use-return-focus";
 import { cn } from "@/lib/utils";
@@ -221,6 +221,7 @@ function FirstRun() {
           Gram makes it a workspace, whose orchestrator hands your tasks to agents.
         </p>
       </div>
+      {noAgent && <Readiness lead />}
       <div className="flex flex-col gap-2">
         {searchable && (
           <RepoSearch
@@ -264,7 +265,6 @@ function FirstRun() {
       </div>
       <RecommendedSetupWelcome on={recommendedOn} onChange={changeRecommended} />
       <div className="flex flex-col gap-3">
-        {noAgent && <Readiness lead />}
         <div data-testid="welcome-actions" className="flex flex-wrap items-center gap-2">
           {picked !== undefined ? (
             <Button
@@ -619,7 +619,7 @@ function RecentRepos({
 const STATE: Readonly<Record<ToolState, { icon: LucideIcon; words: string; className: string }>> = {
   ready: { icon: CircleCheck, words: "Ready", className: "text-success" },
   attention: { icon: CircleAlert, words: "Needs sign-in", className: "text-foreground" },
-  missing: { icon: CircleX, words: "Not installed", className: "text-destructive" },
+  missing: { icon: CircleAlert, words: "Not installed", className: "text-warning" },
   optional: { icon: Circle, words: "Not installed", className: "text-muted-foreground" },
 };
 
@@ -742,8 +742,16 @@ function ToolLine({ row, primary = false }: { row: ToolRow; primary?: boolean })
         </OutboundLink>
       )}
       {needed && (
-        <p data-testid="welcome-remedy" className="basis-full pl-5.5 text-muted-foreground">
-          <CommandText text={row.detail} />
+        <p
+          data-testid="welcome-remedy"
+          className="flex basis-full items-start gap-1.5 pl-5.5 text-muted-foreground"
+        >
+          <span className="min-w-0">
+            <CommandText text={row.detail} />
+          </span>
+          {row.installCommand !== undefined && (
+            <CopyButton command={row.installCommand} testId={`welcome-copy-${row.tool}`} />
+          )}
         </p>
       )}
     </li>

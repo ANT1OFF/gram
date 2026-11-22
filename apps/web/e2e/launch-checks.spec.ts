@@ -375,7 +375,7 @@ test("first run with no agent warns once and leads with installing one", async (
   await page.goto("/");
   const welcome = page.getByTestId("welcome");
   await expect(welcome.getByTestId("welcome-runs-with")).toHaveText(
-    "Install Claude Code or Codex to start",
+    "Install Claude Code or Codex to start: one is enough",
   );
   // One warning: the card says it with its remedies, so no banner and no title bar chip.
   await expect(page.getByTestId("launch-checks-banner")).toHaveCount(0);
