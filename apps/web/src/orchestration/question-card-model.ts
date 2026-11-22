@@ -128,8 +128,8 @@ export const questionHolder = (
 ): string | undefined => {
   if (question.stage === "triage") {
     return question.triageUntil > now
-      ? `The orchestrator may settle it from your brief or memory; if not, it comes to your Inbox at ${questionTime(question.triageUntil)}. You can answer now.`
-      : "It is on its way to your Inbox. You can answer now.";
+      ? `The orchestrator may settle it from your brief or memory; if not, it comes to your Inbox at ${questionTime(question.triageUntil)}. Answer now to decide it yourself.`
+      : "It is on its way to your Inbox. Answer now to decide it yourself.";
   }
   if (question.stage === "forwarded") {
     const why =
