@@ -41,12 +41,14 @@ export const discardWarning = () =>
 export function DreamRow({
   dream,
   now,
+  running,
   reviewing,
   onReview,
   children,
 }: {
   dream: Dream;
   now: number;
+  running: boolean;
   reviewing: boolean;
   onReview: () => void;
   children?: ReactNode;
@@ -130,8 +132,8 @@ export function DreamRow({
       )}
       {failed && (
         <p data-testid="dream-next-step" className="text-body text-description">
-          Memory is unchanged. Try again
-          {threadId === undefined ? "" : ", or open its thread to see what it did"}.
+          Memory is unchanged.
+          {threadId === undefined ? "" : " Its thread shows what it did."}
         </p>
       )}
       {(failed ? [] : (dream.notes ?? [])).map((note) => (
@@ -144,7 +146,8 @@ export function DreamRow({
           <Button
             size="sm"
             data-testid="dream-retry"
-            disabled={busy}
+            disabled={busy || running}
+            title={running ? "One run per workspace at a time" : undefined}
             onClick={() => run(() => api.startDream(dream.workspaceId, dreamRetryInput(dream)))}
           >
             Try again

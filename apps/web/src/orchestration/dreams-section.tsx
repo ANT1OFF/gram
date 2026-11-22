@@ -1082,6 +1082,7 @@ function RunList({
   title,
   dreams,
   now,
+  running,
   reviewing,
   onReview,
   review,
@@ -1090,6 +1091,7 @@ function RunList({
   title: string;
   dreams: readonly Dream[];
   now: number;
+  running: boolean;
   reviewing: DreamId | undefined;
   onReview: (dream: DreamId | undefined) => void;
   review: (dream: DreamId) => ReactNode;
@@ -1109,6 +1111,7 @@ function RunList({
               key={dream.id}
               dream={dream}
               now={now}
+              running={running}
               reviewing={reviewing === dream.id}
               onReview={() => onReview(reviewing === dream.id ? undefined : dream.id)}
             >
@@ -1190,6 +1193,7 @@ export function DreamsSection({
           title="Ready to review"
           dreams={ready}
           now={now}
+          running={running}
           reviewing={reviewing}
           onReview={review}
           review={reviewOf}
@@ -1272,6 +1276,7 @@ export function DreamsSection({
             title={ready.length > 0 ? "Other runs" : "Runs"}
             dreams={rest}
             now={now}
+            running={running}
             reviewing={reviewing}
             onReview={review}
             review={reviewOf}
