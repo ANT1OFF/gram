@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { PendingRequest, RequestId } from "@gram/contracts";
+import { ASK_PLAN_MAX_CHARS, askContent } from "./ask-content.ts";
 import {
   ASK_OPTION_LABEL_MAX_CHARS,
-  ASK_PLAN_MAX_CHARS,
   ASK_QUESTION_MAX_CHARS,
   ASK_QUESTIONS_MAX,
-  askContent,
-} from "./event-sink.ts";
+} from "./ask-limits.ts";
 
 const id = "req-1" as RequestId;
 const question = {
@@ -64,16 +63,33 @@ describe("what an ask's opening carries for a receiver to answer it", () => {
     expect(cut.planTruncated).toBe(true);
   });
 
-  it("carries neither for an approval", () => {
+  it("carries an approval's exact command, the model's words for it and why it asks", () => {
+    const approval = {
+      kind: "approval" as const,
+      id,
+      toolName: "Bash",
+      displayName: "Bash",
+      input: { command: "bun run export --dry" },
+      description: " Check the export before switching it ",
+      decisionReason: "Bash commands ask first in this workspace",
+      suggestions: [],
+    };
+    expect(askContent(approval)).toEqual({
+      command: "bun run export --dry",
+      description: "Check the export before switching it",
+      reason: "Bash commands ask first in this workspace",
+    });
+    // A call with no command, and no words of its own, carries nothing.
+    const { decisionReason: _reason, ...unexplained } = approval;
+    expect(askContent({ ...unexplained, input: { file_path: "a.ts" }, description: "" })).toEqual(
+      {},
+    );
+    // A hidden character in a command is shown, never passed on unseen.
+    expect(askContent({ ...approval, input: { command: "ls\u202e" } }).command).not.toContain(
+      "\u202e",
+    );
     expect(
-      askContent({
-        kind: "approval",
-        id,
-        toolName: "Bash",
-        displayName: "Bash",
-        input: { command: "ls" },
-        suggestions: [],
-      }),
-    ).toEqual({});
+      askContent({ ...approval, input: { command: "c".repeat(20_000) } }).command,
+    ).toHaveLength(10_000);
   });
 });
