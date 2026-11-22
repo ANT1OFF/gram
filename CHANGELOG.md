@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.36.0](https://github.com/ANT1OFF/gram/compare/v1.35.0...v1.36.0) (2026-11-22)
+
+
+### Features
+
+* keep the orchestrator's questions in the server store, with questions.md written from it ([#968](https://github.com/ANT1OFF/gram/issues/968)) ([bdb3eb3](https://github.com/ANT1OFF/gram/commit/bdb3eb373f67e08c079f77fa5c9f26efa06d012d))
+* **kit:** DataTable and TreeChart for embedding apps' pages ([#960](https://github.com/ANT1OFF/gram/issues/960)) ([81b92d3](https://github.com/ANT1OFF/gram/commit/81b92d34cf79af2e20ca502ddc24f6db0aaf9d72))
+* **kit:** TreeChart stands childless children in a column and can open fitted ([#961](https://github.com/ANT1OFF/gram/issues/961)) ([ef2a543](https://github.com/ANT1OFF/gram/commit/ef2a5434fa46b036ffd4a8126298c5209664f543))
+* **web:** a step to take opens its link from a button, and its text can be selected ([#965](https://github.com/ANT1OFF/gram/issues/965)) ([89a2ecd](https://github.com/ANT1OFF/gram/commit/89a2ecdd17ca14f3832bc94a0afea024a3ec60dc))
+
+
+### Bug Fixes
+
+* adding a repository behind a GitHub route, worker questions while paused, and Continue in on a headless server ([#959](https://github.com/ANT1OFF/gram/issues/959)) ([b02354a](https://github.com/ANT1OFF/gram/commit/b02354aa027007f4f1294c36f0842fe36cee87b4))
+* **ci:** keep a pull request's Linux packages for a day, not a week ([#963](https://github.com/ANT1OFF/gram/issues/963)) ([062d9a4](https://github.com/ANT1OFF/gram/commit/062d9a41f74222cf9856064896c97ab664e63fb6))
+* resuming a thread whose folder is the clone sets other changes aside; ci: shorter artifact retention ([#964](https://github.com/ANT1OFF/gram/issues/964)) ([72eca34](https://github.com/ANT1OFF/gram/commit/72eca34cf32e07c76cfe40396c69ff10485dba41))
+* **server:** a managed local check stops once its result can't be used ([#970](https://github.com/ANT1OFF/gram/issues/970)) ([dac6452](https://github.com/ANT1OFF/gram/commit/dac6452378b8d2dedc1d93668fd7cdbacb8c29bb))
+* **server:** a worker's session leaves out the blocking ask tool ([#958](https://github.com/ANT1OFF/gram/issues/958)) ([65010f4](https://github.com/ANT1OFF/gram/commit/65010f4fc881906f94ac7e64e7f01c7c2404e72e))
+* **web:** New workspace, worker questions and Continue in say what happened and what to do next ([#969](https://github.com/ANT1OFF/gram/issues/969)) ([7517ffd](https://github.com/ANT1OFF/gram/commit/7517ffd0ad3c31f7d496ed5f59e093ec9804c7a0))
+
 ## [1.35.0](https://github.com/ANT1OFF/gram/compare/v1.34.0...v1.35.0) (2026-11-21)
 
 
