@@ -42,6 +42,7 @@ import {
   userMessage,
   userParts,
   authored,
+  sendResultOf,
   typedInput,
   clientInput,
   serverSetOf,
@@ -288,7 +289,7 @@ export const makeMessageQueue = ({
       );
       if (lost === undefined) {
         if (read !== forAgentInput && rt.lostSession === seed) rt.lostSession = undefined;
-        return;
+        return turn.id;
       }
       if (rt.carrying?.turnId === turn.id) return yield* Effect.die(lost);
       yield* Effect.logWarning(
@@ -561,6 +562,7 @@ export const makeMessageQueue = ({
         yield* withSender(userMessage(input, id, turnId, createdAt)),
         turnId,
       );
+      return turnId;
     });
 
   const refuseMissingFolder = (rt: Runtime) =>
@@ -740,16 +742,15 @@ export const makeMessageQueue = ({
               }
               if (stopHeld(rt)) return yield* enqueue();
               if (rt.session !== undefined && rt.turn === undefined) {
-                const kept = yield* sendNow(rt, rt.session, input).pipe(
-                  Effect.as(false),
+                return yield* sendNow(rt, rt.session, input).pipe(
+                  Effect.map((turnId) => ({ queued: false, turnId })),
                   Effect.tapError(() =>
                     rt.turn !== undefined && rt.carrying === undefined
                       ? finishTurn(rt, "interrupted", "sendFailed")
                       : Effect.void,
                   ),
-                  Effect.catchTag("InputUndelivered", () => Effect.succeed(true)),
+                  Effect.catchTag("InputUndelivered", () => Effect.succeed({ queued: true })),
                 );
-                return { queued: kept };
               }
               if (rt.session !== undefined) return yield* enqueue();
               break;
@@ -760,8 +761,7 @@ export const makeMessageQueue = ({
                 rt.queue.length === 0 &&
                 rt.launch === undefined
               ) {
-                yield* launch(rt, input);
-                return { queued: false };
+                return { queued: false, turnId: yield* launch(rt, input) };
               }
               return yield* enqueue();
             case "running":
@@ -778,8 +778,7 @@ export const makeMessageQueue = ({
             return result;
           }
           yield* openSession(rt, thread);
-          yield* launch(rt, input);
-          return { queued: false };
+          return { queued: false, turnId: yield* launch(rt, input) };
         }),
       );
     });
@@ -788,7 +787,7 @@ export const makeMessageQueue = ({
     const input = authored(typedInput(sent));
     return store.getThread(threadId).pipe(
       Effect.flatMap(() => sendInput(threadId, input)),
-      Effect.map(({ queued }) => ({ queued })),
+      Effect.map(sendResultOf),
       Effect.tap(() => userTyped(threadId, input)),
     );
   };

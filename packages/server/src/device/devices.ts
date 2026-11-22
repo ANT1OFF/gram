@@ -97,6 +97,8 @@ export interface OnlineDevice {
   readonly deviceId: DeviceId;
   /** Whose it is: the person the front named at the dial, never what the device says. */
   readonly owner: DeviceCaller["actor"];
+  /** The key the front registered to `owner`: what the device's turn grants are checked with. */
+  readonly publicKey: string;
   readonly workspace: string;
   readonly hello: DeviceHello;
   readonly since: number;
@@ -250,6 +252,7 @@ export const makeDevices = (options: DevicesOptions = {}) => {
         const device: OnlineDevice = {
           deviceId,
           owner: caller.actor,
+          publicKey: caller.publicKey,
           workspace: caller.workspace,
           hello,
           since: now(),

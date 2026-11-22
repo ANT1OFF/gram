@@ -1,5 +1,13 @@
 import { createHash, createPublicKey, type KeyObject, verify } from "node:crypto";
-import { DEVICE_CLOCK_SKEW_MS, type DeviceDial, DeviceId, deviceDialBytes } from "@gram/contracts";
+import {
+  DEVICE_CLOCK_SKEW_MS,
+  DEVICE_GRANT_TTL_MS,
+  type DeviceDial,
+  DeviceId,
+  deviceDialBytes,
+  type SignedTurnGrant,
+  turnGrantBytes,
+} from "@gram/contracts";
 
 const SMALL_ORDER = new Set(
   [
@@ -81,3 +89,31 @@ export const deviceDialHolds = (
 /** A dial's time as its header carries it: thirteen digits and nothing else. */
 export const deviceDialTime = (header: unknown): number | undefined =>
   typeof header === "string" && /^\d{13}$/.test(header) ? Number(header) : undefined;
+
+/**
+ * Whether a turn grant was signed by the key `publicKey` names, for this origin, workspace and
+ * thread, with the device's own lifetime, and is in its time here, allowing the clock's skew
+ * before it was issued. The device checks it again by its own clock; this side checks so that a
+ * grant it couldn't use is never bound to a turn.
+ */
+export const turnGrantHolds = (
+  publicKey: string,
+  signed: SignedTurnGrant,
+  expected: { readonly origin: string; readonly workspace: string; readonly thread: string },
+  now: number,
+): boolean => {
+  const grant = signed?.grant;
+  if (typeof grant !== "object" || grant === null || grant.v !== 1) return false;
+  if (grant.origin !== expected.origin || grant.workspace !== expected.workspace) return false;
+  if (grant.thread !== expected.thread) return false;
+  if (!Number.isSafeInteger(now) || !Number.isSafeInteger(grant.issuedAt)) return false;
+  if (grant.expiresAt !== grant.issuedAt + DEVICE_GRANT_TTL_MS) return false;
+  if (now < grant.issuedAt - DEVICE_CLOCK_SKEW_MS || now >= grant.expiresAt) return false;
+  const key = devicePublicKeyFrom(publicKey);
+  if (key === undefined) return false;
+  try {
+    return verifyText(key, turnGrantBytes(grant), signed.signature);
+  } catch {
+    return false;
+  }
+};

@@ -6,6 +6,7 @@ import { BabysitBudget } from "../babysit.ts";
 import { CheckoutInUse, CheckoutUsers, CheckoutUsersPayload } from "../checkout-use.ts";
 import { ClosedThread, ReopenedClosedThread } from "../closed-threads.ts";
 import { CodexHome } from "../codex-home.ts";
+import { SignedTurnGrant } from "../device.ts";
 import { DocId } from "../docs.ts";
 import {
   ModelRef,
@@ -84,7 +85,16 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(NotFound, AgentUnavailable, GitError, InvalidState),
   }),
   Rpc.make("thread.send", {
-    payload: { ...threadRef, input: UserInput, clientMessageId },
+    payload: {
+      ...threadRef,
+      input: UserInput,
+      clientMessageId,
+      /**
+       * The sender's lent device signed this for the message, as it left: the turn the message
+       * starts may ask that device, and no other turn may (`docs/design/personal-device.md`).
+       */
+      deviceGrant: Schema.optionalKey(SignedTurnGrant),
+    },
     success: SendResult,
     error: errors(ThreadNotFound, InvalidState, AgentUnavailable),
   }),

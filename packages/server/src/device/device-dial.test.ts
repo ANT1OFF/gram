@@ -1,6 +1,7 @@
 // A lent device's dial into a whole server over a real socket, behind a synthetic proxy: only the
 // front's device statement reaches the device's path and nothing else, only with the decision hook
-// on, and a dial signed for that statement connects the device, which the event sink records.
+// on, and a dial signed for that statement connects the device, which the event sink records. Its
+// tools are listed to every session but a worker's.
 import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
@@ -16,6 +17,7 @@ import {
   DeviceId,
   DeviceRpcs,
   deviceDialBytes,
+  ThreadId,
 } from "@gram/contracts";
 import * as NodeWS from "@effect/platform-node/NodeWS";
 import * as Effect from "effect/Effect";
@@ -25,6 +27,7 @@ import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as RpcServer from "effect/rpc/RpcServer";
 import * as SocketServer from "effect/socket/SocketServer";
 import * as Stream from "effect/Stream";
+import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
 import { DEVICE_TYP, IDENTITY_HEADER } from "../http/fronted-identity.ts";
@@ -245,6 +248,21 @@ describe("a device's dial", () => {
             ),
           ),
         );
+      }),
+    );
+
+    it.effect("lists the device's tools to sessions that aren't a worker's", () =>
+      Effect.gen(function* () {
+        const registry = yield* AppToolRegistry;
+        const names = (audience: "plain" | "orchestrator" | "worker") =>
+          registry
+            .forTransport(ThreadId.make("t-any"), audience)
+            .map((tool) => tool.descriptor.name)
+            .filter((name) => name.startsWith("device_"));
+        const all = ["device_list_files", "device_read_file", "device_run"];
+        expect(names("plain")).toEqual(all);
+        expect(names("orchestrator")).toEqual(all);
+        expect(names("worker")).toEqual([]);
       }),
     );
   });

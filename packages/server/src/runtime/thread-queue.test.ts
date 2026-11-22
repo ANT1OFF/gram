@@ -134,7 +134,7 @@ describe("ThreadRuntimes sends with nothing running", () => {
         // Evicted, the thread is cold, and the next send opens a session the same way.
         yield* TestClock.adjust("15 minutes");
         yield* statusOf(thread.id, "cold");
-        expect(yield* runtimes.send(thread.id, { text: "again" })).toEqual({ queued: false });
+        expect(yield* runtimes.send(thread.id, { text: "again" })).toMatchObject({ queued: false });
         expect(yield* userTexts(thread.id)).toEqual(["one", "again"]);
         yield* TestClock.adjust("1 second");
         const resumed = yield* waitFor(

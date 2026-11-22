@@ -37,6 +37,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { attachmentsDir, withDraftAttachments } from "../../attachments/attachments.ts";
 import { ServerConfig } from "../../config.ts";
+import { LentDeviceTurns } from "../../device/turns.ts";
 import { ActingPerson } from "../../embedding/person.ts";
 import { EventHub } from "../../events/event-hub.ts";
 import { expandHome, resolveFolder } from "../../fs/folders.ts";
@@ -130,6 +131,7 @@ export const threadHandlers = Effect.gen(function* () {
     onSome: (git) => git.sync,
   });
   const ports = Option.getOrUndefined(yield* Effect.serviceOption(ThreadPorts));
+  const deviceTurns = Option.getOrUndefined(yield* Effect.serviceOption(LentDeviceTurns));
   const gate = Option.getOrUndefined(yield* Effect.serviceOption(TerminalGate));
   const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
   const holdWatch = (path: string) =>
@@ -326,15 +328,20 @@ export const threadHandlers = Effect.gen(function* () {
           return yield* new InvalidState({ message: PERSON_NAMES_NO_ID });
         return yield* profiles.start(profile, { threadId });
       }),
-    "thread.send": ({ threadId, input: sent, clientMessageId }) => {
+    "thread.send": ({ threadId, input: sent, clientMessageId, deviceGrant }) => {
       const input = clientInput(sent);
+      const send = runtimes.send(threadId, input);
       return store.messageReceipt(
         threadId,
         clientMessageId,
         ["send", input],
         sendRpc.successSchema,
         sendRpc.errorSchema,
-        runtimes.send(threadId, input),
+        deviceTurns === undefined || deviceGrant === undefined
+          ? send
+          : Effect.flatMap(ActingPerson, (person) =>
+              deviceTurns.sending(threadId, person, deviceGrant, send),
+            ),
       );
     },
     "thread.steer": ({ threadId, input: sent, clientMessageId, interrupt }) => {

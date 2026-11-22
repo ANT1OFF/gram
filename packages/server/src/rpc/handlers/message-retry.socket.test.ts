@@ -155,7 +155,7 @@ describe("message retry after a lost acknowledgement", () => {
           const retry = yield* makeClient();
           const result = yield* dispatch(retry);
           if (mode === "send" || mode === "queue")
-            expect(result).toEqual({ queued: mode === "queue" });
+            expect(result).toMatchObject({ queued: mode === "queue" });
           if (mode === "queue") {
             expect((yield* store.listQueue(thread.id)).map((item) => item.input.text)).toEqual([
               "exactly once",

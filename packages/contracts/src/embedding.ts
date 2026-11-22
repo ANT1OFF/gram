@@ -18,6 +18,7 @@ export const DecisionAction = Schema.Literals([
   "connector.call",
   "host.place",
   "outward",
+  "device",
 ]);
 export type DecisionAction = typeof DecisionAction.Type;
 
@@ -71,7 +72,9 @@ export const DecisionRequest = Schema.Struct({
    * What is known about the action, all optional. A push or pull request action: `command` (an
    * agent's own shell line), `repo` (owner/name), `ref`, `base`, `number`, `method`, `draft`,
    * `title`. A connector call: `server`, `tool`, `input`. A spawn: `title`, `project`, `model`,
-   * `machine`. Placing work on a host: `host`, `command`, `folder`.
+   * `machine`. Placing work on a host: `host`, `command`, `folder`. A request to a person's lent
+   * device (`device`): `kind` (`exec`, `read` or `list`), `device`, `person`, `folder` (its label),
+   * `path` or `cwd` as the device will take it, and `command`.
    */
   detail: Schema.Record(Schema.String, Schema.Unknown),
   approval: Schema.optionalKey(DecisionApproval),
@@ -174,6 +177,9 @@ export const SinkEventType = Schema.Literals([
   "conversation.owner",
   "device.connected",
   "device.disconnected",
+  "device.requested",
+  "device.answered",
+  "device.finished",
 ]);
 export type SinkEventType = typeof SinkEventType.Type;
 

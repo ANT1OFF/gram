@@ -1,5 +1,6 @@
 import type {
   ConversationRef,
+  SendResult,
   TurnId,
   UserInput,
   QueuedInput,
@@ -54,6 +55,15 @@ export const notInFlight = (item: QueuedInput): QueuedInput => {
  * `input` given to `send` or `steer`, its `author` as the server establishes it: Gram's when it
  * carries a notice or its caller said so, the user's unless another thread sent it (`origin`).
  */
+/** What `send` answers of how an input went: queued or not, and the turn it started. */
+export const sendResultOf = (result: {
+  readonly queued: boolean;
+  readonly turnId?: TurnId | undefined;
+}): SendResult =>
+  result.turnId === undefined
+    ? { queued: result.queued }
+    : { queued: result.queued, turnId: result.turnId };
+
 export const authored = (input: UserInput): UserInput => {
   const { author, ...rest } = input;
   if (author === "server" || input.notice !== undefined) return { ...rest, author: "server" };

@@ -764,7 +764,10 @@ const make = Effect.gen(function* () {
             turnId: item.turnId,
             messageId: item.id,
             ...(published === undefined ? {} : { published }),
-          }).pipe(Effect.catchTag("InputUndelivered", () => Effect.void)),
+          }).pipe(
+            Effect.asVoid,
+            Effect.catchTag("InputUndelivered", () => Effect.void),
+          ),
         );
         return { started };
       }),

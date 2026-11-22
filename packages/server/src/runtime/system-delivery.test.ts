@@ -508,7 +508,9 @@ describe("system delivery", () => {
         "end:error:synthesized:empty",
       ]);
 
-      expect(yield* runtimes.send(thread.id, { text: "carry on" })).toEqual({ queued: false });
+      expect(yield* runtimes.send(thread.id, { text: "carry on" })).toMatchObject({
+        queued: false,
+      });
       expect(sentTexts(session)).toEqual(["one", "carry on"]);
     }).pipe(
       Effect.provide(

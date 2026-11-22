@@ -391,7 +391,7 @@ describe("moving a thread's checkout", () => {
       });
       yield* idle(thread.id);
       yield* runtimes.moveCheckout(thread.id, { kind: "worktree", path: "/work/one" });
-      expect(yield* runtimes.send(thread.id, { text: "after the move" })).toEqual({
+      expect(yield* runtimes.send(thread.id, { text: "after the move" })).toMatchObject({
         queued: false,
       });
       const reopened = yield* waitFor(
