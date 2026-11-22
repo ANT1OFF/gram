@@ -17,6 +17,7 @@ import { FeatureMenu, PausedBadge } from "@/orchestration/feature-sheet";
 import { RAIL_TONES } from "@/orchestration/rail-tones";
 import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { HeldBriefChip } from "@/orchestration/held-brief";
+import { reportOrOutcome } from "@/orchestration/question-card-model";
 import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "@/orchestration/overview-pr-chips";
 import {
   nowBesidePrs,
@@ -292,7 +293,7 @@ export function useLatestReport(
       .find((worker) => worker.threadId === threadId)?.lastReport;
     return report === undefined || report.summary.trim() === ""
       ? undefined
-      : { summary: report.summary, at: report.at };
+      : reportOrOutcome({ summary: report.summary, at: report.at }, ledger?.questions ?? []);
   }, [ledger, threadId]);
 }
 
