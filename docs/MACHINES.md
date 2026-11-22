@@ -475,9 +475,10 @@ Gram sends no credential to it, and the variable holds none: the address is `htt
 in the host's log, and the sessions get no machine server.
 
 - **What wins.** A session whose thread's profile already names a server keeps that server and
-  gets no machine server. A confined session never gets either.
-- **Your lists still apply.** The server is subject to the session's MCP lists like any other, so
-  a session held to some servers names its `url` there to keep it.
+  gets no machine server. A confined session and a memory update never get one.
+- **Your lists still apply.** The host checks the session's MCP lists itself before it gives the
+  server, by its name and its address, whichever agent runs: a session held to some servers names
+  the machine server there to keep it, and a denylist entry for it leaves it out.
 - **This machine's own host** (the one in the app) never reads the variable.
 
 ## When it drops or restarts

@@ -14,6 +14,7 @@ import {
   type AgentKind,
   type AgentStatus,
   AgentUnavailable,
+  connectorListed,
   HostFailed,
   type HostAgentReload,
   NotFound,
@@ -147,6 +148,26 @@ const DELIVERIES_KEPT = 256;
 
 const noSession = (handle: string) => new HostFailed({ message: `No agent session ${handle}.` });
 
+/**
+ * Whether a session opened with `request` is given the machine's own MCP server: not when the
+ * control plane named a server of its own, nor for a confined session or a memory update, and only
+ * when the session's own lists keep it, matched by its name and address here, before any agent's
+ * own handling of the lists (a denylist entry wins). An agent that would load a server its lists
+ * leave out never sees it.
+ */
+export const takesMachineServer = (
+  request: Pick<
+    HostSessionOpen,
+    "mcpServer" | "mcpAllowlist" | "mcpDenylist" | "confineWrites" | "dreamFilesOnly"
+  >,
+  server: MachineMcpServer,
+): boolean =>
+  request.mcpServer === undefined &&
+  request.confineWrites !== true &&
+  request.dreamFilesOnly !== true &&
+  (request.mcpAllowlist === undefined || connectorListed(request.mcpAllowlist, server)) &&
+  !connectorListed(request.mcpDenylist ?? [], server);
+
 const optionsFor = (
   request: HostSessionOpen,
   remoteAppTools: RemoteAppTools | undefined,
@@ -156,7 +177,7 @@ const optionsFor = (
   const { handle: _handle, agent: _agent, mcp, waitForPrevious, ...rest } = request;
   return {
     ...rest,
-    ...(rest.mcpServer === undefined && machineMcpServer !== undefined
+    ...(machineMcpServer !== undefined && takesMachineServer(request, machineMcpServer)
       ? { mcpServer: { name: machineMcpServer.name, url: machineMcpServer.url } }
       : {}),
     ...(waitForPrevious === true ? { waitForPreviousSession: { onWait: Effect.void } } : {}),
