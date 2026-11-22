@@ -109,6 +109,9 @@ const resolvingTool = (toolClass: "outward" | "crossThread") =>
       Effect.succeed(target === 7),
   });
 
+/** A decision hook's guard that says whether it decided the call. */
+const guard = (hookDecided: boolean) => () => Effect.succeed(hookDecided);
+
 describe("app tool policy", () => {
   const sideEffects: Array<string> = [];
   const tool = (toolClass: "read" | "self" | "crossThread" | "outward") =>
@@ -370,6 +373,34 @@ describe("app tool policy", () => {
         ["outward_asking", false],
         ["self_asking", true],
       ]);
+    }),
+  );
+
+  // A reply in a host's own conversation: the hook's answer is the approval when the hook decided
+  // that very call, and the tool's own card stands when it didn't (no hook, or one that is off).
+  it.effect("raises no card of its own for a call the host decided, and its card otherwise", () =>
+    Effect.gen(function* () {
+      const decided = defineAppTool({
+        descriptor: { name: "host_reply", class: "self", description: "" },
+        input: Schema.Struct({ n: Schema.Number }),
+        decision: () => ({ action: "conversation.reply", detail: {} }),
+        needsApproval: () => Effect.succeed(true),
+        hostDecides: true,
+        handle: (_t, { n }) => Effect.succeed(n),
+      });
+      const asked: Array<string> = [];
+      const gate = {
+        approve: (_threadId: ThreadId, d: AppToolDescriptor) =>
+          Effect.sync(() => void asked.push(d.name)),
+      };
+      const [byHost] = bindAppTools([decided], "t1" as ThreadId, gate, guard(true));
+      expect(yield* byHost!.run({ n: 1 })).toBe(1);
+      expect(asked).toEqual([]);
+      const [unasked] = bindAppTools([decided], "t1" as ThreadId, gate, guard(false));
+      expect(yield* unasked!.run({ n: 2 })).toBe(2);
+      const [noGuard] = bindAppTools([decided], "t1" as ThreadId, gate);
+      expect(yield* noGuard!.run({ n: 3 })).toBe(3);
+      expect(asked).toEqual(["host_reply", "host_reply"]);
     }),
   );
 
