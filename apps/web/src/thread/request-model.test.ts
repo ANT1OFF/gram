@@ -5,10 +5,13 @@ import { limitShareText } from "@/usage/limit-format";
 
 import {
   alwaysRules,
+  approvalDetails,
   approvalReceipt,
   browserAsk,
   browserAskLine,
   limitPauseAsk,
+  mustReadDetails,
+  opensDetails,
 } from "./request-model";
 
 const pause = (input: Record<string, unknown>): ApprovalRequest => ({
@@ -199,5 +202,38 @@ describe("browserAsk", () => {
       browserAsk(call("mcp__gram__browser_navigate", { url: "https://x.test/" })),
     ).toBeUndefined();
     expect(browserAskLine(call("Bash", { command: "ls" }))).toBeUndefined();
+  });
+});
+
+describe("a send_worker card", () => {
+  const send: ApprovalRequest = {
+    kind: "approval",
+    id: "r-send" as RequestId,
+    toolName: "mcp__gram__send_worker",
+    displayName: "send_worker",
+    input: {
+      workspace: "Platform · gram.example.com",
+      organisation: "Example Co",
+      model: "Claude · opus",
+      workerModel: "Claude · sonnet",
+      project: "api",
+      repository: "example-co/api",
+      title: "Refunds",
+      brief: "Make refunds idempotent.",
+    },
+    suggestions: [],
+  };
+
+  it("opens on where it runs, the repository it works from and both models", () => {
+    const details = approvalDetails(send);
+    expect(details.kind).toBe("spawn");
+    const fields = details.kind === "spawn" ? details.fields : [];
+    const value = (label: string) => fields.find((field) => field.label === label)?.value;
+    expect(value("Runs in")).toBe("Platform · gram.example.com");
+    expect(value("Repository")).toBe("example-co/api");
+    expect(value("Model")).toContain("Claude · sonnet");
+    expect(opensDetails(send)).toBe(true);
+    // Still answerable from the Inbox, unlike what must be read whole.
+    expect(mustReadDetails(send)).toBe(false);
   });
 });

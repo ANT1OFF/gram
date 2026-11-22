@@ -139,6 +139,14 @@ export const mustReadDetails = (request: ApprovalRequest): boolean =>
   (request.toolName.startsWith(`${APP_TOOL_PREFIX}browser_`) &&
     typeof request.input["control"] === "string");
 
+/**
+ * An approval whose card opens its details: what must be read in full, and a `send_worker`, whose
+ * details say where the worker goes, what it works from and on which model. That one can still be
+ * answered from the Inbox and kept with others.
+ */
+export const opensDetails = (request: ApprovalRequest): boolean =>
+  mustReadDetails(request) || request.toolName === `${APP_TOOL_PREFIX}send_worker`;
+
 const CHROME_TOOL = /^mcp__claude-in-chrome__(.+)$/;
 
 const SERVER_PROMPT = /^mcp__(.+)__elicitation$/;
@@ -337,11 +345,52 @@ const issueDetails = (input: ApprovalRequest["input"]): ApprovalDetails | undefi
   };
 };
 
+const SEND_WORKER = `${APP_TOOL_PREFIX}send_worker`;
+
+const sendDetails = (input: ApprovalRequest["input"]): ApprovalDetails | undefined => {
+  const project = text(input["project"]);
+  const brief = text(input["brief"]);
+  if (project === undefined || brief === undefined) return undefined;
+  const repository = text(input["repository"]);
+  const organisation = text(input["organisation"]);
+  const model = text(input["model"]);
+  const workerModel = text(input["workerModel"]);
+  const rows: ReadonlyArray<readonly [string, string | undefined]> = [
+    ["Runs in", text(input["workspace"])],
+    ["Rules", organisation === undefined ? undefined : `${organisation}'s rules and approvals`],
+    ["Why", text(input["reason"])],
+    ["Repository", repository ?? project],
+    [
+      "Works from",
+      `What is pushed to ${repository ?? "the repository's remote"}${text(input["branch"]) === undefined ? "" : ` (${text(input["branch"])})`}. Nothing uncommitted on this computer goes with it.`,
+    ],
+    [
+      "Model",
+      model === undefined
+        ? undefined
+        : workerModel === undefined || workerModel === model
+          ? model
+          : `${model}, as that workspace starts threads, not ${workerModel} that workers here run on`,
+    ],
+    [
+      "Then",
+      "It shows under this orchestrator with a cloud mark and keeps running while this computer sleeps. Its pull request brings the work back.",
+    ],
+  ];
+  return {
+    kind: "spawn",
+    fields: rows.flatMap(([label, value]) => (value === undefined ? [] : [{ label, value }])),
+    scope: [],
+    brief,
+  };
+};
+
 /** The folded details of an app tool's card. A spawn missing its project or brief reads as JSON. */
 export const approvalDetails = (request: ApprovalRequest): ApprovalDetails => {
   const input = revealValue(request.input) as ApprovalRequest["input"];
   const json: ApprovalDetails = { kind: "json", text: JSON.stringify(input, null, 2) };
   if (request.toolName === `${APP_TOOL_PREFIX}report_issue`) return issueDetails(input) ?? json;
+  if (request.toolName === SEND_WORKER) return sendDetails(input) ?? json;
   if (request.toolName !== `${APP_TOOL_PREFIX}spawn_worker`) return json;
   const project = text(input["project"]);
   const brief = text(input["brief"]);

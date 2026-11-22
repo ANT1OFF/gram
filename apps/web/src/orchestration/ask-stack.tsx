@@ -378,7 +378,7 @@ export function AskItem({
             className="text-meta text-muted-foreground"
           />
         )}
-        <AskDetails ask={ask} />
+        <AskDetails ask={ask} open={ask.detailsOpen === true} />
         {ask.freeForm !== undefined && (
           <ReplyField
             ask={ask}

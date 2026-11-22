@@ -166,8 +166,14 @@ export const sendWorkerTool = (deps: Deps) =>
         const listed = yield* deps.port.targets();
         const picked = listed.ok ? pickTarget(listed.targets, input.workspace) : undefined;
         if (typeof picked !== "object") return input;
-        const model = yield* modelThere(deps, caller, input.project, picked);
-        return { ...input, picked, ...(model === undefined ? {} : { pickedModel: model }) };
+        const there = yield* whatThere(deps, caller, input.project, picked);
+        return {
+          ...input,
+          picked,
+          ...(there.model === undefined ? {} : { pickedModel: there.model }),
+          ...(there.repository === undefined ? {} : { repository: there.repository }),
+          ...(there.workerModel === undefined ? {} : { workerModel: there.workerModel }),
+        };
       }),
     needsApproval: () => Effect.succeed(true),
     title: (_caller, input: SendWorkerCall) =>
@@ -180,7 +186,7 @@ export const sendWorkerTool = (deps: Deps) =>
       Effect.succeed(
         input.picked === undefined
           ? `Send “${input.title.trim()}” from ${input.project.trim()} to a server${input.workspace === undefined ? "" : ` (${input.workspace})`}, under its rules`
-          : `Send “${input.title.trim()}” from ${input.project.trim()} to run in ${targetName(input.picked)}, as a thread of that workspace. ${input.picked.organisation}'s rules and approvals apply there, and it runs on ${input.pickedModel === undefined ? "the model that workspace starts threads on" : modelLabel(input.pickedModel)}, not this workspace's worker model.`,
+          : `Send “${input.title.trim()}” from ${input.project.trim()} to run in ${targetName(input.picked)}, as a thread of that workspace. ${input.picked.organisation}'s rules and approvals apply there, and it runs on ${input.pickedModel === undefined ? "the model that workspace starts threads on" : modelLabel(input.pickedModel)}, ${input.workerModel === undefined ? "not this workspace's worker model" : `not ${modelLabel(input.workerModel)} that workers here run on`}.`,
       ),
     cardDetails: (input: SendWorkerCall) => ({
       ...(input.picked === undefined
@@ -193,12 +199,22 @@ export const sendWorkerTool = (deps: Deps) =>
                 ? "The one that workspace starts threads on"
                 : modelLabel(input.pickedModel),
           }),
+      ...(input.workerModel === undefined ? {} : { workerModel: modelLabel(input.workerModel) }),
       project: input.project,
+      ...(input.repository === undefined ? {} : { repository: input.repository }),
+      ...(input.branch === undefined ? {} : { branch: input.branch }),
       title: input.title,
+      ...(input.reason === undefined || input.reason.trim() === "" ? {} : { reason: input.reason }),
       brief: input.brief,
     }),
     handle: (caller, input: SendWorkerCall) => {
-      const { picked, pickedModel: _model, ...call } = input;
+      const {
+        picked,
+        pickedModel: _model,
+        repository: _repo,
+        workerModel: _worker,
+        ...call
+      } = input;
       return sendWorker(
         deps,
         caller,
@@ -220,6 +236,8 @@ interface SendWorkerCall {
   readonly reason?: string;
   readonly picked?: SentWorkTarget;
   readonly pickedModel?: { readonly agent: string; readonly model: string };
+  readonly repository?: string;
+  readonly workerModel?: { readonly agent: string; readonly model: string };
 }
 
 const agents: Readonly<Record<string, string>> = { claude: "Claude", codex: "Codex" };
@@ -227,7 +245,13 @@ const agents: Readonly<Record<string, string>> = { claude: "Claude", codex: "Cod
 const modelLabel = (model: { readonly agent: string; readonly model: string }): string =>
   `${agents[model.agent] ?? model.agent} · ${model.model}`;
 
-const modelThere = (
+interface There {
+  readonly repository?: string;
+  readonly model?: { readonly agent: string; readonly model: string };
+  readonly workerModel?: { readonly agent: string; readonly model: string };
+}
+
+const whatThere = (
   { orchestration, store, port, proc }: Deps,
   callerId: ThreadId,
   projectName: string,
@@ -235,19 +259,34 @@ const modelThere = (
 ) =>
   Effect.gen(function* () {
     const authority = yield* orchestration.authorityOf(callerId);
-    if (authority === undefined) return undefined;
+    if (authority === undefined) return {};
+    const models = authority.state.charter.workerModels ?? [];
+    const local = models.find((each) => each.default === true) ?? models[0];
+    const workerModel =
+      local === undefined || !("model" in local)
+        ? undefined
+        : { agent: local.agent, model: local.model };
     const wanted = projectName.trim().toLowerCase();
     const project = (yield* store.listProjects).find(
       (each) =>
         authority.state.workspace.projectIds.includes(each.id) &&
         (each.id === projectName.trim() || each.name.toLowerCase() === wanted),
     );
-    if (project === undefined) return undefined;
-    const repository = yield* repositoryOf(project.root).pipe(Effect.provideService(Proc, proc));
-    if (repository === undefined) return undefined;
-    const checked = yield* port.check(target.origin, target.workspaceId, [repository]);
-    return checked.ok ? checked.reach.model : undefined;
-  }).pipe(Effect.orElseSucceed(() => undefined));
+    const repository =
+      project === undefined
+        ? undefined
+        : yield* repositoryOf(project.root).pipe(Effect.provideService(Proc, proc));
+    const checked =
+      repository === undefined
+        ? undefined
+        : yield* port.check(target.origin, target.workspaceId, [repository]);
+    const model = checked?.ok === true ? checked.reach.model : undefined;
+    return {
+      ...(repository === undefined ? {} : { repository }),
+      ...(model === undefined ? {} : { model }),
+      ...(workerModel === undefined ? {} : { workerModel }),
+    } satisfies There;
+  }).pipe(Effect.orElseSucceed((): There => ({})));
 
 export const sendWorker = (
   { orchestration, store, runtimes, port, proc, sent: justSent }: Deps,
