@@ -471,7 +471,7 @@ server, for Claude Code, Codex and ACP agents alike, as a remote (streamable HTT
 (`packages/server/src/host/machine-mcp-server.ts`). It is for whatever starts the host, such as a
 platform that runs a relay beside it, which attaches the machine's own credential on its way out.
 Gram sends no credential to it, and the variable holds none: the address is `https:`, or plain
-`http:` on loopback only, with no user or password in it. Anything else is refused, with a warning
+`http:` on loopback only, with no user, password, query or fragment in it. Anything else is refused, with a warning
 in the host's log, and the sessions get no machine server.
 
 - **What wins.** A session whose thread's profile already names a server keeps that server and

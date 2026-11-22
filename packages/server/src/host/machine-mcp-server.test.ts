@@ -23,10 +23,13 @@ describe("a machine's own MCP server, from its host's environment", () => {
     expect(machineMcpServerFrom("  ")).toEqual({ server: undefined });
   });
 
-  it("is refused for plain http off loopback, a credential in the url, or a name a config can't take", () => {
+  it("is refused for plain http off loopback, a credential, query or fragment in the url, or a name a config can't take", () => {
     for (const value of [
       { name: "tools", url: "http://mcp.example.test/mcp" },
       { name: "tools", url: "https://user:secret@mcp.example.test/mcp" },
+      { name: "tools", url: "https://mcp.example.test/mcp?token=secret" },
+      { name: "tools", url: "https://mcp.example.test/mcp?" },
+      { name: "tools", url: "https://mcp.example.test/mcp#secret" },
       { name: "tools", url: "file:///etc/passwd" },
       { name: 'a"b', url: "https://mcp.example.test/mcp" },
       { name: "", url: "https://mcp.example.test/mcp" },

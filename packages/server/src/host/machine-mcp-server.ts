@@ -5,8 +5,7 @@
  */
 export const MACHINE_MCP_SERVER_ENV = "GRAM_HOST_MCP_SERVER";
 
-/** A server's name as the agents' configs take one: Codex makes it a TOML key. */
-const NAME = /^[A-Za-z0-9_-]{1,64}$/;
+const TOML_KEY_SERVER_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 const LOOPBACK = new Set(["127.0.0.1", "[::1]", "localhost"]);
 
@@ -18,8 +17,9 @@ export interface MachineMcpServer {
 /**
  * The MCP server `value` (`GRAM_HOST_MCP_SERVER`, JSON `{"name":"…","url":"…"}`) names, or why it
  * isn't one. Unset or empty: none, and no error. The address is a remote (streamable HTTP) server
- * reached with no credential of Gram's: `https:`, or `http:` on loopback only, with no user or
- * password in it, since the agents' configs and logs show it.
+ * reached with no credential of Gram's: `https:`, or `http:` on loopback only, with no user,
+ * password, query or fragment in it, since the agents' configs and logs show it and a query is
+ * sent on.
  */
 export const machineMcpServerFrom = (
   value: string | undefined,
@@ -34,7 +34,7 @@ export const machineMcpServerFrom = (
   if (typeof parsed !== "object" || parsed === null)
     return { server: undefined, error: "isn't an object" };
   const { name, url } = parsed as Record<string, unknown>;
-  if (typeof name !== "string" || !NAME.test(name))
+  if (typeof name !== "string" || !TOML_KEY_SERVER_NAME.test(name))
     return { server: undefined, error: "names no server (letters, digits, _ and -, at most 64)" };
   if (typeof url !== "string") return { server: undefined, error: "has no url" };
   let address: URL;
@@ -45,6 +45,8 @@ export const machineMcpServerFrom = (
   }
   if (address.username !== "" || address.password !== "")
     return { server: undefined, error: "has a url with a user or password in it" };
+  if (address.search !== "" || address.hash !== "" || url.includes("?") || url.includes("#"))
+    return { server: undefined, error: "has a url with a query or fragment in it" };
   const secure = address.protocol === "https:";
   const local = address.protocol === "http:" && LOOPBACK.has(address.hostname);
   if (!secure && !local)
