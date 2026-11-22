@@ -61,8 +61,9 @@ const signerOf = (
  * Binds a person's device grant to the one turn their message starts, on a thread that person
  * started (or a workspace's orchestrator nobody started) (`docs/design/personal-device.md`,
  * "The tools and the turn binding, as built"), by the id the runtime gave that turn. The binding is
- * made only when the message starts a turn of an idle thread of the grant's workspace that no other
- * thread spawned. It holds while that turn is the thread's open one, the grant is in its time and
+ * made only when the message starts a turn of an idle thread that no other thread spawned, with a
+ * device of the person's dialled in for the workspace the grant names: the front's name for this
+ * server, which is that workspace's control plane. It holds while that turn is the thread's open one, the grant is in its time and
  * the person's message is the only input the turn has taken: a steer, another thread's message, a
  * wake or a notice joining the turn ends it for good.
  */
@@ -98,16 +99,15 @@ export const makeDeviceTurns = (options: DeviceTurnsOptions) => {
           thread.role !== "dream" &&
           (thread.startedBy === person ||
             (thread.startedBy === undefined && thread.role === "orchestrator"));
-        const device =
-          !theirs || thread.workspaceId === undefined
-            ? undefined
-            : signerOf(
-                options.devices,
-                person,
-                signed,
-                { origin: options.origin, workspace: thread.workspaceId, thread: threadId },
-                now(),
-              );
+        const device = !theirs
+          ? undefined
+          : signerOf(
+              options.devices,
+              person,
+              signed,
+              { origin: options.origin, workspace: signed.grant.workspace, thread: threadId },
+              now(),
+            );
         if (device === undefined) {
           yield* Effect.logInfo("devices: a message's grant binds nothing").pipe(
             Effect.annotateLogs({ threadId }),

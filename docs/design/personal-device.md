@@ -1028,9 +1028,10 @@ capabilities and its folders' labels) and `device.disconnected` (and why).
 `thread.send` takes an optional `deviceGrant`, the grant the device signed as the message left,
 and answers with the `turnId` the message started, where it started one. The server binds the
 grant to that turn, by its id, only when all of these hold: a person signed in through the front
-sent it; one of that person's own devices is dialled in for the thread's workspace (the front
-names workspaces by this server's own workspace ids) and its key verifies the grant; the grant
-names this server's public origin, this thread and that workspace, has the device's ten-minute
+sent it; one of that person's own devices is dialled in for the workspace the grant names and its
+key verifies the grant (the front's workspace is this whole server, the control plane of one of
+its workspaces, so the threads of every Gram workspace here are in it); the grant names this
+server's public origin and this thread, has the device's ten-minute
 lifetime and is in its time (two minutes of skew allowed before `issuedAt`); the thread is no
 worker's and no dream's, and it is the person's own (they started it), or it is the workspace's
 orchestrator and nobody started it; and the message started a turn rather than waiting in the
