@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.37.0](https://github.com/ANT1OFF/gram/compare/v1.36.0...v1.37.0) (2026-11-22)
+
+
+### Features
+
+* **embedding:** an approval's ask.opened carries its command, the model's words and why it asks ([#975](https://github.com/ANT1OFF/gram/issues/975)) ([c81ae60](https://github.com/ANT1OFF/gram/commit/c81ae6091e557a48d7816cfe8938ea37d79239b3))
+* **embedding:** the scheduler, object store and host provider take a token file ([#979](https://github.com/ANT1OFF/gram/issues/979)) ([404aed7](https://github.com/ANT1OFF/gram/commit/404aed7363a61cca29060473afb1d6b29b2f86cf))
+* **server:** a headless server takes a lent device's dial through the front ([#982](https://github.com/ANT1OFF/gram/issues/982)) ([6db2645](https://github.com/ANT1OFF/gram/commit/6db2645f72658f1565c925364ac62d6da44acdfe))
+* **web:** TreeChart draws left to right and opens on a focused entry with its ancestors in view ([#980](https://github.com/ANT1OFF/gram/issues/980)) ([aeb8018](https://github.com/ANT1OFF/gram/commit/aeb8018c56cbea9da0512bfbe7190d430c3e46bb))
+
+
+### Bug Fixes
+
+* a recap in questions.md can't become a question, and a divider says why a failed session wasn't saved ([#971](https://github.com/ANT1OFF/gram/issues/971)) ([6086012](https://github.com/ANT1OFF/gram/commit/6086012565934e35762a6cd5891ad32d0fd5302a))
+* **host:** a machine's own proxy rewrite of a clone's origin still reaches that repository ([#983](https://github.com/ANT1OFF/gram/issues/983)) ([ec53e00](https://github.com/ANT1OFF/gram/commit/ec53e00e243f5c10d8989ce820bfaa4939145e82))
+* **server:** log why managed local checks fail ([#976](https://github.com/ANT1OFF/gram/issues/976)) ([97ef04d](https://github.com/ANT1OFF/gram/commit/97ef04d154425b7ea35f483207c80c1a36d8b61d))
+* thread moves, held worker briefs and sent workers lose nothing (three TLA+ models) ([#981](https://github.com/ANT1OFF/gram/issues/981)) ([d1b2e2b](https://github.com/ANT1OFF/gram/commit/d1b2e2b067b29b7bbfdc39073fb3107eb39a3185))
+* **web:** a dismissed document chip stays dismissed ([#972](https://github.com/ANT1OFF/gram/issues/972)) ([734bdf6](https://github.com/ANT1OFF/gram/commit/734bdf6029682aef557d73dbfc308e20c924749d))
+* **web:** first-run setup says one agent is enough, leads with it and copies its install command ([#974](https://github.com/ANT1OFF/gram/issues/974)) ([d3726dd](https://github.com/ANT1OFF/gram/commit/d3726dd7f446dcf4b7349ab470e839973c3dd60a))
+* **web:** phone answers, the thread move's review and workers sent to a server say what happens ([#978](https://github.com/ANT1OFF/gram/issues/978)) ([aaa7f85](https://github.com/ANT1OFF/gram/commit/aaa7f8520e6cfdd26c58120c67e3329d3df7a20b))
+* **web:** reviewing a push, answering a worker and recovering a paused orchestrator say what happened and what's next ([#973](https://github.com/ANT1OFF/gram/issues/973)) ([50f29b5](https://github.com/ANT1OFF/gram/commit/50f29b5a5fb6c1b462db979a3215851a15bb4f46))
+
 ## [1.36.0](https://github.com/ANT1OFF/gram/compare/v1.35.0...v1.36.0) (2026-11-22)
 
 
