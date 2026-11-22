@@ -8,7 +8,7 @@ import { type AnswerNote, EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs, parseQuestions, QUESTIONS_FILE, type RequestId } from "@gram/contracts";
+import { GramRpcs, type RequestId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Cause from "effect/Cause";
@@ -292,12 +292,14 @@ export const AuthMiddleware = HttpRouter.middleware(
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
     const eventSink = Option.getOrUndefined(yield* Effect.serviceOption(EventSink));
-    const memory = Option.getOrUndefined(yield* Effect.serviceOption(OrchestrationMemory));
     const hub = Option.getOrUndefined(yield* Effect.serviceOption(EventHub));
     const answerQuestionAsUser =
-      memory === undefined || hub === undefined || store === undefined || runtimes === undefined
+      orchestration === undefined ||
+      hub === undefined ||
+      store === undefined ||
+      runtimes === undefined
         ? undefined
-        : questionAnswerer({ memory, store, hub, runtimes });
+        : questionAnswerer({ questions: orchestration.memoryQuestions, store, hub, runtimes });
     const sharedFolders = Option.getOrUndefined(yield* Effect.serviceOption(SharedFolders));
     const machineJobs = yield* makeMachineJobs();
     const stopDeps =
@@ -510,7 +512,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                         noteAnswer: (askId: string, note: AnswerNote | undefined) =>
                           eventSink.noteAnswer(askId as RequestId, note),
                       }),
-                  ...(answerQuestionAsUser === undefined || memory === undefined
+                  ...(answerQuestionAsUser === undefined || orchestration === undefined
                     ? {}
                     : {
                         orchestratorQuestions: {
@@ -519,10 +521,8 @@ export const AuthMiddleware = HttpRouter.middleware(
                               const state = yield* store.getWorkspace(workspaceId);
                               const threadId = state.workspace.orchestratorThreadId;
                               if (threadId === undefined) return undefined;
-                              const content = yield* memory.read(workspaceId, QUESTIONS_FILE);
-                              const question = parseQuestions(content).find(
-                                (each) => each.id === questionId,
-                              );
+                              const listed = yield* orchestration.memoryQuestions.list(workspaceId);
+                              const question = listed.find((each) => each.id === questionId);
                               return question === undefined ? undefined : { question, threadId };
                             }).pipe(Effect.orElseSucceed(() => undefined)),
                           answer: answerQuestionAsUser,

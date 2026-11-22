@@ -124,6 +124,7 @@ export * from "./worktree-move.ts";
 export * from "./worktrees.ts";
 export * from "./mock-visuals.ts";
 export * from "./questions.ts";
+export * from "./questions-doc.ts";
 export * from "./worker-questions.ts";
 export * from "./waits.ts";
 export * from "./wake-conditions.ts";

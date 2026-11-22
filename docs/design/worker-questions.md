@@ -160,8 +160,18 @@ Shared shapes are in `packages/contracts/src/worker-questions.ts`. `WorkerQuesti
 record. The ledger carries the workspace's questions (`OrchestratorLedger.questions`). The
 digest carries the triage list and the copies (`OrchestrationDigest.questions`).
 
-`ask_user` (orchestrator to user) keeps `questions.md` as its store, with its own Answer
-flow. The two share the question card in `question-entry.tsx`, from one view model
+`ask_user` (orchestrator to user) has its own Answer flow. Its questions are in the same
+outbox (`memoryQuestions`, `service/memory-questions.ts`), and the server writes `questions.md`
+in the orchestrator's memory from them, so the dream run, the memory tools and the Memory tab
+still read the file. An edit to the file made outside the store (by the dream run, a person,
+or `memory_write`) is read back as asks and closes (`readQuestionsEdit` in
+`packages/contracts/src/questions-doc.ts`): an entry it adds is asked, an entry it closes is
+closed, and the store keeps the ids. An open question the edit takes out is put back, since only
+a close ends it, and an answer on its way to the orchestrator stays until it is closed as
+answered. A closed question the edit takes out is gone. The first read of a workspace whose
+store is empty takes the file as it stands.
+
+The two share the question card in `question-entry.tsx`, from one view model
 (`QuestionCard`). A worker question adds who asked, the orchestrator's line and
 Dismiss.
 

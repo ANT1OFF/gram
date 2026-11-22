@@ -902,8 +902,11 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           },
           { asWorker },
         );
+        const settled =
+          path === QUESTIONS_FILE && (yield* orchestration.memoryQuestions.settle(workspaceId));
         yield* showWrite(caller, workspaceId, write);
-        return { path: write.path, bytes: write.bytes, revision };
+        const now = settled ? memoryRevision(yield* memory.read(workspaceId, path)) : revision;
+        return { path: write.path, bytes: write.bytes, revision: now };
       }).pipe(Effect.mapError(failed(tool)));
 
     const memoryWrite = defineAppTool({
@@ -1007,6 +1010,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             asWorker,
             check: (current) => checkRevision("memory_delete", path, revision, current),
           });
+          if (path === QUESTIONS_FILE) yield* orchestration.memoryQuestions.settle(workspaceId);
           yield* showWrite(caller, workspaceId, write);
           return { path: write.path, deleted: true };
         }).pipe(Effect.mapError(failed("memory_delete"))),
@@ -1038,8 +1042,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           const workspaceId = yield* memoryOf("ask_user", caller);
           const confined = yield* visualsFor("ask_user", caller, input);
           const date = yield* today;
-          const { write, result } = yield* memory.modify(workspaceId, QUESTIONS_FILE, (current) =>
-            questionEdit("ask_user", askQuestion(current, confined, date)),
+          const { write, result } = yield* orchestration.memoryQuestions.modify(
+            workspaceId,
+            (current) => questionEdit("ask_user", askQuestion(current, confined, date)),
           );
           yield* showWrite(caller, workspaceId, write);
           return { id: result.id, updated: result.updated, reopened: result.reopened };
@@ -1078,8 +1083,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           }
           const workspaceId = yield* memoryOf("close_question", caller);
           const date = yield* today;
-          const { write, result } = yield* memory.modify(workspaceId, QUESTIONS_FILE, (current) =>
-            questionEdit("close_question", closeQuestion(current, input, date)),
+          const { write, result } = yield* orchestration.memoryQuestions.modify(
+            workspaceId,
+            (current) => questionEdit("close_question", closeQuestion(current, input, date)),
           );
           yield* showWrite(caller, workspaceId, write);
           return { id: result.id, closed: true };

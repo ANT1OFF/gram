@@ -11,6 +11,7 @@ import {
   ReasoningVariant,
   RoutineState,
   SwitchNoteMode,
+  StoredMemoryQuestions,
   StoredWakeCondition,
   ThreadId,
   type PendingWake,
@@ -567,6 +568,8 @@ export const OutboxState = Schema.Struct({
   questions: Schema.optionalKey(Schema.Array(StoredWorkerQuestion)),
   /** The number of the last question id handed out (`WQ<n>`); absent before the first. */
   questionSeq: Schema.optionalKey(Schema.Int),
+  /** The orchestrator's own questions, which `questions.md` is written from; absent before any. */
+  memoryQuestions: Schema.optionalKey(StoredMemoryQuestions),
   /**
    * By routine id (`WorkspaceRoutine.id`): how its runs stand, kept by the routines engine
    * (`routines/routines.ts`). The charter's write path drops a removed or turned-off routine's.
@@ -753,6 +756,7 @@ export const outboxForNewOrchestrator = (
   ...(previous.heldBriefs === undefined ? {} : { heldBriefs: previous.heldBriefs }),
   ...(previous.questions === undefined ? {} : { questions: previous.questions }),
   ...(previous.questionSeq === undefined ? {} : { questionSeq: previous.questionSeq }),
+  ...(previous.memoryQuestions === undefined ? {} : { memoryQuestions: previous.memoryQuestions }),
 });
 
 /**
