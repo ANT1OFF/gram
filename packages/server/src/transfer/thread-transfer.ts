@@ -70,6 +70,7 @@ import { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { fileOrigin } from "../thread-profiles/repositories.ts";
 import { recordedCloneOf, recordedOriginAt, recordedOriginUrl } from "./recorded-remote.ts";
+import { makeSettle } from "./settle.ts";
 import { cut, portableThread, scrubbed, shareableRemote } from "./workspace-transfer.ts";
 
 /** Why nothing here runs while the hosted features setting is off. */
@@ -137,7 +138,11 @@ export interface ThreadTransferShape {
   importThreadFor(
     input: ImportThreadForPersonInput,
   ): Effect.Effect<ImportThreadResult, NotFound | ThreadNotFound | InvalidState>;
-  /** The thread here becomes a read-only, archived copy saying where it went. */
+  /**
+   * The thread here becomes a read-only, archived copy saying where it went. Refused when a turn
+   * started on it at or after the bundle's `exportedAt`, which the export stamps before it reads
+   * the thread; checked again and written under the thread's lock (models/thread-move).
+   */
   settleThread(
     input: SettleThreadInput,
     by?: string,
@@ -233,6 +238,7 @@ const make = (options: ThreadTransferOptions) =>
       thread: Thread,
       where: Pick<ThreadBundle, "repository" | "branch" | "base" | "tip" | "wip">,
       notes: Array<string>,
+      exportedAt: number,
     ) =>
       Effect.gen(function* () {
         const history = yield* store.exportHistory(thread.id);
@@ -246,7 +252,7 @@ const make = (options: ThreadTransferOptions) =>
         return scrubbed({
           format: THREAD_BUNDLE_FORMAT,
           app: { version: config.appVersion ?? "0.0.0", schema: SCHEMA },
-          exportedAt: yield* Clock.currentTimeMillis,
+          exportedAt,
           thread: portableThread(thread),
           messages: scrubbed(history.messages.slice(dropped), true),
           turns: history.turns.slice(-BUNDLE_MESSAGES_MAX),
@@ -257,7 +263,7 @@ const make = (options: ThreadTransferOptions) =>
         } satisfies ThreadBundle);
       });
 
-    const exportFromMachine = (thread: Thread, checkout: Checkout) =>
+    const exportFromMachine = (thread: Thread, checkout: Checkout, exportedAt: number) =>
       Effect.gen(function* () {
         const url =
           checkout.cloneIdentity === undefined ? undefined : cloneUrlOf(checkout.cloneIdentity);
@@ -294,12 +300,14 @@ const make = (options: ThreadTransferOptions) =>
               : { wip: { ref: work.ref, commit: work.commit, uncommitted: false } }),
           },
           [],
+          exportedAt,
         );
       });
 
     const exportThread: ThreadTransferShape["exportThread"] = (input) =>
       Effect.gen(function* () {
         yield* requireOn;
+        const exportedAt = yield* Clock.currentTimeMillis;
         const thread = yield* store.getThread(input.threadId);
         if (thread.transferredTo !== undefined) {
           return yield* refuse(
@@ -324,7 +332,7 @@ const make = (options: ThreadTransferOptions) =>
         }
         const checkout = effectiveCheckout(thread);
         if (checkout.hostId !== undefined && !isLocalHost(checkout))
-          return yield* exportFromMachine(thread, checkout);
+          return yield* exportFromMachine(thread, checkout, exportedAt);
         const project = (yield* store.listProjects).find((each) => each.id === thread.projectId);
         if (project === undefined)
           return yield* refuse("This thread's repository isn't a project here.");
@@ -369,6 +377,7 @@ const make = (options: ThreadTransferOptions) =>
                 }),
           },
           notes,
+          exportedAt,
         );
       });
 
@@ -967,49 +976,7 @@ const make = (options: ThreadTransferOptions) =>
         Effect.provideService(ReadingAs, SERVER),
       );
 
-    const settleThread: ThreadTransferShape["settleThread"] = (input, by) =>
-      Effect.gen(function* () {
-        yield* requireOn;
-        const before = yield* store.getThread(input.threadId);
-        if (before.transferredTo !== undefined) return before;
-        if (before.lastActivityAt > input.exportedAt) {
-          return yield* refuse(
-            "This thread carried on after it was exported, so its copy there is behind. Carry on in one of the two; moving it again makes another copy there.",
-          );
-        }
-        const rested = yield* runtimes.restSession(input.threadId);
-        if (rested === "working") {
-          return yield* refuse(
-            "This thread started a turn after it was exported, so its copy there is behind. Carry on in one of the two; moving it again makes another copy there.",
-          );
-        }
-        const at = yield* Clock.currentTimeMillis;
-        const settled = yield* store.updateThread(input.threadId, (thread) => ({
-          ...thread,
-          parked: true,
-          transferredTo: {
-            name: input.to,
-            at,
-            ...(input.url === undefined ? {} : { url: input.url }),
-            ...(input.server === undefined ? {} : { server: input.server }),
-            ...(by === undefined ? {} : { by }),
-          },
-        }));
-        yield* hub.publish({ type: "thread.upsert", thread: settled });
-        return settled;
-      });
-
-    const settledThere: ThreadTransferShape["settledThere"] = (threadId) =>
-      Effect.gen(function* () {
-        yield* requireOn;
-        const thread = yield* store.updateThread(threadId, (was) => {
-          if (was.transferredFrom?.leftOpen === undefined) return was;
-          const { leftOpen: _settled, ...from } = was.transferredFrom;
-          return { ...was, transferredFrom: from };
-        });
-        yield* hub.publish({ type: "thread.upsert", thread });
-        return thread;
-      });
+    const { settleThread, settledThere } = makeSettle({ store, runtimes, hub, requireOn });
 
     return ThreadTransfer.of({
       exportThread,

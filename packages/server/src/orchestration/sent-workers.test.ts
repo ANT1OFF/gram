@@ -227,6 +227,28 @@ describe("a worker sent to a server", () => {
             );
             expect((yield* store.getThread(sent.threadId)).sentTo?.state).toBe("running");
 
+            // The next wait reads it done before the message is taken up there (a machine
+            // waking, say): it hasn't answered, so it is still followed.
+            yield* settle;
+            yield* TestClock.adjust("2 seconds");
+            yield* Queue.offer(app.waits, {
+              happened: false,
+              latest: "m-3",
+              thread: { title: BRIEF.title, state: "done", working: false },
+            });
+            yield* settle;
+            yield* TestClock.adjust("2 seconds");
+            yield* waitReal(
+              "a wait after the unanswered read",
+              Effect.sync(() =>
+                app.asked.filter((each) => each.op === "wait" && each["after"] === "m-3").length >=
+                2
+                  ? true
+                  : undefined,
+              ),
+            );
+            expect((yield* store.getThread(sent.threadId)).sentTo?.state).toBe("running");
+
             // Finished there, then asked again: it is followed again.
             yield* settle;
             yield* TestClock.adjust("2 seconds");

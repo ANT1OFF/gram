@@ -8,6 +8,7 @@ import { ImportThreadInput, type ThreadBundle } from "@gram/contracts/thread-tra
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import type * as Scope from "effect/Scope";
 import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { Proc } from "@gram/git";
@@ -177,6 +178,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           expect(off.message).toBe(THREAD_TRANSFER_OFF);
 
           yield* hostedFeatures(true);
+          // The clock moves on, as a real one does, before the move stamps its bundle.
+          yield* TestClock.adjust("1 second");
           const bundle = yield* transfer.exportThread({ threadId: thread.id });
           return { bundle, threadId: thread.id };
         }),
@@ -282,6 +285,41 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
     }),
   );
 
+  it.effect("a turn that starts while the thread is exported keeps it from settling", () =>
+    Effect.gen(function* () {
+      const laptop = yield* makeWorld;
+      const bare = nodePath.join(laptop.dir, "remote.git");
+      run(laptop.dir, "init", "-q", "--bare", bare);
+      pointAt(laptop.repo, bare);
+      run(laptop.repo, "push", "-q", "origin", "main");
+      yield* onServer(
+        laptop,
+        Effect.gen(function* () {
+          const runtimes = yield* ThreadRuntimes;
+          const transfer = yield* ThreadTransfer;
+          const thread = yield* runtimes.create({
+            projectRoot: laptop.repo,
+            checkout: { kind: "main", path: laptop.repo },
+            input: { text: "Port the cart to the new checkout." },
+          });
+          yield* completeTurn(yield* waitSent(thread.id, 1), "Started.");
+          yield* hostedFeatures(true);
+          yield* TestClock.adjust("1 second");
+          const bundle = yield* transfer.exportThread({ threadId: thread.id });
+          // A message sent while the edits were pushed: its turn starts in the export's
+          // millisecond, after the export read the thread idle, and is done before the settle.
+          yield* runtimes.send(thread.id, { text: "And the tests." });
+          yield* completeTurn(yield* waitSent(thread.id, 2), "Tests too.");
+          const behind = yield* transfer
+            .settleThread({ threadId: thread.id, to: "Hosted", exportedAt: bundle.exportedAt })
+            .pipe(Effect.flip);
+          expect(behind.message).toContain("carried on after it was exported");
+          expect((yield* (yield* ThreadStore).getThread(thread.id)).transferredTo).toBeUndefined();
+        }),
+      );
+    }),
+  );
+
   it.effect("on a server that runs no work, a person's thread moves to their own machine", () =>
     Effect.gen(function* () {
       const laptop = yield* makeWorld;
@@ -304,6 +342,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           write(nodePath.join(laptop.repo, "cart.ts"), "export const cart = [];\n");
           yield* completeTurn(session, "Started.");
           yield* hostedFeatures(true);
+          // The clock moves on, as a real one does, before the move stamps its bundle.
+          yield* TestClock.adjust("1 second");
           return yield* transfer.exportThread({ threadId: thread.id });
         }),
       );
@@ -371,6 +411,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           write(nodePath.join(folder, "cart.test.ts"), "test('cart', () => {});\n");
           // The fake machine never opens a session: put the one starting there to rest.
           yield* (yield* ThreadRuntimes).restSession(thread.id);
+          // The clock moves on, as a real one does, before the move stamps its bundle.
+          yield* TestClock.adjust("1 second");
           const out = yield* transfer.exportThread({ threadId: thread.id });
           expect(out.repository.remote).toBe(REMOTE);
           expect(out.wip).toBeDefined();
@@ -438,6 +480,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             write(nodePath.join(folder, "cart.ts"), "export const cart = [];\n");
             yield* completeTurn(yield* waitSent(thread.id, 1), "Started the cart.");
             yield* hostedFeatures(true);
+            // The clock moves on, as a real one does, before the move stamps its bundle.
+            yield* TestClock.adjust("1 second");
             const bundle = yield* transfer.exportThread({ threadId: thread.id });
             return { bundle, threadId: thread.id };
           }),
@@ -459,6 +503,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
             const moved = (yield* (yield* ThreadStore).getThread(threadId)).checkout.path;
             write(nodePath.join(moved, "cart.test.ts"), "test('cart', () => {});\n");
             yield* completeTurn(session, "Tests added.");
+            // The clock moves on, as a real one does, before the move stamps its bundle.
+            yield* TestClock.adjust("1 second");
             return yield* transfer.exportThread({ threadId });
           }),
         );
@@ -527,6 +573,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           laptop,
           Effect.gen(function* () {
             yield* hostedFeatures(true);
+            // The clock moves on, as a real one does, before the move stamps its bundle.
+            yield* TestClock.adjust("1 second");
             return yield* (yield* ThreadTransfer).exportThread({ threadId });
           }),
         );
@@ -566,6 +614,8 @@ describe.skipIf(!hasGit)("moving a thread to another server", () => {
           });
           yield* completeTurn(yield* waitSent(thread.id, 1), "Looked.");
           yield* hostedFeatures(true);
+          // The clock moves on, as a real one does, before the move stamps its bundle.
+          yield* TestClock.adjust("1 second");
           return yield* transfer.exportThread({ threadId: thread.id });
         }),
       );
