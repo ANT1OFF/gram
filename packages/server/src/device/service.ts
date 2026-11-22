@@ -8,7 +8,7 @@ import { EventSink } from "../embedding/event-sink.ts";
 import type { DeviceCaller } from "../http/fronted-identity.ts";
 import { fileNonceStore } from "../host/paired-machines.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
-import { ReadingAs, SERVER } from "../embedding/readable-by.ts";
+import { FrontedSignIn } from "../rpc/actor-guard.ts";
 import {
   DEVICE_CONNECT_PATH,
   DEVICE_DIAL_NONCE,
@@ -31,7 +31,11 @@ export class LentDevices extends Context.Service<LentDevices, Devices | undefine
       const config = yield* ServerConfig;
       if (config.frontedIdentity === undefined) return undefined;
       const sink = yield* Effect.serviceOption(EventSink);
+      const fronted = yield* Effect.serviceOption(FrontedSignIn);
       const devices = makeDevices({
+        allowed: Option.isNone(fronted)
+          ? devicesOn
+          : Effect.zipWith(devicesOn, fronted.value.active, (on, active) => on && active),
         nonces: fileNonceStore(config.dataDir, DEVICE_NONCES_FILE, DEVICE_DIAL_NONCE),
         ...(Option.isNone(sink) ? {} : { sink: sink.value }),
       });
@@ -106,4 +110,4 @@ export const deviceStatement = (
         Effect.annotateLogs({ path }),
         Effect.as(refuse("forbidden: not for a device", 403)),
       )
-    : Effect.provideService(ReadingAs, SERVER)(deviceDialIn(devices, origin, caller));
+    : deviceDialIn(devices, origin, caller);

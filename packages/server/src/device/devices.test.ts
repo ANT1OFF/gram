@@ -25,7 +25,7 @@ import type { SinkRecord } from "../embedding/event-sink.ts";
 import type { DeviceCaller } from "../http/fronted-identity.ts";
 import { streamPair } from "../host/test-stream.ts";
 import type { Socket } from "../platform/unstable.ts";
-import { makeDevices } from "./devices.ts";
+import { DIALS_PER_PERSON, makeDevices } from "./devices.ts";
 
 const ORIGIN = "https://gram.example.com";
 const PATH = "/device/connect";
@@ -146,6 +146,29 @@ describe("a device's dial", () => {
       kind: "refused",
       status: 403,
     });
+  });
+
+  it("takes only so many dials of one person's devices at once, and tells them to wait", () => {
+    const devices = makeDevices({ now: () => NOW });
+    for (let i = 0; i < DIALS_PER_PERSON; i++) {
+      const key = deviceKey();
+      expect(
+        devices.admit(ORIGIN, callerFor(key.publicKey), WORKSPACE, dialHeaders(key)).kind,
+      ).toBe("ok");
+    }
+    const key = deviceKey();
+    expect(
+      devices.admit(ORIGIN, callerFor(key.publicKey), WORKSPACE, dialHeaders(key)),
+    ).toMatchObject({ kind: "refused", status: 503 });
+    const other = deviceKey();
+    expect(
+      devices.admit(
+        ORIGIN,
+        callerFor(other.publicKey, { actor: { ...PERSON, id: "u-bob" } }),
+        WORKSPACE,
+        dialHeaders(other, { subject: "u-bob" }),
+      ).kind,
+    ).toBe("ok");
   });
 
   it("takes no dial while the history of dials can't be read", () => {
@@ -270,6 +293,31 @@ describe("a device's connection", () => {
         ),
       );
       yield* devices.attach(admitted.device, yield* NodeSocket.fromDuplex(Effect.succeed(control)));
+      expect(devices.list(WORKSPACE)).toEqual([]);
+    }),
+  );
+
+  it.live("ends once devices are turned off on the server", () =>
+    Effect.gen(function* () {
+      const key = deviceKey();
+      let on = true;
+      const devices = makeDevices({
+        now: () => NOW,
+        pingEveryMs: 20,
+        allowed: Effect.sync(() => on),
+      });
+      const admitted = devices.admit(ORIGIN, callerFor(key.publicKey), WORKSPACE, dialHeaders(key));
+      if (admitted.kind !== "ok") throw new Error(admitted.message);
+      const { host, control } = yield* streamPair;
+      yield* Effect.forkScoped(
+        serveFakeDevice(yield* NodeSocket.fromDuplex(Effect.succeed(host)), helloOf(key.id)),
+      );
+      const attached = yield* Effect.forkScoped(
+        devices.attach(admitted.device, yield* NodeSocket.fromDuplex(Effect.succeed(control))),
+      );
+      while (devices.list(WORKSPACE).length === 0) yield* Effect.sleep("5 millis");
+      on = false;
+      yield* Fiber.join(attached);
       expect(devices.list(WORKSPACE)).toEqual([]);
     }),
   );

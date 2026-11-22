@@ -66,6 +66,7 @@ export const makeDialNonceRecord = (
         }
       if (signed <= floor) return "stale";
       if (nonces.has(nonce)) return "replayed";
+      if (own.length === 0) dialsOf.delete(key);
       if (nonces.size >= limits.most || own.length >= limits.perKey) return "full";
       dialsOf.set(key, [...own, until]);
       nonces.set(nonce, until);

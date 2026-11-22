@@ -1007,9 +1007,12 @@ device id the headers name is the one that key derives; the address's `workspace
 statement's; the signature covers the server's public origin, that path, the workspace, the
 person, the device, the SHA-256 of the token the dial carries, a time within two minutes and a
 nonce never seen. The nonces are kept across restarts in `device-dial-nonces.json`, as a joined
-machine's are, and while that history can't be read no dial is taken. A device statement opens
+machine's are, and while that history can't be read no dial is taken. The server takes the front's word for the person's membership of that workspace and the
+device's registration to them: the front must keep both true. A device statement opens
 that one path and nothing else, and no other statement opens it. With no decision hook on, every
-dial is refused: no device is reached ungoverned.
+dial is refused: no device is reached ungoverned, and a connection ends within five seconds of
+the hook, hosted features or sign-in through the front going off. At most 48 dials of one
+person's devices are taken in two minutes, and a full record answers 503 so a device waits.
 
 Once connected, the server asks `device.hello` and takes only protocol 1, the device id it
 admitted, a `read` capability and folders with ids of their own. The device is then online for

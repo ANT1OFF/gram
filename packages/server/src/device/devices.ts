@@ -42,6 +42,8 @@ export const DEVICE_NONCES_FILE = "device-dial-nonces.json";
 
 const NONCES_KEPT = 4096;
 const DIALS_PER_DEVICE = 12;
+/** How many dials of one person's devices are taken in two minutes, so one person can't fill the room. */
+export const DIALS_PER_PERSON = 48;
 const NONCE_SKEW_MS = 2 * 60_000;
 const ACCESS_TOKEN = /^DPoP ([\x21-\x7e]{16,4096})$/;
 
@@ -118,6 +120,11 @@ export interface DevicesOptions {
   readonly sink?: EventSinkShape;
   readonly pingEveryMs?: number;
   readonly connectionMostMs?: number;
+  /**
+   * Whether devices may still be reached, asked at each ping: once it says no (the decision hook
+   * or hosted features went off, or sign-in through the front did), every connection ends.
+   */
+  readonly allowed?: Effect.Effect<boolean>;
 }
 
 /** Why a hello can't be taken, or undefined when it can. */
@@ -150,6 +157,8 @@ export const makeDevices = (options: DevicesOptions = {}) => {
     most: NONCES_KEPT,
     perKey: DIALS_PER_DEVICE,
   });
+  const personDials = new Map<string, number[]>();
+  const allowed = options.allowed ?? Effect.succeed(true);
   const online = new Map<string, { device: OnlineDevice; close: (why: string) => void }>();
   const record = (event: Parameters<EventSinkShape["record"]>[0]) =>
     options.sink === undefined ? Effect.void : options.sink.record(event);
@@ -191,10 +200,16 @@ export const makeDevices = (options: DevicesOptions = {}) => {
     if (!holds) return refused(401, "unauthorized: bad signature");
     if (!dials.ready()) return refused(503, "unavailable: dial history unreadable");
     if (dials.stale(time)) return refused(401, "unauthorized: dial out of date");
+    const person = caller.actor.id;
+    const recent = (personDials.get(person) ?? []).filter((until) => until >= at);
+    if (recent.length >= DIALS_PER_PERSON) return refused(503, "unavailable: too many dials; wait");
     const taken = dials.record(deviceId, nonce, time, at);
     if (taken === "stale") return refused(401, "unauthorized: dial out of date");
     if (taken === "replayed") return refused(401, "unauthorized: dial replayed");
-    if (taken === "full") return refused(401, "unauthorized: too many dials; wait");
+    if (taken === "full") return refused(503, "unavailable: too many dials; wait");
+    if (taken === "ok") personDials.set(person, [...recent, time + NONCE_SKEW_MS]);
+    for (const [someone, untils] of personDials)
+      if (untils.every((until) => until < at)) personDials.delete(someone);
     if (taken === "unsaved") return refused(503, "unavailable: dial couldn't be recorded");
     return { kind: "ok", device: { deviceId, caller } };
   };
@@ -253,6 +268,14 @@ export const makeDevices = (options: DevicesOptions = {}) => {
             folders: hello.folders.map((folder) => folder.label),
           },
         });
+        yield* allowed.pipe(
+          Effect.orElseSucceed(() => false),
+          Effect.flatMap((yes) =>
+            yes ? Effect.void : Effect.sync(() => end("devices were turned off on this server")),
+          ),
+          Effect.repeat(Schedule.spaced(Duration.millis(pingEveryMs))),
+          Effect.forkScoped,
+        );
         const why = yield* Deferred.await(ended).pipe(
           Effect.raceFirst(
             Effect.sleep(Duration.millis(connectionMostMs)).pipe(

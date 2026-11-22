@@ -1064,7 +1064,7 @@ export const ServerLayer: Layer.Layer<
     ).pipe(
       Layer.merge(LoopStallLog),
       Layer.provide(FrontedSignIn.layer),
-      Layer.provide(LentDevices.layer),
+      Layer.provide(LentDevices.layer.pipe(Layer.provide(FrontedSignIn.layer))),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),
       Layer.provideMerge(RemoteHosts.layer),
