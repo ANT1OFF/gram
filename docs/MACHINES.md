@@ -463,6 +463,23 @@ up without the other CLIs (Codex's app-server, OpenCode's server) taking its CPU
 thread's session opens. Unset, empty, or naming no agent Gram knows, the host runs every agent;
 a name that is no agent is left out, with a warning in the host's log.
 
+## A machine's own MCP server
+
+A host started with `GRAM_HOST_MCP_SERVER`, JSON such as
+`{"name":"tools","url":"http://127.0.0.1:3129/mcp"}`, gives every agent session it opens that MCP
+server, for Claude Code, Codex and ACP agents alike, as a remote (streamable HTTP) server
+(`packages/server/src/host/machine-mcp-server.ts`). It is for whatever starts the host, such as a
+platform that runs a relay beside it, which attaches the machine's own credential on its way out.
+Gram sends no credential to it, and the variable holds none: the address is `https:`, or plain
+`http:` on loopback only, with no user or password in it. Anything else is refused, with a warning
+in the host's log, and the sessions get no machine server.
+
+- **What wins.** A session whose thread's profile already names a server keeps that server and
+  gets no machine server. A confined session never gets either.
+- **Your lists still apply.** The server is subject to the session's MCP lists like any other, so
+  a session held to some servers names its `url` there to keep it.
+- **This machine's own host** (the one in the app) never reads the variable.
+
 ## When it drops or restarts
 
 A dropped connection that comes back within 2 minutes changes nothing: the host keeps its sessions

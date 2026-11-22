@@ -682,6 +682,41 @@ describe("agent sessions through the host process", () => {
   );
 });
 
+describe("a machine's own MCP server", () => {
+  const MACHINE_SERVER = { name: "machine", url: "http://127.0.0.1:3129/mcp" };
+
+  it.live("is given to a session the control plane names none for, and never over its own", () =>
+    Effect.gen(function* () {
+      const agent = yield* scriptedAgent("codex", "host");
+      const sessions = yield* sessionsOnHost(
+        () => Effect.succeed(agent.host),
+        undefined,
+        {},
+        { mcpServer: MACHINE_SERVER },
+      );
+      yield* sessions.open({ handle: "a", agent: "codex", threadId: THREAD, cwd: "/work" });
+      const named = { name: "profile", url: "https://mcp.example.test/workspace" };
+      yield* sessions.open({
+        handle: "b",
+        agent: "codex",
+        threadId: "other" as ThreadId,
+        cwd: "/work",
+        mcpServer: named,
+      });
+      expect(agent.opened.map((o) => o.mcpServer)).toEqual([MACHINE_SERVER, named]);
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.live("is given to none when the machine has none", () =>
+    Effect.gen(function* () {
+      const agent = yield* scriptedAgent("claude", "host");
+      const sessions = yield* sessionsOnHost(() => Effect.succeed(agent.host));
+      yield* sessions.open({ handle: "a", agent: "claude", threadId: THREAD, cwd: "/work" });
+      expect(agent.opened[0]!.mcpServer).toBeUndefined();
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+});
+
 describe("a host's session events", () => {
   it.live("are kept until confirmed, so a new subscription picks up after the last confirmed", () =>
     Effect.gen(function* () {
