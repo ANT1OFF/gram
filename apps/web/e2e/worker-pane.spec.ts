@@ -289,3 +289,59 @@ test("a worker's row, its head and its PR tab name the same PR, its chip before 
   await expect(pane(page).getByTestId("beside-tab-pr")).toHaveAttribute("aria-selected", "true");
   expect(page.url()).toBe(url);
 });
+
+test("Preview on a file a worker in the pane wrote opens it in a window, which opens it in the worker's Preview tab", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1680, height: 900 });
+  const made = await realistic(page);
+  await page.keyboard.press("ControlOrMeta+KeyJ");
+  await row(page, made.searchWorker).click();
+  await expect(pane(page)).toHaveAttribute("data-thread-id", made.searchWorker);
+  const doc = "/tmp/gram-design/search-plan.md";
+  await page.evaluate(
+    ({ worker, path }) =>
+      window.gramMock!.simulateWrittenFile(
+        worker as never,
+        path,
+        "# Search plan\n\nIndex the titles first.",
+      ),
+    { worker: made.searchWorker, path: doc },
+  );
+
+  // The pane has no Preview tab of its own: the file opens over the app, read for the worker.
+  await pane(page).getByRole("button", { name: "Preview search-plan.md" }).click();
+  const look = page.getByTestId("file-quick-look");
+  await expect(look.getByRole("heading", { name: "Search plan" })).toBeVisible();
+  await expect(pane(page)).toBeVisible();
+  if (process.env.GRAM_E2E_SHOTS === "1") {
+    await page.screenshot({ path: "test-results/worker-file-quick-look.png" });
+  }
+
+  // Esc closes it, and the worker stays open in the pane.
+  await page.keyboard.press("Escape");
+  await expect(look).toHaveCount(0);
+  await expect(pane(page)).toHaveAttribute("data-thread-id", made.searchWorker);
+
+  // Open in tab moves it to the worker in the main view, on its Preview tab.
+  await pane(page).getByRole("button", { name: "Preview search-plan.md" }).click();
+  await look.getByTestId("file-quick-look-open-tab").click();
+  await expect(look).toHaveCount(0);
+  await expect(page.locator(`[data-thread-view="${made.searchWorker}"]`)).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Preview", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    page.getByTestId("preview-markdown").getByRole("heading", { name: "Search plan" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("preview-address")).toHaveValue(doc);
+  if (process.env.GRAM_E2E_SHOTS === "1") {
+    await page.screenshot({ path: "test-results/worker-file-in-tab.png" });
+  }
+
+  // Pop out puts it back in a window from the tab.
+  await page.getByTestId("preview-pop-out").click();
+  await expect(look.getByRole("heading", { name: "Search plan" })).toBeVisible();
+  await expect(look.getByTestId("file-quick-look-open-tab")).toHaveCount(0);
+});

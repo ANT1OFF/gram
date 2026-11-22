@@ -1810,6 +1810,16 @@ every permission, download, client certificate and external-app launch refused:
   for newer threads', it re-opens it by the shell's own token for that page and at the address the
   shell recorded; once anything else opened in the thread, such as an agent's page, it doesn't.
 
+A Markdown or HTML file an agent writes gets a card under the message, whose Preview shows it in
+the Preview tab. From a worker open in the right pane, which has no Preview tab of its own, it opens
+in a window over the app, with Open in tab to move it to the worker's Preview tab; the Preview tab's
+Pop out does the reverse. Either reads the file where the thread's folder is, on this machine or the
+one the worker runs on, through the same reads as Files: only the thread's folders and files its
+own calls wrote, never a credential. Both read the file again after each change the agent makes to
+it. When the file is gone from the folder (the agent switched branch or removed it) or its machine
+can't be reached, they show what the agent last wrote, from the conversation, and say so. An HTML
+page on another machine shows as its source.
+
 Agents can't open a web page in your Preview tab with `show_panel`, which stays on loopback; they
 browse with the tools below, under their own approvals.
 

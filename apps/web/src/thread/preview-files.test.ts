@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { markdownRoot, previewableFiles } from "./preview-files";
+import { markdownRoot, previewableFiles, writesTo } from "./preview-files";
 
 const done = (type: string, input: unknown) => ({ type, state: "output-available", input });
 
@@ -35,5 +35,53 @@ describe("markdownRoot", () => {
     expect(markdownRoot("/repo-api/NOTES.md", roots)).toBe("/repo-api");
     expect(markdownRoot("/tmp/gram-report/REPORT.md", roots)).toBe("/tmp/gram-report");
     expect(markdownRoot("/REPORT.md", [])).toBe("/");
+  });
+});
+
+const message = (...parts: unknown[]) => ({ parts });
+
+describe("writesTo", () => {
+  const path = "/repo/docs/design.md";
+
+  it("counts the finished writes to a file and keeps the text they left it with", () => {
+    const writes = writesTo(
+      [
+        message(done("tool-Write", { file_path: path, content: "# Plan\n\nOne. One." })),
+        message(
+          done("tool-Write", { file_path: "/repo/other.md", content: "other" }),
+          done("tool-Edit", { file_path: path, old_string: "One.", new_string: "Two." }),
+          { type: "tool-Edit", state: "output-error", input: { file_path: path } },
+        ),
+        message(
+          done("tool-MultiEdit", {
+            file_path: path,
+            edits: [{ old_string: "One.", new_string: "Three.", replace_all: true }],
+          }),
+        ),
+      ],
+      path,
+    );
+    expect(writes).toEqual({ count: 3, content: "# Plan\n\nTwo. Three." });
+  });
+
+  it("has no text when an Edit came first or didn't apply as written", () => {
+    expect(
+      writesTo(
+        [message(done("tool-Edit", { file_path: path, old_string: "a", new_string: "b" }))],
+        path,
+      ),
+    ).toEqual({ count: 1, content: undefined });
+    expect(
+      writesTo(
+        [
+          message(
+            done("tool-Write", { file_path: path, content: "text" }),
+            done("tool-Edit", { file_path: path, old_string: "missing", new_string: "b" }),
+          ),
+        ],
+        path,
+      ),
+    ).toEqual({ count: 2, content: undefined });
+    expect(writesTo([], path)).toEqual({ count: 0, content: undefined });
   });
 });

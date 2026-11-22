@@ -517,6 +517,15 @@ describe("a joined machine's file reads", () => {
         .file("escape.txt", [checkout], NOT_VOUCHED, 1024)
         .pipe(Effect.flip);
       expect(linked.message).toContain("outside this thread's folder");
+      // `..` climbs out of the folder whether the path is relative or absolute.
+      for (const climb of [
+        "../outside.txt",
+        "src/../../outside.txt",
+        `${checkout}/../outside.txt`,
+      ]) {
+        const up = yield* reads.file(climb, [checkout], NOT_VOUCHED, 1024).pipe(Effect.flip);
+        expect(up.message).toContain("outside this thread's folder");
+      }
       const outside = join(dir, "outside.txt");
       const refused = yield* reads.file(outside, [checkout], NOT_VOUCHED, 1024).pipe(Effect.flip);
       expect(refused.message).toBe(`${outside} is outside this thread's folder`);
