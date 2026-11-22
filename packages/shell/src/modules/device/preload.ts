@@ -36,6 +36,8 @@ export const hostedDevicePreload = (ipc: PreloadIpc): Pick<DesktopBridge, "hoste
     liftPause: (origin) => ipc.invoke(Channels.hostedDeviceLiftPause, { origin }),
     startAfresh: () => ipc.invoke(Channels.hostedDeviceStartAfresh),
     activity: () => ipc.invoke(Channels.hostedDeviceActivity),
+    openSite: (origin, workspace) =>
+      ipc.invoke(Channels.hostedDeviceOpenSite, { origin, workspace }),
     onChange: (callback) => ipc.subscribe<null>(Channels.hostedDeviceChanged, () => callback()),
   },
 });

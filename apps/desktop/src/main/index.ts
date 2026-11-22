@@ -103,8 +103,10 @@ import {
   askColorsFor,
   createDeviceHost,
   deviceDataDir,
+  devicePlatform,
   embeddingFromMessage,
   machineName,
+  siteOpener,
 } from "./hosted-device.ts";
 import { APP_ID } from "./app-id.ts";
 import { devAllowedOrigins, devBootUrl, logLevelFromMessage } from "./boot.ts";
@@ -287,10 +289,7 @@ const deviceHost = createDeviceHost({
           return { env: filtered.env, secrets: filtered.secrets };
         },
         machineName: machineName(),
-        platform:
-          process.platform === "darwin" || process.platform === "win32"
-            ? process.platform
-            : "linux",
+        platform: devicePlatform(process.platform),
         now: () => Date.now(),
         elapsed: () => performance.now(),
         changed: () => {
@@ -710,6 +709,7 @@ async function runApp() {
     isTrustedSenderUrl(event.senderFrame?.url, trustedOrigins()),
   );
   deviceChanged = installHostedDeviceIpc(ipc, {
+    openSite: siteOpener(deviceHost, openLink, join(__dirname, "../hosted-site/hosted-site.js")),
     device: () => deviceHost.device(),
     decisions: (sender) =>
       dialogDecisions(() => {

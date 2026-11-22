@@ -17,6 +17,7 @@ import type {
   RestoreWorktreeResult,
   ReviewMonitorResult,
   SendResult,
+  SignedTurnGrant,
   StartSessionResult,
   TaskId,
   ThreadBrowserStatus,
@@ -59,7 +60,15 @@ export interface ThreadsApi {
   /** The page of history before `before` (`thread.history`). */
   threadHistory(threadId: ThreadId, before: string): Promise<ThreadHistoryPage>;
   createThread(input: CreateThreadInput): Promise<Thread>;
-  send(threadId: ThreadId, input: UserInput): Promise<SendResult>;
+  /**
+   * `deviceGrant`: the grant a device the person lends signed for this message, which lets the
+   * turn it starts ask that device (`thread.send`).
+   */
+  send(
+    threadId: ThreadId,
+    input: UserInput,
+    options?: { readonly deviceGrant?: SignedTurnGrant },
+  ): Promise<SendResult>;
   /**
    * Into the running turn, after the tool calls under way; with `interrupt`, the turn stops now
    * and the agent answers it.

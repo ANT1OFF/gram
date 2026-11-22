@@ -37,6 +37,7 @@ export const Channels = {
   hostedDeviceStartAfresh: "gram:hosted-device-start-afresh",
   hostedDeviceActivity: "gram:hosted-device-activity",
   hostedDeviceChanged: "gram:hosted-device-changed",
+  hostedDeviceOpenSite: "gram:hosted-device-open-site",
   copyText: "gram:copy-text",
   showItemInFolder: "gram:show-item-in-folder",
   listFonts: "gram:list-fonts",

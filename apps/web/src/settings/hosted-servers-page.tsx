@@ -326,6 +326,16 @@ function WorkspaceRow({
             {workspace.lending !== "off" && workspace.readOnly ? " · reads only" : ""}
           </span>
         </span>
+        {bridge.openSite !== undefined && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void act(async () => bridge.openSite?.(origin, workspace.id))}
+          >
+            Open
+          </Button>
+        )}
         {workspace.lending === "off" && workspace.policy !== "off" && (
           <Button
             size="sm"

@@ -42,6 +42,7 @@ import {
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
 import { RECONNECT_WAIT_MS, whenReconnected } from "@/api/connection";
 import { useApi } from "@/api/context";
+import { hostedSiteGrant } from "@/desktop/hosted-site-grant";
 import { useWindowAttended } from "@/desktop/use-window-attended";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
@@ -499,17 +500,21 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
 
   const send = async (newDraft = false) => {
     if (intercept()) return;
+    const granting = hostedSiteGrant(threadId);
     if (!(await connected())) return;
     const taken = take();
     if (!taken) return;
     const { input, giveBack, release, active } = taken;
     try {
+      const deviceGrant = await granting;
       if (editing) {
         await api.rewind(threadId, editing.messageId, editing.files);
         if (!active()) return;
         useDraftStore.getState().cancelEdit(threadId);
       }
-      const result = await api.send(threadId, input);
+      const result = await (deviceGrant === undefined
+        ? api.send(threadId, input)
+        : api.send(threadId, input, { deviceGrant }));
       if (!active()) return;
       if (result.queued) {
         const waits =

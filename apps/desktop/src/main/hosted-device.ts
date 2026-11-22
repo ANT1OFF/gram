@@ -1,6 +1,8 @@
 import { hostname } from "node:os";
 import { isAbsolute, join } from "node:path";
 import type { HostedDevice } from "@gram/shell/modules/device";
+import { makeSiteWindows } from "@gram/shell/modules/device/main";
+import type { BrowserWindow } from "electron";
 
 /**
  * This machine as a personal device of a hosted control plane, in the main process: made while
@@ -138,3 +140,22 @@ export const askColorsFor = (
   accent: dark ? "#346bf1" : "#1b4ed8",
   warning: dark ? "#ffb900" : "#ba7a00",
 });
+
+/** The platform a lent machine names itself by. */
+export const devicePlatform = (platform: NodeJS.Platform): "darwin" | "linux" | "win32" =>
+  platform === "darwin" || platform === "win32" ? platform : "linux";
+
+/**
+ * Opens a server's site for a workspace in its window (`site-window.ts`), whose one call is
+ * answered by the device of the moment: none while there is none.
+ */
+export const siteOpener = (
+  host: Pick<DeviceHost, "device">,
+  openLink: (url: string, from: BrowserWindow) => Promise<boolean>,
+  preload: string,
+) =>
+  makeSiteWindows({
+    preload,
+    turnGrant: (origin, workspace, thread) => host.device()?.turnGrant(origin, workspace, thread),
+    openLink: (url, from) => void openLink(url, from),
+  }).open;

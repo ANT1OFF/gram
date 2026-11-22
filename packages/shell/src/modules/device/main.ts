@@ -17,6 +17,7 @@ import { hostedThreadIdOf, workMessageOf, workToSendOf, workWaitOf } from "./wor
 
 export { isDecisionWindow, makeAskWindow } from "./ask-window.ts";
 export { workToSendOf, workWaitOf, workMessageOf } from "./work-input.ts";
+export { makeSiteWindows, type SiteWindows } from "./site-window.ts";
 
 /**
  * A server's own words on one line, as a dialog the shell draws shows them: codes nobody could
@@ -321,6 +322,8 @@ export interface HostedDeviceIpcOptions {
   /** The dialogs, attached to the window that asked. */
   readonly decisions: (sender: WebContents) => DeviceDecisions;
   readonly machine: string;
+  /** Opens a server's site for a workspace in its window (`site-window.ts`). */
+  readonly openSite?: (origin: string, workspace: string, page: string) => void;
 }
 
 /**
@@ -526,6 +529,22 @@ export const installHostedDeviceIpc = (ipc: ShellIpc, options: HostedDeviceIpcOp
     withDevice((device, _arg, sender) => decide(device, sender).startAfresh()),
   );
 
+  serve(
+    Channels.hostedDeviceOpenSite,
+    withDevice((device, arg) => {
+      const { origin, workspace } = target(arg);
+      const page =
+        origin === undefined || workspace === undefined
+          ? undefined
+          : device.sitePage(origin, workspace);
+      if (origin === undefined || workspace === undefined || page === undefined)
+        return { ok: false, why: "Gram doesn't know that workspace there." };
+      if (options.openSite === undefined)
+        return { ok: false, why: "This app can't open the server's site." };
+      options.openSite(origin, workspace, page);
+      return { ok: true };
+    }),
+  );
   serve(Channels.hostedDeviceActivity, async (): Promise<HostedDeviceActivity | null> => {
     const device = options.device();
     if (device === undefined) return null;

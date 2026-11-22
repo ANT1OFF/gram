@@ -20,6 +20,7 @@ export const BUNDLES = [
   "main",
   "preload",
   "page-guard",
+  "hosted-site",
   "server",
   "proc-worker",
   "gram-host",
