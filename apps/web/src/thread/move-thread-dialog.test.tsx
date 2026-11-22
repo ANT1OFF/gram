@@ -27,6 +27,8 @@ vi.mock("@tanstack/react-router", () => ({
 type Bridge = NonNullable<DesktopBridge["hostedDevice"]>;
 const ORIGIN = "https://gram.example.com";
 const ok = async () => ({ ok: true as const });
+/** The workspaces the server lists, as id and name; one unless a test lists more. */
+let workspaces: ReadonlyArray<readonly [string, string]> = [["w1", "Platform"]];
 const BUNDLE = { format: 1, exportedAt: 1_700_000_000_000, notes: ["Its terminal stays here."] };
 
 /** The desktop app signed in to one server that takes threads; its send answers as told. */
@@ -41,18 +43,16 @@ const install = (...answers: HostedThreadMoved[]) => {
           signedIn: true,
           paused: false,
           takesThreads: true,
-          workspaces: [
-            {
-              id: "w1",
-              name: "Platform",
-              organisation: "Example Co",
-              policy: "on",
-              lending: "off",
-              readOnly: false,
-              folders: [],
-              connected: false,
-            },
-          ],
+          workspaces: workspaces.map(([id, name]) => ({
+            id,
+            name,
+            organisation: "Example Co",
+            policy: "on",
+            lending: "off",
+            readOnly: false,
+            folders: [],
+            connected: false,
+          })),
         },
       ],
     }),
@@ -114,6 +114,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  workspaces = [["w1", "Platform"]];
   vi.unstubAllGlobals();
   useThreadDialogs.setState({ dialog: undefined, error: undefined });
   useServerSettings.setState({ settings: undefined });
@@ -184,5 +185,23 @@ describe("MoveThreadDialog", () => {
     expect(refused.textContent).toContain("Nothing changed here");
     expect(calls.some((call) => call.startsWith("/threads/settle"))).toBe(false);
     expect(screen.getByTestId("move-thread-start").textContent).toBe("Try again");
+  });
+
+  it("moves nowhere until one of several workspaces is chosen, then to that one", async () => {
+    workspaces = [
+      ["w1", "Platform"],
+      ["w2", "Payments"],
+    ];
+    const calls = install({ ok: true, threadId, notes: [] });
+    await moveIt();
+    const start = screen.getByTestId("move-thread-start");
+    expect(start).toHaveProperty("disabled", true);
+    expect(calls.some((call) => call.startsWith("send"))).toBe(false);
+    fireEvent.click(screen.getByRole("radio", { name: /Payments/ }));
+    fireEvent.click(start);
+    await screen.findByTestId("move-thread-after");
+    expect(calls.find((call) => call.startsWith("send"))).toBe(
+      `send ${ORIGIN} w2 ${JSON.stringify(BUNDLE)}`,
+    );
   });
 });

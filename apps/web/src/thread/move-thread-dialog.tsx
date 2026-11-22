@@ -1,18 +1,26 @@
-import type { HostedThreadMoved, ThreadId } from "@gram/contracts";
+import type { DiffFile, HostedThreadMoved, ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Check, CircleDashed } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
+import { RadioGroup } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/motion";
-import { targetKey } from "@/orchestration/move-targets";
+import { type MoveTarget, targetKey } from "@/orchestration/move-targets";
+import { FILE_STATUS } from "@/panels/diff-files";
 import { threadWorking } from "@/orchestration/tree-model";
 import { useThreadsStore } from "@/stores/threads";
 
 import { Dialog, DialogShell } from "./dialog-shell";
-import { goesLines, type MoveStage, moveSteps, staysLines } from "./move-thread-model";
+import {
+  chosenTarget,
+  goesLines,
+  type MoveStage,
+  moveSteps,
+  staysLines,
+} from "./move-thread-model";
 import { stopTurn } from "./stop-store";
 import {
   type ExportedThread,
@@ -58,7 +66,13 @@ export function MoveThreadDialog({
     queryFn: () => api.listProjects(),
   });
   const [picked, setPicked] = useState<string>();
-  const target = targets.find((each) => targetKey(each) === picked) ?? targets[0];
+  const target = chosenTarget(targets, picked);
+  const git = useThreadsStore((s) => s.byId[threadId]?.git);
+  const { data: edits, isPending: readingEdits } = useQuery({
+    queryKey: ["git.diff", threadId, "uncommitted", git?.changesToken ?? null, "move"],
+    queryFn: () => api.gitDiff(threadId, { kind: "uncommitted" }),
+    retry: false,
+  });
   const [phase, setPhase] = useState<"review" | "waiting" | "moving" | "moved">("review");
   const [stage, setStage] = useState<MoveStage>("export");
   const [error, setError] = useState<{ readonly why: string; readonly unknown: boolean }>();
@@ -122,12 +136,13 @@ export function MoveThreadDialog({
     return useThreadsStore.subscribe(atRest);
   });
 
-  if (summary === undefined || mover === undefined || target === undefined) return null;
+  if (summary === undefined || mover === undefined || targets.length === 0) return null;
   const { thread } = summary;
   const title = thread.title;
-  const repository = projects.find((each) => each.id === thread.projectId)?.name;
+  const repository =
+    git?.origin ?? projects.find((each) => each.id === thread.projectId)?.name ?? "its repository";
 
-  if (phase === "moved" && moved !== undefined) {
+  if (phase === "moved" && moved !== undefined && target !== undefined) {
     return (
       <DialogShell
         testId="move-thread-dialog"
@@ -175,7 +190,7 @@ export function MoveThreadDialog({
     );
   }
 
-  if (phase === "moving") {
+  if (phase === "moving" && target !== undefined) {
     return (
       <DialogShell
         testId="move-thread-dialog"
@@ -221,59 +236,57 @@ export function MoveThreadDialog({
       title={`Move "${title}" to a server`}
       onClose={onClose}
     >
-      <div className="flex flex-col gap-1">
-        <label htmlFor="move-thread-to" className="text-meta text-muted-foreground">
-          To
-        </label>
+      <div className="-mx-1 flex min-h-0 flex-col gap-4 overflow-y-auto px-1">
         {targets.length > 1 ? (
-          <select
-            id="move-thread-to"
-            data-testid="move-thread-to"
-            value={targetKey(target)}
-            disabled={waiting}
-            onChange={(event) => setPicked(event.target.value)}
-            className="h-8 rounded-lg border border-input bg-transparent px-2 text-reading outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            {targets.map((each) => (
-              <option key={targetKey(each)} value={targetKey(each)}>
-                {each.name} · {each.host} · {each.organisation}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <p id="move-thread-to" data-testid="move-thread-to" className="text-reading">
-            {target.name} · {target.host}
-            <span className="block text-meta text-muted-foreground">{target.organisation}</span>
-          </p>
-        )}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <p id="move-thread-to-label" className="text-meta text-muted-foreground">
+              Choose where it goes
+            </p>
+            <RadioGroup<string>
+              testId="move-thread-to"
+              labelledBy="move-thread-to-label"
+              value={target === undefined ? undefined : targetKey(target)}
+              disabled={waiting}
+              onChange={setPicked}
+              options={targets.map((each) => ({
+                value: targetKey(each),
+                label: (
+                  <>
+                    {each.name} on {each.host}
+                    <span className="text-muted-foreground"> · {each.organisation}</span>
+                  </>
+                ),
+              }))}
+            />
+          </div>
+        ) : null}
         <Listed
           testId="move-thread-goes"
           title="Goes"
-          lines={goesLines({
-            ...(repository === undefined ? {} : { repository }),
-            ...(thread.checkout.branch === undefined ? {} : { branch: thread.checkout.branch }),
-          })}
+          lines={goesLines(
+            thread.checkout.branch === undefined ? {} : { branch: thread.checkout.branch },
+          )}
         />
-        <Listed
-          testId="move-thread-stays"
-          title={`Stays on ${machine()}`}
-          lines={staysLines(machine())}
-        />
-      </div>
-      {working && (
-        <p data-testid="move-thread-running" className="flex flex-col gap-0.5 text-reading">
-          {waiting ? "It moves when this turn ends" : "It is working now"}
-          <span className="text-meta text-muted-foreground">
-            It moves once this turn ends, or stop it now and it is told what was cut off.
-          </span>
+        <p data-testid="move-thread-stays" className="flex flex-col gap-1 text-meta">
+          <span className="text-muted-foreground">Stays on {machine()}</span>
+          <span>{staysLines(machine()).join(" · ")}</span>
         </p>
-      )}
-      <p className="text-meta text-muted-foreground">
-        From the move on, {target.organisation}'s rules apply there: its models, its limits and its
-        audit, which records the move. This copy stays here, read-only.
-      </p>
+        {working && (
+          <p data-testid="move-thread-running" className="flex flex-col gap-0.5 text-reading">
+            {waiting ? "It moves when this turn ends" : "It is working now"}
+            <span className="text-meta text-muted-foreground">
+              It moves once this turn ends, or stop it now and it is told what was cut off.
+            </span>
+          </p>
+        )}
+      </div>
+      <Destination
+        target={target}
+        repository={repository}
+        edits={edits?.repo === true ? (edits.files ?? []) : undefined}
+        reading={readingEdits}
+        unpushed={git?.aheadUpstream ?? 0}
+      />
       {error !== undefined && (
         <div role="alert" data-testid="move-thread-error" className="flex flex-col gap-0.5">
           <p className="text-reading text-destructive">
@@ -284,7 +297,7 @@ export function MoveThreadDialog({
           </p>
           <p className="text-meta text-muted-foreground">
             {error.unknown
-              ? `It may be on ${target.name} already. Try again before you carry on here: if it got there, the server answers with that thread and this copy becomes read-only.`
+              ? `It may be on ${target?.name ?? "the server"} already. Try again before you carry on here: if it got there, the server answers with that thread and this copy becomes read-only.`
               : `Nothing changed here: the thread is still on ${machine()} and you can keep working in it.`}
           </p>
         </div>
@@ -293,7 +306,7 @@ export function MoveThreadDialog({
         <Dialog.Close render={<Button type="button" variant="ghost" size="sm" />}>
           Cancel
         </Dialog.Close>
-        {working && !waiting && (
+        {working && !waiting && target !== undefined && (
           <Button
             type="button"
             variant="outline"
@@ -311,17 +324,141 @@ export function MoveThreadDialog({
           type="button"
           size="sm"
           data-testid="move-thread-start"
-          disabled={waiting}
+          disabled={waiting || target === undefined}
           onClick={() => (working ? setPhase("waiting") : void move())}
         >
-          {working
-            ? "Move when this turn ends"
-            : error === undefined
-              ? `Move to ${target.name}`
-              : "Try again"}
+          {target === undefined
+            ? "Choose where it goes"
+            : working
+              ? "Move when this turn ends"
+              : error === undefined
+                ? `Move to ${target.name}`
+                : "Try again"}
         </Button>
       </div>
     </DialogShell>
+  );
+}
+
+const FILES_LISTED_AT_MOST = 6;
+
+const plural = (count: number, one: string, many: string) =>
+  `${count.toLocaleString("en")} ${count === 1 ? one : many}`;
+
+function Destination({
+  target,
+  repository,
+  edits,
+  reading,
+  unpushed,
+}: {
+  target: MoveTarget | undefined;
+  repository: string;
+  edits: readonly DiffFile[] | undefined;
+  reading: boolean;
+  unpushed: number;
+}) {
+  const shown = edits?.slice(0, FILES_LISTED_AT_MOST) ?? [];
+  const more = (edits?.length ?? 0) - shown.length;
+  const additions = edits?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
+  const deletions = edits?.reduce((sum, file) => sum + file.deletions, 0) ?? 0;
+  return (
+    <section
+      data-testid="move-thread-destination"
+      aria-label="Before you move"
+      className="flex shrink-0 flex-col gap-3 rounded-lg border border-edge-group bg-card p-3 text-reading"
+    >
+      <div data-testid="move-thread-where" className="flex flex-col gap-0.5">
+        <span className="text-meta text-muted-foreground">Goes to</span>
+        {target === undefined ? (
+          <span className="text-muted-foreground">
+            No workspace chosen yet. Nothing moves until you choose one.
+          </span>
+        ) : (
+          <>
+            <span className="font-medium">
+              {target.name} on {target.host}
+            </span>
+            <span className="text-meta text-muted-foreground">
+              {target.organisation}'s workspace. Its rules, models, limits and audit apply there
+              from the move on. This copy stays here, read-only.
+            </span>
+          </>
+        )}
+      </div>
+      <div data-testid="move-thread-ref" className="flex flex-col gap-1.5">
+        <span className="text-meta text-muted-foreground">Who can read its edits</span>
+        <span>
+          Anyone who can read <span className="font-mono">{repository}</span>. Its edits go on a
+          hidden ref there, not on a branch.
+        </span>
+        {reading ? (
+          <span className="text-meta text-muted-foreground">Reading its edits…</span>
+        ) : edits === undefined ? (
+          <span className="text-meta text-muted-foreground">
+            Its uncommitted edits couldn't be listed here. Any it has go there too.
+          </span>
+        ) : edits.length === 0 ? (
+          <span className="text-meta text-muted-foreground">It has no uncommitted edits.</span>
+        ) : (
+          <>
+            <span className="text-meta text-muted-foreground">
+              {plural(edits.length, "uncommitted file goes", "uncommitted files go")} there:{" "}
+              <span className="font-mono tabular-nums">
+                <span className="text-success">+{additions.toLocaleString("en")}</span>{" "}
+                <span className="text-destructive">−{deletions.toLocaleString("en")}</span>
+              </span>
+            </span>
+            <ul
+              data-testid="move-thread-files"
+              className="flex max-h-32 flex-col overflow-y-auto rounded-md border border-border/60 [&>li~li]:border-t [&>li~li]:border-border/60"
+            >
+              {shown.map((file) => {
+                const status = FILE_STATUS[file.status];
+                return (
+                  <li
+                    key={file.path}
+                    title={`${file.path} · ${status.label}`}
+                    className="flex min-w-0 items-center gap-2 px-2 py-1 text-meta"
+                  >
+                    <status.icon
+                      aria-hidden
+                      className={cn("size-icon-row shrink-0", status.tone)}
+                    />
+                    <span className="sr-only">{status.label}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono">
+                      {file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}
+                    </span>
+                    {(file.additions > 0 || file.deletions > 0) && (
+                      <span className="shrink-0 font-mono tabular-nums">
+                        {file.additions > 0 && (
+                          <span className="text-success">+{file.additions}</span>
+                        )}
+                        {file.additions > 0 && file.deletions > 0 && " "}
+                        {file.deletions > 0 && (
+                          <span className="text-destructive">−{file.deletions}</span>
+                        )}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+              {more > 0 && (
+                <li className="px-2 py-1 text-meta text-muted-foreground">
+                  and {plural(more, "more file", "more files")}
+                </li>
+              )}
+            </ul>
+          </>
+        )}
+        {unpushed > 0 && (
+          <span className="text-meta text-muted-foreground">
+            So {unpushed === 1 ? "does the commit" : `do the ${unpushed} commits`} its branch has
+            that {repository} hasn't got yet.
+          </span>
+        )}
+      </div>
+    </section>
   );
 }
 

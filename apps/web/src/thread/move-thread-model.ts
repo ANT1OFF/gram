@@ -1,6 +1,6 @@
 import type { HostedDeviceView, Thread } from "@gram/contracts";
 
-import { type MoveTarget, moveTargets } from "@/orchestration/move-targets";
+import { type MoveTarget, moveTargets, targetKey } from "@/orchestration/move-targets";
 
 /** Where a thread can move: a workspace of a server signed in to that takes threads. */
 export const threadMoveTargets = (
@@ -11,6 +11,16 @@ export const threadMoveTargets = (
       ? view
       : { ...view, servers: view.servers.filter((server) => server.takesThreads === true) },
   );
+
+/**
+ * Where the move goes: the one place there is, or the one the person picked among several. Never
+ * the first of several by default, so a thread can't go to a workspace nobody chose.
+ */
+export const chosenTarget = (
+  targets: readonly MoveTarget[],
+  picked: string | undefined,
+): MoveTarget | undefined =>
+  targets.length === 1 ? targets[0] : targets.find((each) => targetKey(each) === picked);
 
 export const SIGN_IN_FIRST = "Sign in to a server under Settings → Hosted first.";
 
@@ -109,13 +119,10 @@ export const bringSteps = (
   }));
 };
 
-/** What goes with the thread, as the review lists it. */
-export const goesLines = (input: {
-  readonly repository?: string;
-  readonly branch?: string;
-}): readonly string[] => [
+/** What goes with the thread, as the review lists it. Its edits are listed by file under it. */
+export const goesLines = (input: { readonly branch?: string }): readonly string[] => [
   "The conversation and its turns, with anything that looks like a key removed",
-  `Its edits, uncommitted ones too, saved on a hidden ref of ${input.repository ?? "its repository"}, not on the branch. Whoever can read the repository can read them.`,
+  "Its edits, uncommitted ones too, as listed below",
   ...(input.branch === undefined ? [] : [`Its branch, ${input.branch}`]),
 ];
 
