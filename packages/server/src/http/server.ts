@@ -107,6 +107,7 @@ import { embeddingEnabled, withEmbeddingSeed } from "../settings/embedding.ts";
 import { ActorGuard, FrontedSignIn } from "../rpc/actor-guard.ts";
 import { DEVICE_CONNECT_PATH } from "../device/devices.ts";
 import { deviceStatement, LentDevices, NOT_A_DEVICE } from "../device/service.ts";
+import { LentDevicesLive } from "../device/tools.ts";
 import { markActor, unmarkActor } from "./actor.ts";
 import {
   IDENTITY_HEADER,
@@ -1064,7 +1065,7 @@ export const ServerLayer: Layer.Layer<
     ).pipe(
       Layer.merge(LoopStallLog),
       Layer.provide(FrontedSignIn.layer),
-      Layer.provide(LentDevices.layer.pipe(Layer.provide(FrontedSignIn.layer))),
+      Layer.provide(LentDevicesLive.pipe(Layer.provide(FrontedSignIn.layer))),
       Layer.provideMerge(ServerCore),
       Layer.provide(RemoteControl.layer),
       Layer.provideMerge(RemoteHosts.layer),

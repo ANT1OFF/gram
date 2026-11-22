@@ -5,8 +5,9 @@
 Status: design approved on 11 November 2026 with the defaults in
 [section 10](#10-open-decisions), after an independent security review
 ([what it changed](#11-what-the-security-review-changed)). The device in the desktop app is built,
-and so is the control plane's dial ([as built](#the-control-planes-dial-as-built)); the tools a
-thread calls a device with are not yet. It sits
+and so are the control plane's dial ([as built](#the-control-planes-dial-as-built)) and the tools a
+thread calls a device with ([as built](#the-tools-and-the-turn-binding-as-built)); the hosted view
+that sends a message's grant is not yet. It sits
 behind the one hosted-features setting (`experimental.embedding`), and with that off none of it
 exists.
 
@@ -1022,6 +1023,55 @@ connection wins) or after fifteen minutes, when the device dials again with a fr
 front checks again. The event sink gets `device.connected` (the device, its platform, its
 capabilities and its folders' labels) and `device.disconnected` (and why).
 
-Not yet: the three tools, the person binding and the turn grant carried with a message, the
-decision hook's call per request, and the `device.requested`, `device.answered` and
-`device.finished` events. Nothing calls a device yet beyond its hello.
+### The tools and the turn binding, as built
+
+`thread.send` takes an optional `deviceGrant`, the grant the device signed as the message left,
+and answers with the `turnId` the message started, where it started one. The server binds the
+grant to that turn, by its id, only when all of these hold: a person signed in through the front
+sent it; one of that person's own devices is dialled in for the thread's workspace (the front
+names workspaces by this server's own workspace ids) and its key verifies the grant; the grant
+names this server's public origin, this thread and that workspace, has the device's ten-minute
+lifetime and is in its time (two minutes of skew allowed before `issuedAt`); the thread is no
+worker's and no dream's, and it is the person's own (they started it), or it is the workspace's
+orchestrator and nobody started it; and the message started a turn rather than waiting in the
+queue. That
+turn is then the thread's one **device turn** (`device/turns.ts`). It is checked at every call and
+lost for good once the turn is no longer the thread's open one, the grant runs out, or the turn
+has taken any input but the person's message: a steer, another thread's message or report, a wake
+or a notice, each of which is stored as a message of that turn. No later turn, wake or worker
+inherits it. A grant that doesn't bind is ignored and the message is sent as any other.
+
+`device_run`, `device_read_file` and `device_list_files` (`device/tools.ts`) are listed to every
+session but a worker's on a server where people sign in through a front. Outside a device turn a
+call is refused with `no-device-turn`, and neither the decision hook nor the device is asked.
+Inside one, the call is resolved first (the folder by its label or id, the path made relative with
+`/` between names, and anything absolute, starting `~` or climbing out with `..` refused as
+`outside-folders`), then the decision hook is asked (action `device`, with `kind`, `device`,
+`person`, the folder's label, the resolved `path` or `cwd`, and the `command`), then the device.
+Each request carries the turn's grant, the thread, the person as the front named them and the
+folder's id, and is recorded as `device.requested`, then `device.answered` (allowed, or refused and
+why, with how long it took) and, for a command, `device.finished`; each carries the turn's id. A
+refusal comes back to the agent as an ordinary result with one of the fixed reasons, and a request
+refused for good (by the person, for its path, or a read-only device) is refused again unasked for
+the rest of the turn. A request under way is withdrawn with `device.cancel` once its turn stops
+being a device turn (`turn-changed`) or it outlives the device's own limits by thirty seconds.
+
+Where this differs from the design above:
+
+- **Listed per session, checked per call.** The tools are not added only for a device turn,
+  because an agent's tool list is fixed for its session; the check at each call is what holds them
+  to the turn. And there is no secret made for the turn: anything holding the thread's own tool
+  token while a device turn is open (a process the agent left running in its sandbox) can call
+  them. Binding only on the person's own threads keeps another member's sandbox from waiting for
+  someone else's turn this way; on a workspace's shared orchestrator it doesn't. The person's ask
+  on their computer, which shows the command exactly, is still the gate.
+- **Answers given in the turn** (to the agent's questions, an approval's or a plan's message) don't
+  end a device turn. Over the front only the thread's own people can answer, and the device's ask
+  is again what stands between such text and the computer.
+- **Input is seen by what was stored.** A steer the agent took but whose message couldn't be
+  written (a database error) isn't counted, so the turn keeps its binding.
+- **A command can't outlast the grant**: its timeout is cut to what is left of the ten minutes, and
+  a request still running when they end is withdrawn.
+
+Not yet: the desktop app doesn't send a grant with a message, since the hosted view that would
+isn't built, so no turn is a device turn and every call answers `no-device-turn`.

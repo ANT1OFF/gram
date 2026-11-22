@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { HostId, MessageId, RequestId, ThreadId } from "./ids.ts";
+import { HostId, MessageId, RequestId, ThreadId, TurnId } from "./ids.ts";
 import { UIMessageSchema } from "./ui-message.ts";
 
 /** How one answer of `thread.respondMany` went. */
@@ -49,6 +49,8 @@ export const checkoutRequestHost = (request: CheckoutRequest): HostId | undefine
 export const SendResult = Schema.Struct({
   /** True when a turn was running and the input joined the queue. */
   queued: Schema.Boolean,
+  /** The turn the input started, where it started one. */
+  turnId: Schema.optionalKey(TurnId),
 });
 export type SendResult = typeof SendResult.Type;
 

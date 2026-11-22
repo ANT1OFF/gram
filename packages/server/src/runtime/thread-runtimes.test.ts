@@ -642,7 +642,7 @@ describe("ThreadRuntimes", () => {
       yield* waitStatus(thread.id, "cold");
       expect(session.closed).toBe(true);
 
-      expect(yield* runtimes.send(thread.id, { text: "again" })).toEqual({ queued: false });
+      expect(yield* runtimes.send(thread.id, { text: "again" })).toMatchObject({ queued: false });
       const resumed = yield* waitFor(
         "the resumed session",
         Effect.sync(() => fake.sessions.length === 2 && fake.sessions[1]),
@@ -674,7 +674,7 @@ describe("ThreadRuntimes", () => {
       yield* waitStatus(thread.id, "cold");
       expect(warm.closed).toBe(true);
 
-      expect(yield* runtimes.send(thread.id, { text: "hello" })).toEqual({ queued: false });
+      expect(yield* runtimes.send(thread.id, { text: "hello" })).toMatchObject({ queued: false });
       const reopened = yield* waitFor(
         "the fresh session's send",
         Effect.sync(() => fake.sessions.length === 2 && fake.sessions[1]!.sent.length === 1),
