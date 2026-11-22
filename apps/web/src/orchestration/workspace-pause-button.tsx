@@ -9,7 +9,13 @@ import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useThreadsStore } from "@/stores/threads";
-import { inTurn, pauseClock, pauseConfirmText, pauseText } from "@/thread/orchestration-model";
+import {
+  inTurn,
+  pauseClock,
+  pauseConfirmText,
+  pausedOnErrorText,
+  pauseText,
+} from "@/thread/orchestration-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useViewWorkspace } from "@/views/view-workspace";
 
@@ -66,11 +72,19 @@ function PausedPill({
 }) {
   const { busy, run } = useWorkspacePause(state);
   const paused = state.paused!;
-  const label = `${pauseText(paused)} since ${pauseClock(paused.at)}. Resume orchestration`;
+  const orchestratorId = state.workspace.orchestratorThreadId;
+  const orchestrator = useThreadsStore((s) =>
+    orchestratorId === undefined ? undefined : s.byId[orchestratorId],
+  );
+  const onError = orchestrator === undefined ? undefined : pausedOnErrorText(paused, orchestrator);
+  const label =
+    onError === undefined
+      ? `${pauseText(paused)} since ${pauseClock(paused.at)}. Resume orchestration`
+      : `Paused since ${pauseClock(paused.at)}: the orchestrator stopped on an error. Click to resume`;
   return (
     <Hint
       label={label}
-      side="bottom"
+      side="left"
       render={
         <Button
           size="xs"

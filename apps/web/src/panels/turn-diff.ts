@@ -63,5 +63,11 @@ export function turnEndMessages(messages: readonly GramUIMessage[]): ReadonlyMap
 /** A Diff panel target that selects a turn rather than focusing a file. */
 export const turnTarget = (turnId: TurnId): string => `turn:${turnId}`;
 
+/**
+ * A Diff panel target that shows the branch against its base: what a push would send, which is
+ * what a person judges before allowing one.
+ */
+export const BRANCH_TARGET = "scope:branch";
+
 export const targetTurnId = (target: string): TurnId | undefined =>
   target.startsWith("turn:") ? (target.slice("turn:".length) as TurnId) : undefined;

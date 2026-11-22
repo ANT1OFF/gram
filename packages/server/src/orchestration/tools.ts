@@ -83,6 +83,7 @@ import {
   WorkerSandbox,
 } from "./tool-inputs.ts";
 import { appendEntry, editPassage, memoryRevision, OrchestrationMemory } from "./memory.ts";
+import { noQuestionsAsked } from "./question-edits.ts";
 import { prWakeEventOf, prWatchSeenOf, refusal } from "./rules.ts";
 import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
@@ -893,12 +894,19 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
           path,
           (current) => {
             const next = change(current, asWorker);
-            if (Effect.isEffect(next)) {
-              return Effect.map(next, (content) => ({ content, result: undefined }));
-            }
-            return typeof next === "string"
-              ? Effect.succeed({ content: next, result: undefined })
-              : Effect.fail(new AppToolError({ tool, message: next.problem }));
+            const made = Effect.isEffect(next)
+              ? next
+              : typeof next === "string"
+                ? Effect.succeed(next)
+                : Effect.fail(new AppToolError({ tool, message: next.problem }));
+            return Effect.flatMap(made, (content) =>
+              path === QUESTIONS_FILE
+                ? Effect.as(noQuestionsAsked(tool, current, content), {
+                    content,
+                    result: undefined,
+                  })
+                : Effect.succeed({ content, result: undefined }),
+            );
           },
           { asWorker },
         );

@@ -1,13 +1,15 @@
-import type { DocMeta, ThreadId } from "@gram/contracts";
+import { docHidden, type DocId, type DocMeta, type ThreadId } from "@gram/contracts";
 import { FileText, X } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
+import { useApi } from "@/api/context";
+import { errorMessage } from "@/api/errors";
 import { Button } from "@/components/ui/button";
 import { agoText, formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
+import { useThreadsStore } from "@/stores/threads";
 
 import { showDoc } from "./doc-pane-store";
-import { useDocChipStore } from "./doc-chip-store";
 import { useDocs, useThreadWorkspace } from "./doc-queries";
 
 /** The doc `threadId` last published or updated, newest first by its last save; else none. */
@@ -25,21 +27,27 @@ export const pinnedDocOf = (
  * has scrolled past its card.
  */
 export function PinnedDocChip({ threadId }: { threadId: ThreadId }) {
+  const api = useApi();
   const workspaceId = useThreadWorkspace(threadId);
   const docs = useDocs(workspaceId);
   const ref = useRef<HTMLDivElement>(null);
   const now = useNow(true, ref, 60_000);
   const doc = pinnedDocOf(docs.data?.docs, threadId);
-  const dismissedRevision = useDocChipStore(
-    (s) =>
-      s.dismissed.find((entry) => entry.threadId === threadId && entry.docId === doc?.id)?.revision,
-  );
-  if (
-    workspaceId === undefined ||
-    doc === undefined ||
-    (dismissedRevision !== undefined && doc.revision <= dismissedRevision)
-  )
-    return null;
+  const hidden = useThreadsStore((s) => docHidden(s.byId[threadId]?.thread, doc?.id));
+  const [hiding, setHiding] = useState<DocId>();
+  if (workspaceId === undefined || doc === undefined || hidden || hiding === doc.id) return null;
+  const dismiss = () => {
+    setHiding(doc.id);
+    api.hideDoc(threadId, doc.id).catch((error: unknown) => {
+      setHiding(undefined);
+      useThreadsStore.getState().applyEvent({
+        type: "notify",
+        kind: "error",
+        title: "Couldn't dismiss the document chip",
+        body: errorMessage(error),
+      });
+    });
+  };
   return (
     <div ref={ref} className="flex w-full thread-column shrink-0 px-6 pb-2">
       <div className="group/doc-chip flex max-w-full min-w-0 items-center rounded-full border border-edge bg-card">
@@ -64,7 +72,7 @@ export function PinnedDocChip({ threadId }: { threadId: ThreadId }) {
           aria-label="Dismiss document chip"
           title="Dismiss document chip"
           className="mr-0.5 rounded-full text-muted-foreground opacity-0 group-focus-within/doc-chip:opacity-100 group-hover/doc-chip:opacity-100 [@media(hover:none)]:opacity-100"
-          onClick={() => useDocChipStore.getState().dismiss(threadId, doc.id, doc.revision)}
+          onClick={dismiss}
         >
           <X aria-hidden className="size-icon-chip" />
         </Button>

@@ -12,6 +12,7 @@ import {
   type WorkerLedgerEntry,
   type WorkerPendingRequest,
   type WorkerPr,
+  type WorkerReport,
   WorkerState,
 } from "./orchestration.ts";
 
@@ -155,6 +156,18 @@ export const reportGist = (summary: string): string => {
   return gist === "" ? "reported" : gist;
 };
 
+/**
+ * A worker's last report as its line once nothing outranks it. A question report that has got
+ * this far no longer stands: input reached the worker after it asked (the server's `lastInputAt`),
+ * which is how an answer lands, so it reads "WQ6 answered", not "asked WQ6".
+ */
+export const reportLine = (report: Pick<WorkerReport, "state" | "summary">): string => {
+  if (report.state === "done") return "reported done";
+  if (report.state !== "question") return reportGist(report.summary);
+  const id = /^Asked (W?Q\d+)\b/.exec(report.summary)?.[1];
+  return id === undefined ? "got an answer" : `${id} answered`;
+};
+
 const BARE_COMMAND =
   /^((?:git|gh|uv|uvx|npm|npx|pnpm|bun|bunx|yarn|cargo|go|make|pytest|python3?|node|tsc|vitest|jest)\b.*)$/;
 
@@ -267,8 +280,7 @@ export const nowLineOf = (
       return "in review";
     }
     if (worker.state === "briefed") return "starting…";
-    if (report !== undefined)
-      return report.state === "done" ? "reported done" : reportGist(report.summary);
+    if (report !== undefined) return reportLine(report);
     if (worker.quiet?.lastTool !== undefined) return `stopped after ${worker.quiet.lastTool}`;
     return "idle";
   })();

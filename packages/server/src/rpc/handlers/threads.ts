@@ -2,6 +2,7 @@ import {
   ThreadRpcs,
   effectiveCheckout,
   GitError,
+  hideDoc,
   InvalidState,
   KEPT_WORK_GONE_CODE,
   isLocalHost,
@@ -450,6 +451,8 @@ export const threadHandlers = Effect.gen(function* () {
       }),
     "thread.pin": ({ threadId, pinned }) =>
       runtimes.updateThread(threadId, (t) => ({ ...t, pinned })).pipe(Effect.asVoid),
+    "thread.hideDoc": ({ threadId, docId }) =>
+      runtimes.updateThread(threadId, (t) => hideDoc(t, docId)).pipe(Effect.asVoid),
     "thread.park": ({ threadId, parked }) =>
       runtimes
         .updateThread(threadId, (t) => ({ ...t, parked }))

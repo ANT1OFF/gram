@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
-import type {
-  Doc,
-  DocCardData,
-  DocId,
-  DocMeta,
-  ThreadId,
-  ThreadSummary,
-  WorkspaceId,
+import {
+  hideDoc,
+  type Doc,
+  type DocCardData,
+  type DocId,
+  type DocMeta,
+  type ThreadId,
+  type ThreadSummary,
+  type WorkspaceId,
 } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +20,6 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { DocCard } from "./doc-card";
 import { PinnedDocChip, pinnedDocOf } from "./doc-chip";
-import { useDocChipStore } from "./doc-chip-store";
 import { useDocPane } from "./doc-pane-store";
 import { docsByAuthor, DocsPanel } from "./docs-panel";
 import { docByline, DocsStrip } from "./docs-strip";
@@ -75,6 +75,12 @@ const docsApi = (docs: DocMeta[], content = REPORT) => {
       content,
     })),
     saveDoc,
+    hideDoc: vi.fn<Api["hideDoc"]>(async (threadId, id) => {
+      useThreadsStore.setState((s) => {
+        const held = s.byId[threadId]!;
+        return { byId: { ...s.byId, [threadId]: { ...held, thread: hideDoc(held.thread, id) } } };
+      });
+    }),
   };
   return { api, saveDoc };
 };
@@ -97,7 +103,6 @@ beforeEach(() => {
   revealed = vi.fn();
   useLayoutStore.setState({ revealPanel: revealed as never });
   useDocPane.setState({ open: {} });
-  useDocChipStore.setState({ dismissed: [] });
   useThreadsStore.setState({
     byId: {
       [WORKER]: summary(WORKER, WS),
@@ -331,35 +336,26 @@ describe("PinnedDocChip", () => {
     expect((await screen.findByTestId("pinned-doc")).dataset["docId"]).toBe("doc-1");
   });
 
-  it("keeps a dismissal across reloads and reappears only for a newer revision", async () => {
+  it("keeps a dismissal on the thread across remounts, refetches and later saves", async () => {
     const { api } = docsApi([meta(1)]);
-    const { unmount } = renderWithApi(<PinnedDocChip threadId={WORKER} />, api);
+    const first = renderWithApi(<PinnedDocChip threadId={WORKER} />, api);
     await screen.findByTestId("pinned-doc");
     fireEvent.click(screen.getByRole("button", { name: "Dismiss document chip" }));
-    unmount();
+    expect(screen.queryByTestId("pinned-doc")).toBeNull();
+    await waitFor(() => expect(api.hideDoc).toHaveBeenCalledWith(WORKER, "doc-1"));
+    first.unmount();
 
-    const saved = window.localStorage.getItem("gram.docChips")!;
-    useDocChipStore.setState({ dismissed: [] });
-    window.localStorage.setItem("gram.docChips", saved);
-    await useDocChipStore.persist.rehydrate();
-    expect(useDocChipStore.getState().dismissed).toEqual([
-      { threadId: WORKER, docId: "doc-1", revision: 1 },
-    ]);
-    const reload = renderWithApi(
+    // The doc saved again, twice, and listed afresh: still hidden, as its id alone is kept.
+    const updated = docsApi([meta(1, { revision: 3, updatedAt: NOW })]);
+    renderWithApi(
       <>
         <PinnedDocChip threadId={WORKER} />
         <DocsStrip workspaceId={WS} />
       </>,
-      api,
+      updated.api,
     );
     await screen.findByTestId("doc-row");
     expect(screen.queryByTestId("pinned-doc")).toBeNull();
-    reload.unmount();
-
-    // Revision, rather than the clock, identifies a later save, even in the same millisecond.
-    const updated = docsApi([meta(1, { revision: 2 })]);
-    renderWithApi(<PinnedDocChip threadId={WORKER} />, updated.api);
-    expect((await screen.findByTestId("pinned-doc")).dataset["docId"]).toBe("doc-1");
   });
 
   it("pins the doc the thread last saved, with its age", async () => {

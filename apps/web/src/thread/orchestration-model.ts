@@ -178,6 +178,24 @@ export const pauseText = (pause: Pick<OrchestrationPause, "reason" | "detail">):
 };
 
 /**
+ * Why an orchestrator stopped, when its own error paused it: the error's words, which the pause's
+ * generic detail ("open it to see why") only points at, and the step that brings it back. Said
+ * where the user resumes it. `undefined` for any other pause, which `pauseText` says.
+ */
+export const pausedOnErrorText = (
+  pause: Pick<OrchestrationPause, "reason">,
+  orchestrator: { readonly status: ThreadStatus; readonly thread: Pick<Thread, "lastError"> },
+): { readonly reason: string; readonly next: string } | undefined =>
+  pause.reason === "deliveryFailed" &&
+  orchestrator.status === "error" &&
+  orchestrator.thread.lastError !== undefined
+    ? {
+        reason: `The orchestrator stopped on an error: ${orchestrator.thread.lastError.text.trim()}`,
+        next: "Sort that out, then Resume to start it again. Gram also tries again by itself from time to time.",
+      }
+    : undefined;
+
+/**
  * What a pause does to the workers, after `pauseText`'s sentence. The user's own pause stops them
  * too, each once it has finished the step it is on, and `working` of them are still at work: finishing a
  * command, or the user's own. Any other pause stops only the orchestrator.
@@ -268,24 +286,29 @@ const HANDOFF_REASON: Record<Handoff["reason"], string> = {
   switch: "continued in another agent",
 };
 
+const unsavedWords = (handoff: Pick<Handoff, "unsaved" | "unsavedBecause">): string =>
+  handoff.unsaved !== true
+    ? ""
+    : handoff.unsavedBecause === "failed"
+      ? ", not saved first: the old session had failed"
+      : ", without saving first";
+
 /** The handoff divider's words. */
-export const handoffLabel = (handoff: Pick<Handoff, "reason" | "unsaved">): string =>
-  `New session · ${known(HANDOFF_REASON, handoff.reason) ?? handoff.reason}${
-    handoff.unsaved === true ? ", without saving first" : ""
-  }`;
+export const handoffLabel = (
+  handoff: Pick<Handoff, "reason" | "unsaved" | "unsavedBecause">,
+): string =>
+  `New session · ${known(HANDOFF_REASON, handoff.reason) ?? handoff.reason}${unsavedWords(handoff)}`;
 
 /**
  * A fresh session onto another model's divider: "Fresh session on Claude Code · Opus 5.5 · 14:02",
  * and ", without saving first" after a hard cut.
  */
 export const freshOnDividerLabel = (
-  handoff: Pick<Handoff, "unsaved" | "at">,
+  handoff: Pick<Handoff, "unsaved" | "unsavedBecause" | "at">,
   agentName: string,
   modelName: string,
 ): string =>
-  `Fresh session on ${agentName} · ${modelName} · ${formatClockTime(handoff.at)}${
-    handoff.unsaved === true ? ", without saving first" : ""
-  }`;
+  `Fresh session on ${agentName} · ${modelName} · ${formatClockTime(handoff.at)}${unsavedWords(handoff)}`;
 
 /**
  * A worker-authored URL when it is safe to make a link of: `https` only, so a `javascript:` or

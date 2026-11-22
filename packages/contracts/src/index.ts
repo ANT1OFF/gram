@@ -29,6 +29,7 @@ export * from "./feed-cursor.ts";
 export * from "./feature-cards.ts";
 export * from "./feed-window.ts";
 export * from "./hidden-prs.ts";
+export * from "./hidden-docs.ts";
 export * from "./draft-stash.ts";
 export * from "./dreams.ts";
 export * from "./fs.ts";

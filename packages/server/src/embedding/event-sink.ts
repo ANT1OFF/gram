@@ -41,13 +41,7 @@ import { EventHub, isOwnEvent, type OwnEvent } from "../events/event-hub.ts";
 import { type StoredMessage, ThreadStore } from "../persistence/thread-store.ts";
 import { readOutbox as readStoredOutbox } from "../orchestration/outbox.ts";
 import { publicQuestion, questionsOf } from "../orchestration/worker-questions.ts";
-import {
-  ASK_OPTION_DESCRIPTION_MAX_CHARS,
-  ASK_OPTION_LABEL_MAX_CHARS,
-  ASK_OPTIONS_MAX,
-  ASK_QUESTION_MAX_CHARS,
-  ASK_QUESTIONS_MAX,
-} from "./ask-limits.ts";
+import { askContent } from "./ask-content.ts";
 import { postJson } from "./endpoint.ts";
 import { messageEvent } from "./message-event.ts";
 import { backfillPage } from "./backfill-page.ts";
@@ -228,63 +222,6 @@ const askTitle = (request: PendingRequest): string => {
   }
   if (request.kind === "question") return request.questions[0]?.question ?? "Question";
   return "Plan";
-};
-
-export {
-  ASK_OPTION_LABEL_MAX_CHARS,
-  ASK_OPTIONS_MAX,
-  ASK_QUESTION_MAX_CHARS,
-  ASK_QUESTIONS_MAX,
-} from "./ask-limits.ts";
-/** The most of a plan `ask.opened` carries; a longer plan is cut and marked `planTruncated`. */
-export const ASK_PLAN_MAX_CHARS = 50_000;
-
-/**
- * What a receiver needs to show a question or a plan and answer it through `asks/answer`: the
- * questions with their choices, or the plan. An answer is keyed by each question's text and names
- * choices by their labels, so neither is ever cut: a question ask that doesn't fit whole is sent
- * without its questions, and a receiver sends the person to the thread. An approval has neither.
- */
-export const askContent = (
-  request: PendingRequest,
-): {
-  readonly questions?: ReadonlyArray<unknown>;
-  readonly plan?: string;
-  readonly planTruncated?: true;
-} => {
-  if (request.kind === "plan") {
-    return request.plan.length > ASK_PLAN_MAX_CHARS
-      ? { plan: request.plan.slice(0, ASK_PLAN_MAX_CHARS), planTruncated: true }
-      : { plan: request.plan };
-  }
-  if (request.kind !== "question") return {};
-  const { questions } = request;
-  const fits =
-    questions.length > 0 &&
-    questions.length <= ASK_QUESTIONS_MAX &&
-    questions.every(
-      (each) =>
-        each.question.length > 0 &&
-        each.question.length <= ASK_QUESTION_MAX_CHARS &&
-        each.options.length <= ASK_OPTIONS_MAX &&
-        each.options.every(
-          (option) => option.label.length > 0 && option.label.length <= ASK_OPTION_LABEL_MAX_CHARS,
-        ),
-    );
-  if (!fits) return {};
-  return {
-    questions: questions.map((each) => ({
-      question: each.question,
-      ...(each.header === "" ? {} : { header: each.header.slice(0, 200) }),
-      options: each.options.map((option) => ({
-        label: option.label,
-        ...(option.description === ""
-          ? {}
-          : { description: option.description.slice(0, ASK_OPTION_DESCRIPTION_MAX_CHARS) }),
-      })),
-      multiSelect: each.multiSelect,
-    })),
-  };
 };
 
 const IDLE_STATUSES: ReadonlySet<string> = new Set(["idle", "cold"]);

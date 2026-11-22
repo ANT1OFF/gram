@@ -912,8 +912,14 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           const marks = (yield* store.listMessages(thread.id)).flatMap((message) =>
             message.parts.flatMap((part) => (part.type === "data-handoff" ? [part.data] : [])),
           );
+          // A save was asked for, so the divider says why none was made.
           expect(marks).toMatchObject([
-            { previousAgentSessionId: session.agentSessionId, reason: "user" },
+            {
+              previousAgentSessionId: session.agentSessionId,
+              reason: "user",
+              unsaved: true,
+              unsavedBecause: "failed",
+            },
           ]);
 
           // With nobody in the slot, there is nothing to hand off.

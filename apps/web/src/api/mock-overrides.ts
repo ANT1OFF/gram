@@ -70,3 +70,20 @@ export const mockServerLacks = (): readonly string[] =>
 export const MOCK_FAIL_OPEN_KEY = "gram.mock.failOpen";
 
 export const mockFailOpen = (): string | undefined => flag(MOCK_FAIL_OPEN_KEY) ?? undefined;
+
+/**
+ * `"1"`: a fresh session the user starts is under way, then its new session doesn't open, as when
+ * the orchestrator's checkout couldn't be put back; the orchestrator ends in error and the
+ * workspace pauses, as the server leaves them.
+ */
+export const MOCK_HANDOFF_FAILS_KEY = "gram.mock.handoffFails";
+
+export const mockHandoffFails = (): boolean => flag(MOCK_HANDOFF_FAILS_KEY) === "1";
+
+/**
+ * `"1"`: a memory update the user drafts fails soon after it starts, its agent stopping on an error
+ * before it writes anything, as the server records an `agent_error`.
+ */
+export const MOCK_DREAM_FAILS_KEY = "gram.mock.dreamFails";
+
+export const mockDreamFails = (): boolean => flag(MOCK_DREAM_FAILS_KEY) === "1";

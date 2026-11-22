@@ -27,6 +27,7 @@ import {
   choiceLayout,
   otherIndex,
   replyAction,
+  replyDone,
   replyId,
   type Ask,
   type AskOption,
@@ -164,7 +165,7 @@ export function QuietView({ workspaceId }: ViewProps) {
     if (action === undefined) return;
     setPick(undefined);
     useAskStackStore.getState().setReply(replyId(ask), "");
-    send(ask, "Replied", action);
+    send(ask, replyDone(ask), action);
   };
   const undo = (key?: string) => {
     const answer = takeBack(key);

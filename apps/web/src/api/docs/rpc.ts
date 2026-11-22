@@ -7,4 +7,5 @@ export const docsRpc = ({ client }: RpcContext): DocsApi => ({
   readDoc: (workspaceId, id) => run(client["docs.read"]({ workspaceId, id })),
   saveDoc: (workspaceId, id, content, revision) =>
     run(client["docs.save"]({ workspaceId, id, content, revision })),
+  hideDoc: (threadId, docId) => run(client["thread.hideDoc"]({ threadId, docId })),
 });

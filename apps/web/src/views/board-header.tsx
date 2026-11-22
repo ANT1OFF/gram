@@ -12,7 +12,13 @@ import { useNeedsYouIn } from "@/orchestration/use-needs-you";
 import { useTitlebarSlot } from "@/shell/titlebar-slot";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
-import { pauseClock, pauseLeavesRunning, pauseText } from "@/thread/orchestration-model";
+import { useResume } from "@/orchestration/use-board-actions";
+import {
+  pauseClock,
+  pauseLeavesRunning,
+  pausedOnErrorText,
+  pauseText,
+} from "@/thread/orchestration-model";
 
 import { useViewStore } from "./view-store";
 
@@ -57,6 +63,16 @@ export function BoardHeader({
   const waiting = here.length;
   const asking = here.some((item) => !isErrorItem(item));
   const working = useThreadsStore((s) => midTurnWorkers(s.byId, workspace.id));
+  const orchestrator = useThreadsStore((s) =>
+    workspace.orchestratorThreadId === undefined
+      ? undefined
+      : s.byId[workspace.orchestratorThreadId],
+  );
+  const resume = useResume(workspace.id);
+  const onError =
+    paused === undefined || orchestrator === undefined
+      ? undefined
+      : pausedOnErrorText(paused, orchestrator);
   const slot = useTitlebarSlot((s) => s.slot);
   const shown = useViewStore((s) => s.view === "board");
   const header = (
@@ -102,10 +118,32 @@ export function BoardHeader({
           className="mx-4 my-2 flex shrink-0 items-center gap-2 rounded-(--radius-md) border border-border px-2.5 py-1.5 text-meta"
         >
           <Pause aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-          <span className="min-w-0">
-            {pauseText(paused)} since {pauseClock(paused.at)}.{" "}
-            <span className="text-muted-foreground">{pauseLeavesRunning(working, paused)}</span>
+          <span className="min-w-0 flex-1">
+            {onError === undefined ? (
+              <>
+                {pauseText(paused)} since {pauseClock(paused.at)}.{" "}
+                <span className="text-muted-foreground">{pauseLeavesRunning(working, paused)}</span>
+              </>
+            ) : (
+              <>
+                Paused since {pauseClock(paused.at)}. {onError.reason}{" "}
+                <span className="text-muted-foreground">
+                  {onError.next} {pauseLeavesRunning(working, paused)}
+                </span>
+              </>
+            )}
           </span>
+          {paused.reason !== "parked" && (
+            <Button
+              size="xs"
+              variant={onError === undefined ? "outline" : "default"}
+              data-testid="rail-paused-resume"
+              className="shrink-0"
+              onClick={() => void resume()}
+            >
+              Resume
+            </Button>
+          )}
         </p>
       )}
     </>

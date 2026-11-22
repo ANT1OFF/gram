@@ -25,6 +25,8 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 
+import { failDreamSoon } from "./mock-dream-fails";
+import { mockMerge, sidesOf } from "./mock-dream-merge";
 import { MockInvalidState } from "./mock-fs";
 import type { AdoptDreamInput, ApiServerEvent, DreamPreviewInput, StartDreamInput } from "./types";
 
@@ -189,24 +191,6 @@ const seedFiles = (now: number): Map<string, MockFile> => {
 };
 
 const MERGE_MS = 2000;
-
-const sidesOf = (file: DreamFileDiff): string =>
-  JSON.stringify([file.before ?? null, file.after ?? null, file.current ?? null]);
-
-const linesOf = (text: string | undefined) => (text ?? "").replace(/\n$/, "").split("\n");
-
-const mockMerge = (file: Pick<DreamFileDiff, "before" | "after" | "current">): string => {
-  const base = new Set(linesOf(file.before));
-  const merged = linesOf(file.after);
-  const current = linesOf(file.current);
-  current.forEach((line, index) => {
-    if (base.has(line) || merged.includes(line) || line.trim() === "") return;
-    const after = index === 0 ? -1 : merged.indexOf(current[index - 1]!);
-    if (after === -1) merged.push(line);
-    else merged.splice(after + 1, 0, line);
-  });
-  return `${merged.join("\n")}\n`;
-};
 
 const currentOf = (memory: MockMemory): MockVersion =>
   memory.versions.find((version) => version.version === memory.current)!;
@@ -480,7 +464,7 @@ export function createMockDreams(host: MockDreamsHost) {
           ? planOf(workspaceId, input.budgetTokens ?? DREAM_BUDGET_TOKENS_DEFAULT)
           : undefined;
       if (planned !== undefined) readBy.set(id, planned.taken);
-      return putDream({
+      const started = putDream({
         id,
         workspaceId,
         kind: input.kind,
@@ -504,6 +488,8 @@ export function createMockDreams(host: MockDreamsHost) {
               ...(planned.notes.length === 0 ? {} : { notes: planned.notes }),
             }),
       });
+      failDreamSoon(host, thread, started, putDream);
+      return started;
     },
 
     async listDreams(workspaceId: WorkspaceId): Promise<readonly Dream[]> {
