@@ -1019,16 +1019,6 @@ const websocketOptions: NodeHttpServer.Options["websocket"] & { readonly closeTi
   },
 };
 
-const createHttpListener = () => {
-  const server = createServer();
-  server.on("request", (_request, response) => {
-    if (server.listenerCount("request") !== 1) return;
-    response.writeHead(503, { connection: "close" });
-    response.end();
-  });
-  return server;
-};
-
 /** The HTTP + WebSocket server on 127.0.0.1, with the core services it serves. */
 export const ServerLayer: Layer.Layer<
   | HttpServer.HttpServer
@@ -1046,7 +1036,7 @@ export const ServerLayer: Layer.Layer<
     const { port, listenHost, provisionedHosts } = yield* ServerConfig;
     const listeners = (options: NodeHttpServer.Options) =>
       withProvisionedListener(
-        NodeHttpServer.layerServer(createHttpListener, options),
+        NodeHttpServer.layerServer(() => createServer(), options),
         provisionedHosts,
         options,
       );

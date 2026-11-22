@@ -58,7 +58,7 @@ depends on its siblings through an alias, and a consumer does the same:
   "dependencies": {
     "@gram/contracts": "npm:@<owner>/gram-contracts@1.18.1-canary.20261110231900.g664099538",
     "@gram/server": "npm:@<owner>/gram-server@1.18.1-canary.20261110231900.g664099538",
-    "effect": "4.1.4"
+    "effect": "4.1.5"
   }
 }
 ```
