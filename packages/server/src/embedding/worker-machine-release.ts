@@ -24,9 +24,8 @@ import {
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
 import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
-import { forgetReleased } from "./hosted-machine-forget.ts";
+import { setAsideReleased } from "./hosted-machine-set-aside.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { SqlClient } from "../platform/unstable.ts";
 
 /**
  * The workers whose machine may be told its work is over: finished as the ledger reads them and
@@ -289,7 +288,6 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
-    const sql = Option.getOrUndefined(yield* Effect.serviceOption(SqlClient.SqlClient));
     const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
@@ -332,18 +330,23 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
           );
         }
       }
-      const forget = signedIn?.forgetStopped;
-      if (forget === undefined || runtimes === undefined || sql === undefined) return;
+      const aside = signedIn?.setAside;
+      if (aside === undefined || runtimes === undefined) return;
+      const isAside = (machine: ReleaseMachine) =>
+        remote.machines.get(machine.id)?.setAside !== undefined;
       const candidates = machines.filter(
         (machine) =>
           machine.via !== undefined &&
           machine.onlineSince === undefined &&
+          !isAside(machine) &&
           told.get(toldKey(machine))?.released === true,
       );
-      yield* forgetReleased(
+      yield* setAsideReleased(
         candidates,
-        { store, runtimes, fence: (effect) => Effect.orDie(sql.withTransaction(effect)) },
-        forget,
+        machines.filter(isAside),
+        { store, runtimes },
+        aside.stopped,
+        aside.takeBack,
       );
     });
     yield* pass.pipe(

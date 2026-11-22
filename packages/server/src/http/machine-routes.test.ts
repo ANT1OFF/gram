@@ -201,6 +201,9 @@ describe("a joined machine's folders, for the local app", () => {
   );
 });
 
+const names = (body: unknown) =>
+  (body as { machines: ReadonlyArray<{ name: string }> }).machines.map((each) => each.name);
+
 describe("Settings → Machines", () => {
   it.effect("lists this Gram's release and protocol, and the command that updates a machine", () =>
     Effect.gen(function* () {
@@ -226,6 +229,28 @@ describe("Settings → Machines", () => {
       expect(down.body).toMatchObject({
         machines: [{ offline: { kind: "tailscale-down", cause: "stopped" } }],
       });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("leaves out a hosted machine set aside, and lists it again once it is taken back", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const provisioned = hosts.machines.provision({
+        name: "worker-0123456789",
+        publicKey: generateHostKey().publicKey,
+        platform: "linux",
+        onDemand: "worker",
+        via: "https://hosted.example.test",
+        viaAccount: "account-ada-0123456789",
+      });
+      if (provisioned.kind !== "provisioned") throw new Error(provisioned.message);
+      const id = provisioned.machine.id;
+      hosts.machines.setAside(id, 1);
+      expect(names((yield* post(hosts, MACHINES_LIST_PATH, {})).body)).toEqual([]);
+      hosts.machines.setAside(id, undefined);
+      expect(names((yield* post(hosts, MACHINES_LIST_PATH, {})).body)).toEqual([
+        "worker-0123456789",
+      ]);
     }).pipe(Effect.scoped),
   );
 
