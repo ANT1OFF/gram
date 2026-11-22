@@ -1050,6 +1050,37 @@ describe("the relays a desktop's Gram asks the app to carry", () => {
     }),
   );
 
+  it.live("at the most carried, ask first which are stopped there, as just after a restart", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      fullOf(hosts);
+      const key = generateHostKey();
+      const app = fakeApp({
+        answer: ({ call, body }) =>
+          call !== "status"
+            ? { status: 200, body: {} }
+            : body["name"] === NEW
+              ? { status: 200, body: { phase: "joining", publicKey: key.publicKey } }
+              : { status: 200, body: { phase: "stopped" } },
+      });
+      // Nothing known asleep yet: no reclaimed pass has run since this Gram started.
+      const asleep = new Set<string>();
+      const source = signedInSource(SERVER, {
+        port: bridgeWorkerMachines(app.port),
+        hosts,
+        everyMs: 10,
+        asleep,
+        timeoutMs: 200,
+      });
+      yield* source.arrive(NEW);
+      expect(hosts.list().map((each) => each.name)).toContain(NEW);
+      expect(asleep.size).toBe(RELAYED_MOST);
+      // Asked after, never stopped, released or forgotten.
+      expect(app.calls.filter((each) => each.call !== "status")).toEqual([]);
+      expect(hosts.list()).toHaveLength(RELAYED_MOST + 1);
+    }),
+  );
+
   it("relay no more machines than the app takes in one list, online and wanted ones first", () => {
     const machines = Array.from({ length: APP_RELAYS_MOST + 6 }, (_, index) => ({
       name: `m${index}`,

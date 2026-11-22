@@ -415,8 +415,6 @@ export interface ProvidedMachine {
   /** The sign-in there it was asked for under (`PairedMachine.viaAccount`). */
   readonly viaAccount?: string | undefined;
   readonly onlineSince?: number | undefined;
-  /** When it first joined. */
-  readonly joinedAt?: number | undefined;
 }
 
 /** Why waiting for a machine ended without it. */

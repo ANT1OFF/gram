@@ -4,7 +4,6 @@ import {
   hostOf,
   type Thread,
   type ThreadId,
-  type WorkspaceId,
 } from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -24,9 +23,6 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
-import { readOutbox as readStoredOutbox } from "../orchestration/outbox.ts";
-import { threadsLetGo, WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
-import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 
 /**
  * The workers whose machine may be told its work is over: finished as the ledger reads them and
@@ -43,116 +39,10 @@ export const releasableWorkers = (
       .map((worker) => worker.threadId),
   );
 
-/** The workers with a wake pending, as the ledger reads them: their machine is kept for it. */
-export const wakingWorkers = (
-  features: ReadonlyArray<Pick<FeatureLedgerEntry, "workers">>,
-): ReadonlySet<ThreadId> =>
-  new Set(
-    features
-      .flatMap((feature) => feature.workers)
-      .filter((worker) => (worker.wakes?.length ?? 0) > 0)
-      .map((worker) => worker.threadId),
-  );
-
-/**
- * Whether a session has anything going on: a turn, a queued message, a request waiting, work in
- * the background or a subagent.
- */
-export const sessionBusy = (summary: {
-  readonly status: string;
-  readonly queue: ReadonlyArray<unknown>;
-  readonly pendingRequests: ReadonlyArray<unknown>;
-  readonly background?: ReadonlyArray<unknown> | undefined;
-  readonly activity?: unknown;
-}) =>
-  summary.status === "running" ||
-  summary.status === "starting" ||
-  summary.queue.length > 0 ||
-  summary.pendingRequests.length > 0 ||
-  (summary.background?.length ?? 0) > 0 ||
-  summary.activity !== undefined;
-
-/** What `threadsNow` reads. */
-export interface ThreadsNowDeps {
-  readonly store: Pick<
-    ThreadStore["Service"],
-    "listThreadsForClaims" | "listThreadWakes" | "listWorkspaces" | "getOutbox"
-  >;
-  /** A workspace's ledger, or none when it can't be read. */
-  readonly ledger: (
-    workspaceId: WorkspaceId,
-  ) => Effect.Effect<Option.Option<{ readonly features: ReadonlyArray<FeatureLedgerEntry> }>>;
-  readonly runtimes: Pick<ThreadRuntimes["Service"], "summaryOf">;
-  readonly now?: () => number;
-}
-
-/**
- * Reads, as they are now, whether the threads let each hosted worker machine go
- * (`threadsLetGo`): every thread, archived ones included, every plain thread's wake, every
- * worker's wake as its workspace's ledger reads it, and each archived thread's session. Undefined,
- * so nothing is let go, when any of it can't be read: a thread's row, a workspace's ledger or its
- * outbox.
- */
-export const threadsNow = (
-  deps: ThreadsNowDeps,
-): Effect.Effect<((machine: ReleaseMachine) => boolean) | undefined> =>
-  Effect.gen(function* () {
-    const waking = new Set<ThreadId>();
-    for (const workspace of yield* deps.store.listWorkspaces) {
-      const id = workspace.workspace.id;
-      if (readStoredOutbox(yield* deps.store.getOutbox(id))._tag === "unreadable") return undefined;
-      const ledger = yield* deps.ledger(id);
-      if (Option.isNone(ledger)) return undefined;
-      for (const worker of wakingWorkers(ledger.value.features)) waking.add(worker);
-    }
-    const claims = yield* deps.store.listThreadsForClaims;
-    if (claims.unknown.length > 0 || claims.unknownParked.length > 0) return undefined;
-    for (const wake of yield* deps.store.listThreadWakes) waking.add(wake.threadId);
-    const busy = new Set<ThreadId>();
-    for (const thread of claims.threads) {
-      if (thread.parked !== true) continue;
-      const summary = yield* deps.runtimes.summaryOf(thread.id);
-      if (summary !== undefined && sessionBusy(summary)) busy.add(thread.id);
-    }
-    const at = (deps.now ?? Date.now)();
-    return (machine) =>
-      threadsLetGo(machine, claims.threads, waking, (thread) => busy.has(thread), at);
-  });
-
-/**
- * Forgets each hosted worker machine whose release was told, that is offline and that the
- * threads let go (`threadsNow`), once its server says it is stopped (`forget`, the signed-in
- * `forgetStopped`). The threads are read again, afresh, under the machine's name's lock after
- * that answer, and once more after it is forgotten: a thread taken up meanwhile has it registered
- * again. What the release's answer said isn't relied on: only the threads, and the stopped status.
- */
-export const forgetReleased = (
-  machines: ReadonlyArray<ReleaseMachine>,
-  told: ReadonlyMap<string, { readonly released: boolean }>,
-  deps: ThreadsNowDeps,
-  forget: (id: string, letGo: Effect.Effect<boolean>) => Effect.Effect<boolean>,
-) =>
-  Effect.gen(function* () {
-    const released = machines.filter(
-      (machine) =>
-        machine.via !== undefined &&
-        machine.onlineSince === undefined &&
-        told.get(toldKey(machine))?.released === true,
-    );
-    if (released.length === 0) return;
-    const first = yield* threadsNow(deps);
-    if (first === undefined) return;
-    for (const machine of released) {
-      if (!first(machine)) continue;
-      const letGo = Effect.map(threadsNow(deps), (now) => now?.(machine) === true);
-      yield* forget(machine.id, letGo);
-    }
-  });
-
 /** How often worker machines are looked at. */
 export const WORKER_RELEASE_EVERY = Duration.minutes(2);
 /** How long a newly online machine is given before it can be released. */
-export const WORKER_RELEASE_SETTLE_MS = WORKER_MACHINE_SETTLE_MS;
+export const WORKER_RELEASE_SETTLE_MS = 30 * 60_000;
 
 /** A joined machine as this reads it. */
 export interface ReleaseMachine {
@@ -394,7 +284,6 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     if (tell === undefined || remote === undefined) return;
     const orchestration = yield* Orchestration;
     const store = yield* ThreadStore;
-    const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const told = new Map<string, { readonly released: boolean; readonly at: number }>();
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
@@ -437,18 +326,6 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
           );
         }
       }
-      const forget = signedIn?.forgetStopped;
-      if (forget === undefined || runtimes === undefined) return;
-      yield* forgetReleased(
-        machines,
-        told,
-        {
-          store,
-          runtimes,
-          ledger: (id) => orchestration.ledger(id).pipe(Effect.option),
-        },
-        forget,
-      );
     });
     yield* pass.pipe(
       Effect.catchCause((cause) =>
