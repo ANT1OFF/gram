@@ -8,16 +8,27 @@ export class EndpointFailed extends Data.TaggedError("EndpointFailed")<{
   readonly message: string;
 }> {}
 
-const bearerOf = async (endpoint: EndpointConfig): Promise<string | undefined> => {
+/** A token file that could not be read or holds no token. Its message never holds the file's text. */
+export class TokenFileUnusable extends Error {}
+
+/**
+ * The bearer an endpoint is sent: its token, or what its token file holds now. A file is read
+ * again for every call, so a token the deployment rotates (a projected workload token) is never
+ * sent stale.
+ */
+export const bearerOf = async (
+  endpoint: Pick<EndpointConfig, "token" | "tokenFile">,
+): Promise<string | undefined> => {
   if (endpoint.tokenFile === undefined) return endpoint.token;
   let text: string;
   try {
     text = await readFile(endpoint.tokenFile, "utf8");
   } catch {
-    throw new Error("the token file could not be read");
+    throw new TokenFileUnusable("the token file could not be read");
   }
   const token = text.trim();
-  if (!/^[\x21-\x7e]+$/.test(token)) throw new Error("the token file holds no usable token");
+  if (!/^[\x21-\x7e]+$/.test(token))
+    throw new TokenFileUnusable("the token file holds no usable token");
   return token;
 };
 

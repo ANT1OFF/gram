@@ -7,6 +7,7 @@ import * as Exit from "effect/Exit";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { postJson } from "./endpoint.ts";
+import { callOutside } from "./outside.ts";
 
 // A token from a file is read again for every call, so one replaced while the server runs is the
 // one sent next.
@@ -52,6 +53,33 @@ describe("an endpoint's token file", () => {
     expect(JSON.stringify(unusable)).not.toContain("two words");
     const missing = await Effect.runPromiseExit(
       postJson({ url, tokenFile: join(dir, "nothing") }, {}, 5000),
+    );
+    expect(JSON.stringify(missing)).toContain("the token file could not be read");
+    expect(seen).toHaveLength(2);
+  });
+});
+
+describe("an outside service's token file", () => {
+  it("is read for every call, and a file that can't be read fails the call before it is made", async () => {
+    seen.length = 0;
+    const file = join(dir, "outside-token");
+    await writeFile(file, "rotated-1\n");
+    const service = { url: url.replace(/\/$/, ""), tokenFile: file };
+    await Effect.runPromise(
+      callOutside("store", service, { method: "POST", path: "/x", json: {} }),
+    );
+    await writeFile(file, "rotated-2");
+    await Effect.runPromise(
+      callOutside("store", service, { method: "POST", path: "/x", json: {} }),
+    );
+    expect(seen).toEqual(["Bearer rotated-1", "Bearer rotated-2"]);
+
+    const missing = await Effect.runPromiseExit(
+      callOutside(
+        "store",
+        { ...service, tokenFile: join(dir, "nothing") },
+        { method: "GET", path: "/" },
+      ),
     );
     expect(JSON.stringify(missing)).toContain("the token file could not be read");
     expect(seen).toHaveLength(2);
