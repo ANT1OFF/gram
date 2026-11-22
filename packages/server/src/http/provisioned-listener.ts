@@ -71,11 +71,6 @@ const createTlsListener = (config: ProvisionedHostsConfig) => {
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
   });
-  server.on("request", (_request, response) => {
-    if (server.listenerCount("request") !== 1) return;
-    response.writeHead(503, { connection: "close" });
-    response.end();
-  });
   return {
     server,
     end: () => {
