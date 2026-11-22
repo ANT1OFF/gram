@@ -119,10 +119,9 @@ export const bringSteps = (
   }));
 };
 
-/** What goes with the thread, as the review lists it. Its edits are listed by file under it. */
+/** What goes with the thread besides its edits, which the review lists by file. */
 export const goesLines = (input: { readonly branch?: string }): readonly string[] => [
-  "The conversation and its turns, with anything that looks like a key removed",
-  "Its edits, uncommitted ones too, as listed below",
+  "The conversation, with anything that looks like a key removed",
   ...(input.branch === undefined ? [] : [`Its branch, ${input.branch}`]),
 ];
 

@@ -235,42 +235,40 @@ export function MoveThreadDialog({
       testId="move-thread-dialog"
       title={`Move "${title}" to a server`}
       onClose={onClose}
+      className="w-[min(40rem,90vw)]"
     >
-      <div className="-mx-1 flex min-h-0 flex-col gap-4 overflow-y-auto px-1">
+      <div className="-mx-1 flex min-h-0 flex-col gap-3 overflow-y-auto px-1">
         {targets.length > 1 ? (
-          <div className="flex flex-col gap-1.5">
-            <p id="move-thread-to-label" className="text-meta text-muted-foreground">
-              Choose where it goes
-            </p>
-            <RadioGroup<string>
-              testId="move-thread-to"
-              labelledBy="move-thread-to-label"
-              value={target === undefined ? undefined : targetKey(target)}
-              disabled={waiting}
-              onChange={setPicked}
-              options={targets.map((each) => ({
-                value: targetKey(each),
-                label: (
-                  <>
-                    {each.name} on {each.host}
-                    <span className="text-muted-foreground"> · {each.organisation}</span>
-                  </>
-                ),
-              }))}
-            />
+          <div data-testid="move-thread-to" className="flex flex-col gap-1.5">
+            <p className="text-meta text-muted-foreground">Choose where it goes</p>
+            {serversOf(targets).map((server) => (
+              <div key={server.origin} className="flex flex-col gap-1">
+                <p id={`move-thread-to-${server.host}`} className="text-meta">
+                  {server.host}
+                  <span className="text-muted-foreground"> · {server.organisations}</span>
+                </p>
+                <RadioGroup<string>
+                  name="move-thread-to"
+                  labelledBy={`move-thread-to-${server.host}`}
+                  className="pl-2"
+                  value={target === undefined ? undefined : targetKey(target)}
+                  disabled={waiting}
+                  onChange={setPicked}
+                  options={server.targets.map((each) => ({
+                    value: targetKey(each),
+                    label: <span className="font-medium">{each.name}</span>,
+                  }))}
+                />
+              </div>
+            ))}
           </div>
         ) : null}
-        <Listed
-          testId="move-thread-goes"
-          title="Goes"
-          lines={goesLines(
-            thread.checkout.branch === undefined ? {} : { branch: thread.checkout.branch },
-          )}
-        />
-        <p data-testid="move-thread-stays" className="flex flex-col gap-1 text-meta">
-          <span className="text-muted-foreground">Stays on {machine()}</span>
-          <span>{staysLines(machine()).join(" · ")}</span>
-        </p>
+        <div className="flex flex-col gap-2 text-meta">
+          <p data-testid="move-thread-stays" className="flex flex-col gap-0.5">
+            <span className="text-muted-foreground">Stays on {machine()}</span>
+            <span>{staysLines(machine()).join(" · ")}</span>
+          </p>
+        </div>
         {working && (
           <p data-testid="move-thread-running" className="flex flex-col gap-0.5 text-reading">
             {waiting ? "It moves when this turn ends" : "It is working now"}
@@ -281,6 +279,9 @@ export function MoveThreadDialog({
         )}
       </div>
       <Destination
+        goes={goesLines(
+          thread.checkout.branch === undefined ? {} : { branch: thread.checkout.branch },
+        )}
         target={target}
         repository={repository}
         edits={edits?.repo === true ? (edits.files ?? []) : undefined}
@@ -340,25 +341,38 @@ export function MoveThreadDialog({
   );
 }
 
-const FILES_LISTED_AT_MOST = 6;
+const FILES_LISTED_AT_MOST = 4;
+
+const biggestFirst = (files: readonly DiffFile[]): readonly DiffFile[] =>
+  files.toSorted((a, b) => b.additions + b.deletions - (a.additions + a.deletions));
+
+const serversOf = (targets: readonly MoveTarget[]) =>
+  [...Map.groupBy(targets, (each) => each.origin)].map(([origin, each]) => ({
+    origin,
+    host: each[0]!.host,
+    organisations: [...new Set(each.map((one) => one.organisation))].join(", "),
+    targets: each,
+  }));
 
 const plural = (count: number, one: string, many: string) =>
   `${count.toLocaleString("en")} ${count === 1 ? one : many}`;
 
 function Destination({
+  goes,
   target,
   repository,
   edits,
   reading,
   unpushed,
 }: {
+  goes: readonly string[];
   target: MoveTarget | undefined;
   repository: string;
   edits: readonly DiffFile[] | undefined;
   reading: boolean;
   unpushed: number;
 }) {
-  const shown = edits?.slice(0, FILES_LISTED_AT_MOST) ?? [];
+  const shown = biggestFirst(edits ?? []).slice(0, FILES_LISTED_AT_MOST);
   const more = (edits?.length ?? 0) - shown.length;
   const additions = edits?.reduce((sum, file) => sum + file.additions, 0) ?? 0;
   const deletions = edits?.reduce((sum, file) => sum + file.deletions, 0) ?? 0;
@@ -366,31 +380,40 @@ function Destination({
     <section
       data-testid="move-thread-destination"
       aria-label="Before you move"
-      className="flex shrink-0 flex-col gap-3 rounded-lg border border-edge-group bg-card p-3 text-reading"
+      className="flex shrink-0 flex-col gap-2 rounded-lg border border-edge-group bg-card p-3 text-reading"
     >
       <div data-testid="move-thread-where" className="flex flex-col gap-0.5">
         <span className="text-meta text-muted-foreground">Goes to</span>
         {target === undefined ? (
-          <span className="text-muted-foreground">
-            No workspace chosen yet. Nothing moves until you choose one.
+          <span
+            data-testid="move-thread-unchosen"
+            className="rounded-md border border-dashed border-border px-2 py-1.5 font-medium"
+          >
+            Choose a workspace above. Nothing moves until you do.
           </span>
         ) : (
           <>
-            <span className="font-medium">
-              {target.name} on {target.host}
+            <span className="font-heading text-title">
+              {target.name}
+              <span className="font-sans text-reading text-muted-foreground">
+                {" "}
+                on {target.host}
+              </span>
             </span>
             <span className="text-meta text-muted-foreground">
-              {target.organisation}'s workspace. Its rules, models, limits and audit apply there
-              from the move on. This copy stays here, read-only.
+              {target.organisation}'s rules, models, limits and audit apply there from the move on.
             </span>
           </>
         )}
+        <span data-testid="move-thread-goes" className="text-meta">
+          With it: {goes.join(" · ")}
+        </span>
       </div>
       <div data-testid="move-thread-ref" className="flex flex-col gap-1.5">
         <span className="text-meta text-muted-foreground">Who can read its edits</span>
         <span>
-          Anyone who can read <span className="font-mono">{repository}</span>. Its edits go on a
-          hidden ref there, not on a branch.
+          Anyone who can read <span className="font-mono">{repository}</span>: they go on a hidden
+          ref there, not on a branch.
         </span>
         {reading ? (
           <span className="text-meta text-muted-foreground">Reading its edits…</span>
@@ -411,7 +434,7 @@ function Destination({
             </span>
             <ul
               data-testid="move-thread-files"
-              className="flex max-h-32 flex-col overflow-y-auto rounded-md border border-border/60 [&>li~li]:border-t [&>li~li]:border-border/60"
+              className="flex flex-col rounded-md border border-border/60 [&>li~li]:border-t [&>li~li]:border-border/60"
             >
               {shown.map((file) => {
                 const status = FILE_STATUS[file.status];
@@ -459,26 +482,5 @@ function Destination({
         )}
       </div>
     </section>
-  );
-}
-
-function Listed({
-  testId,
-  title,
-  lines,
-}: {
-  testId: string;
-  title: string;
-  lines: readonly string[];
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <p className="text-meta text-muted-foreground">{title}</p>
-      <ul data-testid={testId} className="flex list-disc flex-col gap-0.5 pl-4 text-reading">
-        {lines.map((line) => (
-          <li key={line}>{line}</li>
-        ))}
-      </ul>
-    </div>
   );
 }
