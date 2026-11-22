@@ -150,6 +150,10 @@ export function OpenQuestion({
   onDismiss,
   onOpen,
   answering = false,
+  initialChoice = NO_CHOICE,
+  startAnswering = false,
+  sendLabel,
+  onCancel,
 }: {
   card: QuestionCard;
   compact: boolean;
@@ -169,13 +173,21 @@ export function OpenQuestion({
   onOpen?: (() => void) | undefined;
   /** The Asks dock has it open now: it says so rather than offer Answer again. */
   answering?: boolean;
+  /** What is picked as it opens: the answer given before, when it is being changed. */
+  initialChoice?: Choice;
+  /** Opens answering in place, as Update answer does, rather than behind an Answer button. */
+  startAnswering?: boolean;
+  /** The send button's words, "Send answer" unless given. */
+  sendLabel?: string | undefined;
+  /** Where Cancel goes instead of back to the Answer button: the answered card, for a change. */
+  onCancel?: (() => void) | undefined;
 }) {
   const [mode, setMode] = useState<"idle" | "answering" | "dismissing">(
-    sheet ? "answering" : "idle",
+    sheet || startAnswering ? "answering" : "idle",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [choice, setChoice] = useState<Choice>(NO_CHOICE);
+  const [choice, setChoice] = useState<Choice>(initialChoice);
   const [reason, setReason] = useState("");
   const answer = choiceAnswer(choice).join("; ");
   const questionId = useId();
@@ -350,6 +362,7 @@ export function OpenQuestion({
             type="submit"
             form={answerFormId}
             testId="question-send"
+            {...(sendLabel === undefined ? {} : { label: sendLabel })}
             disabled={busy || answer === "" || unavailable !== undefined}
             title={unavailable ?? (answer === "" ? "Pick an answer" : undefined)}
             hint={formatKeys("mod+enter")}
@@ -359,7 +372,12 @@ export function OpenQuestion({
           </span>
           <span className="flex-1" />
           {!sheet && (
-            <Button type="button" size="xs" variant="ghost" onClick={() => setMode("idle")}>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => (onCancel === undefined ? setMode("idle") : onCancel())}
+            >
               Cancel
             </Button>
           )}
@@ -498,6 +516,19 @@ export function useWorkerQuestionActions(workspaceId: WorkspaceId) {
       api
         .answerWorkerQuestion({ workspaceId, questionId: question.id, answer: text })
         .then(refresh),
+    /**
+     * Changes the answer `question` holds: refused when it changed since (its `closedAt`), and the
+     * ledger read again either way, so the card shows the newer answer.
+     */
+    change: (question: WorkerQuestion) => (text: string) =>
+      api
+        .answerWorkerQuestion({
+          workspaceId,
+          questionId: question.id,
+          answer: text,
+          replaces: { closedAt: question.closedAt ?? 0 },
+        })
+        .finally(refresh),
     dismiss: (question: WorkerQuestion) => (reason: string | undefined) =>
       api
         .dismissWorkerQuestion({

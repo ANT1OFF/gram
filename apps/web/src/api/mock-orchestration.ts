@@ -1512,7 +1512,10 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
      * worker, steered while it runs, and the card in its transcript moved on.
      */
     async answerWorkerQuestion(input: AnswerWorkerQuestionInput): Promise<WorkerQuestion> {
-      return closeQuestion(input.workspaceId, input.questionId, { answer: input.answer.trim() });
+      return closeQuestion(input.workspaceId, input.questionId, {
+        answer: input.answer.trim(),
+        replaces: input.replaces,
+      });
     },
 
     /** The user's dismissal of a worker's question, told to the worker. */

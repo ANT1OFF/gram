@@ -72,6 +72,11 @@ export const replyTool = (
     rejectExcessProperties: true,
     resolve: (threadId, input) =>
       Effect.gen(function* () {
+        const owner = yield* conversations.ownerOf(input.conversation);
+        if (owner?.id !== threadId)
+          return yield* replyFailed(
+            `This thread doesn't own the conversation ${input.conversation}, so it can't reply there. Reply only in a conversation a message came to you from, or one you were handed.`,
+          );
         if (input.files === undefined) return { ...input, files: [] as ReadonlyArray<ReplyFile> };
         const thread = yield* store
           .getThread(threadId)
@@ -93,6 +98,7 @@ export const replyTool = (
       },
     }),
     needsApproval: (threadId) => supervised(store, threadId),
+    hostDecides: true,
     describe: (_threadId, target) =>
       Effect.succeed(
         `Post in ${target.conversation}:\n\n${target.text}${

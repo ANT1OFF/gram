@@ -27,11 +27,15 @@ export interface ActionCard {
   readonly input: Readonly<Record<string, unknown>>;
 }
 
+/**
+ * Lets an action through, or refuses it. Answers whether the hook decided it (`true`: asked, and
+ * allowed or approved), or let it through unasked (`false`: no hook, or one that is off).
+ */
 export type ActionGuard = (
   threadId: ThreadId,
   question: Pick<DecisionQuestion, "action" | "initiator" | "detail">,
   card: Effect.Effect<ActionCard>,
-) => Effect.Effect<void, ActionRefused>;
+) => Effect.Effect<boolean, ActionRefused>;
 
 export interface ActionGuardDeps {
   /** `undefined` where no hook is configured: the guard then lets everything through unasked. */
@@ -40,53 +44,84 @@ export interface ActionGuardDeps {
   readonly runtimes: Pick<ThreadRuntimesShape, "requestApproval">;
 }
 
+/**
+ * How many cards one action raises at most: the hook asks again when someone it doesn't name
+ * answered, so an answer from anyone else neither lets the action through nor ends it.
+ */
+export const CARDS_PER_ACTION = 5;
+
+/** Why an action is refused once its cards are spent with no answer the hook takes. */
+export const ASKED_TOO_OFTEN =
+  "It was answered too many times by people who may not approve it, so it was not done.";
+
 export const makeActionGuard =
   ({ hook, store, runtimes }: ActionGuardDeps): ActionGuard =>
   (threadId, question, card) =>
     Effect.gen(function* () {
-      if (hook === undefined || !(yield* hook.enabled)) return;
+      if (hook === undefined || !(yield* hook.enabled)) return false;
       const unavailable = new ActionRefused({
         message: refusalText(question.action, DECISION_UNAVAILABLE),
       });
       const thread = yield* store.getThread(threadId).pipe(Effect.mapError(() => unavailable));
       const first = yield* hook.decide({ ...question, thread });
-      if (first.decision === "allow") return;
+      if (first.decision === "allow") return true;
       if (first.decision === "refuse") {
         return yield* new ActionRefused({ message: refusalText(question.action, first.reason) });
       }
       const shown = yield* card;
-      const answer = yield* runtimes
-        .requestApproval(threadId, {
-          toolName: shown.toolName,
-          displayName: shown.displayName,
-          input: { ...shown.input },
-          description: first.title ?? shown.description,
-          ...(first.reason === undefined || first.reason.trim() === ""
-            ? {}
-            : { decisionReason: first.reason }),
-          suggestions: [],
-          scopes: ["once"],
-        })
-        .pipe(Effect.mapError(() => unavailable));
-      if (answer.decision !== "allow") {
-        return yield* new ActionRefused({
+      let asking = first;
+      for (let round = 0; round < CARDS_PER_ACTION; round++) {
+        const answer = yield* runtimes
+          .requestApproval(
+            threadId,
+            {
+              toolName: shown.toolName,
+              displayName: shown.displayName,
+              input: { ...shown.input },
+              description: asking.title ?? shown.description,
+              ...(asking.reason === undefined || asking.reason.trim() === ""
+                ? {}
+                : { decisionReason: asking.reason }),
+              suggestions: [],
+              scopes: ["once"],
+            },
+            {
+              decisionId: asking.id,
+              ...(asking.assignees === undefined ? {} : { assignees: asking.assignees }),
+              ...(asking.title === undefined ? {} : { title: asking.title }),
+            },
+          )
+          .pipe(Effect.mapError(() => unavailable));
+        const notApproved = new ActionRefused({
           message: `Not approved (${question.action})${answer.message === undefined ? "." : `: ${answer.message}`}`,
         });
-      }
-      const second = yield* hook.decide({
-        ...question,
-        thread,
-        approval: {
-          decisionId: first.id,
-          askId: answer.resolution?.requestId ?? "",
-          ...(answer.answeredBy === undefined ? {} : { answeredBy: answer.answeredBy }),
-        },
-      });
-      if (second.decision !== "allow") {
-        return yield* new ActionRefused({
-          message: refusalText(question.action, second.reason ?? "The approval was not accepted."),
+        if (answer.decision !== "allow" && answer.answeredBy === undefined)
+          return yield* notApproved;
+        const second = yield* hook.decide({
+          ...question,
+          thread,
+          approval: {
+            decisionId: asking.id,
+            askId: answer.resolution?.requestId ?? "",
+            ...(answer.answeredBy === undefined ? {} : { answeredBy: answer.answeredBy }),
+          },
         });
+        if (second.decision === "ask") {
+          asking = second;
+          continue;
+        }
+        if (answer.decision !== "allow") return yield* notApproved;
+        if (second.decision !== "allow") {
+          return yield* new ActionRefused({
+            message: refusalText(
+              question.action,
+              second.reason ?? "The approval was not accepted.",
+            ),
+          });
+        }
+        return true;
       }
+      return yield* new ActionRefused({ message: refusalText(question.action, ASKED_TOO_OFTEN) });
     });
 
 /** The guard over the server's own hook, store and runtimes, for the handlers that act for a person. */

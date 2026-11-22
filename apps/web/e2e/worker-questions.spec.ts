@@ -135,6 +135,59 @@ test("the Inbox lists forwarded questions; one is answered there, another dismis
   ).toContainText("Out of scope for this feature.");
 });
 
+test("answered elsewhere, the orchestrator's forward card shows it; Update answer changes it", async ({
+  page,
+}) => {
+  const made = await start(page);
+  // The forward's card in the orchestrator's transcript, drawn while it was open.
+  await page
+    .getByRole("radiogroup", { name: "View" })
+    .getByRole("radio", { name: /^Chat\b/ })
+    .click();
+  const forward = page.locator('[data-testid="worker-question-card"][data-question="WQ1"]');
+  await expect(forward).toHaveAttribute("data-stage", "forwarded");
+  await expect(forward.getByRole("button", { name: "Answer" })).toBeVisible();
+
+  // Answered somewhere else: the card follows, with no reload.
+  await page.evaluate(
+    ([workspaceId]) =>
+      window.gramMock!.answerWorkerQuestion({
+        workspaceId: workspaceId as never,
+        questionId: "WQ1",
+        answer: "Keep for replay",
+      }),
+    [made.workspaceId] as const,
+  );
+  await expect(forward).toHaveAttribute("data-stage", "answered");
+  await expect(forward.getByTestId("question-status")).toHaveText(/^Answered by you · \d\d:\d\d$/);
+  await expect(forward.getByTestId("question-outcome")).toHaveText("Keep for replay");
+  await expect(forward.getByTestId("question-send")).toHaveCount(0);
+  if (process.env["GRAM_E2E_SHOTS"] === "1") {
+    await forward.screenshot({ path: "test-results/question-card-answered.png" });
+  }
+
+  // Update answer starts from that answer; the change goes to the worker as a new message.
+  await forward.getByTestId("question-update").click();
+  await expect(forward.getByRole("radio", { name: /^Keep for replay/ })).toBeChecked();
+  if (process.env["GRAM_E2E_SHOTS"] === "1") {
+    await forward.screenshot({ path: "test-results/question-card-updating.png" });
+  }
+  await forward.getByRole("radio", { name: /^Drop after three/ }).click();
+  await forward.getByRole("button", { name: "Update answer" }).click();
+  await expect(forward.getByTestId("question-outcome")).toHaveText("Drop after three");
+  await expect(forward.getByTestId("question-status")).toHaveText(
+    /^Answer changed by you · \d\d:\d\d$/,
+  );
+  if (process.env["GRAM_E2E_SHOTS"] === "1") {
+    await forward.screenshot({ path: "test-results/question-card-changed.png" });
+  }
+  expect(await stageOf(page, made.workspaceId, "WQ1")).toMatchObject({
+    stage: "answered",
+    answer: "Drop after three",
+    revised: true,
+  });
+});
+
 test("the feature sheet keeps each question's history: who answered and when", async ({ page }) => {
   await start(page);
   // The working worker's feature: its forwarded question, and the one the user dismissed.

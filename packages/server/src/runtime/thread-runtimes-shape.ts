@@ -1,3 +1,4 @@
+import type { AskNote } from "../embedding/event-sink.ts";
 import type {
   ThreadId,
   TurnId,
@@ -525,11 +526,14 @@ export interface ThreadRuntimesShape {
   ): Effect.Effect<Thread, ThreadNotFound>;
   /**
    * Raises an approval card that the server answers itself, for app tool calls, whatever the agent.
-   * Waits for `respond`; the turn ending or the session closing denies it.
+   * Waits for `respond`; the turn ending or the session closing denies it. `decided` is what the
+   * decision hook said in asking for it, which the card's `ask.opened` carries to the host so the
+   * host can take the answer as the approval it asked for.
    */
   requestApproval(
     threadId: ThreadId,
     request: Omit<ApprovalRequest, "kind" | "id">,
+    decided?: AskNote,
   ): Effect.Effect<ServerApprovalAnswer, ThreadNotFound>;
   /** The live agent session, for app tools that drive it directly. */
   session(threadId: ThreadId): Effect.Effect<AgentSession, ThreadNotFound | InvalidState>;

@@ -6,7 +6,6 @@ import {
   type OrchestratorLedger,
   type ThreadId,
   type WorkerQuestion,
-  type WorkspaceId,
 } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -17,14 +16,12 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { hasGit } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import type { FakeSession } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Orchestration } from "./service.ts";
 import { encodeOutbox } from "./outbox.ts";
 import {
   completeTurn,
   makeWorld,
-  openOrchestrator,
   outboxOf,
   settle,
   spawn,
@@ -34,25 +31,17 @@ import {
   type Server,
   type World,
 } from "./test-harness.ts";
+import {
+  QUESTION,
+  asked,
+  inServer,
+  nextDigest,
+  stored,
+  withWorker,
+} from "./worker-question-harness.ts";
 
 // Workers' own questions (docs/design/worker-questions.md): asked by a worker, triaged by its
 // orchestrator, otherwise answered or dismissed by the user, with the orchestrator's copy.
-
-const inServer = <A, E>(body: (world: World) => Effect.Effect<A, E, Server | Scope.Scope>) =>
-  Effect.gen(function* () {
-    const world = yield* makeWorld;
-    return yield* withServer(world, body(world));
-  });
-
-const QUESTION = {
-  question: "Should a deleted cart answer 404 or 410?",
-  context: "Clients cache 404s for a day.",
-  options: [
-    { label: "404", description: "What the API does today" },
-    { label: "410", description: "Gone, so clients drop it" },
-  ],
-  recommended: "410",
-};
 
 const partsOf = (messages: ReadonlyArray<GramUIMessage>, type: string) =>
   messages.flatMap((message) => message.parts.filter((part) => part.type === type));
@@ -64,37 +53,6 @@ const questionCards = (threadId: ThreadId) =>
       (part) => (part as unknown as { data: WorkerQuestion }).data,
     );
   });
-
-const stored = (workspaceId: WorkspaceId, id: string) =>
-  Effect.map(outboxOf(workspaceId), (outbox) =>
-    (outbox.questions ?? []).find((question) => question.id === id),
-  );
-
-/** An orchestrator with one worker, its brief's turn still running. */
-const withWorker = (world: World) =>
-  Effect.gen(function* () {
-    const opened = yield* openOrchestrator(world);
-    const worker = yield* spawn(opened.session, { feature: "cart", title: "Cart API" });
-    yield* completeTurn(opened.session);
-    return { ...opened, worker };
-  });
-
-/** The next digest the orchestrator is sent, once the window has passed; its turn left running. */
-const nextDigest = (orchestrator: FakeSession) =>
-  Effect.gen(function* () {
-    const before = orchestrator.sent.length;
-    yield* TestClock.adjust("60 seconds");
-    yield* settle;
-    const session = yield* waitSent(orchestrator.options.threadId, before + 1);
-    return session.sent.at(-1)?.text ?? "";
-  });
-
-const asked = (session: FakeSession, input: Record<string, unknown> = QUESTION) =>
-  session.callTool("ask_question", input) as Effect.Effect<{
-    readonly asked: boolean;
-    readonly id: string;
-    readonly stage: string;
-  }>;
 
 /** A second workspace, its orchestrator with a worker of its own. */
 const otherWorkspace = (other: World) =>
@@ -276,11 +234,7 @@ describe.skipIf(!hasGit)("worker questions", () => {
           "question",
         );
 
-        // Closed is closed, for the orchestrator and the user alike.
-        const again = yield* session
-          .callTool("answer_worker", { questionId: "WQ1", answer: "404", source: "memory" })
-          .pipe(Effect.flip);
-        expect(again.message).toMatch(/^closed: WQ1 is answered already by the orchestrator\./);
+        // An answer is not a second answer: the user's, given as if it were open, is refused.
         const late = yield* orchestration
           .answerQuestionAsUser({ workspaceId, questionId: "WQ1", answer: "404" })
           .pipe(Effect.flip);

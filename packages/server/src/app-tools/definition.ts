@@ -135,6 +135,13 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
    */
   decision?(threadId: ThreadId, target: T): Pick<DecisionQuestion, "action" | "detail"> | undefined;
   /**
+   * A call the decision hook decided (`decision`, with the hook on) raises no card of Gram's own:
+   * the host's answer, and the card it asked a person for, is the approval. For an action on the
+   * host's own things, such as a reply in a conversation it owns. Where no hook decided the call,
+   * `needsApproval` and the class answer as without it.
+   */
+  readonly hostDecides?: true;
+  /**
    * What the card's details show for a call, when what runs isn't the input as sent (an issue as
    * composed and redacted, footer included); the input in the schema's encoding when absent.
    */

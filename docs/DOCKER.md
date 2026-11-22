@@ -246,9 +246,14 @@ The [wire shapes](../packages/contracts/src/embedding.ts) are version 1.
   call to the approval Gram would have asked for anyway.
 - `refuse` stops the action. The agent is told why in the call's result, and the thread shows the
   same line as a notice.
-- `ask` raises the usual approval card, with the endpoint's reason on it. When a person approves
-  it the endpoint is asked again, naming the first call and the card, and the action runs only if
-  that answer is `allow`.
+- `ask` raises the usual approval card, with the endpoint's reason on it, and its `ask.opened`
+  names the call that asked (`decisionId`), an action the server takes itself included. When a
+  person answers it the endpoint is asked again, naming the first call and the card, and the action
+  runs only if a person approved it and that answer is `allow`. For an action the server takes
+  itself, an `ask` on that second call (the endpoint doesn't take this person's answer) raises a
+  new card in its place, at most five for one action, so an answer from someone the endpoint
+  doesn't name neither lets the action through nor ends it; a rejection is asked about too, and
+  the endpoint can only ask again or let it stop there.
 - With sign-in through a fronting proxy on, a request for something a person did in the app
   carries that person's id as `actor.id`, and the second call for an approved card names who
   approved it in `approval.answeredBy`.
