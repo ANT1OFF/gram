@@ -29,7 +29,6 @@ export const THREADS = [
     cloneIdentity: cloneIdentityOf(URL)!,
   }),
   thread("t-here", { path: "/clones/widgets-trees/here", cloneIdentity: cloneIdentityOf(URL)! }),
-  // A folder the user picked there: Gram didn't make it from a clone.
   thread("t-folder", { kind: "main", path: "/home/dev/project" }),
   thread("t-nothing", {
     path: "/clones/widgets-trees/nothing",
