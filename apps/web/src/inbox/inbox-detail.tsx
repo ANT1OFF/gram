@@ -23,6 +23,7 @@ import {
 import {
   otherIndex,
   replyAction,
+  replyDone,
   replyId,
   type ApprovalShortcut,
   type Ask,
@@ -194,7 +195,7 @@ function AskInPlace({
     if (action === undefined) return;
     setPicked(undefined);
     useAskStackStore.getState().setReply(replyId(ask), "");
-    send("Replied", action);
+    send(replyDone(ask), action);
   };
   useInboxKeys((event) => {
     const target = event.target instanceof Element ? event.target : null;

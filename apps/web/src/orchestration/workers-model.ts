@@ -3,6 +3,7 @@ import {
   ciFixOwnedPrs,
   capWords,
   reportGist,
+  reportLine,
   requestGist,
   type FeatureLedgerEntry,
   type FinishedWorker,
@@ -463,10 +464,7 @@ export const workerRow = (
   if (busy.activity === "working") return row(undefined, busy.reason ?? "compacting");
   if (busy.activity === "automation") return row(undefined, busy.reason ?? "waits on checks");
   if (busy.activity === "attention") return row(undefined, busy.reason ?? "needs attention");
-  if (report !== undefined) {
-    if (report.state === "done") return row(undefined, "reported done");
-    return row(undefined, reportGist(report.summary));
-  }
+  if (report !== undefined) return row(undefined, reportLine(report));
   if (live.quiet?.lastTool !== undefined)
     return row(undefined, `stopped after ${live.quiet.lastTool}`);
   return row(undefined, "idle");

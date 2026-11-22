@@ -59,8 +59,6 @@ import {
   type DismissWorkerQuestionInput,
   type WorkerQuestion,
   isOpenQuestion,
-  workerAnswerMessage,
-  workerDismissMessage,
   firstChoiceOf,
 } from "@gram/contracts";
 
@@ -76,6 +74,7 @@ import {
 import { simulateWaits } from "./mock-board-waits";
 import { simulateQuietBusy, simulateQuietWorkspaces, simulateWaitingOn } from "./mock-quiet";
 import { simulateReadme } from "./mock-readme";
+import { closeWorkerQuestion, type MockQuestionClose } from "./mock-worker-questions";
 import {
   simulateDigestStream,
   simulateRealistic,
@@ -306,6 +305,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
   const intervened = new Set<ThreadId>();
   const noLocalCheck = new Set<string>();
   const started = new Set<ThreadId>();
+  const inputAt = new Map<ThreadId, number>();
   host.onEvent((event) => {
     if (event.type === "thread.status" && event.status === "running") started.add(event.threadId);
   });
@@ -422,6 +422,7 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
                     }
                   : {}),
                 lastReport: reports.get(t.id),
+                lastInputAt: inputAt.get(t.id),
                 started: started.has(t.id),
                 askedAt,
                 overlapsWith: (overlaps.get(t.id) ?? []).filter((other) =>
@@ -513,45 +514,19 @@ export function createMockOrchestration(host: MockOrchestrationHost) {
     });
   };
 
-  const closeQuestion = async (
-    workspaceId: WorkspaceId,
-    questionId: string,
-    close: { readonly answer: string } | { readonly dismissed: true; readonly reason?: string },
-  ): Promise<WorkerQuestion> => {
-    const all = questionsOf.get(workspaceId) ?? [];
-    const question = all.find((each) => each.id.toLowerCase() === questionId.toLowerCase());
-    if (question === undefined) {
-      throw Object.assign(new Error(`There is no question ${questionId} in this workspace.`), {
-        _tag: "NotFound",
-        entity: "question",
-        id: questionId,
-      });
-    }
-    if (!isOpenQuestion(question)) {
-      throw new MockInvalidState(`${question.id} is ${question.stage} already.`);
-    }
-    const text =
-      "answer" in close
-        ? workerAnswerMessage(question, close.answer, { closedBy: "user" })
-        : workerDismissMessage(question, close.reason);
-    const delivered = await host.deliver(question.threadId, text);
-    const closed: WorkerQuestion = {
-      ...question,
-      stage: "answer" in close ? "answered" : "dismissed",
-      ...("answer" in close ? { answer: close.answer } : {}),
-      ...("dismissed" in close && close.reason !== undefined ? { reason: close.reason } : {}),
-      closedBy: "user",
-      closedAt: Date.now(),
-      delivered,
-    };
-    questionsOf.set(
+  const closeQuestion = (workspaceId: WorkspaceId, questionId: string, close: MockQuestionClose) =>
+    closeWorkerQuestion(
+      {
+        deliver: (threadId, text) => host.deliver(threadId, text),
+        questionsOf,
+        showQuestion,
+        inputAt,
+        changed: (id) => host.emit({ type: "orchestration.changed", workspaceId: id }),
+      },
       workspaceId,
-      all.map((each) => (each.id === closed.id ? closed : each)),
+      questionId,
+      close,
     );
-    showQuestion(closed);
-    host.emit({ type: "orchestration.changed", workspaceId });
-    return closed;
-  };
 
   const heldOf = new Map<WorkspaceId, readonly HeldBrief[]>();
   const wakesOf = new Map<ThreadId, readonly PendingWake[]>();
