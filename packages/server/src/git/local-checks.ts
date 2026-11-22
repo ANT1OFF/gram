@@ -74,7 +74,14 @@ import { evidenceBytes, removeEvidence } from "./check-evidence.ts";
 import { isolatedGitOptions, ranOn } from "./isolated-git.ts";
 import { makeAdmission } from "./keyed-lock.ts";
 import { makeCheckCancel, type CheckPr } from "./local-check-cancel.ts";
-import { dirStat, entries, fileStat } from "./local-check-files.ts";
+import {
+  dirStat,
+  entries,
+  fileStat,
+  logLocalFailure,
+  logHostCheck,
+  withHostCheckDiagnostic,
+} from "./local-check-files.ts";
 
 export {
   diagnoseExit,
@@ -1215,9 +1222,6 @@ export const LocalChecksLive = Layer.effect(
         current.job === undefined ? current : { ...current, job: { ...current.job, ...more } };
       const body = Effect.gen(function* () {
         if (wanted.refusal !== undefined) {
-          yield* Effect.sync(() =>
-            writeFileSync(started.log!, `${wanted.refusal}\n`, { mode: 0o600 }),
-          );
           return {
             ok: false,
             reason: wanted.refusal,
@@ -1395,6 +1399,7 @@ export const LocalChecksLive = Layer.effect(
         ),
         Effect.flatMap((result) =>
           Effect.gen(function* () {
+            yield* logLocalFailure(started.log, result);
             yield* finish(key, endedAs(current, result, yield* Clock.currentTimeMillis));
           }),
         ),
@@ -1535,7 +1540,7 @@ export const LocalChecksLive = Layer.effect(
             Effect.exit,
           );
           if (Exit.isSuccess(answer)) {
-            const result = answer.value;
+            const result = withHostCheckDiagnostic(answer.value);
             return result.ok &&
               (result.tree === null ||
                 !SHA.test(result.tree) ||
@@ -1569,16 +1574,7 @@ export const LocalChecksLive = Layer.effect(
           ),
           Effect.flatMap((result) =>
             Effect.gen(function* () {
-              if (started.log !== undefined) {
-                const text = result.log ?? result.reason ?? "";
-                yield* Effect.sync(() => {
-                  try {
-                    writeFileSync(started.log!, text.endsWith("\n") ? text : `${text}\n`, {
-                      mode: 0o600,
-                    });
-                  } catch (_theRecordKeepsHowItEndedRegardless) {}
-                });
-              }
+              yield* logHostCheck(started.log, result);
               yield* finish(key, machineEnded(started, result, yield* Clock.currentTimeMillis));
             }),
           ),
@@ -1752,6 +1748,7 @@ export const LocalChecksLive = Layer.effect(
           if (keep) markRetained(work);
           else yield* removeWork(running.job!.own, work);
         }
+        yield* logLocalFailure(running.log, outcome);
         yield* finish(key, endedAs(running, outcome, yield* Clock.currentTimeMillis));
       });
     const timedOutLeft = (running: LocalCheck) =>
