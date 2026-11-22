@@ -31,6 +31,7 @@ import {
   isLegacyRelayed,
   RECLAIMED_EVERY,
 } from "./signed-in-reclaim.ts";
+import { type FinalCheck, forgetStoppedSignedIn } from "./signed-in-forget.ts";
 import {
   NO_APP,
   NO_SIGNED_IN_SERVER,
@@ -280,11 +281,13 @@ export const signedInSource = (
         return true;
       }),
     );
-  const roomNow = () =>
+  const roomNow = (withinMs: number) =>
     Effect.gen(function* () {
       const full = noRoomWords(hosts.list(), deps.asleep);
       if (full === undefined || deps.asleep === undefined) return full;
-      yield* forgetReclaimed(port, hosts, new Map(), deps.asleep, deps.sent);
+      yield* forgetReclaimed(port, hosts, new Map(), deps.asleep, deps.sent).pipe(
+        Effect.timeoutOption(Math.max(0, withinMs)),
+      );
       return noRoomWords(hosts.list(), deps.asleep);
     });
   return {
@@ -481,7 +484,7 @@ export const signedInSource = (
                 };
             }
             if (machine === undefined && status.publicKey !== undefined) {
-              const full = yield* roomNow();
+              const full = yield* roomNow(deadline - now());
               if (full !== undefined) return { failed: full };
               const result = hosts.machines.provision({
                 name,
@@ -524,6 +527,12 @@ export class SignedInWorkers extends Context.Service<
       | { readonly source: WorkerMachineSource; readonly server: WorkerMachineServer }
       | { readonly refused: string }
     >;
+    /**
+     * Forgets a hosted worker machine's registration once its server says it is stopped, nothing
+     * on it waits and `final` still lets it go, with the removal in it (`forgetStoppedSignedIn`):
+     * whether it did. Absent without the app.
+     */
+    readonly forgetStopped?: (id: string, final: FinalCheck) => Effect.Effect<boolean>;
   }
 >()("@gram/server/SignedInWorkers") {}
 
@@ -707,6 +716,8 @@ export const SignedInWorkersLive = Layer.effect(
     );
     return {
       port,
+      forgetStopped: (id: string, final: FinalCheck) =>
+        forgetStoppedSignedIn(port, hosts, { locks, asleep, sent, starting }, id, final),
       source: port.server().pipe(
         Effect.tap((answered) => Effect.sync(() => answered.ok && heardFrom(answered.server))),
         Effect.map((answered) =>
