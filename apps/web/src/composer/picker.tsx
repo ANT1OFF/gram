@@ -43,6 +43,11 @@ export interface PickerOption<V extends string> {
    * Legacy models, and shows it with the rest while a search or a star finds it.
    */
   legacy?: boolean | undefined;
+  /**
+   * Holds its group's place with no row of its own: the model picker draws the group's heading,
+   * which says why it lists nothing, and no row under it.
+   */
+  headingOnly?: boolean | undefined;
 }
 
 interface PickerProps<V extends string> {

@@ -10,8 +10,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -23,13 +21,12 @@ import {
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
-import { FOLD, FoldSummary } from "@/components/fold-summary";
 import { FormError } from "@/components/form-error";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input, Textarea } from "@/components/ui/input";
 import { carriedDraft } from "@/composer/draft-prefill";
-import { useModelNames, useModelsSettled } from "@/composer/models";
+import { useModelsSettled } from "@/composer/models";
 import {
   needsMachine,
   ON_DEMAND_QUERY_KEY,
@@ -45,13 +42,8 @@ import { Expand, PressScale, Spinner } from "@/motion";
 import { AddRepository, type AddRepositoryHandle } from "@/new-thread/add-repository";
 import { AutonomyChoice } from "@/new-thread/autonomy-choice";
 import { Field } from "@/settings/fields";
-import { useDefaultModel, useRosterHere, useSlotModel } from "@/settings/model-slots";
 import { useSaveSettings } from "@/settings/use-save-settings";
-import {
-  defaultWorkerIndex,
-  projectNameOf,
-  withAutonomy,
-} from "@/settings/workspace-settings-model";
+import { projectNameOf, withAutonomy } from "@/settings/workspace-settings-model";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useWelcome } from "@/welcome/welcome-state";
@@ -70,6 +62,8 @@ import {
 import { EnvironmentField, useEnvironments } from "./environment-field";
 import { environmentLabel } from "./environment-field-model";
 import { RepositoryAccess } from "./repository-access";
+import { WorkspaceModels } from "./workspace-models";
+import { SavedNotOpened } from "./saved-not-opened";
 import { StartSteps } from "./start-steps";
 import { RepositoryChecklist } from "./repository-checklist";
 import { sendDiscover } from "./use-board-actions";
@@ -78,10 +72,6 @@ import { parentFolder } from "./workspace-repos";
 import { sleep } from "@/lib/sleep";
 
 const MACHINE_POLL_MS = 1000;
-
-const RosterEditor = lazy(() =>
-  import("@/settings/roster-editor").then((module) => ({ default: module.RosterEditor })),
-);
 
 const inPopup = (target: EventTarget) =>
   target instanceof Element &&
@@ -154,7 +144,11 @@ export function NewWorkspaceSheet({
                 type="button"
                 variant="outline"
                 className="self-start"
-                onClick={() => void queryClient.invalidateQueries({ queryKey: ["workspaces"] })}
+                onClick={() =>
+                  void queryClient.invalidateQueries({
+                    queryKey: ["workspaces"],
+                  })
+                }
               >
                 Retry
               </Button>
@@ -234,7 +228,10 @@ function SheetForm({
   const [issue, setIssue] = useState<string>();
   const [nameIssue, setNameIssue] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [created, setCreated] = useState<{ state: WorkspaceState; text: string | undefined }>();
+  const [created, setCreated] = useState<{
+    state: WorkspaceState;
+    text: string | undefined;
+  }>();
   const [pending, setPending] = useState(false);
   const onDemand = useOnDemandMachine();
   const environments = useEnvironments();
@@ -299,7 +296,10 @@ function SheetForm({
       const thread =
         text === undefined
           ? await api.openOrchestrator({ workspaceId: state.workspace.id })
-          : await api.startTask({ target: { workspaceId: state.workspace.id }, input: { text } });
+          : await api.startTask({
+              target: { workspaceId: state.workspace.id },
+              input: { text },
+            });
       if (reads && !discovered.current) {
         discovered.current = true;
         await sendDiscover(api, thread.id).catch((e: unknown) =>
@@ -416,7 +416,11 @@ function SheetForm({
         void start();
       }}
     >
-      <div className="flex flex-wrap gap-x-7 gap-y-5">
+      <fieldset
+        disabled={created !== undefined}
+        data-testid="new-workspace-fields"
+        className="flex min-w-0 flex-wrap gap-x-7 gap-y-5"
+      >
         <div className="flex min-w-0 flex-[1_1_20rem] flex-col gap-5">
           <Field
             label="Name"
@@ -426,7 +430,7 @@ function SheetForm({
                 <span role="alert" className="text-destructive">
                   {nameIssue}
                 </span>
-              ) : draft.name.trim() === "" ? (
+              ) : draft.name.trim() === "" && created === undefined ? (
                 <span className="text-meta text-muted-foreground">
                   Optional. Left empty, it is named after the first repository.
                 </span>
@@ -439,7 +443,7 @@ function SheetForm({
               data-testid="new-workspace-name"
               className="max-w-none"
               autoComplete="off"
-              value={draft.name}
+              value={created === undefined ? draft.name : created.state.workspace.name}
               invalid={nameIssue !== undefined}
               placeholder={
                 draft.homeProjectId === undefined
@@ -525,27 +529,35 @@ function SheetForm({
             task={firstMessageOf(draft) !== undefined}
           />
         </div>
-      </div>
-      {issue !== undefined && <FormError message={issue} />}
-      {machineWanted && !reachesTheirs && <StartMachineCard />}
-      <div className="flex flex-wrap items-center gap-2 border-t border-edge pt-4">
-        <PressScale>
-          <Button
-            type="submit"
-            data-testid="new-workspace-start"
-            disabled={busy || waiting}
-            aria-label={waiting ? `Start, waiting for your ${noun}` : undefined}
-          >
-            {(busy || waiting) && <Spinner aria-hidden />}
-            {waiting
-              ? `Opens once your ${noun} is up…`
-              : created === undefined
-                ? "Start"
-                : "Open orchestrator"}
-            <ShortcutKbd id="draft.create" cap />
-          </Button>
-        </PressScale>
-        {created === undefined && (
+      </fieldset>
+      <div
+        data-testid="new-workspace-actions"
+        className="sticky bottom-0 z-10 -mx-5 -mb-5 flex flex-col gap-3 rounded-b-lg border-t border-edge bg-card px-5 pt-4 pb-5"
+      >
+        {issue !== undefined &&
+          (created === undefined ? (
+            <FormError message={issue} />
+          ) : (
+            <SavedNotOpened name={created.state.workspace.name} reason={issue} />
+          ))}
+        {machineWanted && !reachesTheirs && <StartMachineCard />}
+        <div className="flex flex-wrap items-center gap-2">
+          <PressScale>
+            <Button
+              type="submit"
+              data-testid="new-workspace-start"
+              disabled={busy || waiting}
+              aria-label={waiting ? `Start, waiting for your ${noun}` : undefined}
+            >
+              {(busy || waiting) && <Spinner aria-hidden />}
+              {waiting
+                ? `Opens once your ${noun} is up…`
+                : created === undefined
+                  ? "Start"
+                  : "Open orchestrator"}
+              <ShortcutKbd id="draft.create" cap />
+            </Button>
+          </PressScale>
           <Button
             type="button"
             variant="outline"
@@ -553,77 +565,24 @@ function SheetForm({
             disabled={busy || waiting}
             onClick={() => void saveOnly()}
           >
-            Save without starting
+            {created === undefined ? "Save without starting" : "Leave it saved"}
           </Button>
-        )}
-        <Button type="button" variant="ghost" onClick={cancel}>
-          Cancel
-        </Button>
-        {source !== undefined && (
-          <span
-            data-testid="new-workspace-from"
-            className="ml-auto text-meta text-muted-foreground"
-          >
-            Setup from {source.workspace.name}
-          </span>
-        )}
+          {created === undefined && (
+            <Button type="button" variant="ghost" onClick={cancel}>
+              Cancel
+            </Button>
+          )}
+          {source !== undefined && (
+            <span
+              data-testid="new-workspace-from"
+              className="ml-auto text-meta text-muted-foreground"
+            >
+              Setup from {source.workspace.name}
+            </span>
+          )}
+        </div>
       </div>
     </form>
-  );
-}
-
-function WorkspaceModels({
-  charter,
-  disabled,
-  onChange,
-}: {
-  charter: OrchestratorCharter;
-  disabled: boolean;
-  onChange: (charter: OrchestratorCharter) => void;
-}) {
-  const [opened, setOpened] = useState(false);
-  const own = useSlotModel(charter.orchestratorModel);
-  const inherited = useDefaultModel();
-  const orchestrator = charter.orchestratorModel === undefined ? inherited : own;
-  const workers = charter.workerModels ?? [];
-  const roster = useRosterHere(workers);
-  const defaultIndex = defaultWorkerIndex(workers);
-  const picked = defaultIndex === undefined ? undefined : roster[defaultIndex];
-  const worker =
-    picked === undefined ? orchestrator : picked.missing === undefined ? picked.entry : undefined;
-  const nameOf = useModelNames([orchestrator, worker]);
-
-  return (
-    <details
-      className={FOLD}
-      onToggle={(event) => {
-        if (event.currentTarget.open) setOpened(true);
-      }}
-    >
-      <FoldSummary className="items-baseline text-reading">
-        <span className="font-medium">Models</span>
-        {(orchestrator || worker) && (
-          <span className="flex flex-wrap gap-x-4 text-meta text-description">
-            {orchestrator && <span>Orchestrator · {nameOf(orchestrator)}</span>}
-            {worker && <span>Default worker · {nameOf(worker)}</span>}
-          </span>
-        )}
-      </FoldSummary>
-      {opened && (
-        <div className="mt-3 flex flex-col gap-4">
-          <Suspense
-            fallback={<Spinner aria-label="Loading model settings" className="size-icon-row" />}
-          >
-            <RosterEditor
-              charter={charter}
-              disabled={disabled}
-              onChange={onChange}
-              orchestratorDescription="Used for the repository survey and the first task."
-            />
-          </Suspense>
-        </div>
-      )}
-    </details>
   );
 }
 

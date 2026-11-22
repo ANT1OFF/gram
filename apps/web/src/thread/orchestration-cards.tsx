@@ -11,10 +11,7 @@ import {
   type ThreadId,
   type WorkerAnswer,
   type WorkerLedgerEntry,
-  type WorkerQuestion,
   type WorkerReport,
-  isOpenQuestion,
-  questionStatusLine,
 } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import {
@@ -28,7 +25,6 @@ import {
   Hand,
   Layers,
   Megaphone,
-  MessageCircleQuestion,
   MessageCircleReply,
   MoonStar,
   Network,
@@ -54,12 +50,6 @@ import {
   presentFileStatus,
   reviewSummary,
 } from "@/orchestration/memory-model";
-import {
-  questionKind,
-  questionOutcome,
-  workerQuestionCard,
-} from "@/orchestration/question-card-model";
-import { OpenQuestion, useWorkerQuestionActions } from "@/orchestration/question-entry";
 import { StageChip } from "@/orchestration/stage-stepper";
 import { OutboundLink } from "@/panels/outbound-link";
 import { useThreadsStore } from "@/stores/threads";
@@ -132,7 +122,7 @@ export function StatePill({
   );
 }
 
-const CARD = "rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading";
+export const CARD = "rounded-(--radius-md) border border-edge bg-card/40 p-3 text-reading";
 const TRIGGER =
   "group flex items-center gap-1 text-meta text-muted-foreground hover:text-foreground";
 const PRE =
@@ -161,7 +151,7 @@ function Disclosure({
   );
 }
 
-function ThreadLink({ threadId, children }: { threadId: ThreadId; children: ReactNode }) {
+export function ThreadLink({ threadId, children }: { threadId: ThreadId; children: ReactNode }) {
   const beside = useBesideLink(threadId);
   return (
     <Link
@@ -193,7 +183,11 @@ function SectionHeading({ children }: { children: ReactNode }) {
   return <h4 className="text-meta font-medium text-muted-foreground">{children}</h4>;
 }
 
-function WorkerText({ text, className }: { text: string; className?: string }) {
+/**
+ * Worker-authored text: plain, never markdown, since it comes from an agent the user isn't watching.
+ * Only its `[title](#threadId)` links to threads the app knows become chips.
+ */
+export function WorkerText({ text, className }: { text: string; className?: string }) {
   return (
     <p className={cn("text-meta whitespace-pre-wrap", className)}>
       <ThreadLinkedText text={text} />
@@ -867,83 +861,6 @@ export function WorkerAnswerCard({
         It answers what your brief, its memory or your own words settle. Write to the{" "}
         {inWorker ? "worker" : "worker's thread"} if you would have said otherwise.
       </p>
-    </article>
-  );
-}
-
-/**
- * A worker's own question (`ask_question`), as one card that moves through its states: asked, with
- * the orchestrator, forwarded to you, answered or dismissed, with who did it and when. While it is
- * open it can be answered or dismissed right here too; the words are the worker's, as written.
- */
-export function WorkerQuestionCard({
-  question,
-  threadId,
-}: {
-  question: WorkerQuestion;
-  /** The thread the card is drawn in, which decides whose side is named. */
-  threadId: ThreadId;
-}) {
-  const inWorker = question.threadId === threadId;
-  const actions = useWorkerQuestionActions(question.workspaceId);
-  const open = isOpenQuestion(question);
-  const outcome = questionOutcome(question);
-  const status = questionStatusLine(question);
-  return (
-    <article
-      aria-label={`${questionKind(question.id)} ${question.id}`}
-      data-testid="worker-question-card"
-      data-question={question.id}
-      data-stage={question.stage}
-      className={cn(CARD, "my-2 flex flex-col gap-1.5 p-2.5")}
-    >
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta">
-        <MessageCircleQuestion
-          aria-hidden
-          className={cn("size-icon-row", open ? "text-status-needs-mark" : "text-muted-foreground")}
-        />
-        <h3 className="font-medium">
-          {inWorker ? (
-            <>Asked a question</>
-          ) : (
-            <>
-              {questionKind(question.id)} from{" "}
-              <ThreadLink threadId={question.threadId}>{question.title}</ThreadLink>
-            </>
-          )}{" "}
-          <span className="font-mono font-normal text-muted-foreground">{question.id}</span>
-        </h3>
-        <span data-testid="question-status" className="ml-auto text-muted-foreground tabular-nums">
-          {status}
-        </span>
-      </header>
-      {open ? (
-        <OpenQuestion
-          card={{ ...workerQuestionCard(question), asker: undefined, status: undefined }}
-          compact={false}
-          onAnswer={actions.answer(question)}
-          onDismiss={actions.dismiss(question)}
-        />
-      ) : (
-        <>
-          <WorkerText text={question.question} />
-          {question.note !== undefined && (
-            <p className="text-meta text-muted-foreground">
-              <span className="font-medium text-foreground">Orchestrator:</span> {question.note}
-            </p>
-          )}
-          {outcome !== undefined && (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-reading">
-              <dt className="text-meta text-muted-foreground">
-                {question.stage === "dismissed" ? "Why" : "A"}
-              </dt>
-              <dd data-testid="question-outcome">
-                <WorkerText text={outcome} />
-              </dd>
-            </dl>
-          )}
-        </>
-      )}
     </article>
   );
 }

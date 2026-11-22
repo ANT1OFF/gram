@@ -16,13 +16,14 @@ import {
   MessageCircleQuestion,
   type LucideIcon,
 } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
 import { formatKeys } from "@/keyboard/registry";
+import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { ExpandPresence, PresenceItem, PresenceList } from "@/motion";
 import { NO_CHOICE, choiceAnswer, typeOther, type Choice } from "@/thread/choice-model";
@@ -38,6 +39,7 @@ import { memoryId, workerQuestionId } from "./ask-model";
 import { useDerivedAsks } from "./needs-you-store";
 import {
   memoryQuestionCard,
+  questionHolder,
   questionKind,
   questionOutcome,
   workerQuestionCard,
@@ -143,6 +145,7 @@ export function OpenQuestion({
   compact,
   sheet = false,
   unavailable,
+  holder,
   onAnswer,
   onDismiss,
   onOpen,
@@ -157,6 +160,8 @@ export function OpenQuestion({
   sheet?: boolean;
   /** Why it can't be answered right now; the Answer button says so. */
   unavailable?: string | undefined;
+  /** Who holds it and what answering does, said above its answer: the card in a thread's. */
+  holder?: ReactNode;
   /** Sends the answer: the sheet's, or the card's own where Answer opens nowhere else. */
   onAnswer?: ((answer: string) => Promise<unknown>) | undefined;
   onDismiss?: ((reason: string | undefined) => Promise<unknown>) | undefined;
@@ -300,6 +305,7 @@ export function OpenQuestion({
           </span>
         </p>
       )}
+      {holder}
       <ExpandPresence open={inPlace && mode === "answering"}>
         <form
           id={answerFormId}
@@ -536,6 +542,21 @@ export function WorkerQuestionList({
         })}
       </PresenceList>
     </ul>
+  );
+}
+
+/**
+ * Who holds a worker's open question and what Answer does about it (`questionHolder`), moved on
+ * when its triage time passes.
+ */
+export function QuestionHolder({ question }: { question: WorkerQuestion }) {
+  const now = useNow(question.stage === "triage", undefined, 60_000);
+  const holder = questionHolder(question, now);
+  if (holder === undefined) return null;
+  return (
+    <p data-testid="question-holder" className="text-meta text-muted-foreground">
+      {holder}
+    </p>
   );
 }
 

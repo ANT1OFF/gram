@@ -1,4 +1,5 @@
 import {
+  isOpenQuestion,
   orchestrationMode,
   type FeatureStage,
   type PendingRequest,
@@ -433,7 +434,7 @@ export function simulateWorkerQuestions(
   scenes: MockScenes,
   board: MockBoardSimulation,
 ): readonly WorkerQuestion[] {
-  const { host, questionsOf, showQuestion } = scenes;
+  const { host, questionsOf, showQuestion, reports } = scenes;
   const minute = 60_000;
   const now = Date.now();
   const asked = (
@@ -505,9 +506,27 @@ export function simulateWorkerQuestions(
       closedAt: now - 70 * minute,
       delivered: "sent",
     }),
+    asked(board.briefed, "WQ6", 3, {
+      question: "Page the registry list by cursor or by offset?",
+      context: "The list is sorted by name and grows while people page through it.",
+      options: [
+        { label: "Cursor", description: "Stable while entries are added." },
+        { label: "Offset", description: "What the other list endpoints do." },
+      ],
+      recommended: "Cursor",
+      stage: "triage",
+    }),
   ];
   questionsOf.set(board.workspaceId, questions);
   for (const question of questions) showQuestion(question);
+  for (const question of questions.filter(isOpenQuestion)) {
+    reports.set(question.threadId, {
+      threadId: question.threadId,
+      state: "question",
+      summary: `Asked ${question.id}: ${question.question}`,
+      at: question.askedAt,
+    });
+  }
   host.emit({ type: "orchestration.changed", workspaceId: board.workspaceId });
   return questions;
 }

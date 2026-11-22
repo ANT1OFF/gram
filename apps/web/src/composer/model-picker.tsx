@@ -22,6 +22,14 @@ const NO_FAVOURITES = () => false;
 export interface GroupHead {
   readonly mark: ReactNode;
   readonly hint: string;
+  /**
+   * Words shown beside the mark, for a group whose pick does more than change the model: the other
+   * agent's, which moves the thread ("Continue in Codex: new session with a handoff"). Without
+   * them the mark stands alone.
+   */
+  readonly words?: string | undefined;
+  /** Why the group's rows are greyed, on a line under its words. */
+  readonly note?: string | undefined;
 }
 export type GroupHeads = Readonly<Record<string, GroupHead>>;
 
@@ -289,7 +297,7 @@ function ModelSearchBody({
                 <Combobox.GroupLabel
                   data-testid="model-group-head"
                   className={cn(
-                    "flex px-2 pt-2 pb-1 text-muted-foreground",
+                    "flex items-start gap-2 px-2 pt-2 pb-1 text-muted-foreground",
                     group.label !== firstGroup && "mt-1 border-t border-border",
                   )}
                 >
@@ -302,16 +310,27 @@ function ModelSearchBody({
                         tabIndex={-1}
                         aria-label={heads[group.label]!.hint}
                         data-testid="model-group-mark"
-                        className="flex items-center"
+                        className="flex shrink-0 items-center"
                       />
                     }
                   >
                     {heads[group.label]!.mark}
                   </Hint>
+                  {heads[group.label]!.words !== undefined && (
+                    <span aria-hidden className="flex min-w-0 flex-col text-caption">
+                      <span data-testid="model-group-words">{heads[group.label]!.words}</span>
+                      {heads[group.label]!.note !== undefined && (
+                        <span data-testid="model-group-note" className="text-foreground">
+                          {heads[group.label]!.note}
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </Combobox.GroupLabel>
               ))}
             <Combobox.Collection>
               {(option: Option) => {
+                if (option.headingOnly === true) return null;
                 const starred = favourite(option.value);
                 return (
                   <Combobox.Item

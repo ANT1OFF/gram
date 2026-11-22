@@ -25,7 +25,16 @@ import { ANSWERED, calmTone, workerStarting, workerTone, type RailTone } from ".
 import { threadWorking } from "./tree-model";
 import { OVER_STATES, workerShown } from "./worker-shown";
 import { workerActivity, workerWait, type WorkerActivity, type WorkerBusy } from "./wait-model";
-import { workerWaitingOn, type ThreadName, type WaitClock, type WaitingOn } from "./waiting-on";
+import {
+  triageReason,
+  waitClock,
+  waitingOf,
+  workerWaitingOn,
+  type ThreadName,
+  type TriageHold,
+  type WaitClock,
+  type WaitingOn,
+} from "./waiting-on";
 
 export type WorkersTab = "now" | "done";
 
@@ -105,7 +114,31 @@ export interface WorkerLiveFacts {
   readonly answered?: ReadonlySet<ThreadId>;
   /** How a wait's time reads; the viewer's clock at `now` by default. */
   readonly clock?: WaitClock;
+  /** Workers whose question is with their orchestrator (`triagedQuestions`). */
+  readonly triage?: ReadonlyMap<ThreadId, TriageHold>;
 }
+
+/**
+ * The workers whose open question is with their orchestrator and none forwarded to the user: each
+ * one's earliest in triage. They wait on the orchestrator, not on the user, until it forwards.
+ */
+export const triagedQuestions = (
+  ledger: Pick<OrchestratorLedger, "questions"> | undefined,
+): ReadonlyMap<ThreadId, TriageHold> => {
+  const questions = ledger?.questions ?? [];
+  const forwarded = new Set(
+    questions.filter((q) => q.stage === "forwarded").map((q) => q.threadId),
+  );
+  const held = new Map<ThreadId, TriageHold>();
+  for (const question of questions) {
+    if (question.stage !== "triage" || forwarded.has(question.threadId)) continue;
+    const before = held.get(question.threadId);
+    if (before === undefined || question.triageUntil < before.until) {
+      held.set(question.threadId, { id: question.id, until: question.triageUntil });
+    }
+  }
+  return held;
+};
 
 /** Local midnight `days` days before the day `now` falls on, by the calendar (so across DST too). */
 export const daysBefore = (now: number, days: number): number => {
@@ -229,6 +262,8 @@ export interface LiveToneFacts {
   /** Its asks were answered here and it isn't heard from yet. */
   readonly answered?: boolean | undefined;
   readonly ownedCi?: ReadonlySet<string> | undefined;
+  /** Its question is with its orchestrator (`triagedQuestions`). */
+  readonly triage?: boolean | undefined;
 }
 
 /**
@@ -241,12 +276,13 @@ export interface LiveToneFacts {
  */
 export const liveWorkerTone = (
   entry: WorkerLedgerEntry | undefined,
-  { summary, detail, asking, answered, ownedCi }: LiveToneFacts,
+  { summary, detail, asking, answered, ownedCi, triage }: LiveToneFacts,
 ): RailTone => {
   const live = entry === undefined ? undefined : liveWorkerEntry(entry, summary);
   return workerTone({
     asking,
     answered,
+    triage,
     state: live?.state,
     failed: live?.state === "error",
     status: summary?.status,
@@ -293,7 +329,7 @@ export interface WorkerTones {
  * finished worker at work again counts as working, as its row has it; one at rest stays out.
  */
 export const workerTones = (
-  ledger: Pick<OrchestratorLedger, "features"> | undefined,
+  ledger: Pick<OrchestratorLedger, "features" | "questions"> | undefined,
   running: readonly ThreadId[],
   { byId, statusDetail, asking = new Set(), answered }: Omit<WorkerLiveFacts, "now" | "ownedCi">,
 ): WorkerTones => {
@@ -308,6 +344,7 @@ export const workerTones = (
   }
   for (const threadId of running) if (!entries.has(threadId)) entries.set(threadId, undefined);
   const ownedCi = ciFixOwnedPrs(all.map((entry) => liveWorkerEntry(entry, byId[entry.threadId])));
+  const triage = triagedQuestions(ledger);
   const tones: Record<string, RailTone> = {};
   let working = 0;
   for (const [threadId, entry] of entries) {
@@ -317,6 +354,7 @@ export const workerTones = (
       asking: asking.has(threadId),
       answered: answered?.has(threadId),
       ownedCi,
+      triage: triage.has(threadId),
     });
     tones[threadId] = tone;
     if (tone === "working") working += 1;
@@ -331,7 +369,7 @@ export const workerTones = (
  */
 export const workerRow = (
   worker: WorkerLedgerEntry,
-  { byId, statusDetail, now, ownedCi, asking, answered, clock }: WorkerLiveFacts,
+  { byId, statusDetail, now, ownedCi, asking, answered, clock, triage }: WorkerLiveFacts,
 ): WorkerRow => {
   const summary = byId[worker.threadId];
   const live = liveWorkerEntry(worker, summary);
@@ -346,12 +384,18 @@ export const workerRow = (
     asking: asking?.has(worker.threadId) === true,
     answered: answered?.has(worker.threadId),
     ownedCi,
+    triage: triage?.has(worker.threadId),
   });
   const name: ThreadName = (id) => {
     const other = byId[id];
     return other === undefined ? undefined : threadDisplayTitle(other.thread);
   };
-  const waiting = done ? undefined : liveWaiting(live, busy, tone, now, clock, name);
+  const hold = triage?.get(worker.threadId);
+  const waiting = done
+    ? undefined
+    : hold !== undefined && live.state === "question" && calmTone(tone)
+      ? waitingOf([triageReason(hold, now, clock ?? waitClock(now))])
+      : liveWaiting(live, busy, tone, now, clock, name);
   const running = live.status === "running" || live.status === "starting";
   const activity = running ? (statusDetail[worker.threadId] ?? live.activity) : undefined;
   const report = live.lastReport;
@@ -408,6 +452,7 @@ export const workerRow = (
   }
   if (starting) return row(undefined, "starting…");
   if (running) return row(undefined, activity === undefined ? "working" : activityGist(activity));
+  if (waiting?.kind === "triage") return { ...row(undefined, ""), now: waiting.label };
   if (live.state === "question" || (live.reportStands === true && report?.state === "question")) {
     return row(undefined, "asked a question");
   }
@@ -505,7 +550,7 @@ export const doneFeatures = (rows: readonly WorkerRow[]): WorkerFeature[] => {
  * archived workers that finished are there too, and every closed one Gram still lists.
  */
 export const workersByTab = (
-  ledger: Pick<OrchestratorLedger, "features"> | undefined,
+  ledger: Pick<OrchestratorLedger, "features" | "questions"> | undefined,
   facts: WorkerLiveFacts,
   finished: readonly FinishedWorker[] = [],
 ): WorkersByTab => {
@@ -520,8 +565,9 @@ export const workersByTab = (
       feature.workers.map((entry) => liveWorkerEntry(entry, facts.byId[entry.threadId])),
     ),
   );
+  const triage = facts.triage ?? triagedQuestions(ledger);
   for (const feature of ledger?.features ?? []) {
-    const rows = feature.workers.map((worker) => workerRow(worker, { ...facts, ownedCi }));
+    const rows = feature.workers.map((worker) => workerRow(worker, { ...facts, ownedCi, triage }));
     for (const { id } of WORKERS_TABS) {
       const own = rows.filter((row) => row.tab === id);
       if (own.length > 0) add(id, feature.feature, own);
@@ -573,17 +619,18 @@ export const workerActivities = (
  * nothing is left out.
  */
 export const workerWaitings = (
-  ledger: Pick<OrchestratorLedger, "features"> | undefined,
+  ledger: Pick<OrchestratorLedger, "features" | "questions"> | undefined,
   facts: WorkerLiveFacts,
 ): Readonly<Record<string, WaitingOn>> => {
   const { byId } = facts;
+  const triage = facts.triage ?? triagedQuestions(ledger);
   const entries = (ledger?.features ?? []).flatMap((feature) => feature.workers);
   const ownedCi = ciFixOwnedPrs(
     entries.map((entry) => liveWorkerEntry(entry, byId[entry.threadId])),
   );
   const waits: Record<string, WaitingOn> = {};
   for (const entry of entries) {
-    const waiting = workerRow(entry, { ...facts, ownedCi }).waiting;
+    const waiting = workerRow(entry, { ...facts, ownedCi, triage }).waiting;
     if (waiting !== undefined) waits[entry.threadId] = waiting;
   }
   return waits;

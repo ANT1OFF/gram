@@ -49,10 +49,10 @@ import {
   HandoffDivider,
   MemoryWriteCard,
   WorkerAnswerCard,
-  WorkerQuestionCard,
   OrchestrationDigestCard,
   WorkerReportCard,
 } from "./orchestration-cards";
+import { WorkerQuestionCard } from "./worker-question-card";
 import { isNotice, leavesOut, showsInConversation } from "./conversation-only";
 import { isToolPart } from "./parts";
 import { HumanReviewNoticeCard, ReviewNoticeCard } from "./review-notice-card";

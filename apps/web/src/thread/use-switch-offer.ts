@@ -1,11 +1,17 @@
 import type { ThreadId } from "@gram/contracts";
 
 import { useServes } from "@/api/use-serves";
-import { useModelsSettled } from "@/composer/models";
+import { useModelsQuery } from "@/composer/models";
 import { useLaunchChecks } from "@/launch-checks/use-launch-checks";
 import { useThreadsStore } from "@/stores/threads";
 
-import { installed, otherAgent, switchOffer, type SwitchOffer } from "./agent-switch-model";
+import {
+  installed,
+  otherAgent,
+  switchOffer,
+  unlistedReason,
+  type SwitchOffer,
+} from "./agent-switch-model";
 
 /**
  * Whether "Continue in Codex…" (or "…in Claude Code…") is offered on this thread, and why it's
@@ -18,7 +24,8 @@ export function useSwitchOffer(threadId: ThreadId): SwitchOffer {
   const agent = summary?.thread.model?.agent;
   const to = summary?.thread.sessionSwitch?.target.agent ?? otherAgent(agent ?? "claude");
   const wanted = agent !== undefined;
-  const { models } = useModelsSettled(to, wanted && installed(checks, to));
+  const listing = useModelsQuery(to, undefined, wanted && installed(checks, to));
+  const models = listing.isError ? undefined : listing.data?.models;
   const servesFresh = useServes("thread.startFreshOn");
   if (summary === undefined || agent === undefined) return { offered: false };
   return switchOffer({
@@ -26,6 +33,11 @@ export function useSwitchOffer(threadId: ThreadId): SwitchOffer {
     checks,
     platform: typeof window === "undefined" ? undefined : window.gram?.platform,
     listed: (models?.length ?? 0) > 0,
+    unlisted: listing.isError
+      ? unlistedReason(to, listing.error)
+      : listing.isSuccess
+        ? unlistedReason(to, undefined)
+        : undefined,
     servesFresh,
   });
 }

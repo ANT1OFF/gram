@@ -24,7 +24,7 @@ import { useOrchestratorLedger, useWorkspaces } from "./use-orchestration";
 import { prWaitWords } from "./waiting-on";
 import { goToThread } from "./worker-banner";
 import { showWorkersTab } from "./workers-tab";
-import { workerEntryOf, workerRow } from "./workers-model";
+import { triagedQuestions, workerEntryOf, workerRow } from "./workers-model";
 
 const denyTakesEsc = (): boolean => {
   const keys = effectiveKeys("approval.deny", catalogKeys("approval.deny") ?? "");
@@ -69,7 +69,10 @@ function useWorkerFacts(thread: Thread | undefined) {
   const entry = thread === undefined ? undefined : workerEntryOf(ledger?.features, thread.id);
   return {
     entry,
-    row: entry === undefined ? undefined : workerRow(entry, { byId, statusDetail, now }),
+    row:
+      entry === undefined
+        ? undefined
+        : workerRow(entry, { byId, statusDetail, now, triage: triagedQuestions(ledger) }),
   };
 }
 

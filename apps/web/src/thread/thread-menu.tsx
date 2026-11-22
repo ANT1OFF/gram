@@ -91,6 +91,14 @@ export function useThreadMenu(threadId: ThreadId): {
               {offer.fresh === undefined ? continueLabel(offer.to) : freshLabel(offer.to)}…
             </Hint>
           )}
+          {offer.refusal !== undefined && (
+            <p
+              data-testid="menu-continue-in-why"
+              className="max-w-64 px-2 pb-1 text-meta text-muted-foreground"
+            >
+              {offer.refusal}
+            </p>
+          )}
           <div role="separator" className="-mx-1 my-1 h-px bg-border" />
         </>
       )}

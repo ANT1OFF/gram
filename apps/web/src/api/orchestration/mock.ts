@@ -11,6 +11,12 @@ import type { createMockOrchestration } from "../mock-orchestration";
 import type { MockWorld } from "../mock-world";
 import type { OrchestrationApi } from "./types";
 import { MockInvalidState } from "../mock-fs";
+import { mockFailOpen } from "../mock-overrides";
+
+const throwIfOpenFailsByFlag = () => {
+  const message = mockFailOpen();
+  if (message !== undefined) throw new Error(message);
+};
 
 /** What the slice needs of the core: its orchestration mock, and a task's draft adopted. */
 export interface OrchestrationDeps {
@@ -66,9 +72,13 @@ export function createOrchestrationMock(
     listWorkspaces: () => orchestration.list(),
     saveWorkspace: (input) => orchestration.save(input),
     removeWorkspace: (workspaceId) => orchestration.remove(workspaceId),
-    openOrchestrator: (target) => orchestration.open(target),
+    openOrchestrator: async (target) => {
+      throwIfOpenFailsByFlag();
+      return orchestration.open(target);
+    },
     taskPreflight,
     startTask: async (input) => {
+      throwIfOpenFailsByFlag();
       const shown = input.selection ?? (await taskPreflight(input));
       await taskPreflight(input);
       const created = await orchestration.open(input.target, input.autonomy);

@@ -7,6 +7,7 @@ import type {
   ThreadStatus,
   WorkerLedgerEntry,
   WorkerPr,
+  WorkerQuestion,
   WorkerState,
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
@@ -16,7 +17,7 @@ import { dotTone } from "@/views/quiet-model";
 import { rowTone } from "./overview-model";
 import { railTone, TONE_DOT } from "./rail-model";
 import { isBusy, workerActivity } from "./wait-model";
-import { workerActivities, workerRow, workerTones } from "./workers-model";
+import { triagedQuestions, workerActivities, workerRow, workerTones } from "./workers-model";
 
 // The one busy selector Quiet, the sidebar's worker rows and the Board share: a live turn and a
 // wait on automation are busy, a stop that needs somebody is attention, finished work is done.
@@ -292,12 +293,24 @@ const threadOf = (entry: WorkerLedgerEntry, status: ThreadStatus, shell = false)
   }) as unknown as ThreadSummary;
 
 /** Every view's tone for one worker, each built as that view builds it. */
-const everyTone = (entry: WorkerLedgerEntry, summary: ThreadSummary | undefined) => {
-  const ledger = { features: [{ feature: "quiet", state: entry.state, workers: [entry] }] };
+const everyTone = (
+  entry: WorkerLedgerEntry,
+  summary: ThreadSummary | undefined,
+  questions: readonly WorkerQuestion[] = [],
+) => {
+  const ledger = {
+    features: [{ feature: "quiet", state: entry.state, workers: [entry] }],
+    questions,
+  };
   const byId = summary === undefined ? {} : { [entry.threadId]: summary };
   const running = summary !== undefined && summary.status === "running" ? [entry.threadId] : [];
   const { tones } = workerTones(ledger as never, running, { byId, statusDetail: {} });
-  const row = workerRow(entry, { byId, statusDetail: {}, now: NOW });
+  const row = workerRow(entry, {
+    byId,
+    statusDetail: {},
+    now: NOW,
+    triage: triagedQuestions(ledger as never),
+  });
   return {
     shared: tones[entry.threadId],
     board: railTone(card(entry), {
@@ -321,7 +334,39 @@ const everyTone = (entry: WorkerLedgerEntry, summary: ThreadSummary | undefined)
   };
 };
 
+const everywhere = (tone: string) => ({
+  shared: tone,
+  board: tone,
+  sidebar: tone,
+  workers: tone,
+  quiet: tone,
+});
+
 describe("one tone for a worker", () => {
+  it("waits on the orchestrator everywhere while its question is in triage, and needs you once forwarded", () => {
+    const entry = worker("question");
+    const asked = {
+      id: "WQ6",
+      threadId: entry.threadId,
+      stage: "triage",
+      triageUntil: NOW + 7 * 60_000,
+    } as WorkerQuestion;
+    expect(everyTone(entry, threadOf(entry, "idle"), [asked])).toEqual(everywhere("waiting"));
+    const row = workerRow(entry, {
+      byId: {},
+      statusDetail: {},
+      now: NOW,
+      clock: () => "17:23",
+      triage: triagedQuestions({ questions: [asked] }),
+    });
+    expect(row.waiting?.kind).toBe("triage");
+    const forwarded = { ...asked, stage: "forwarded" } as WorkerQuestion;
+    expect(everyTone(entry, threadOf(entry, "idle"), [forwarded])).toEqual(everywhere("needs"));
+    expect(everyTone(entry, threadOf(entry, "idle"), [asked, { ...forwarded, id: "WQ7" }])).toEqual(
+      everywhere("needs"),
+    );
+  });
+
   it("is working everywhere while work runs under a thread its ledger says needs attention", () => {
     const entry = worker("inReview", { pr: pr({ mergeState: "DIRTY" }) });
     const tones = everyTone(entry, threadOf(entry, "idle", true));

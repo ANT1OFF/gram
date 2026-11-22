@@ -104,6 +104,11 @@ export const switchOffer = (input: {
    * signed out, it has nothing to offer.
    */
   readonly listed: boolean;
+  /**
+   * Why the other agent lists nothing, once its listing has settled (`unlistedReason`): the entry
+   * is then offered greyed with these words rather than hidden. Absent while the listing runs.
+   */
+  readonly unlisted?: string | undefined;
   /** Whether the server serves `thread.startFreshOn`, which a worker's fresh session needs. */
   readonly servesFresh?: boolean;
 }): SwitchOffer => {
@@ -115,19 +120,41 @@ export const switchOffer = (input: {
       : otherAgent(thread.model.agent);
   if (!installed(checks, to)) return { offered: false };
   const signedOut = (to === "codex" ? checks?.codexSignIn : checks?.claudeSignIn) === "notSignedIn";
-  if (!input.listed && !signedOut) return { offered: false };
+  const unlisted = input.listed || signedOut ? undefined : input.unlisted;
+  if (!input.listed && !signedOut && unlisted === undefined) return { offered: false };
   const fresh =
     thread.sessionSwitch === undefined ? noCarryOver(thread, to, input.platform) : undefined;
   const refusal =
-    fresh !== undefined && thread.role !== "orchestrator" && input.servesFresh === false
+    unlisted ??
+    (fresh !== undefined && thread.role !== "orchestrator" && input.servesFresh === false
       ? OLDER_SERVER
-      : refusalOf(summary, to, checks!, fresh !== undefined);
+      : refusalOf(summary, to, checks!, fresh !== undefined));
   return {
     offered: true,
     to,
     ...(refusal === undefined ? {} : { refusal }),
     ...(fresh === undefined ? {} : { fresh }),
   };
+};
+
+/**
+ * Why `to` lists no models to continue on, from its settled listing: the server can't run it at all
+ * (no adapter), its listing failed, or it listed none. The server refuses a switch to a model its
+ * CLI doesn't list (`checkSwitchTarget`), so these grey the entry; none of them is a sign-in, which
+ * the launch checks say on their own.
+ */
+export const unlistedReason = (to: AgentKind, error: unknown): string => {
+  const name = AGENT_NAMES[to];
+  if (error === undefined || error === null)
+    return `${name} lists no models here. Check ${name} in Settings → Agents.`;
+  const tag = typeof error === "object" ? Reflect.get(error, "_tag") : undefined;
+  const reason = typeof error === "object" ? Reflect.get(error, "reason") : undefined;
+  if (tag === "AgentUnavailable" && reason === undefined)
+    return `${name} isn't available here, so this thread can't move to it.`;
+  const message = typeof error === "object" ? Reflect.get(error, "message") : undefined;
+  return typeof message === "string" && message !== ""
+    ? `${name}'s models couldn't be listed: ${message}`
+    : `${name}'s models couldn't be listed. Check ${name} in Settings → Agents.`;
 };
 
 const refusalOf = (
@@ -173,6 +200,23 @@ const refusalOf = (
 /** "Start fresh in Claude Code: new session with the recent turns", for the chip's group heading. */
 export const freshHint = (to: AgentKind): string =>
   `Start fresh in ${AGENT_NAMES[to]}: new session with the recent turns`;
+
+/**
+ * The other agent's heading in the composer's model list. A pick there moves the thread, so it says
+ * so beside the mark (`words`); when it can't move now, the words shorten to the move's name and the
+ * reason follows on a line under them (`note`), which is also the mark's own label.
+ */
+export const switchGroupHead = (
+  offer: SwitchOffer,
+): { hint: string; words: string; note?: string } => {
+  if (!offer.offered) return { hint: "", words: "" };
+  if (offer.refusal === undefined) {
+    const words = offer.fresh === undefined ? continueHint(offer.to) : freshHint(offer.to);
+    return { hint: words, words };
+  }
+  const words = offer.fresh === undefined ? continueLabel(offer.to) : freshLabel(offer.to);
+  return { hint: offer.refusal, words, note: offer.refusal };
+};
 
 /** The menu item's and the sheet's words for a fresh session on `to`. */
 export const freshLabel = (to: AgentKind): string => `Start fresh in ${AGENT_NAMES[to]}`;

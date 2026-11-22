@@ -79,7 +79,7 @@ import { useDraftStore } from "@/stores/drafts";
 import { useSuggestionsStore } from "@/stores/suggestions";
 import { useThreadsStore } from "@/stores/threads";
 import { WAIT_WORDS } from "@/thread/awaiting-machine-model";
-import { continueHint, freshHint, SWITCH_PREFIX } from "@/thread/agent-switch-model";
+import { SWITCH_PREFIX, switchGroupHead } from "@/thread/agent-switch-model";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useSwitchOffer } from "@/thread/use-switch-offer";
 
@@ -918,7 +918,7 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       ? []
       : otherModels !== undefined && otherModels.length > 0
         ? otherModels.map((m) => otherRow(m.id, m.displayName))
-        : [otherRow("", agentLabel(otherAgent))];
+        : [{ ...otherRow("", agentLabel(otherAgent)), headingOnly: true }];
   const heads =
     model === undefined || otherAgent === undefined || otherChoices.length === 0
       ? undefined
@@ -926,14 +926,11 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
           [provider]: {
             mark: <AgentIcon agent={model.agent} className="size-icon-chip" />,
             hint: provider,
+            words: provider,
           },
           [agentLabel(otherAgent)]: {
             mark: <AgentIcon agent={otherAgent} className="size-icon-chip" />,
-            hint:
-              (offer.offered ? offer.refusal : undefined) ??
-              (offer.offered && offer.fresh !== undefined
-                ? freshHint(otherAgent)
-                : continueHint(otherAgent)),
+            ...switchGroupHead(offer),
           },
         };
 

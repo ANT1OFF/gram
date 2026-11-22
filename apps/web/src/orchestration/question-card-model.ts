@@ -1,5 +1,6 @@
 import {
   questionStatusLine,
+  questionTime,
   type OrchestratorLedger,
   type QuestionChoice,
   type ThreadId,
@@ -115,3 +116,27 @@ export const questionOutcome = (question: WorkerQuestion): string | undefined =>
  */
 export const questionKind = (id: string): string =>
   /^WQ\d/.test(id) ? "Worker question" : "Question";
+
+/**
+ * Who holds an open question and what Answer does about it, for its card in a thread: with the
+ * orchestrator until its triage time (answering now takes it from there), or the user's, in the
+ * Inbox too. `undefined` once it is closed.
+ */
+export const questionHolder = (
+  question: Pick<WorkerQuestion, "stage" | "triageUntil" | "forwardedBy">,
+  now: number,
+): string | undefined => {
+  if (question.stage === "triage") {
+    return question.triageUntil > now
+      ? `The orchestrator may settle it from your brief or memory; if not, it comes to your Inbox at ${questionTime(question.triageUntil)}. You can answer now.`
+      : "It is on its way to your Inbox. You can answer now.";
+  }
+  if (question.stage === "forwarded") {
+    const why =
+      question.forwardedBy === "paused"
+        ? "The workspace is paused, so it came straight to you"
+        : "It waits on you";
+    return `${why}, here and in your Inbox.`;
+  }
+  return undefined;
+};

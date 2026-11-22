@@ -102,13 +102,18 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     fireEvent.change(name, { target: { value: "  Payments " } });
     startChord(form());
     await waitFor(() => expect(navigate).toHaveBeenCalled());
-    expect(save.mock.calls[0]![0]).toMatchObject({ name: "Payments", projectIds: [API] });
+    expect(save.mock.calls[0]![0]).toMatchObject({
+      name: "Payments",
+      projectIds: [API],
+    });
 
     cleanup();
     navigate.mockClear();
     render({ repo: API });
     await screen.findByRole("form", { name: "New workspace" });
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "payments" } });
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "payments" },
+    });
     startChord(form());
     expect(await screen.findByText("payments is taken. Pick another name.")).toBeTruthy();
     expect(save).toHaveBeenCalledTimes(1);
@@ -159,12 +164,18 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
       params: { threadId: thread.id },
     });
     // The first run is done once the workspace exists.
-    expect(api.updateSettings).toHaveBeenCalledWith({ onboarding: { welcomeSeen: true } });
+    expect(api.updateSettings).toHaveBeenCalledWith({
+      onboarding: { welcomeSeen: true },
+    });
   });
 
   it("opens the orchestrator without a message when the field is left empty, numbering the name", async () => {
     const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
-    await api.saveWorkspace({ name: "docs", projectIds: [API], homeProjectId: API });
+    await api.saveWorkspace({
+      name: "docs",
+      projectIds: [API],
+      homeProjectId: API,
+    });
     const save = vi.spyOn(api, "saveWorkspace");
     const task = vi.spyOn(api, "startTask");
     const open = vi.spyOn(api, "openOrchestrator");
@@ -195,7 +206,9 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     const thread = await open.mock.results[0]!.value;
-    expect(send).toHaveBeenCalledExactlyOnceWith(thread.id, { text: DISCOVER_MESSAGE });
+    expect(send).toHaveBeenCalledExactlyOnceWith(thread.id, {
+      text: DISCOVER_MESSAGE,
+    });
   });
 
   it("opened from the first-run card, starts ticked to read the repositories, as the card promises", async () => {
@@ -210,7 +223,9 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     const thread = await open.mock.results[0]!.value;
-    expect(send).toHaveBeenCalledExactlyOnceWith(thread.id, { text: DISCOVER_MESSAGE });
+    expect(send).toHaveBeenCalledExactlyOnceWith(thread.id, {
+      text: DISCOVER_MESSAGE,
+    });
   });
 
   it("saves without starting: no orchestrator, no message, back to the list", async () => {
@@ -248,7 +263,11 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const list = vi.fn(async () => ({
       environments: [
         { id: "default", label: "Default", detail: "Open internet" },
-        { id: "env-node", label: "Node.js", detail: "Open internet · node 22, pnpm" },
+        {
+          id: "env-node",
+          label: "Node.js",
+          detail: "Open internet · node 22, pnpm",
+        },
       ],
       default: "default",
     }));
@@ -282,11 +301,18 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const access = vi.fn(async ({ repositories }: { repositories: readonly string[] }) => ({
       repositories: repositories.map((fullName) => ({
         fullName,
-        push: { allowed: false, text: "No: the app can only read", detail: "It reads only." },
+        push: {
+          allowed: false,
+          text: "No: the app can only read",
+          detail: "It reads only.",
+        },
         pullRequest: { allowed: false, text: "—" },
         merge: { allowed: false, text: "You, on GitHub" },
         checks: ["build"],
-        fix: { label: `Give the app write on ${fullName}`, href: "https://example.invalid/i/1" },
+        fix: {
+          label: `Give the app write on ${fullName}`,
+          href: "https://example.invalid/i/1",
+        },
       })),
       note: "Never main.",
     }));
@@ -305,7 +331,9 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(within(rows[0]!).getByTestId("new-workspace-access-checks").textContent).toContain(
       "build",
     );
-    const fix = screen.getByRole("link", { name: "Give the app write on EXAMPLE/api" });
+    const fix = screen.getByRole("link", {
+      name: "Give the app write on EXAMPLE/api",
+    });
     expect(fix.getAttribute("target")).toBe("_blank");
   });
 
@@ -351,7 +379,11 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     const save = vi.spyOn(api, "saveWorkspace");
     render({ repo: API });
     await screen.findByRole("form", { name: "New workspace" });
-    fireEvent.click(within(screen.getByTestId("autonomy")).getByRole("radio", { name: /Publish/ }));
+    fireEvent.click(
+      within(screen.getByTestId("autonomy")).getByRole("radio", {
+        name: /Publish/,
+      }),
+    );
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save.mock.calls[0]![0].charter?.autonomy).toBe("publish");
@@ -409,7 +441,10 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(chips()).toEqual(["api"]);
     fireEvent.click(screen.getByTestId("new-workspace-start"));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
-    expect(save.mock.calls[0]![0]).toMatchObject({ projectIds: [API], homeProjectId: API });
+    expect(save.mock.calls[0]![0]).toMatchObject({
+      projectIds: [API],
+      homeProjectId: API,
+    });
   });
 
   it("waits for both unset-default discoveries and creates with the resulting Codex choice", async () => {
@@ -570,6 +605,21 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
     expect(send).toHaveBeenCalledOnce();
     expect(first).toEqual([{ workspaceId: (await save.mock.results[0]!.value).workspace.id }]);
   });
+  it("after a save whose orchestrator failed to open, leaves it saved without saving it again", async () => {
+    const { api, render } = await mount(settingsWith({ welcomeSeen: true }));
+    const save = vi.spyOn(api, "saveWorkspace");
+    vi.spyOn(api, "openOrchestrator").mockRejectedValueOnce(new Error("no session"));
+    render({ repo: API });
+    await screen.findByRole("form", { name: "New workspace" });
+    fireEvent.click(screen.getByTestId("new-workspace-start"));
+    await screen.findByTestId("new-workspace-saved-not-opened");
+    // What it was saved with: an edit now would change nothing.
+    expect(screen.getByTestId<HTMLFieldSetElement>("new-workspace-fields").disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("new-workspace-save"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/threads" }));
+    expect(save).toHaveBeenCalledOnce();
+  });
+
   it("starts the person's own machine where none is up, and opens the workspace once it is", async () => {
     useEmbedShell.setState({
       ...EMPTY_SHELL,
@@ -585,11 +635,16 @@ describe("NewWorkspaceSheet", { timeout: 20_000 }, () => {
         if (init?.method === "POST") {
           posts.push(url);
           started = true;
-          return Response.json({ progress: { hostKey: "k", phase: "starting", at: 1 } });
+          return Response.json({
+            progress: { hostKey: "k", phase: "starting", at: 1 },
+          });
         }
         return Response.json(
           started
-            ? { available: true, machine: { id: "m-1", name: "sbx", online: true } }
+            ? {
+                available: true,
+                machine: { id: "m-1", name: "sbx", online: true },
+              }
             : { available: true },
         );
       }),

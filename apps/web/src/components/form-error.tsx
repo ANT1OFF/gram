@@ -19,7 +19,6 @@ export function FormError({
   className?: string | undefined;
   testId?: string | undefined;
 }) {
-  const home = useHome();
   return (
     <Alert
       variant="destructive"
@@ -28,16 +27,32 @@ export function FormError({
     >
       <CircleAlert aria-hidden className="size-icon-row" />
       <AlertDescription className="text-meta break-words text-pretty">
-        {messageParts(message, home).map((part, i) =>
-          "text" in part ? (
-            <span key={i}>{part.text}</span>
-          ) : (
-            <span key={i} title={part.path} className="font-mono break-all">
-              {part.label}
-            </span>
-          ),
-        )}
+        <FormErrorText message={message} />
       </AlertDescription>
     </Alert>
+  );
+}
+
+/** A form error's words, its folders shortened as `FormError` shows them. */
+export function FormErrorText({
+  message,
+  className,
+}: {
+  message: string;
+  className?: string | undefined;
+}) {
+  const home = useHome();
+  return (
+    <span className={cn("break-words", className)}>
+      {messageParts(message, home).map((part, i) =>
+        "text" in part ? (
+          <span key={i}>{part.text}</span>
+        ) : (
+          <span key={i} title={part.path} className="font-mono break-all">
+            {part.label}
+          </span>
+        ),
+      )}
+    </span>
   );
 }
