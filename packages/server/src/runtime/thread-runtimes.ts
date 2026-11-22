@@ -474,6 +474,10 @@ const make = Effect.gen(function* () {
     searchRefreshes: yield* FiberMap.make<string>(),
   });
 
+  const restoreGate =
+    remoteHosts === undefined
+      ? undefined
+      : (thread: Thread) => restoreGateOf(remoteHosts.stops, sessionHostOf(thread), thread.id);
   const {
     settleDelivery,
     noteDeliveryStart,
@@ -515,6 +519,7 @@ const make = Effect.gen(function* () {
     stampTurnEnd,
     setRetrying: (rt, retrying, detail) => setRetrying(rt, retrying, detail),
     clearPendingRequests: (rt, reason) => clearPendingRequests(rt, reason),
+    restoreGate,
     ...(remoteHosts === undefined
       ? {}
       : {
@@ -722,10 +727,7 @@ const make = Effect.gen(function* () {
       openSession(rt, thread, resumeAt, switchAttempt),
     forkStopInMissing: (rt) => forkStopInMissing(rt),
     becomeIdle: (rt) => becomeIdle(rt),
-    restoreGate:
-      remoteHosts === undefined
-        ? undefined
-        : (thread) => restoreGateOf(remoteHosts.stops, sessionHostOf(thread), thread.id),
+    restoreGate,
   });
   const unusedTurn = (rt: Runtime, turnId: TurnId | undefined) =>
     turnId === undefined
