@@ -41,6 +41,7 @@ import type {
   GramUIMessageChunk,
   MachineState,
   MessageId,
+  SentTo,
   TaskId,
   Thread,
   ThreadBrowserStatus,
@@ -2911,6 +2912,14 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       ...runtime.summary.thread,
       checkout: { ...runtime.summary.thread.checkout, hostId: HostId.make(hostId) },
     };
+    runtime.summary = { ...runtime.summary, thread };
+    this.#emit({ type: "thread.upsert", thread });
+  }
+
+  /** Dev and e2e hook: the thread is a worker sent to a server, as `send_worker` records one. */
+  sendToServer(threadId: ThreadId, sentTo: SentTo) {
+    const runtime = this.#runtime(threadId);
+    const thread: Thread = { ...runtime.summary.thread, sentTo };
     runtime.summary = { ...runtime.summary, thread };
     this.#emit({ type: "thread.upsert", thread });
   }
