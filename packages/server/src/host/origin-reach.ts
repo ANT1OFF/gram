@@ -32,25 +32,18 @@ const lfsRepository = (url: string) => url.replace(/\/info\/lfs\/?$/, "");
 
 const MACHINE_REWRITES = String.raw`^url\..*\.(insteadof|pushinsteadof)$`;
 
-/** One `url.<base>.insteadOf` (or `pushInsteadOf`) of the machine's: `base` stands for `prefix`. */
-export interface MachineRewrite {
+interface MachineRewrite {
   readonly base: string;
   readonly prefix: string;
 }
 
-/** `git config --get-regexp`'s lines for `MACHINE_REWRITES`, as rewrites. */
 const parseMachineRewrites = (stdout: string): ReadonlyArray<MachineRewrite> =>
   stdout.split("\n").flatMap((line) => {
     const match = /^url\.(.+)\.(?:insteadof|pushinsteadof) (.+)$/i.exec(line.trim());
     return match === null ? [] : [{ base: match[1]!, prefix: match[2]! }];
   });
 
-/**
- * The URLs `url` stands for under the machine's own rewrites: for the longest base of theirs it
- * starts with, each prefix that base stands for, followed by the rest of `url`. Empty when none of
- * them rewrote to it.
- */
-const unrewritten = (rewrites: ReadonlyArray<MachineRewrite>, url: string) => {
+const urlsMachineRewroteTo = (rewrites: ReadonlyArray<MachineRewrite>, url: string) => {
   const longest = rewrites
     .filter((rewrite) => rewrite.base !== "" && url.startsWith(rewrite.base))
     .reduce((most, rewrite) => Math.max(most, rewrite.base.length), 0);
@@ -61,18 +54,12 @@ const unrewritten = (rewrites: ReadonlyArray<MachineRewrite>, url: string) => {
         .map((rewrite) => rewrite.prefix + url.slice(longest));
 };
 
-/**
- * Whether `url` is what the machine's own rewrites make of a URL for the recorded repository, such
- * as a proxy that the machine sends every GitHub remote through: at least one URL it stands for
- * names that repository, and none names another. Anything else, another host's or another
- * repository's included, isn't.
- */
-const rewrittenFrom = (
+const machineRewroteFromRecorded = (
   rewrites: ReadonlyArray<MachineRewrite>,
   url: string,
   recorded: string,
 ): boolean => {
-  const named = unrewritten(rewrites, url).flatMap((original) => {
+  const named = urlsMachineRewroteTo(rewrites, url).flatMap((original) => {
     const identity = cloneIdentityOf(original);
     return identity === undefined ? [] : [identity];
   });
@@ -90,7 +77,8 @@ const reachChecked = <E, R>(
     const recorded = record.originIdentity;
     if (identity === undefined && recorded === undefined) return;
     if (identity !== undefined && recorded !== undefined && sameRepo(recorded, identity)) return;
-    if (recorded !== undefined && rewrittenFrom(yield* rewrites, url, recorded)) return;
+    if (recorded !== undefined && machineRewroteFromRecorded(yield* rewrites, url, recorded))
+      return;
     yield* refuse(
       recorded === undefined
         ? `Gram has no origin recorded for ${record.name}, and its folder sends git to ${redactUrlCredentials(url).slice(0, 200)}. If its origin couldn't be read when it was added, Gram reads it again when the next thread starts in it or Gram starts; if it had none, remove the project and add it again.`
