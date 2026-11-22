@@ -13,7 +13,13 @@ import { Orchestration } from "../orchestration/service.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { mayReachThread, NOT_YOUR_MACHINE, ownersOf, RoutedFor } from "../host/ownership.ts";
+import {
+  asThreadOwner,
+  mayReachThread,
+  NOT_YOUR_MACHINE,
+  ownersOf,
+  RoutedFor,
+} from "../host/ownership.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import type { Actor } from "../http/fronted-identity.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -45,6 +51,22 @@ const personOf = (value: unknown): Actor | string => {
   return { id, name: typeof name === "string" ? name.trim() : id, role: "member" };
 };
 
+/**
+ * Whom a message or a stop is sent for: `person`, the default, for the person who wrote it, so a
+ * thread on a machine started for someone else refuses it; `thread`, for the thread's own machine's
+ * owner, as its agent's tool calls are, while it is still shown and recorded as the person's. The
+ * platform asks for `thread` where it lets more people than the machine's own write in a thread (a
+ * shared agent's, on a machine started for no person) and has decided this person may.
+ */
+export type SentFor = "person" | "thread";
+
+const sentForOf = (value: unknown): SentFor | string =>
+  value === undefined || value === "person"
+    ? "person"
+    : value === "thread"
+      ? "thread"
+      : "`for` is `person` or `thread`";
+
 const failed = (error: { readonly _tag: string; readonly message?: string }): EmbedAnswer =>
   error._tag === "ThreadNotFound"
     ? refusal(404, "there is no such thread")
@@ -67,6 +89,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
       action: string,
       payload: Record<string, unknown>,
       effect: Effect.Effect<A, E>,
+      sentFor: SentFor = "person",
     ): Effect.Effect<A | "not-yours", E> =>
       Effect.gen(function* () {
         if (!(yield* mayReachThread(store.getThread, ownerOf, threadId)))
@@ -77,7 +100,9 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         return result;
       }).pipe(
         Effect.provideService(ActingPerson, person.id),
-        Effect.provideService(RoutedFor, { person: person.id }),
+        sentFor === "thread"
+          ? asThreadOwner(store.getThread, ownerOf, threadId)
+          : Effect.provideService(RoutedFor, { person: person.id }),
       );
 
     yield* inbound.route("POST", "thread-messages", (body) =>
@@ -96,6 +121,8 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           return refusal(400, `\`text\` is 1 to ${THREAD_MESSAGE_MAX} characters`);
         if (typeof mode !== "string" || !(THREAD_MESSAGE_MODES as readonly string[]).includes(mode))
           return refusal(400, "`mode` is `queue`, `steer` or `interrupt`");
+        const sentFor = sentForOf(body?.["for"]);
+        if (sentFor !== "person" && sentFor !== "thread") return refusal(400, sentFor);
         const given = body?.["conversation"];
         const problem = given === undefined ? undefined : conversationRefProblem(given);
         if (problem !== undefined) return refusal(400, problem);
@@ -142,6 +169,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           mode === "queue" ? "thread.send" : "thread.steer",
           { threadId: id, clientMessageId: key },
           received,
+          sentFor,
         ).pipe(
           Effect.map((result) =>
             result === "not-yours"
@@ -161,6 +189,8 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           return refusal(400, "`threadId` is a thread's id");
         const person = personOf(body?.["person"]);
         if (typeof person === "string") return refusal(400, person);
+        const sentFor = sentForOf(body?.["for"]);
+        if (sentFor !== "person" && sentFor !== "thread") return refusal(400, sentFor);
         const id = threadId as ThreadId;
         if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
           return refusal(404, "there is no such thread");
@@ -170,6 +200,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           "thread.interrupt",
           { threadId: id },
           runtimes.interrupt(id, { endLimitWait: true }),
+          sentFor,
         ).pipe(
           Effect.map((result) =>
             result === "not-yours" ? refusal(409, NOT_YOUR_MACHINE) : answer({ interrupted: true }),
