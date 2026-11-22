@@ -30,7 +30,12 @@ import {
 } from "./hosted-machine-set-aside.ts";
 import { fakeApp, NAME, ORIGIN, provisionRelayed } from "./signed-in-fixtures.ts";
 import { noRoomWords, RELAYED_MOST, relaysOf, restingBy } from "./signed-in-room.ts";
-import { setAsideStoppedSignedIn } from "./signed-in-set-aside.ts";
+import {
+  SET_ASIDE_STATUS_MS,
+  setAsideStoppedSignedIn,
+  takeBackSetAside,
+} from "./signed-in-set-aside.ts";
+import { TestClock } from "effect/testing";
 import {
   bridgeWorkerMachines,
   SignedInWorkers,
@@ -312,6 +317,20 @@ describe("a signed-in hosted machine set aside", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect(
+    "not when its server doesn't answer the status in time, which holds no start long",
+    () =>
+      Effect.gen(function* () {
+        const hosts = yield* RemoteHosts.make(memoryMachineStore());
+        const { id } = provisionRelayed(hosts, NAME);
+        const silent: WorkerMachinePortShape = { ...stoppedApp(), call: () => Effect.never };
+        const pass = yield* Effect.forkScoped(setAsideStoppedSignedIn(silent, hosts, {}, id, now));
+        yield* TestClock.adjust(SET_ASIDE_STATUS_MS);
+        expect(yield* Fiber.join(pass)).toBe(false);
+        expect(isAside(hosts, id)).toBe(false);
+      }).pipe(Effect.scoped),
+  );
+
   it.live("not on an answer that doesn't say it is stopped", () =>
     Effect.gen(function* () {
       for (const answer of [
@@ -412,6 +431,64 @@ describe("a signed-in hosted machine set aside", () => {
       expect(isAside(hosts, id)).toBe(false);
     }),
   );
+});
+
+describe("what takes a machine set aside back", () => {
+  it.live("after a restart, a session that wants it takes it back and wakes it", () =>
+    Effect.gen(function* () {
+      const hosts = yield* RemoteHosts.make(memoryMachineStore());
+      const { id } = provisionRelayed(hosts, NAME);
+      hosts.machines.setAside(id, 1);
+      const app = fakeApp({
+        answer: ({ call }) =>
+          call === "status"
+            ? { status: 200, body: { phase: "stopped" } }
+            : { status: call === "start" ? 202 : 200, body: {} },
+      });
+      yield* Layer.build(
+        SignedInWorkersLive.pipe(
+          Layer.provide(Layer.succeed(WorkerMachinePort)(bridgeWorkerMachines(app.port))),
+          Layer.provide(Layer.succeed(RemoteHosts)(hosts)),
+        ),
+      );
+      expect(isAside(hosts, id)).toBe(true);
+      yield* Effect.forkScoped(hosts.stops.wanting(HostId.make(id), Effect.never));
+      while (!app.calls.some((each) => each.call === "start")) yield* Effect.sleep("5 millis");
+      expect(isAside(hosts, id)).toBe(false);
+      expect(app.calls.find((each) => each.call === "start")?.body).toMatchObject({ name: NAME });
+    }).pipe(Effect.scoped),
+  );
+
+  it("is a dial (it is online), a want or a start of its name; nothing else", () => {
+    const marks = new Map<string, number | undefined>();
+    const list: Array<{ id: string; name: string; onlineSince?: number }> = [];
+    let wanted = "";
+    const hosts = {
+      list: () => list as never,
+      stops: {
+        wanted: (id: string) => id === wanted,
+        owes: () => false,
+        holding: () => false,
+        awaited: () => new Set<ThreadId>(),
+        restedOf: () => [],
+      } as never,
+      machines: {
+        get: (id: string) => ({ setAside: marks.get(id) }) as never,
+        setAside: (id: string, at: number | undefined) => marks.set(id, at),
+      },
+    };
+    for (const each of ["dialled", "wanted", "starting", "idle"]) {
+      list.push({
+        id: each,
+        name: `worker-${each}`,
+        ...(each === "dialled" ? { onlineSince: 1 } : {}),
+      });
+      marks.set(each, 1);
+    }
+    wanted = "wanted";
+    takeBackSetAside(hosts, new Set(["worker-starting"]));
+    expect([...marks].filter(([, at]) => at !== undefined).map(([id]) => id)).toEqual(["idle"]);
+  });
 });
 
 describe("a machine set aside takes no relay and no room", () => {

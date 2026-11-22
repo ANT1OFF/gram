@@ -12,6 +12,13 @@ import { type NameLocks, withName } from "./worker-machine-stops.ts";
  */
 export type FinalCheck = (setAside: () => boolean) => Effect.Effect<boolean>;
 
+/**
+ * How long the status asked before setting a machine aside may take: it is asked under the name's
+ * lock, so a wake or start of the name waits behind it no longer than this. Past it, nothing is
+ * set aside.
+ */
+export const SET_ASIDE_STATUS_MS = 10_000;
+
 /** What setting a machine aside reads and changes. */
 export type SetAsideHosts = Pick<RemoteHostsShape, "list" | "stops"> & {
   readonly machines: Pick<RemoteHostsShape["machines"], "get" | "setAside">;
@@ -62,12 +69,11 @@ export const setAsideStoppedSignedIn = (
       const machine = free();
       if (machine === undefined) return false;
       const before = sentOf(deps.sent, machine.name);
-      const answered = yield* port.call(
-        machine.via,
-        "status",
-        { name: machine.name },
-        { account: machine.viaAccount },
-      );
+      const asked = yield* port
+        .call(machine.via, "status", { name: machine.name }, { account: machine.viaAccount })
+        .pipe(Effect.timeoutOption(SET_ASIDE_STATUS_MS));
+      if (asked._tag === "None") return false;
+      const answered = asked.value;
       if (!answered.ok || answered.status < 200 || answered.status >= 300) return false;
       const phase = parseMachineStatus(answered.body).phase;
       if (phase !== "stopped" && phase !== "failed") return false;

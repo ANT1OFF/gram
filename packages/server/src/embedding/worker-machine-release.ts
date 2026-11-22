@@ -330,8 +330,11 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
           );
         }
       }
+    });
+    const asidePass = Effect.gen(function* () {
       const aside = signedIn?.setAside;
       if (aside === undefined || runtimes === undefined) return;
+      const machines = remote.list().filter((machine) => machine.onDemand === "worker");
       const isAside = (machine: ReleaseMachine) =>
         remote.machines.get(machine.id)?.setAside !== undefined;
       const candidates = machines.filter(
@@ -352,6 +355,13 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     yield* pass.pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("the worker machine release pass failed", cause),
+      ),
+      Effect.andThen(
+        asidePass.pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("the worker machine set-aside pass failed", cause),
+          ),
+        ),
       ),
       Effect.repeat(Schedule.spaced(WORKER_RELEASE_EVERY)),
       Effect.forkScoped,
