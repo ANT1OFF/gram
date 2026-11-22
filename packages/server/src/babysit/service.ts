@@ -26,7 +26,7 @@ import {
   type ThreadId,
   type ThreadNotFound,
 } from "@gram/contracts";
-import { canWrite, Pr, prChecksStamp, repoFromPrUrl } from "@gram/git";
+import { canWrite, Pr, repoFromPrUrl } from "@gram/git";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -48,13 +48,13 @@ import { GitStatePublisher } from "../git/publisher.ts";
 import { PrReviews } from "../git/review.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { failingChecks } from "./check-notice.ts";
 import {
   buildReport,
   alreadyReported,
   checkDecision,
   citedShas,
   countRound,
-  failingCheck,
   isCiOnly,
   isReadyToMerge,
   kickoffText,
@@ -664,21 +664,6 @@ export const BabysitLive = Layer.effect(
         yield* schedule(threadId, ["round"]);
       });
 
-    const failingChecks = (
-      cwd: string,
-      bound: { readonly repo: string; readonly number: number },
-      badge: PrStatus,
-    ) =>
-      pr.checks(cwd, bound.number, bound.repo, { stamp: prChecksStamp(badge) }).pipe(
-        Effect.map((runs) =>
-          runs
-            .filter((run) => run.status === "failing" && run.name !== "" && run.required !== false)
-            .map((run) => failingCheck(run.name, run.link)),
-        ),
-        Effect.orElseSucceed(() => undefined),
-        asBackground,
-      );
-
     const deliver = (threadId: ThreadId) =>
       Effect.suspend(() => {
         delivering.add(threadId);
@@ -724,9 +709,8 @@ export const BabysitLive = Layer.effect(
         const { blockers, suggestions } =
           review === undefined ? { blockers: [], suggestions: [] } : openFindings(review);
         const failed = requiredChecksOf(badge) === "failing";
-        const details = failed ? yield* failingChecks(cwd, bound, badge) : [];
+        const details = failed ? yield* failingChecks(pr, cwd, bound, badge) : [];
         const failing = details ?? [];
-        // The rollup was read even if the check details could not be fetched from this checkout.
         const failedWithoutDetails = failed && details === undefined;
         if (taken.has("merge")) {
           const actionable =

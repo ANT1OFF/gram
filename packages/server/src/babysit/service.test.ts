@@ -8,7 +8,6 @@ import type {
   PrReviewState,
   PrStatus,
   ReviewNotice,
-  ReviewThread,
   ServerEvent,
   ThreadId,
 } from "@gram/contracts";
@@ -45,8 +44,14 @@ import { makeRuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Babysit, BabysitLive } from "./service.ts";
 
-const HEAD_A = "a".repeat(40);
-const HEAD_B = "b".repeat(40);
+import {
+  badge,
+  botThread,
+  HEAD_A,
+  HEAD_B,
+  noThreads,
+  reviewState,
+} from "./review-test-fixtures.ts";
 
 const world: {
   observer: GitStateObserver | undefined;
@@ -206,53 +211,6 @@ const TestLayer = BabysitLive.pipe(
     }),
   ),
 );
-
-const noThreads = { unresolved: 0, blockers: 0, suggestions: 0, outdatedUnresolved: 0 };
-
-const reviewState = (overrides: Partial<PrReviewState> = {}): PrReviewState => ({
-  bots: ["example-code-review"],
-  reviewedHead: true,
-  roundInFlight: false,
-  threads: noThreads,
-  ...overrides,
-});
-
-const badge = (overrides: Partial<PrStatus> = {}): PrStatus => ({
-  number: 12,
-  state: "OPEN",
-  url: "https://github.com/acme/web/pull/12",
-  title: "t",
-  isDraft: false,
-  checks: "passing",
-  headMatches: true,
-  aheadOfPr: false,
-  headRefOid: HEAD_A,
-  mergeState: "BLOCKED",
-  ...overrides,
-});
-
-const botThread = (
-  id: string,
-  severity: ReviewThread["severity"],
-  isResolved = false,
-): ReviewThread => ({
-  id,
-  path: "src/app.ts",
-  line: 3,
-  isResolved,
-  isOutdated: false,
-  severity,
-  byBot: true,
-  comments: [
-    {
-      id: `${id}_c`,
-      author: "example-code-review",
-      body: `[${severity}] Finding ${id}.`,
-      createdAt: "2026-09-16T10:00:00Z",
-      url: `https://github.com/acme/web/pull/12#${id}`,
-    },
-  ],
-});
 
 const observer = Effect.suspend(() =>
   world.observer === undefined
