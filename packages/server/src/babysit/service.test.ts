@@ -8,7 +8,6 @@ import type {
   PrReviewState,
   PrStatus,
   ReviewNotice,
-  ReviewThread,
   ServerEvent,
   ThreadId,
 } from "@gram/contracts";
@@ -17,6 +16,7 @@ import {
   applySuggestion,
   containsCommit,
   Pr,
+  PrLookupError,
   Proc,
   ProcLive,
   type PrDetailResponse,
@@ -44,8 +44,14 @@ import { makeRuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Babysit, BabysitLive } from "./service.ts";
 
-const HEAD_A = "a".repeat(40);
-const HEAD_B = "b".repeat(40);
+import {
+  badge,
+  botThread,
+  HEAD_A,
+  HEAD_B,
+  noThreads,
+  reviewState,
+} from "./review-test-fixtures.ts";
 
 const world: {
   observer: GitStateObserver | undefined;
@@ -58,7 +64,7 @@ const world: {
   /** When set, review fetches wait for it; `fetchStarted` opens once one is waiting. */
   fetchGate: Deferred.Deferred<void> | undefined;
   fetchStarted: Deferred.Deferred<void> | undefined;
-  checkRuns: ReadonlyArray<PrCheckRun>;
+  checkRuns: ReadonlyArray<PrCheckRun> | undefined;
   /** Each checks lookup's repo, number and stamp. */
   checksAsked: Array<readonly [string | undefined, number, string | undefined]>;
   /** `sha>head` → whether head contains sha; absent means unknown locally. */
@@ -121,9 +127,11 @@ const MockPr = Layer.succeed(Pr, {
   status: (_cwd, bound) =>
     Effect.sync(() => (bound?.reviews === true ? world.reviewedBadge : world.state?.pr)),
   checks: (_cwd, number, repo, options) =>
-    Effect.sync(() => {
+    Effect.suspend(() => {
       world.checksAsked.push([repo, number, options?.stamp]);
-      return world.checkRuns;
+      return world.checkRuns === undefined
+        ? Effect.fail(new PrLookupError({ message: "Checkout is unreachable." }))
+        : Effect.succeed(world.checkRuns);
     }),
   prime: () => Effect.void,
   seenChecks: () => Effect.succeed(undefined),
@@ -203,53 +211,6 @@ const TestLayer = BabysitLive.pipe(
     }),
   ),
 );
-
-const noThreads = { unresolved: 0, blockers: 0, suggestions: 0, outdatedUnresolved: 0 };
-
-const reviewState = (overrides: Partial<PrReviewState> = {}): PrReviewState => ({
-  bots: ["example-code-review"],
-  reviewedHead: true,
-  roundInFlight: false,
-  threads: noThreads,
-  ...overrides,
-});
-
-const badge = (overrides: Partial<PrStatus> = {}): PrStatus => ({
-  number: 12,
-  state: "OPEN",
-  url: "https://github.com/acme/web/pull/12",
-  title: "t",
-  isDraft: false,
-  checks: "passing",
-  headMatches: true,
-  aheadOfPr: false,
-  headRefOid: HEAD_A,
-  mergeState: "BLOCKED",
-  ...overrides,
-});
-
-const botThread = (
-  id: string,
-  severity: ReviewThread["severity"],
-  isResolved = false,
-): ReviewThread => ({
-  id,
-  path: "src/app.ts",
-  line: 3,
-  isResolved,
-  isOutdated: false,
-  severity,
-  byBot: true,
-  comments: [
-    {
-      id: `${id}_c`,
-      author: "example-code-review",
-      body: `[${severity}] Finding ${id}.`,
-      createdAt: "2026-09-16T10:00:00Z",
-      url: `https://github.com/acme/web/pull/12#${id}`,
-    },
-  ],
-});
 
 const observer = Effect.suspend(() =>
   world.observer === undefined
@@ -606,6 +567,20 @@ describe("review monitor", () => {
       }).pipe(Effect.scoped, Effect.provide(TestLayer)),
     );
   }
+
+  it.effect("delivers a required CI failure when the named checks cannot be read", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* monitoredThread;
+      yield* (yield* ThreadStore).updateSettings((s) => ({ ...s, reviewBots: [] }));
+      yield* publish(id, badge({ checks: "pending", requiredChecks: "pending" }));
+      world.checkRuns = undefined;
+      yield* publish(id, badge({ checks: "failing", requiredChecks: "failing" }));
+      yield* TestClock.adjust("30 seconds");
+      yield* waitFor("CI failure notice", notices(id).pipe(Effect.map((n) => n.length === 1)));
+      expect((yield* inputs(id))[0]?.text).toContain("Required CI checks failed");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
 
   for (const mergeState of ["UNKNOWN", "UNSTABLE", "BLOCKED", "DIRTY", "CONFLICTING"]) {
     it.effect(`keeps real CI failures on ${mergeState} without a bot`, () =>

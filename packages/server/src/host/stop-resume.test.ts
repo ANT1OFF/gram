@@ -36,68 +36,7 @@ import {
   type StopResumeDeps,
 } from "./stop-resume.ts";
 
-const MACHINE = "m-1" as HostId;
-const URL = "https://git.example.test/acme/widgets.git";
-const COMMIT = "a".repeat(40);
-
-const thread = (id: string, checkout: Partial<Thread["checkout"]> & { path: string }) =>
-  ({
-    id: id as ThreadId,
-    checkout: { kind: "worktree", hostId: MACHINE, ...checkout },
-  }) as unknown as Thread;
-
-const THREADS = [
-  thread("t-worker", {
-    path: "/clones/widgets-trees/worker",
-    branch: "gram/worker",
-    repoRoot: "/clones/widgets",
-    cloneIdentity: cloneIdentityOf(URL)!,
-  }),
-  thread("t-here", { path: "/clones/widgets-trees/here", cloneIdentity: cloneIdentityOf(URL)! }),
-  // A folder the user picked there: Gram didn't make it from a clone.
-  thread("t-folder", { kind: "main", path: "/home/dev/project" }),
-  thread("t-nothing", {
-    path: "/clones/widgets-trees/nothing",
-    branch: "gram/nothing",
-    cloneIdentity: cloneIdentityOf(URL)!,
-  }),
-  thread("t-refused", {
-    path: "/clones/widgets-trees/refused",
-    cloneIdentity: cloneIdentityOf(URL)!,
-  }),
-];
-
-/** A machine whose disk holds only `present`, and what it was asked to put back. */
-const machine = (present: ReadonlyArray<string>, restores: boolean) => {
-  const asked: Array<RestoreRequest> = [];
-  const restore = (request: RestoreRequest) =>
-    Effect.suspend((): Effect.Effect<HostStopRestored, HostFailed> => {
-      asked.push(request);
-      if (request.threadId === "t-nothing")
-        return Effect.succeed({ restored: false, note: "Nothing was kept of it at the remote." });
-      if (request.threadId === "t-refused")
-        return Effect.fail(new HostFailed({ message: "git fetch failed" }));
-      return Effect.succeed({ restored: true, commit: COMMIT, uncommitted: true });
-    });
-  const started: Array<ThreadId> = [];
-  const stops = makeStopMarks();
-  stops.stopped(MACHINE, ["t-worker" as ThreadId, "t-folder" as ThreadId]);
-  const deps = {
-    hosts: {
-      connection: () =>
-        Effect.succeed({
-          git: { present: (cwd: string) => Effect.succeed(present.includes(cwd)) },
-          stop: restores ? { restore } : {},
-        }),
-      stops,
-    },
-    store: { listThreads: Effect.succeed(THREADS) },
-    runtimes: {
-      startSession: (threadId: ThreadId) => Effect.sync(() => void started.push(threadId)),
-    },
-  } as unknown as StopResumeDeps;
-  return { deps, asked, started };
-};
+import { COMMIT, MACHINE, machine, thread, THREADS, URL } from "./stop-resume-test-fixtures.ts";
 
 /** A machine's resume state and a session about to open on it, with a host whose disk is `disk`. */
 const gated = (stops: StopMarks) =>
@@ -1719,11 +1658,17 @@ describe("resuming a machine on another disk", () => {
           stops.back(MACHINE);
           const watchers: Array<() => void> = [];
           const settings = { experimental: { embedding: false } };
+          const joined = {
+            id: MACHINE,
+            name: "box",
+            confirmedAt: 1,
+            via: undefined as string | undefined,
+          };
           yield* resumeOwedMachines({
             ...deps,
             hosts: {
               ...deps.hosts,
-              machines: { list: () => [{ id: MACHINE, name: "box", confirmedAt: 1 }] } as never,
+              machines: { list: () => [joined] } as never,
               watch: (listener: () => void) => {
                 watchers.push(listener);
                 return () => {};
@@ -1743,6 +1688,12 @@ describe("resuming a machine on another disk", () => {
           yield* TestClock.adjust("2 minutes");
           expect(asked).toEqual([]);
           expect(stops.owes(MACHINE)).toBe(true);
+          // The provider relays this connection and this Gram owns the worktree.
+          joined.via = "https://hosted.example";
+          for (const watcher of watchers) watcher();
+          yield* TestClock.adjust("1 second");
+          expect(asked.length).toBeGreaterThan(0);
+          expect(stops.owes(MACHINE)).toBe(false);
         }),
       ),
   );

@@ -1005,7 +1005,8 @@ export const RESTED_RETRY_MOST_MS = 30 * 60_000;
  * that dials in owing a resume (back on another disk, `StopMarks.owes`) is resumed here as soon as
  * it is online, one resume at a time: its sessions wait for that rather than open over folders
  * that aren't there. A resume that doesn't complete leaves it owed, and it is tried again at the
- * next change or sweep. With them on, whoever starts the machines asks (`POST /machines/stop/resume`).
+ * next change or sweep. An embedding provider that connects its own machines asks
+ * (`POST /machines/stop/resume`). For a relayed worker, this Gram owns the threads and resumes them.
  */
 export const resumeOwedMachines = (
   deps: StopResumeDeps & {
@@ -1029,11 +1030,12 @@ export const resumeOwedMachines = (
           deps.hosts.stops.restedOf(id).length > 0 &&
           !deps.hosts.stops.owes(id) &&
           deps.hosts.stops.stoppedAt(id) === undefined;
-        if (hosted || !deps.hosts.stops.owes(id)) {
+        const providerResumes = hosted && machine.via === undefined;
+        if (providerResumes || !deps.hosts.stops.owes(id)) {
           const backoff = restedBackoff.get(id);
           const restedDue = resting && (backoff === undefined || at >= backoff.next);
           const blockedDue =
-            !hosted &&
+            !providerResumes &&
             deps.hosts.stops.anyBlocked(id) &&
             at - (triedBlocked.get(id) ?? 0) >= BLOCKED_RETRY_MS;
           if (!restedDue && !blockedDue) continue;
@@ -1054,7 +1056,7 @@ export const resumeOwedMachines = (
         if (!online) continue;
         going.add(id);
         run(
-          Effect.logInfo("a machine back on another disk is resumed by this Gram").pipe(
+          Effect.logInfo("a machine's threads are resumed by this Gram").pipe(
             Effect.annotateLogs({ hostId: id }),
             Effect.andThen(resumeHost(deps, id)),
             Effect.catchCause((cause) =>

@@ -182,7 +182,7 @@ describe("queue persistence", () => {
     }),
   );
 
-  it.effect("sends what waited queued when the thread's machine comes online, not another's", () =>
+  it.effect("delivers a durable monitor wake when its machine reconnects", () =>
     Effect.gen(function* () {
       const dir = mkdtempSync(join(tmpdir(), "gram-queue-"));
       yield* Effect.addFinalizer(() => Effect.sync(() => rmSync(dir, { recursive: true })));
@@ -200,7 +200,13 @@ describe("queue persistence", () => {
           "the first send",
           fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1)),
         );
-        yield* runtimes.send(thread.id, { text: "waited", origin });
+        const notice = yield* runtimes.sendNotice(
+          thread.id,
+          "review:acme/repo#1",
+          { text: "CI failed" },
+          { steer: false },
+        );
+        expect(notice.queued).toBe(true);
         return thread.id;
       }).pipe(Effect.provide(layerAt(file)));
 
@@ -210,7 +216,7 @@ describe("queue persistence", () => {
         // Another machine joining leaves it queued.
         yield* runtimes.sendQueuedOn("another-machine" as HostId);
         const [before] = yield* runtimes.snapshot;
-        expect(before?.queue.map((q) => q.input.text)).toEqual(["waited"]);
+        expect(before?.queue.map((q) => q.input.text)).toEqual(["CI failed"]);
         expect(before?.status).toBe("cold");
 
         yield* runtimes.sendQueuedOn(hostOf({}));
@@ -218,7 +224,7 @@ describe("queue persistence", () => {
           "the send once its machine is back",
           fake.latest(threadId).pipe(Effect.map((s) => s.sent.length === 1 && s)),
         );
-        expect(session.sent.map((i) => i.text)).toEqual([fenceThreadMessage(origin, "waited")]);
+        expect(session.sent.map((i) => i.text)).toEqual(["CI failed"]);
         const [after] = yield* runtimes.snapshot;
         expect(after?.queue).toEqual([]);
       }).pipe(Effect.provide(layerAt(file)));

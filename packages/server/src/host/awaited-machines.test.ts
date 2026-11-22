@@ -13,7 +13,7 @@ import { awaitedMachines, type WorkerHost } from "./worker-host.ts";
 const ID = HostId.make("m-one");
 const HOST = { id: ID } as unknown as WorkerHost;
 
-const setup = (embedding = true) => {
+const setup = (embedding = true, via?: string) => {
   let online = true;
   const stops = makeStopMarks();
   const get = (id: HostId) =>
@@ -23,7 +23,7 @@ const setup = (embedding = true) => {
   const forSession = awaitedMachines(
     get,
     {
-      machines: { get: () => ({ confirmedAt: 1 }) } as never,
+      machines: { get: () => ({ confirmedAt: 1, name: "The worker", via }) } as never,
       stops,
     },
     { getSettings: Effect.succeed({ experimental: { embedding } } as never) },
@@ -71,6 +71,31 @@ describe("a session on a machine started again after a stop", () => {
         stops.resumed(ID, generation);
         yield* TestClock.adjust("1 second");
         expect(yield* Fiber.join(opening)).toBe(HOST);
+      }),
+    ),
+  );
+
+  it.effect("times out waiting for a relayed worker and can retry once it is ready", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { stops, forSession, away, back } = setup(true, "https://hosted.example");
+        away();
+        stops.stopped(ID, []);
+        stops.away(ID);
+        const opening = yield* Effect.forkScoped(Effect.flip(forSession(ID)));
+        yield* TestClock.adjust("30 seconds");
+        expect(stops.wanted(ID)).toBe(true);
+
+        back();
+        stops.back(ID);
+        const generation = stops.resumeStarted(ID);
+        yield* TestClock.adjust("31 seconds");
+        expect(yield* Fiber.join(opening)).toMatchObject({ hostId: ID, _tag: "HostUnavailable" });
+        expect(stops.wanted(ID)).toBe(false);
+
+        stops.settle(ID, generation);
+        stops.resumed(ID, generation);
+        expect(yield* forSession(ID)).toBe(HOST);
       }),
     ),
   );
