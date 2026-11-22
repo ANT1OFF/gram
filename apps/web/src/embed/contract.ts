@@ -934,6 +934,14 @@ export interface MountOptions {
    * no colours, so an app can follow Gram's own palettes and still pick its default look.
    */
   readonly defaults?: LookDefaults;
+  /**
+   * Where a person's look (Settings → Appearance and their own palettes) is kept. `server`, the
+   * default, saves it with the server's settings, which win when the app starts and whenever its
+   * event stream reconnects. `device` keeps it in this browser alone, the same against every server
+   * the page mounts: for an app that mounts many servers from one origin, or a server several
+   * people share. The server's saved look is then neither read nor changed.
+   */
+  readonly appearance?: "server" | "device";
 }
 
 export interface GramHandle {

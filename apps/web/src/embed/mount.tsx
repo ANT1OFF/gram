@@ -17,6 +17,7 @@ import { setServerBase } from "@/api/server-base";
 import type { Api } from "@/api/types";
 import { installKeyboard } from "@/keyboard/registry";
 import { setAppBasePath, appBasePath } from "@/lib/app-path";
+import { keepAppearanceOn } from "@/settings-sync";
 import { createAppRouter } from "@/router";
 import { ThreadView } from "@/thread/thread-view";
 import { routeTree } from "@/routeTree.gen";
@@ -85,6 +86,7 @@ export const mountGram: MountGram = async (options) => {
     setAppBasePath(options.basePath);
     installHostTheme(document, options.theme);
     installLookDefaults(options.defaults);
+    keepAppearanceOn(options.appearance ?? "server");
     bootTheme(
       document.documentElement,
       window.localStorage,
@@ -197,18 +199,26 @@ export const ShellThread: ShellThreadComponent = ({ threadId, placeholder }) => 
       key={threadId}
       threadId={threadId as ThreadId}
       focused
-      beside={{ header: null, ...(placeholder === undefined ? {} : { placeholder }) }}
+      beside={{
+        header: null,
+        ...(placeholder === undefined ? {} : { placeholder }),
+      }}
     />
   </div>
 );
 
 /** Where the window is under the app, and a way to move it, for the embedding app's components. */
 export const useShellLocation: UseShellLocation = () => {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const navigate = useNavigate();
   return {
     pathname,
     navigate: (to, options) =>
-      navigate({ to: to as "/", ...(options?.replace === true ? { replace: true } : {}) }),
+      navigate({
+        to: to as "/",
+        ...(options?.replace === true ? { replace: true } : {}),
+      }),
   };
 };

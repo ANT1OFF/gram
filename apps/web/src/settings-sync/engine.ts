@@ -36,7 +36,16 @@ export interface SettingsSyncOptions {
   debounceMs?: number;
   /** Where changes the server hasn't acknowledged wait between launches; `localStorage` by default. */
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem">;
+  /**
+   * Where Settings → Appearance and custom palettes are kept. `server` (the default) keeps them
+   * with the server's settings. `device` keeps them in the theme store's own storage alone: the
+   * server's appearance and palettes are neither read nor written.
+   */
+  appearance?: AppearanceHome;
 }
+
+/** Where a person's look is kept: with the server's settings, or in this browser. */
+export type AppearanceHome = "server" | "device";
 
 export const SETTINGS_DEBOUNCE_MS = 400;
 
@@ -53,10 +62,13 @@ const report = (what: string, error: unknown) => {
  * never acknowledged: a push still debouncing when the window closed, or one that failed. Those
  * wait under `UNSYNCED_SETTINGS_KEY` and are applied over the server's values and pushed at the next
  * start. Afterwards local changes are pushed, debounced, as patches of only what changed. Pulled
- * values are recorded as synced before listening, so applying them never echoes back.
+ * values are recorded as synced before listening, so applying them never echoes back. With
+ * `appearance: "device"` the look and custom palettes are left out of all of it: the theme store's
+ * own storage keeps them, so neither a server's saved look nor a failed read can replace them.
  */
 export function createSettingsSync(options: SettingsSyncOptions) {
   const { api, theme, layout, debounceMs = SETTINGS_DEBOUNCE_MS } = options;
+  const onServer = options.appearance !== "device";
   const storage = options.storage ?? globalThis.localStorage;
   let synced: SyncedSettings | undefined;
   let confirmed: SyncedSettings | undefined;
@@ -70,7 +82,7 @@ export function createSettingsSync(options: SettingsSyncOptions) {
   const unsubscribe: (() => void)[] = [];
 
   const current = (): SyncedSettings => ({
-    appearance: appearanceFromPrefs(theme.getState()),
+    ...(onServer ? { appearance: appearanceFromPrefs(theme.getState()) } : {}),
     sidebarWidth: layout.getState().sidebarWidth,
     panelOpen: layout.getState().panelOpen,
     panelWidth: layout.getState().panelWidth,
@@ -81,7 +93,7 @@ export function createSettingsSync(options: SettingsSyncOptions) {
   });
 
   const apply = (settings: Settings) => {
-    theme.getState().setTheme(prefsFromAppearance(settings.appearance));
+    if (onServer) theme.getState().setTheme(prefsFromAppearance(settings.appearance));
     const { sidebar, panel } = settings;
     layout.getState().setSidebarWidth(sidebar.width);
     layout.getState().setPanel({ open: panel.open, width: panel.width, tab: panel.tab });
@@ -165,19 +177,20 @@ export function createSettingsSync(options: SettingsSyncOptions) {
     timer = setTimeout(() => void flush(), debounceMs);
   };
 
+  /** The server's palettes, or `undefined` where they aren't read. */
+  const readPalettes = async () => (onServer ? await api.listPalettes() : undefined);
+
   let listening = false;
   const listen = () => {
     if (listening || disposed) return;
     listening = true;
-    unsubscribe.push(theme.subscribe(schedule), layout.subscribe(schedule));
+    unsubscribe.push(layout.subscribe(schedule));
+    if (onServer) unsubscribe.push(theme.subscribe(schedule));
   };
 
   return {
     async start() {
-      const [settings, palettes] = await Promise.allSettled([
-        api.getSettings(),
-        api.listPalettes(),
-      ]);
+      const [settings, palettes] = await Promise.allSettled([api.getSettings(), readPalettes()]);
       if (disposed) return;
       const unsynced = readUnsynced();
       let loaded: Settings | undefined;
@@ -189,12 +202,12 @@ export function createSettingsSync(options: SettingsSyncOptions) {
       } else {
         report("load settings", settings.reason);
       }
-      if (palettes.status === "fulfilled") {
+      if (palettes.status === "rejected") {
+        report("load palettes", palettes.reason);
+      } else if (palettes.value !== undefined) {
         const custom = palettes.value.filter((p) => !p.builtin).map(toThemePalette);
         theme.getState().setCustomPalettes(custom);
         syncedPalettes = confirmedPalettes = custom;
-      } else {
-        report("load palettes", palettes.reason);
       }
       if (synced || syncedPalettes) listen();
       if (loaded) options.onLoaded?.(loaded);
@@ -219,23 +232,20 @@ export function createSettingsSync(options: SettingsSyncOptions) {
       try {
         await flush();
         await pushing;
-        const [settings, palettes] = await Promise.allSettled([
-          api.getSettings(),
-          api.listPalettes(),
-        ]);
+        const [settings, palettes] = await Promise.allSettled([api.getSettings(), readPalettes()]);
         if (disposed) return;
         edited = confirmed ? settingsPatch(confirmed, current()) : undefined;
         localPalettes = theme.getState().customPalettes;
 
         pulling = true;
         try {
-          if (palettes.status === "fulfilled") {
+          if (palettes.status === "rejected") {
+            report("reload palettes", palettes.reason);
+          } else if (palettes.value !== undefined) {
             ackedPalettes = confirmedPalettes;
             const pulled = palettes.value.filter((p) => !p.builtin).map(toThemePalette);
             theme.getState().setCustomPalettes(pulled);
             syncedPalettes = confirmedPalettes = pulled;
-          } else {
-            report("reload palettes", palettes.reason);
           }
           if (settings.status === "fulfilled") {
             pulledSettings = settings.value;

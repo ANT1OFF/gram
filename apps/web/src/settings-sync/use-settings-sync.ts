@@ -11,11 +11,17 @@ import { useKeybindingsSync } from "@/keyboard/use-keybindings-sync";
 import { useLayoutStore } from "@/stores/layout";
 import { themeStore } from "@/theme/store";
 
-import { createSettingsSync } from "./engine";
+import { createSettingsSync, type AppearanceHome } from "./engine";
 import { useServerSettings } from "./store";
 import { useGridSync } from "./use-grid-sync";
 
 let active: ReturnType<typeof createSettingsSync> | undefined;
+let appearanceHome: AppearanceHome = "server";
+
+/** Where the look is kept from the next mount of the sync on: an embedding app's `appearance`. */
+export const keepAppearanceOn = (home: AppearanceHome): void => {
+  appearanceHome = home;
+};
 
 /** Re-reads the server's settings and palettes into this window; a no-op before the sync mounts. */
 export const pullServerSettings = (): Promise<void> => active?.pull() ?? Promise.resolve();
@@ -29,6 +35,7 @@ export function useSettingsSync() {
       api,
       theme: themeStore,
       layout: useLayoutStore,
+      appearance: appearanceHome,
       onLoaded: (settings) => useServerSettings.setState({ settings }),
     });
     active = sync;
@@ -63,7 +70,9 @@ export function useSettingsSync() {
         if (stored.join() === state.overviewHidden.join()) return;
         useServerSettings.setState({
           settings: applySettingsPatch(settings, {
-            layout: { overviewSections: overviewSectionsValue(state.overviewHidden) },
+            layout: {
+              overviewSections: overviewSectionsValue(state.overviewHidden),
+            },
           }),
         });
       }),

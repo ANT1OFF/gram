@@ -46,7 +46,8 @@ export function prefsFromAppearance(appearance: Appearance): ThemePrefs {
 
 /** The slice of settings the client edits and keeps in sync. */
 export interface SyncedSettings {
-  appearance: Appearance;
+  /** Absent where the look is kept on the device rather than with the server's settings. */
+  appearance?: Appearance;
   sidebarWidth: number;
   panelOpen: boolean;
   panelWidth: number;
@@ -81,7 +82,11 @@ const sameList = (a: readonly string[], b: readonly string[]) =>
 const overviewSectionsPatch = (prev: SyncedSettings, next: SyncedSettings) =>
   sameList(next.overviewHidden, prev.overviewHidden)
     ? {}
-    : { layout: { overviewSections: overviewSectionsValue(next.overviewHidden) } };
+    : {
+        layout: {
+          overviewSections: overviewSectionsValue(next.overviewHidden),
+        },
+      };
 
 const sidebarPatch = (prev: SyncedSettings, next: SyncedSettings) =>
   next.sidebarWidth !== prev.sidebarWidth ? { sidebar: { width: next.sidebarWidth } } : {};
@@ -99,9 +104,9 @@ export function settingsPatch(
   next: SyncedSettings,
 ): SettingsPatch | undefined {
   const appearance: Partial<Appearance> = {};
-  for (const key of Object.keys(next.appearance) as (keyof Appearance)[]) {
-    if (next.appearance[key] !== prev.appearance[key]) {
-      Object.assign(appearance, { [key]: next.appearance[key] });
+  for (const key of Object.keys(next.appearance ?? {}) as (keyof Appearance)[]) {
+    if (next.appearance?.[key] !== prev.appearance?.[key]) {
+      Object.assign(appearance, { [key]: next.appearance?.[key] });
     }
   }
   const patch: SettingsPatch = {

@@ -56,7 +56,25 @@ const fakeApi = (settings: Settings = DEFAULT_SETTINGS, palettes: Palette[] = []
 /** A launch: the theme store hydrates from `storage`, which the engine also keeps unsynced changes in. */
 const setup = (api: ReturnType<typeof fakeApi>, storage = memoryStorage()) => {
   const theme = createThemeStore(storage);
-  const sync = createSettingsSync({ api, theme, layout: useLayoutStore, storage });
+  const sync = createSettingsSync({
+    api,
+    theme,
+    layout: useLayoutStore,
+    storage,
+  });
+  return { theme, sync, storage };
+};
+
+/** A launch that keeps the look on the device. */
+const onDevice = (api: ReturnType<typeof fakeApi>, storage = memoryStorage()) => {
+  const theme = createThemeStore(storage);
+  const sync = createSettingsSync({
+    api,
+    theme,
+    layout: useLayoutStore,
+    storage,
+    appearance: "device",
+  });
   return { theme, sync, storage };
 };
 
@@ -89,14 +107,22 @@ describe("createSettingsSync", () => {
     });
     useLayoutStore.getState().setOverviewHidden(["usage"]);
     await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
-    expect(api.updateSettings).toHaveBeenLastCalledWith({ layout: { overviewSections: null } });
+    expect(api.updateSettings).toHaveBeenLastCalledWith({
+      layout: { overviewSections: null },
+    });
     sync.dispose();
     useLayoutStore.setState({ overviewHidden: [] });
   });
 
   it("records the overview's mode when the server's settings hide it", async () => {
-    useLayoutStore.setState({ overviewSidebar: "compact", overviewBeforeHide: undefined });
-    const api = fakeApi({ ...DEFAULT_SETTINGS, layout: { overviewSidebar: "hidden" } });
+    useLayoutStore.setState({
+      overviewSidebar: "compact",
+      overviewBeforeHide: undefined,
+    });
+    const api = fakeApi({
+      ...DEFAULT_SETTINGS,
+      layout: { overviewSidebar: "hidden" },
+    });
     const { sync } = setup(api);
     await sync.start();
     expect(useLayoutStore.getState()).toMatchObject({
@@ -108,14 +134,21 @@ describe("createSettingsSync", () => {
     useLayoutStore.getState().toggleOverview();
     expect(useLayoutStore.getState().overviewSidebar).toBe("compact");
     sync.dispose();
-    useLayoutStore.setState({ overviewSidebar: undefined, overviewBeforeHide: undefined });
+    useLayoutStore.setState({
+      overviewSidebar: undefined,
+      overviewBeforeHide: undefined,
+    });
   });
 
   it("applies the server's appearance, overview width and custom palettes without echoing them", async () => {
     const api = fakeApi(
       {
         ...DEFAULT_SETTINGS,
-        appearance: { ...DEFAULT_SETTINGS.appearance, look: "glass", mode: "light" },
+        appearance: {
+          ...DEFAULT_SETTINGS.appearance,
+          look: "glass",
+          mode: "light",
+        },
         sidebar: { ...DEFAULT_SETTINGS.sidebar, width: 300 },
       },
       [palette("tokyo-night", { builtin: true }), palette("my-owl")],
@@ -230,7 +263,9 @@ describe("createSettingsSync", () => {
 
     await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
     expect(api.updateSettings).toHaveBeenCalledTimes(2);
-    expect(api.updateSettings.mock.calls[1]![0].appearance).toMatchObject({ density: "compact" });
+    expect(api.updateSettings.mock.calls[1]![0].appearance).toMatchObject({
+      density: "compact",
+    });
     expect(api.upsertPalette.mock.calls.map(([p]) => p.id)).toEqual(["mine", "mine"]);
     expect(api.removePalette).not.toHaveBeenCalled();
     expect(storage.getItem(UNSYNCED_SETTINGS_KEY)).toBeNull();
@@ -275,7 +310,9 @@ describe("createSettingsSync", () => {
 
     await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
     expect(api.updateSettings).toHaveBeenCalledTimes(2);
-    expect(api.updateSettings.mock.calls[1]![0].appearance).toMatchObject({ mode: "light" });
+    expect(api.updateSettings.mock.calls[1]![0].appearance).toMatchObject({
+      mode: "light",
+    });
     sync.dispose();
   });
 
@@ -377,7 +414,9 @@ describe("createSettingsSync", () => {
     await next.sync.start();
 
     expect(next.theme.getState().mode).toBe("light");
-    expect(api.updateSettings).toHaveBeenCalledWith({ appearance: { mode: "light" } });
+    expect(api.updateSettings).toHaveBeenCalledWith({
+      appearance: { mode: "light" },
+    });
     expect(next.storage.getItem(UNSYNCED_SETTINGS_KEY)).toBeNull();
     next.sync.dispose();
   });
@@ -418,8 +457,65 @@ describe("createSettingsSync", () => {
 
     const next = setup(api, first.storage);
     await next.sync.start();
-    expect(api.updateSettings).toHaveBeenLastCalledWith({ appearance: { motion: "off" } });
+    expect(api.updateSettings).toHaveBeenLastCalledWith({
+      appearance: { motion: "off" },
+    });
     expect(next.storage.getItem(UNSYNCED_SETTINGS_KEY)).toBeNull();
     next.sync.dispose();
+  });
+
+  describe("with the look kept on the device", () => {
+    const light = {
+      ...DEFAULT_SETTINGS,
+      appearance: {
+        ...DEFAULT_SETTINGS.appearance,
+        mode: "light" as const,
+        paletteId: "neutral" as PaletteId,
+      },
+    };
+
+    it("keeps a chosen dark through a server's light look, a reconnect, a failed read, a reload and another server", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const api = fakeApi(light, [palette("their-owl")]);
+      const first = onDevice(api);
+      first.theme.getState().setTheme({ mode: "dark", palette: "neutral-dark" });
+      await first.sync.start();
+      expect(first.theme.getState().mode).toBe("dark");
+
+      // The event stream reconnects; a read fails (a rate limit) and then answers again.
+      api.getSettings.mockRejectedValueOnce(new Error("429"));
+      await first.sync.pull();
+      await first.sync.pull();
+      expect(first.theme.getState()).toMatchObject({
+        mode: "dark",
+        palette: "neutral-dark",
+      });
+      expect(api.listPalettes).not.toHaveBeenCalled();
+      expect(first.theme.getState().customPalettes).toEqual([]);
+
+      // A change of look stays in the browser; a change of layout still reaches the server.
+      first.theme.getState().setTheme({ motion: "off" });
+      useLayoutStore.getState().setSidebarWidth(320);
+      await first.sync.flush();
+      expect(api.updateSettings).toHaveBeenCalledWith({
+        sidebar: { width: 320 },
+      });
+      expect(api.updateSettings.mock.calls.some(([patch]) => "appearance" in patch)).toBe(false);
+      first.sync.dispose();
+
+      // A reload, against another server (another workspace) whose saved look is light.
+      const other = fakeApi(light);
+      const next = onDevice(other, first.storage);
+      await next.sync.start();
+      await next.sync.pull();
+      expect(next.theme.getState()).toMatchObject({
+        mode: "dark",
+        palette: "neutral-dark",
+        motion: "off",
+      });
+      await vi.advanceTimersByTimeAsync(SETTINGS_DEBOUNCE_MS * 2);
+      expect(other.updateSettings).not.toHaveBeenCalled();
+      next.sync.dispose();
+    });
   });
 });
