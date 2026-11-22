@@ -1719,11 +1719,17 @@ describe("resuming a machine on another disk", () => {
           stops.back(MACHINE);
           const watchers: Array<() => void> = [];
           const settings = { experimental: { embedding: false } };
+          const joined = {
+            id: MACHINE,
+            name: "box",
+            confirmedAt: 1,
+            via: undefined as string | undefined,
+          };
           yield* resumeOwedMachines({
             ...deps,
             hosts: {
               ...deps.hosts,
-              machines: { list: () => [{ id: MACHINE, name: "box", confirmedAt: 1 }] } as never,
+              machines: { list: () => [joined] } as never,
               watch: (listener: () => void) => {
                 watchers.push(listener);
                 return () => {};
@@ -1743,6 +1749,12 @@ describe("resuming a machine on another disk", () => {
           yield* TestClock.adjust("2 minutes");
           expect(asked).toEqual([]);
           expect(stops.owes(MACHINE)).toBe(true);
+          // The provider relays this connection and this Gram owns the worktree.
+          joined.via = "https://hosted.example";
+          for (const watcher of watchers) watcher();
+          yield* TestClock.adjust("1 second");
+          expect(asked.length).toBeGreaterThan(0);
+          expect(stops.owes(MACHINE)).toBe(false);
         }),
       ),
   );

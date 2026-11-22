@@ -17,6 +17,7 @@ import {
   applySuggestion,
   containsCommit,
   Pr,
+  PrLookupError,
   Proc,
   ProcLive,
   type PrDetailResponse,
@@ -58,7 +59,7 @@ const world: {
   /** When set, review fetches wait for it; `fetchStarted` opens once one is waiting. */
   fetchGate: Deferred.Deferred<void> | undefined;
   fetchStarted: Deferred.Deferred<void> | undefined;
-  checkRuns: ReadonlyArray<PrCheckRun>;
+  checkRuns: ReadonlyArray<PrCheckRun> | undefined;
   /** Each checks lookup's repo, number and stamp. */
   checksAsked: Array<readonly [string | undefined, number, string | undefined]>;
   /** `sha>head` → whether head contains sha; absent means unknown locally. */
@@ -121,9 +122,11 @@ const MockPr = Layer.succeed(Pr, {
   status: (_cwd, bound) =>
     Effect.sync(() => (bound?.reviews === true ? world.reviewedBadge : world.state?.pr)),
   checks: (_cwd, number, repo, options) =>
-    Effect.sync(() => {
+    Effect.suspend(() => {
       world.checksAsked.push([repo, number, options?.stamp]);
-      return world.checkRuns;
+      return world.checkRuns === undefined
+        ? Effect.fail(new PrLookupError({ message: "Checkout is unreachable." }))
+        : Effect.succeed(world.checkRuns);
     }),
   prime: () => Effect.void,
   seenChecks: () => Effect.succeed(undefined),
@@ -606,6 +609,20 @@ describe("review monitor", () => {
       }).pipe(Effect.scoped, Effect.provide(TestLayer)),
     );
   }
+
+  it.effect("delivers a required CI failure when the named checks cannot be read", () =>
+    Effect.gen(function* () {
+      reset();
+      const id = yield* monitoredThread;
+      yield* (yield* ThreadStore).updateSettings((s) => ({ ...s, reviewBots: [] }));
+      yield* publish(id, badge({ checks: "pending", requiredChecks: "pending" }));
+      world.checkRuns = undefined;
+      yield* publish(id, badge({ checks: "failing", requiredChecks: "failing" }));
+      yield* TestClock.adjust("30 seconds");
+      yield* waitFor("CI failure notice", notices(id).pipe(Effect.map((n) => n.length === 1)));
+      expect((yield* inputs(id))[0]?.text).toContain("Required CI checks failed");
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
 
   for (const mergeState of ["UNKNOWN", "UNSTABLE", "BLOCKED", "DIRTY", "CONFLICTING"]) {
     it.effect(`keeps real CI failures on ${mergeState} without a bot`, () =>

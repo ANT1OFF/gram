@@ -282,8 +282,13 @@ export const makeTurnLifecycle = ({
       );
       const at = yield* Clock.currentTimeMillis;
       const keptGone = keptWorkGoneError(error, KEPT_WORK_GONE_REASON, at);
+      const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
+      const away = Option.isSome(thread) && awayMachine?.(thread.value) !== undefined;
       const gone =
-        keptGone === undefined && rt.cwd !== undefined && !(yield* checkouts.present(rt.cwd));
+        keptGone === undefined &&
+        !away &&
+        rt.cwd !== undefined &&
+        !(yield* checkouts.present(rt.cwd));
       const text = gone ? missingThreadFolder(rt.cwd!) : undefined;
       const kept = yield* keepError(
         rt,

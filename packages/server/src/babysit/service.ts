@@ -69,7 +69,6 @@ import {
   stopReasonOf,
   uncountedReview,
   unresolvedBotThreads,
-  type FailingCheck,
   type Halt,
   type MonitorSnapshot,
   type NoticeReason,
@@ -676,7 +675,7 @@ export const BabysitLive = Layer.effect(
             .filter((run) => run.status === "failing" && run.name !== "" && run.required !== false)
             .map((run) => failingCheck(run.name, run.link)),
         ),
-        Effect.orElseSucceed((): ReadonlyArray<FailingCheck> => []),
+        Effect.orElseSucceed(() => undefined),
         asBackground,
       );
 
@@ -724,8 +723,11 @@ export const BabysitLive = Layer.effect(
         const review = hasBot ? yield* fetchReview(cwd, bound) : undefined;
         const { blockers, suggestions } =
           review === undefined ? { blockers: [], suggestions: [] } : openFindings(review);
-        const failing =
-          requiredChecksOf(badge) === "failing" ? yield* failingChecks(cwd, bound, badge) : [];
+        const failed = requiredChecksOf(badge) === "failing";
+        const details = failed ? yield* failingChecks(cwd, bound, badge) : [];
+        const failing = details ?? [];
+        // The rollup was read even if the check details could not be fetched from this checkout.
+        const failedWithoutDetails = failed && details === undefined;
         if (taken.has("merge")) {
           const actionable =
             ["DIRTY", "CONFLICTING", "BEHIND"].includes(badge.mergeState ?? "") ||
@@ -733,11 +735,12 @@ export const BabysitLive = Layer.effect(
               requiredChecksOf(badge) === "passing") ||
             (badge.mergeState === "BLOCKED" &&
               (failing.length > 0 ||
+                failedWithoutDetails ||
                 blockers.length > 0 ||
                 (hasBot && badge.review?.verdictOnHead === "changesRequested")));
           if (!actionable) taken.delete("merge");
         }
-        if (isCiOnly(taken) && requiredChecksOf(badge) === "failing" && failing.length === 0)
+        if (isCiOnly(taken) && failed && details?.length === 0)
           return yield* dropped(threadId, "no failing required checks", taken);
         if (taken.size === 0) return yield* dropped(threadId, "no actionable change", taken);
         const key = `${bound.repo}#${bound.number}`;
@@ -846,7 +849,11 @@ export const BabysitLive = Layer.effect(
         );
         const delivered = yield* runtimes
           .sendNotice(threadId, reviewNoticeKey(bound), {
-            text: serializeReviewNotice(notice, hasBot),
+            text:
+              serializeReviewNotice(notice, hasBot) +
+              (failedWithoutDetails
+                ? "\nRequired CI checks failed. Check details are unavailable."
+                : ""),
             notice,
           })
           .pipe(

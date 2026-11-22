@@ -206,7 +206,8 @@ const WAKE_LOOK = "500 millis";
  *
  * A thread whose folder its machine's resume couldn't put back (`StopMarks.blocked`) opens no
  * session there, and says why at once. Nor does one whose machine's resume made no progress for
- * too long while it waited: no timer opens a session over folders that may still be coming.
+ * too long while it waited. A relayed worker's wait ends at the start deadline even during a
+ * restore. Its queued work retries once the folders are ready.
  */
 export const awaitedMachines =
   (
@@ -232,7 +233,8 @@ export const awaitedMachines =
           (threadId !== undefined && remote.stops.isThreadBack(id, threadId)));
       if (first.host !== undefined && settled()) return first.host;
       const asIs = first.host === undefined ? Effect.fail(first.away) : Effect.succeed(first.host);
-      if (remote.machines.get(id)?.confirmedAt === undefined) return yield* asIs;
+      const machine = remote.machines.get(id);
+      if (machine?.confirmedAt === undefined) return yield* asIs;
       if (!embeddingOn(yield* store.getSettings) && (first.host === undefined || settled()))
         return yield* asIs;
       yield* Effect.logInfo("a session waits for its machine to be started").pipe(
@@ -266,7 +268,8 @@ export const awaitedMachines =
                   (at) =>
                     notBack() === undefined &&
                     !stalledNow() &&
-                    (at - since < waitMs || remote.stops.resumeRunning(id)),
+                    (at - since < waitMs ||
+                      (machine.via === undefined && remote.stops.resumeRunning(id))),
                 ),
             }),
             Effect.catch((error) => Effect.succeed(error)),
@@ -281,7 +284,15 @@ export const awaitedMachines =
             );
             return yield* stop(RESUME_STALLED);
           }
-          if (host instanceof HostUnavailable) return yield* host;
+          if (host instanceof HostUnavailable) {
+            const detail = remote.stops.resuming(id)
+              ? "Its folders are still being restored."
+              : "It has not reconnected.";
+            const minutes = Math.ceil(waitMs / 60_000);
+            return yield* stop(
+              `${machine.name} was not ready within ${minutes} ${minutes === 1 ? "minute" : "minutes"}. ${detail} Queued work will retry when it's ready.`,
+            );
+          }
           return host;
         }),
       );
