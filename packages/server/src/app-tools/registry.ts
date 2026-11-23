@@ -906,7 +906,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
         ...sessionAppTools(runtimes, store),
         moveToWorktreeTool(runtimes, store, checkouts),
         showWidgetTool(runtimes),
-        ...waitAppTools(waits, runtimes),
+        ...waitAppTools(waits, runtimes, store),
       ];
       const gate = makeApprovalGate(runtimes, store);
       const guard = makeActionGuard({

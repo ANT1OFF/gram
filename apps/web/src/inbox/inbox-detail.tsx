@@ -516,6 +516,7 @@ export function InboxDetail({
               elsewhere
               defaultExpanded
               onDone={() => actions.done(item)}
+              onDismiss={(_, note) => actions.dismissWait(item, note)}
             />
           </ul>
         ) : item.kind === "watch" ? (

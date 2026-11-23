@@ -104,6 +104,13 @@ export function useNeedsYouActions() {
         .resolveWait(item.threadId, item.wait.item.id)
         .catch((error: unknown) => console.error("needs you: done", error));
     },
+    /** Dismisses a Waiting on you item, not done, with why if the user said. */
+    dismissWait: (item: NeedsYouItem, note: string | undefined) => {
+      if (item.wait === undefined || item.threadId === undefined) return;
+      void api
+        .dismissWait(item.threadId, item.wait.item.id, note)
+        .catch((error: unknown) => console.error("needs you: dismiss", error));
+    },
     later: (item: NeedsYouItem) => {
       const now = Date.now();
       void saveSetAside(save, item.ids, { snoozeUntil: now + SNOOZE_MS, now }).catch(

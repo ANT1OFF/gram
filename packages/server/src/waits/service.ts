@@ -25,7 +25,8 @@ import * as Semaphore from "effect/Semaphore";
 import { randomUUID } from "node:crypto";
 import { ActingPerson } from "../embedding/person.ts";
 import { EventHub } from "../events/event-hub.ts";
-import { ThreadStore, type WaitResolution } from "../persistence/thread-store.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
+import type { WaitResolution } from "../persistence/wait-resolution.ts";
 
 /** What an item is made of, as whoever adds it writes it; plain and within limits already. */
 export interface WaitDraft {
@@ -83,8 +84,9 @@ export interface ThreadWaitsShape {
     source: WaitSource,
   ): Effect.Effect<WaitPut, WaitsFull | NotFound | ThreadNotFound>;
   /**
-   * Resolves an item, or with `undefined` reopens it, restyling its chip, and answers it as it then
-   * is with whether this call changed it: resolving one already resolved keeps the first resolution.
+   * Resolves an item, done, dismissed or withdrawn as `resolution.ending` says, or with `undefined`
+   * reopens it, restyling its chip, and answers it as it then is with whether this call changed it:
+   * resolving one already resolved keeps the first resolution.
    * Reopening is refused while `MAX_OPEN_WAITS` are open, as adding one is. With `revision`, an item
    * revised since (`waitRevision`) is left as it is: the resolver read another version of it.
    */
@@ -127,9 +129,13 @@ export interface ThreadWaitsShape {
   heard(threadId: ThreadId, items: ReadonlyArray<WaitItem>): Effect.Effect<void>;
   /**
    * The thread's items, open or `all`, for `list_waits`, without the helper's suggestions: the agent
-   * has heard of those it answers.
+   * has heard of those it answers, unless `heard` is false, as when its orchestrator reads them.
    */
-  listForAgent(threadId: ThreadId, which: WaitListState): Effect.Effect<ReadonlyArray<WaitItem>>;
+  listForAgent(
+    threadId: ThreadId,
+    which: WaitListState,
+    heard?: boolean,
+  ): Effect.Effect<ReadonlyArray<WaitItem>>;
   /** Late-bound by the runtimes, which depend on this service. */
   bindTranscript(transcript: WaitTranscript): Effect.Effect<void>;
 }
@@ -361,11 +367,12 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
             return note === undefined ? undefined : { note, news };
           }),
         heard: (threadId, items) => store.markWaitsTold(threadId, items, Date.now()),
-        listForAgent: (threadId, which) =>
+        listForAgent: (threadId, which, heard = true) =>
           Effect.gen(function* () {
             const items = (yield* store.listWaits(threadId, which)).filter(
               (item) => item.suggested !== true,
             );
+            if (!heard) return items;
             const news = new Set((yield* store.listWaitNews(threadId)).map((item) => item.id));
             yield* store.markWaitsTold(
               threadId,

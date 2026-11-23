@@ -14,6 +14,12 @@ export interface WaitsApi {
    * open items also arrive as `thread.waits`. The agent hears of it with the next message.
    */
   resolveWait(threadId: ThreadId, id: WaitId, undo?: boolean): Promise<WaitItem>;
+  /**
+   * Dismisses an item, not done: it no longer makes sense. It leaves the list as dismissed by the
+   * user, with `note` as why, and `resolveWait`'s `undo` reopens it. The agent hears of it with the
+   * next message, as of Done.
+   */
+  dismissWait(threadId: ThreadId, id: WaitId, note?: string): Promise<WaitItem>;
   /** Keeps a helper's suggestion as an item of the thread's own, counted from then on. */
   keepWait(threadId: ThreadId, id: WaitId): Promise<WaitItem>;
   /**

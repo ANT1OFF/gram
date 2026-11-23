@@ -71,32 +71,57 @@ export function createWaitsMock(world: MockWorld) {
     return after;
   };
 
+  const settle = async (
+    threadId: ThreadId,
+    id: WaitId,
+    how: "done" | "undo" | { readonly dismiss: string | undefined },
+  ) => {
+    world.summary(threadId);
+    await world.delay(30);
+    const all = items.get(threadId) ?? [];
+    const index = all.findIndex((item) => item.id === id);
+    const before = all[index];
+    if (before === undefined) throw new Error(`NotFound: wait ${id}`);
+    const {
+      resolvedAt: _at,
+      resolvedBy: _by,
+      note: _note,
+      ending: _ending,
+      resolverThread: _thread,
+      ...open
+    } = before;
+    const undo = how === "undo";
+    const dismissed =
+      typeof how === "object"
+        ? {
+            ending: "dismissed" as const,
+            ...(how.dismiss === undefined || how.dismiss.trim() === ""
+              ? {}
+              : { note: how.dismiss.trim() }),
+          }
+        : {};
+    const after: WaitItem = undo
+      ? open
+      : waitIsOpen(before)
+        ? { ...before, resolvedAt: Date.now(), resolvedBy: "user", ...dismissed }
+        : before;
+    if (after === before) return before;
+    if (undo && before.suggested !== true && kept(threadId) >= MAX_OPEN_WAITS) {
+      throw tooMany();
+    }
+    items.set(threadId, all.with(index, after));
+    publish(threadId);
+    if (after.messageId !== undefined && after.suggested !== true) {
+      world.putDataPart(threadId, chip(after), after.messageId);
+    }
+    return after;
+  };
+
   const api = {
-    resolveWait: async (threadId: ThreadId, id: WaitId, undo?: boolean) => {
-      world.summary(threadId);
-      await world.delay(30);
-      const all = items.get(threadId) ?? [];
-      const index = all.findIndex((item) => item.id === id);
-      const before = all[index];
-      if (before === undefined) throw new Error(`NotFound: wait ${id}`);
-      const { resolvedAt: _at, resolvedBy: _by, note: _note, ...open } = before;
-      const after: WaitItem =
-        undo === true
-          ? open
-          : waitIsOpen(before)
-            ? { ...before, resolvedAt: Date.now(), resolvedBy: "user" }
-            : before;
-      if (after === before) return before;
-      if (undo === true && before.suggested !== true && kept(threadId) >= MAX_OPEN_WAITS) {
-        throw tooMany();
-      }
-      items.set(threadId, all.with(index, after));
-      publish(threadId);
-      if (after.messageId !== undefined && after.suggested !== true) {
-        world.putDataPart(threadId, chip(after), after.messageId);
-      }
-      return after;
-    },
+    resolveWait: (threadId: ThreadId, id: WaitId, undo?: boolean) =>
+      settle(threadId, id, undo === true ? "undo" : "done"),
+    dismissWait: (threadId: ThreadId, id: WaitId, note?: string) =>
+      settle(threadId, id, { dismiss: note }),
     keepWait: async (threadId: ThreadId, id: WaitId) => {
       world.summary(threadId);
       await world.delay(30);

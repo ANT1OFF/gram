@@ -992,11 +992,13 @@ describe("M1 core app tools", () => {
       expect(yield* runTool(thread.id, "resolve_wait", { id: first, note: "done" })).toEqual({
         id: first,
         resolvedBy: "agent",
+        ending: "done",
       });
       yield* waits.resolve(thread.id, second, { by: "user", at: Date.now() });
       expect(yield* runTool(thread.id, "resolve_wait", { id: second })).toEqual({
         id: second,
         resolvedBy: "user",
+        ending: "done",
       });
       const missing = yield* runTool(thread.id, "resolve_wait", { id: "w-nope" }).pipe(Effect.flip);
       expect(missing.message).toBe("unknown item w-nope");

@@ -12,9 +12,7 @@ import {
   machineOfProject,
   machineProjectRoot,
   NotFound,
-  plainWaitText,
   ThreadId,
-  waitTitleOf,
   waitsFor,
   type Thread,
   type CheckoutRequest,
@@ -43,7 +41,6 @@ import { EventHub } from "../../events/event-hub.ts";
 import { expandHome, resolveFolder } from "../../fs/folders.ts";
 import { deleteMergedBranch } from "../../git/branch-cleanup.ts";
 import { GitStatePublisher } from "../../git/publisher.ts";
-import { HelperScheduler } from "../../helper/scheduler.ts";
 import { restoreThreadWorktree } from "../../git/restore-worktree.ts";
 import { forkHostRefusal } from "../../runtime/history-plans.ts";
 import { Orchestration } from "../../orchestration/service.ts";
@@ -51,7 +48,6 @@ import { ThreadStore } from "../../persistence/thread-store.ts";
 import { resumeAfterMachineLost } from "../../runtime/machine-lost.ts";
 import { PlanKeeper } from "../../plans/keeper.ts";
 import { ThreadPlans } from "../../plans/service.ts";
-import { ThreadWaits } from "../../waits/service.ts";
 import { ThreadPorts } from "../../ports/service.ts";
 import { endCheckpointId } from "../../git/turn-hooks.ts";
 import { GitRefresh } from "../../git/platform.ts";
@@ -99,24 +95,12 @@ export const heldForRemoval = (
     : [thread.checkout.path, effective];
 };
 
-const waitsFull = (threadId: ThreadId) => (full: { readonly open: number }) =>
-  Effect.fail(
-    new InvalidState({
-      message: `${full.open} items already wait on you; mark one done first`,
-      threadId,
-    }),
-  );
-
 /** `thread.*`, `task.*` and `ui.showPanel`. */
 export const threadHandlers = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const store = yield* ThreadStore;
   const plans = yield* ThreadPlans;
-  const waits = yield* ThreadWaits;
   const keeper = Option.getOrUndefined(yield* Effect.serviceOption(PlanKeeper));
-  const helper = Option.getOrUndefined(yield* Effect.serviceOption(HelperScheduler));
-  const waitEvent = (event: "kept" | "dismissed" | "restored") =>
-    helper === undefined ? Effect.void : helper.recordEvent("wait", event);
   const hub = yield* EventHub;
   const checkouts = yield* CheckoutService;
   const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
@@ -547,56 +531,6 @@ export const threadHandlers = Effect.gen(function* () {
         ),
         Effect.map((plan) => plan ?? null),
       ),
-    "thread.resolveWait": ({ threadId, id, undo }) =>
-      Effect.gen(function* () {
-        yield* store.getThread(threadId);
-        const { item, changed } = yield* waits
-          .resolve(threadId, id, undo === true ? undefined : { by: "user", at: Date.now() })
-          .pipe(Effect.catchTag("WaitsFull", waitsFull(threadId)));
-        if (changed && item.suggested === true) {
-          yield* waitEvent(undo === true ? "restored" : "dismissed");
-        }
-        return item;
-      }),
-    "thread.keepWait": ({ threadId, id }) =>
-      Effect.gen(function* () {
-        yield* store.getThread(threadId);
-        const item = yield* waits
-          .keep(threadId, id)
-          .pipe(Effect.catchTag("WaitsFull", waitsFull(threadId)));
-        yield* waitEvent("kept");
-        return item;
-      }),
-    "thread.addWait": ({ threadId, messageId, kind, title }) =>
-      Effect.gen(function* () {
-        yield* store.getThread(threadId);
-        const message = yield* store.getMessage(threadId, messageId);
-        if (message === undefined) {
-          return yield* new NotFound({
-            entity: "message",
-            id: messageId,
-            message: "That message isn't saved yet; try again once the reply has finished.",
-          });
-        }
-        const named =
-          title === undefined
-            ? waitTitleOf(
-                message.parts
-                  .flatMap((part) => (part.type === "text" ? [part.text] : []))
-                  .join("\n"),
-              )
-            : plainWaitText(title);
-        if (named === undefined || named === "") {
-          return yield* new InvalidState({
-            message: "That message has no text to name the item by; give it a title.",
-            threadId,
-          });
-        }
-        const { item } = yield* waits
-          .put(threadId, { kind: kind ?? "draft", title: named, anchor: messageId }, "user")
-          .pipe(Effect.catchTag("WaitsFull", waitsFull(threadId)));
-        return item;
-      }),
     "thread.listWaits": ({ threadId, state }) =>
       Effect.gen(function* () {
         yield* store.getThread(threadId);

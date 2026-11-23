@@ -11,7 +11,8 @@ import { PrReviewRequest } from "./pr-people.ts";
 import { RunWatch } from "./run-watch.ts";
 import { ThreadStatus } from "./thread-status.ts";
 import { verifyReportLine, WorkerReportVerify } from "./verify-recipe.ts";
-import { WaitId, WaitKind } from "./waits.ts";
+import { DigestWaiting, type DigestWaitingEnded } from "./digest-waiting.ts";
+import type { WaitKind } from "./waits.ts";
 import { StoredWakeCondition, WakeCondition, wakeConditionWhen } from "./wake-conditions.ts";
 import { WorkerQuestion } from "./worker-questions.ts";
 
@@ -789,42 +790,6 @@ export const DigestReport = Schema.Struct({
 });
 export type DigestReport = typeof DigestReport.Type;
 
-/** The most open items a digest names, and the most finished ones it names by title. */
-export const DIGEST_WAITING_LISTED = 12;
-
-/** An open item a digest names, so a fresh session knows what the user still has to do. */
-export const DigestWaitingItem = Schema.Struct({
-  threadId: ThreadId,
-  id: WaitId,
-  kind: WaitKind,
-  title: Schema.String,
-  /** Minutes it has waited when the digest was built. */
-  ageMin: Schema.Int,
-});
-export type DigestWaitingItem = typeof DigestWaitingItem.Type;
-
-/**
- * What waits on the user across the orchestrator and its workers: the
- * items of their Waiting on you, counted, so the orchestrator can say what is still owed without
- * repeating it every reply.
- */
-export const DigestWaiting = Schema.Struct({
-  /** Items still open. */
-  open: Schema.Int,
-  /** How many of each kind, in the order kinds first appear. */
-  kinds: Schema.Array(Schema.Struct({ kind: WaitKind, count: Schema.Int })),
-  /** Minutes the oldest open item has waited; absent with none open. */
-  oldestMin: Schema.optionalKey(Schema.Int),
-  /**
-   * The open items by name, at most `DIGEST_WAITING_LISTED`, on a boot: a session that starts
-   * fresh, a handoff's among them, remembers none of them.
-   */
-  items: Schema.optionalKey(Schema.Array(DigestWaitingItem)),
-  /** Titles of what the user marked done since the last digest, at most `DIGEST_WAITING_LISTED`. */
-  resolved: Schema.optionalKey(Schema.Array(Schema.String)),
-});
-export type DigestWaiting = typeof DigestWaiting.Type;
-
 /**
  * The server-authored input that wakes an orchestrator: what changed since the digest it last
  * took, the reports filed since, and the whole ledger. A `UserInput.notice`, so the transcript
@@ -1243,6 +1208,14 @@ const ageText = (minutes: number): string =>
       ? `${Math.floor(minutes / 60)} h`
       : `${Math.floor(minutes / (24 * 60))} d`;
 
+const endedNames = (items: ReadonlyArray<DigestWaitingEnded>) =>
+  items
+    .map(
+      (item) =>
+        `"${inline(item.title)}" [thread ${item.threadId}] (${item.id})${item.note === undefined ? "" : `: "${inline(item.note)}"`}`,
+    )
+    .join(", ");
+
 const waitingLines = (waiting: DigestWaiting): ReadonlyArray<string> => {
   const lines: Array<string> = [];
   if (waiting.open > 0) {
@@ -1266,6 +1239,14 @@ const waitingLines = (waiting: DigestWaiting): ReadonlyArray<string> => {
     lines.push(
       `Since your last digest the user marked done: ${waiting.resolved.map((title) => `"${inline(title)}"`).join(", ")}.`,
     );
+  }
+  if (waiting.dismissed !== undefined && waiting.dismissed.length > 0) {
+    lines.push(
+      `Since your last digest the user dismissed, without doing it: ${endedNames(waiting.dismissed)}.`,
+    );
+  }
+  if (waiting.withdrawn !== undefined && waiting.withdrawn.length > 0) {
+    lines.push(`Since your last digest a worker withdrew: ${endedNames(waiting.withdrawn)}.`);
   }
   return lines;
 };

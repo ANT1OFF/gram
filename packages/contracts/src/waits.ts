@@ -41,6 +41,15 @@ export type WaitSource = typeof WaitSource.Type;
 export const WaitResolver = Schema.Literals(["agent", "user", "helper"]);
 export type WaitResolver = typeof WaitResolver.Type;
 
+/**
+ * How a resolved item ended: `done` by the user (or by the agent, or the helper from the user's own
+ * words), `dismissed` by the user as no longer making sense, without doing it, or `withdrawn` by
+ * the thread that added it or its orchestrator. Stored; absent on a resolved item is `done`, as
+ * every item resolved before endings were is.
+ */
+export const WaitEnding = Schema.Literals(["done", "dismissed", "withdrawn"]);
+export type WaitEnding = typeof WaitEnding.Type;
+
 /** One deliverable waiting on the user, as `wait_items` stores it. */
 export const WaitItem = Schema.Struct({
   id: WaitId,
@@ -63,8 +72,15 @@ export const WaitItem = Schema.Struct({
   /** Epoch ms; absent while it waits. */
   resolvedAt: Schema.optionalKey(Schema.Number),
   resolvedBy: Schema.optionalKey(WaitResolver),
-  /** What the resolver said about it ("sent in Teams"). */
+  /** What the resolver said about it ("sent in Teams"), or why it was dismissed or withdrawn. */
   note: Schema.optionalKey(Schema.String),
+  /** How it ended, while resolved (`WaitEnding`); absent is `done`. */
+  ending: Schema.optionalKey(WaitEnding),
+  /**
+   * The thread that resolved it when another than its own: its orchestrator, withdrawing a
+   * worker's item. Absent when the item's own thread, the user or the helper resolved it.
+   */
+  resolverThread: Schema.optionalKey(ThreadId),
   /**
    * Proposed by the helper model and not yet kept: listed dashed, never counted and drawn as no
    * chip. Kept, the flag goes; dismissed, or lapsed when the user next sends, it is resolved.
@@ -105,6 +121,11 @@ export const waitsFor = <Item extends Pick<WaitItem, "person">>(
 export const waitIsOpen = (item: Pick<WaitItem, "resolvedAt">): boolean =>
   item.resolvedAt === undefined;
 
+/** How `item` ended, or `undefined` while it waits. */
+export const waitEndingOf = (
+  item: Pick<WaitItem, "resolvedAt" | "ending">,
+): WaitEnding | undefined => (item.resolvedAt === undefined ? undefined : (item.ending ?? "done"));
+
 /** Whether `item` counts: open and not a suggestion still to be kept. */
 export const waitIsKept = (item: Pick<WaitItem, "resolvedAt" | "suggested">): boolean =>
   waitIsOpen(item) && item.suggested !== true;
@@ -121,6 +142,11 @@ export const WaitDataSchema = Schema.Struct({
   /** Epoch ms it was resolved, while `done`. */
   resolvedAt: Schema.optionalKey(Schema.Number),
   resolvedBy: Schema.optionalKey(WaitResolver),
+  /**
+   * While `done`, when it wasn't done: `dismissed` or `withdrawn`. A separate key, so a client that
+   * knows only the three states still draws it as resolved.
+   */
+  ending: Schema.optionalKey(Schema.Literals(["dismissed", "withdrawn"])),
 });
 export type WaitData = typeof WaitDataSchema.Type;
 
@@ -132,6 +158,9 @@ export const waitData = (item: WaitItem, state?: "revised"): WaitData => ({
   state: state ?? (waitIsOpen(item) ? "open" : "done"),
   ...(item.resolvedAt === undefined ? {} : { resolvedAt: item.resolvedAt }),
   ...(item.resolvedBy === undefined ? {} : { resolvedBy: item.resolvedBy }),
+  ...(state === undefined && (item.ending === "dismissed" || item.ending === "withdrawn")
+    ? { ending: item.ending }
+    : {}),
 });
 
 /** Where a `WaitView` row comes from: a stored item's source, or a store it is folded in from. */
@@ -252,11 +281,20 @@ const quotedTitle = (title: string) =>
 const named = (items: ReadonlyArray<WaitItem>) =>
   items.map((item) => `${quotedTitle(item.title)} (${item.id})`).join(", ");
 
+const namedWhy = (items: ReadonlyArray<WaitItem>) =>
+  items
+    .map(
+      (item) =>
+        `${quotedTitle(item.title)} (${item.id})${item.note === undefined ? "" : `, saying ${quotedTitle(item.note)}`}`,
+    )
+    .join(", ");
+
 /**
  * What Gram tells the agent of Waiting on you, with the user's
- * next message. `news` are the items whose state the agent hasn't heard: resolved by the user or
- * the helper, added or kept by the user, or reopened after the agent was told they were done. The
- * rest of `open` follows as still waiting. `undefined` without news.
+ * next message. `news` are the items whose state the agent hasn't heard: resolved by the user, the
+ * helper or its orchestrator, each told by how it ended (`WaitEnding`), added or kept by the user,
+ * or reopened after the agent was told they were done. The rest of `open` follows as still
+ * waiting. `undefined` without news.
  */
 export const waitNoteText = (
   news: ReadonlyArray<WaitItem>,
@@ -264,12 +302,25 @@ export const waitNoteText = (
 ): string | undefined => {
   if (news.length === 0) return undefined;
   const fresh = new Set(news.map((item) => item.id));
-  const done = news.filter((item) => !waitIsOpen(item));
+  const resolved = news.filter((item) => !waitIsOpen(item));
+  const byOrchestrator = resolved.filter((item) => item.resolverThread !== undefined);
+  const byUser = resolved.filter((item) => item.resolverThread === undefined);
+  const done = byUser.filter((item) => waitEndingOf(item) === "done");
+  const dismissed = byUser.filter((item) => waitEndingOf(item) === "dismissed");
+  const withdrawn = byOrchestrator.filter((item) => waitEndingOf(item) === "withdrawn");
+  const doneThere = byOrchestrator.filter((item) => waitEndingOf(item) !== "withdrawn");
   const added = news.filter((item) => waitIsOpen(item) && item.source !== "agent");
   const reopened = news.filter((item) => waitIsOpen(item) && item.source === "agent");
   const still = open.filter((item) => !fresh.has(item.id));
   const sentences = [
     done.length === 0 ? undefined : `The user marked done: ${named(done)}.`,
+    dismissed.length === 0
+      ? undefined
+      : `The user dismissed, without doing it, as no longer needed: ${namedWhy(dismissed)}.`,
+    withdrawn.length === 0
+      ? undefined
+      : `Your orchestrator withdrew from the user's list: ${namedWhy(withdrawn)}.`,
+    doneThere.length === 0 ? undefined : `Your orchestrator marked done: ${namedWhy(doneThere)}.`,
     added.length === 0
       ? undefined
       : `The user added to Waiting on you, to act on themselves: ${named(added)}.`,

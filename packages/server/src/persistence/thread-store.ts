@@ -63,7 +63,6 @@ import {
   type TaskChipData,
   type TaskId,
   type WaitId,
-  type WaitResolver,
   ThreadId,
   TurnEndReason,
   type TurnId,
@@ -94,6 +93,7 @@ import {
   rememberPrivateIn,
 } from "./private-readers.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
+import { resolvedWait, type WaitResolution } from "./wait-resolution.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
 import { captureReadWorker, layer as readWorkerLayer, withReadWorker } from "./read-worker.ts";
@@ -360,13 +360,6 @@ export interface ActorEventEntry {
 
 export interface ActorEventRecord extends ActorEventEntry {
   readonly seq: number;
-}
-
-/** Who resolved a Waiting on you item, when, and what they said of it. */
-export interface WaitResolution {
-  readonly by: WaitResolver;
-  readonly at: number;
-  readonly note?: string | undefined;
 }
 
 const RESOLVED_WAITS_KEPT_MS = 30 * DAY_MS;
@@ -3362,37 +3355,19 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           tx(
             Effect.gen(function* () {
               const item = yield* readWait(threadId, id);
+              const ownAgent = resolution?.by === "agent" && resolution.thread === undefined;
               if (resolution !== undefined && item.resolvedAt !== undefined) {
-                if (resolution.by === "agent") {
+                if (ownAgent) {
                   yield* sql`UPDATE wait_items SET told_at = ${resolution.at}
                     WHERE thread_id = ${threadId} AND id = ${id}`;
                 }
                 return item;
               }
-              const { resolvedAt: _at, resolvedBy: _by, note: _note, ...rest } = item;
-              const open: WaitItem =
-                item.resolvedAt === undefined && resolution === undefined
-                  ? rest
-                  : { ...rest, revision: (item.revision ?? 0) + 1 };
-              const next: WaitItem =
-                resolution === undefined
-                  ? open
-                  : {
-                      ...open,
-                      resolvedAt: resolution.at,
-                      resolvedBy: resolution.by,
-                      ...(resolution.note === undefined ? {} : { note: resolution.note }),
-                    };
-              const told = yield* toldAtOf(threadId, id);
-              const toldAt =
-                resolution?.by === "agent"
-                  ? resolution.at
-                  : resolution === undefined &&
-                      item.resolvedAt !== undefined &&
-                      told !== null &&
-                      told >= item.resolvedAt
-                    ? null
-                    : undefined;
+              const { next, toldAt } = resolvedWait(
+                item,
+                resolution,
+                yield* toldAtOf(threadId, id),
+              );
               yield* writeWait(threadId, next, toldAt);
               return next;
             }),

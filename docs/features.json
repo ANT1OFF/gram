@@ -172,16 +172,20 @@
         "apps/web/src/thread/worker-question-card.tsx",
         "packages/server/src/runtime/server-approvals.ts",
         "packages/server/src/app-tools/**",
-        "packages/server/src/waits/**"
+        "packages/server/src/waits/**",
+        "apps/web/src/thread/waiting-*"
       ],
       "tests": [
         "apps/web/src/orchestration/ask-*.test.ts",
         "apps/web/src/thread/worker-question-card.test.tsx",
         "apps/web/e2e/{approval,ask,worker-question}*.spec.ts",
-        "packages/server/src/app-tools/**/*.test.ts"
+        "packages/server/src/app-tools/**/*.test.ts",
+        "packages/server/src/waits/**/*.test.ts",
+        "apps/web/src/thread/waiting-*.test.ts*"
       ],
       "docs": [
         "docs/AGENTS_AND_FEATURES.md#app-tool-approval-results",
+        "docs/EMBEDDING.md#how-an-item-ends",
         "docs/AGENTS_AND_FEATURES.md#permission-modes"
       ],
       "ui": {

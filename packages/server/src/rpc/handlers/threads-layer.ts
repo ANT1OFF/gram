@@ -7,16 +7,18 @@ import { checkoutUseHandlers } from "./checkout-use.ts";
 import { closedThreadHandlers } from "./closed-threads.ts";
 import { logDefects } from "./common.ts";
 import { sidebarHandlers } from "./sidebar.ts";
+import { threadWaitHandlers } from "./thread-waits.ts";
 import { threadHandlers } from "./threads.ts";
 
 /**
  * The threads group's handler layer: the thread handlers and the files beside them that serve a
- * thread's search, babysitting, close and reopen, sidebar row and wakes.
+ * thread's search, babysitting, close and reopen, sidebar row, Waiting on you and wakes.
  */
 export const ThreadHandlersLive = ThreadRpcs.toLayer(
   Effect.gen(function* () {
     const handlers = {
       ...(yield* threadHandlers),
+      ...(yield* threadWaitHandlers),
       ...(yield* searchHandlers),
       ...(yield* babysitHandlers),
       ...(yield* closedThreadHandlers),
