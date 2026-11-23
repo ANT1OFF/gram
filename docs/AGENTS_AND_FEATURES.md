@@ -1246,8 +1246,10 @@ threads, which have no workspace, and memory updates get no shared folder.
 - **Threads on other machines.** A thread on a joined or provisioned machine is given a mirror on
   that machine, under the host's own folder (`shared/<workspace>/`, or `GRAM_HOST_SHARED`). While
   the machine is connected, Gram brings the mirror and its own folder in step every five seconds,
-  in both directions. The mirror is in step before the session opens, and one last time when the
-  machine is readied to stop. A file changed on one side goes to the other, and a file deleted on
+  in both directions. A session's open waits up to 30 seconds for the mirror to be in step, and once
+  more when the machine is readied to stop. On a machine that has never held the folder, the open
+  waits 3 seconds at most: the first copy carries on in the background, smallest files first, so
+  notes are there at once and large files follow while the session runs. A file changed on one side goes to the other, and a file deleted on
   one side is deleted on the other. When a file changed on both sides, the later write wins, and an
   edit beats a delete. Every write and delete names the version it replaces, so a file that changed
   again since it was listed waits for the next round instead of being overwritten. What the two

@@ -156,7 +156,14 @@ export const syncRound = (
       const was = base[path];
       if (was !== undefined) next[path] = was;
     };
-    for (const step of plan.steps) {
+    // Removals first, then copies smallest first: a round cut short (a session's open waits only
+    // so long) has placed as many files as it could, and the notes before the large ones.
+    const ordered = plan.steps.toSorted((a, b) =>
+      a.kind === "copy" && b.kind === "copy"
+        ? a.entry.size - b.entry.size
+        : (a.kind === "copy" ? 1 : 0) - (b.kind === "copy" ? 1 : 0),
+    );
+    for (const step of ordered) {
       if (step.kind === "copy") {
         const [source, target] = step.from === "server" ? [server, host] : [host, server];
         const placed = yield* copy(source, target, step.entry, step.ifMatch).pipe(
