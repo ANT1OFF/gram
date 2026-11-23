@@ -57,7 +57,6 @@ import {
   digestDiff,
   newDigestReports,
   digestGroups,
-  digestWaiting,
   featureBranch,
   featureSlug,
   taskFeature,
@@ -131,6 +130,7 @@ import {
   userWroteMinutesAgo,
   baseMovedText,
 } from "./rules.ts";
+import { digestWaiting } from "./digest-waiting.ts";
 
 /** A kind outside the contract, for the guards that must refuse one. */
 const UNADMITTED = "unadmitted" as string as AgentKind;

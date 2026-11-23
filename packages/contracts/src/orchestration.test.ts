@@ -1,10 +1,10 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
+import { DigestWaiting } from "./digest-waiting.ts";
 import { UserInput } from "./domain.ts";
 import {
   BudgetMeters,
   type DigestReport,
-  DigestWaiting,
   FEATURE_PLAN_MAX_STAGES,
   FeatureLedgerEntry,
   FeatureStage,

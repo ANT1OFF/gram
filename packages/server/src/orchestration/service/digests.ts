@@ -48,7 +48,6 @@ import {
   digestDiff,
   newDigestReports,
   digestGroups,
-  digestWaiting,
   markRepeatedInterfaces,
   quietWorkers,
   rosterText,
@@ -65,6 +64,7 @@ import {
   userAwayMinutes,
   userWroteMinutesAgo,
 } from "../rules.ts";
+import { digestWaiting } from "../digest-waiting.ts";
 import {
   DIGEST_KEY,
   IN_ERROR_DETAIL,
@@ -391,6 +391,7 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
         ),
         now: readAt,
         since: outbox.lastDigestAt,
+        orchestrator: state.workspace.orchestratorThreadId,
       });
       const limitNote = yield* orchestratorLimitNote(state, outbox, features, readAt);
       const questions = digestQuestions(outbox);

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { clipboardText as clipboard } from "./clipboard";
 import { parkSeedAsks } from "./seed-asks";
+import { shot } from "./shots";
 import { openOrchestrator, threadRow } from "./thread-row";
 
 test.use({ permissions: ["clipboard-read", "clipboard-write"] });
@@ -68,6 +69,42 @@ test("what the agent leaves for the user waits in the tray, counts in Needs you,
   await items.first().getByTestId("waiting-done").click();
   await expect(needsYou).toHaveAttribute("data-count", "0");
   await expect(chips.and(page.locator("[data-state=done]"))).toHaveCount(2);
+});
+
+test("Dismiss takes an item off as dismissed, not done, with why, and its chip says so", async ({
+  page,
+}) => {
+  await page.goto("/t/t-deps");
+  const tray = page.getByTestId("waiting-tray");
+  await expect(threadRow(page, "t-deps")).toBeVisible();
+  await parkSeedAsks(page);
+  await page.evaluate(() => {
+    window.gramMock!.simulateWaitOnUser("t-deps" as never, {
+      kind: "action",
+      title: "Run assume example-prod",
+    });
+  });
+  await tray.getByRole("button", { name: /^1 waiting on you/ }).click();
+  const item = tray.getByTestId("waiting-item");
+
+  await item.getByTestId("waiting-dismiss").click();
+  const note = item.getByTestId("waiting-dismiss-note");
+  await expect(note).toBeFocused();
+  await note.fill("The deploy job runs it now");
+  await shot(tray, { path: "e2e/__screenshots__/waits/dismiss-form.png" });
+  await note.press("Enter");
+
+  await expect(item).toHaveCount(0);
+  await expect(tray.getByTestId("waiting-undo-row")).toHaveAttribute("data-ending", "dismissed");
+  const chip = page.getByTestId("transcript").getByTestId("wait-chip");
+  await expect(chip).toHaveAttribute("data-ending", "dismissed");
+  await expect(chip).toContainText("Dismissed");
+  await shot(page, { path: "e2e/__screenshots__/waits/dismissed.png" });
+
+  // Undo brings it back open, as after Done.
+  await tray.getByTestId("waiting-undo").click();
+  await expect(item).toHaveCount(1);
+  await expect(chip).toHaveAttribute("data-state", "open");
 });
 
 test("a helper's suggestion waits dashed and uncounted until kept, and its resolves can be undone", async ({

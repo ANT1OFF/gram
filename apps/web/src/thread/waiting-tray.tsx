@@ -48,11 +48,13 @@ import { useLayoutStore } from "@/stores/layout";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
 
+import { DismissForm, Ended } from "./waiting-ended";
 import {
   copyTextOf,
   noteShown,
   primaryAction,
   recentlyResolved,
+  resolvedAs,
   trayLabel,
   trayNames,
   trayViews,
@@ -72,6 +74,8 @@ const KIND: Record<WaitViewKind, { icon: LucideIcon; label: string }> = {
 };
 
 const UNDO_MS = 10_000;
+
+type Undoable = WaitItem & { readonly ended: "done" | "dismissed" };
 
 const isEndOfDragSelectionIn = (element: Element): boolean => {
   const selection = window.getSelection();
@@ -127,6 +131,7 @@ function Row({
   item,
   now,
   onDone,
+  onDismiss,
   onKeep,
   elsewhere = false,
   defaultExpanded = false,
@@ -136,6 +141,7 @@ function Row({
   item: WaitItem;
   now: number;
   onDone: (item: WaitItem) => void;
+  onDismiss?: ((item: WaitItem, note: string | undefined) => void) | undefined;
   onKeep?: ((item: WaitItem) => void) | undefined;
   elsewhere?: boolean;
   defaultExpanded?: boolean;
@@ -144,6 +150,7 @@ function Row({
   const openAt = useOpenWait();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState<"copied" | "fallback" | "failed" | undefined>(undefined);
+  const [dismissing, setDismissing] = useState(false);
   const rowRef = useRef<HTMLLIElement>(null);
   const kind = KIND[view.kind];
   const suggested = view.suggested === true;
@@ -247,6 +254,16 @@ function Row({
             )}
           </div>
         )}
+        {dismissing && onDismiss !== undefined && (
+          <DismissForm
+            title={view.title}
+            onDismiss={(note) => {
+              setDismissing(false);
+              onDismiss(item, note);
+            }}
+            onCancel={() => setDismissing(false)}
+          />
+        )}
       </div>
       <span className="flex shrink-0 items-center">
         {primary === "copy" && (
@@ -307,7 +324,18 @@ function Row({
             testId="waiting-dismiss"
           />
         ) : (
-          <Action icon={Check} label="Done" onClick={() => onDone(item)} testId="waiting-done" />
+          <>
+            {onDismiss !== undefined && (
+              <Action
+                icon={X}
+                label="Dismiss: it no longer makes sense"
+                disabled={dismissing}
+                onClick={() => setDismissing(true)}
+                testId="waiting-dismiss"
+              />
+            )}
+            <Action icon={Check} label="Done" onClick={() => onDone(item)} testId="waiting-done" />
+          </>
         )}
       </span>
     </li>
@@ -371,14 +399,10 @@ function ResolvedLine({
             <li
               key={item.id}
               data-testid="waiting-resolved-item"
+              data-ending={resolvedAs(item)?.ending}
               className="flex items-center gap-2 px-2 py-1 pl-6 text-meta text-muted-foreground"
             >
-              <Check aria-hidden className="size-icon-row shrink-0 text-success" />
-              <span className="min-w-0 truncate line-through">{item.title}</span>
-              <span className="shrink-0 tabular-nums">
-                {item.resolvedBy === "agent" ? "by the agent · " : ""}
-                {formatRelative(item.resolvedAt!, now)}
-              </span>
+              <Ended item={item} now={now} />
               <button
                 type="button"
                 data-testid="waiting-reopen"
@@ -408,7 +432,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
   const api = useApi();
   const summary = useThreadsStore((s) => s.byId[threadId]);
   const [open, setOpen] = useState(false);
-  const [undoable, setUndoable] = useState<readonly WaitItem[]>([]);
+  const [undoable, setUndoable] = useState<readonly Undoable[]>([]);
   const [showResolved, setShowResolved] = useState(false);
   const now = useNow(open || (summary?.helperResolved?.length ?? 0) > 0, undefined, 60_000);
   const views = summary === undefined ? [] : trayViews(summary);
@@ -440,10 +464,20 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
   const items = summary.waits ?? [];
   const openIds = new Set(items.map((item) => item.id));
   const done = (item: WaitItem) => {
-    setUndoable((rows) => [...rows.filter((row) => row.id !== item.id), item]);
+    setUndoable((rows) => [
+      ...rows.filter((row) => row.id !== item.id),
+      { ...item, ended: "done" },
+    ]);
     void api.resolveWait(threadId, item.id).catch(report("done"));
   };
-  const undo = (item: WaitItem) => {
+  const dismiss = (item: WaitItem, note: string | undefined) => {
+    setUndoable((rows) => [
+      ...rows.filter((row) => row.id !== item.id),
+      { ...item, ended: "dismissed" },
+    ]);
+    void api.dismissWait(threadId, item.id, note).catch(report("dismiss"));
+  };
+  const undo = (item: Undoable) => {
     setUndoable((rows) => rows.filter((row) => row.id !== item.id));
     void api.resolveWait(threadId, item.id, true).catch((error: unknown) => {
       setUndoable((rows) => [...rows, item]);
@@ -512,6 +546,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                 item={item}
                 now={now}
                 onDone={done}
+                onDismiss={dismiss}
                 onKeep={keep}
               />
             ))}
@@ -519,10 +554,21 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
               <li
                 key={item.id}
                 data-testid="waiting-undo-row"
+                data-ending={item.ended}
                 className="flex items-center gap-2 px-2 py-1 text-meta text-muted-foreground"
               >
-                <Check aria-hidden className="size-icon-row shrink-0 text-success" />
-                <span className="min-w-0 truncate line-through">{item.title}</span>
+                {item.ended === "dismissed" ? (
+                  <>
+                    <X aria-hidden className="size-icon-row shrink-0" />
+                    <span className="min-w-0 truncate">{item.title}</span>
+                    <span className="shrink-0">dismissed</span>
+                  </>
+                ) : (
+                  <>
+                    <Check aria-hidden className="size-icon-row shrink-0 text-success" />
+                    <span className="min-w-0 truncate line-through">{item.title}</span>
+                  </>
+                )}
                 <button
                   type="button"
                   data-testid="waiting-undo"
@@ -625,9 +671,11 @@ function useAdditions(count: number): number {
  * it was done, or that a later update moved it.
  */
 export function WaitChip({ wait }: { wait: WaitData }) {
+  const ended =
+    wait.ending === "dismissed" ? "Dismissed" : wait.ending === "withdrawn" ? "Withdrawn" : "Done";
   const state =
     wait.state === "done"
-      ? `Done${wait.resolvedAt === undefined ? "" : ` ${formatStamp(wait.resolvedAt)}`}`
+      ? `${ended}${wait.resolvedAt === undefined ? "" : ` ${formatStamp(wait.resolvedAt)}`}`
       : wait.state === "revised"
         ? "Updated later"
         : undefined;
@@ -635,6 +683,7 @@ export function WaitChip({ wait }: { wait: WaitData }) {
     <div
       data-testid="wait-chip"
       data-state={wait.state}
+      data-ending={wait.ending}
       className="my-1.5 flex w-fit max-w-full items-center gap-1.5 text-meta text-muted-foreground"
     >
       <Inbox
@@ -643,7 +692,12 @@ export function WaitChip({ wait }: { wait: WaitData }) {
       />
       <span className="min-w-0 truncate">
         Waiting on you:{" "}
-        <span className={cn("text-foreground", wait.state !== "open" && "line-through")}>
+        <span
+          className={cn(
+            "text-foreground",
+            wait.state !== "open" && wait.ending === undefined && "line-through",
+          )}
+        >
           {wait.title}
         </span>
       </span>

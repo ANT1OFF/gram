@@ -7,10 +7,12 @@ import {
   type PendingRequest,
   type GramUIMessage,
   type ThreadId,
+  type WaitEnding,
   type WaitItem,
   type WaitView,
   type WaitViewKind,
   type WorkspaceId,
+  waitEndingOf,
   waitIsKept,
 } from "@gram/contracts";
 
@@ -181,6 +183,26 @@ export const recentlyResolved = (items: readonly WaitItem[], now: number): WaitI
         now - item.resolvedAt < RESOLVED_SHOWN_MS,
     )
     .toSorted((a, b) => b.resolvedAt! - a.resolvedAt!);
+
+/**
+ * How a resolved item ended and who ended it, as its resolved row says: `orchestrator` when the
+ * thread's orchestrator withdrew or resolved it from its own thread. `undefined` while it waits.
+ */
+export const resolvedAs = (
+  item: WaitItem,
+):
+  | {
+      readonly ending: WaitEnding;
+      readonly by: "user" | "agent" | "helper" | "orchestrator";
+    }
+  | undefined => {
+  const ending = waitEndingOf(item);
+  if (ending === undefined) return undefined;
+  return {
+    ending,
+    by: item.resolverThread !== undefined ? "orchestrator" : (item.resolvedBy ?? "user"),
+  };
+};
 
 /** A note as the told line unfolds it: what the agent read, without the fence around it. */
 export const noteShown = (note: string): string =>

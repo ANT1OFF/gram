@@ -64,6 +64,7 @@ export * from "./model-catalogue.ts";
 export * from "./recommended.ts";
 export * from "./issues.ts";
 export * from "./orchestration.ts";
+export * from "./digest-waiting.ts";
 export * from "./routines.ts";
 export * from "./rules/worker-state.ts";
 export * from "./reaching-workers.ts";

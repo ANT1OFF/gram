@@ -35,7 +35,14 @@ import { ReviewMonitorResult } from "../review-monitor.ts";
 import { SavedDiff } from "../saved-work.ts";
 import { ReorderThreadsPayload } from "../sidebar.ts";
 import { PlanEdit, ThreadPlan } from "../thread-plan.ts";
-import { WAIT_TITLE_MAX, WaitId, WaitItem, WaitKind, WaitListState } from "../waits.ts";
+import {
+  WAIT_BODY_MAX,
+  WAIT_TITLE_MAX,
+  WaitId,
+  WaitItem,
+  WaitKind,
+  WaitListState,
+} from "../waits.ts";
 import {
   CheckoutRequest,
   RespondManyResult,
@@ -322,7 +329,16 @@ export const ThreadRpcs = RpcGroup.make(
     error: errors(ThreadNotFound),
   }),
   Rpc.make("thread.resolveWait", {
-    payload: { ...threadRef, id: WaitId, undo: Schema.optionalKey(Schema.Boolean) },
+    payload: {
+      ...threadRef,
+      id: WaitId,
+      /** Reopens it rather than resolving it. */
+      undo: Schema.optionalKey(Schema.Boolean),
+      /** Dismisses it, not done (`WaitEnding`); absent, it is marked done. */
+      dismiss: Schema.optionalKey(Schema.Boolean),
+      /** Why, with `dismiss`; plain text. */
+      note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WAIT_BODY_MAX))),
+    },
     success: WaitItem,
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),

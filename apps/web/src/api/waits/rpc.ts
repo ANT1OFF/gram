@@ -5,6 +5,15 @@ import type { WaitsApi } from "./types";
 export const waitsRpc = ({ client }: RpcContext): WaitsApi => ({
   resolveWait: (threadId, id, undo) =>
     run(client["thread.resolveWait"]({ threadId, id, ...(undo === true ? { undo } : {}) })),
+  dismissWait: (threadId, id, note) =>
+    run(
+      client["thread.resolveWait"]({
+        threadId,
+        id,
+        dismiss: true,
+        ...(note === undefined || note.trim() === "" ? {} : { note: note.trim() }),
+      }),
+    ),
   keepWait: (threadId, id) => run(client["thread.keepWait"]({ threadId, id })),
   addWait: (threadId, messageId, options = {}) =>
     run(

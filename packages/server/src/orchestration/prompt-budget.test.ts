@@ -81,9 +81,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * The orchestrator's raised on 2026-11-19, on purpose, for `freeze_merges` restoring auto-merge
  * only on the head it disarmed (the November security batch): its clause was cut first; measured
  * then at 65,603. The worker's raised with it, for the same tool; measured then at 41,948.
+ * The orchestrator's raised on 2026-11-23, on purpose and at the user's word, for withdrawing what
+ * its own workers left on Waiting on you rather than leaving the user to tick it done:
+ * `resolve_wait`'s and `list_waits`'s `threadId`, bound for the orchestrator alone, and
+ * `resolve_wait`'s `ending`. Both descriptions and `wait_on_user`'s were cut first; measured then
+ * at 65,748. The worker's held, down to 41,918.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 65_650,
+  orchestrator: 65_760,
   worker: 41_990,
   plain: 23_650,
 };

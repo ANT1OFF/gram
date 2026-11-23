@@ -682,3 +682,13 @@ An item keeps who it waits on when it is updated, kept, resolved or reopened.
 - This is what a person's list shows, not a permission. The chip an item draws in the transcript is the thread's, and everyone who reads the thread sees it; `thread.resolveWait` and `thread.keepWait` take an item's id from anyone who may write.
 - The agent's side is the thread's: `list_waits`, the note it gets with the next message and the limit of open items count every item, whoever each waits on.
 - Where nobody signs in that way, which is the desktop app, no item names a person and nothing differs from before.
+
+### How an item ends
+
+An item of Waiting on you ends one of three ways, recorded on the item as `ending` (absent is `done`, as on every item resolved before endings were):
+
+- **done**, by the user's Done (`thread.resolveWait`), or by the agent's `resolve_wait`;
+- **dismissed**, by the user's Dismiss: `thread.resolveWait` with `dismiss: true` and an optional `note`, for an item that no longer makes sense and wasn't done;
+- **withdrawn**, by the thread that added it (`resolve_wait` with `ending: "withdrawn"`) or by that thread's own orchestrator, which passes the worker's `threadId` and is named in `resolverThread`. Only the orchestrator that started the worker, in its workspace, may; any other thread is refused.
+
+The `data-wait` chip keeps `state: "done"` for all three and adds `ending` for the other two, so a client that knows only `done` still draws it as resolved. The thread that added the item hears which with its next message, as it hears of Done; an orchestrator's digest lists what the user dismissed, and what a worker withdrew itself, apart from what they marked done. `list_waits` answers a resolved item's `state` as its ending, and an orchestrator may list a worker's with its `threadId`.
