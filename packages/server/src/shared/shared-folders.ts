@@ -23,12 +23,24 @@ import { type SharedBase, type SharedSide, syncRound } from "./sync.ts";
 
 /** How often a connected machine's mirror is brought in step. */
 export const SHARED_SYNC_EVERY = Duration.seconds(5);
-const FIRST_ROUND_WAIT = Duration.seconds(30);
+/**
+ * How long a session's open waits for its machine's mirror to be brought in step, when the two
+ * have been in step before: what changed since is usually small.
+ */
+export const SHARED_ROUND_WAIT = Duration.seconds(30);
+/**
+ * How long a session's open waits on a machine that has never held this workspace's folder, whose
+ * first round copies all of it. A large folder took the whole 30 seconds on every newly joined
+ * machine, before its first session could start; the copy carries on in the background, smallest
+ * files first, so notes are there in moments and large files follow.
+ */
+export const SHARED_FIRST_COPY_WAIT = Duration.seconds(3);
 const AWAY_ROUNDS = 60;
 
 export interface SharedFoldersShape {
   /**
-   * The folder a thread's session is given, on the machine it runs on, brought in step first; or
+   * The folder a thread's session is given, on the machine it runs on, brought in step first (for
+   * at most `SHARED_ROUND_WAIT`, or `SHARED_FIRST_COPY_WAIT` on a machine that has never held it); or
    * `undefined` for a thread with none: no workspace, a memory update, or a machine that can't keep
    * one. Never fails: a folder that can't be had is a session without one.
    */
@@ -60,6 +72,10 @@ export const makeSharedFolders = (
   dataDir: string,
   hosts: Pick<WorkerHostsShape, "get">,
   every: Duration.Input = SHARED_SYNC_EVERY,
+  waits: { readonly round: Duration.Input; readonly firstCopy: Duration.Input } = {
+    round: SHARED_ROUND_WAIT,
+    firstCopy: SHARED_FIRST_COPY_WAIT,
+  },
 ) =>
   Effect.gen(function* () {
     const treeOf = sharedTrees(join(dataDir, "shared"));
@@ -185,8 +201,9 @@ export const makeSharedFolders = (
         const own = yield* folderOf(workspaceId);
         if (own === undefined) return undefined;
         const { path } = yield* host.value.shared.open(workspaceId);
+        const metBefore = Object.keys(yield* readBase(hostId, workspaceId)).length > 0;
         yield* round(hostId, workspaceId).pipe(
-          Effect.timeoutOption(FIRST_ROUND_WAIT),
+          Effect.timeoutOption(metBefore ? waits.round : waits.firstCopy),
           Effect.asVoid,
         );
         yield* keep(hostId, workspaceId);

@@ -137,7 +137,18 @@ export interface SharedRound {
   readonly deferred: number;
 }
 
-/** One round between the control plane's copy and a machine's mirror. */
+const removalsThenSmallestCopies = (steps: ReadonlyArray<SharedStep>): SharedStep[] =>
+  steps.toSorted((a, b) =>
+    a.kind === "copy" && b.kind === "copy"
+      ? a.entry.size - b.entry.size
+      : (a.kind === "copy" ? 1 : 0) - (b.kind === "copy" ? 1 : 0),
+  );
+
+/**
+ * One round between the control plane's copy and a machine's mirror. It removes first, then
+ * copies the smallest files first, so a round cut short (a session's open waits only so long) has
+ * placed as many files as it could.
+ */
 export const syncRound = (
   server: SharedSide,
   host: SharedSide,
@@ -156,7 +167,7 @@ export const syncRound = (
       const was = base[path];
       if (was !== undefined) next[path] = was;
     };
-    for (const step of plan.steps) {
+    for (const step of removalsThenSmallestCopies(plan.steps)) {
       if (step.kind === "copy") {
         const [source, target] = step.from === "server" ? [server, host] : [host, server];
         const placed = yield* copy(source, target, step.entry, step.ifMatch).pipe(
