@@ -202,8 +202,8 @@ export function ComposerChoices({
   const rows = () => [...(popup.current?.querySelectorAll<HTMLElement>("[data-choice-row]") ?? [])];
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!MOVES.has(event.key)) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("[data-model-search]")) return;
+    const target = event.target;
+    if (!(target instanceof Element) || target.closest("[data-model-search]")) return;
     const search =
       event.key === "ArrowDown" && target.getAttribute("aria-expanded") === "true"
         ? target.closest("[data-choice-section]")?.querySelector<HTMLElement>("input")
@@ -216,7 +216,7 @@ export function ComposerChoices({
     const all = rows();
     if (all.length === 0) return;
     event.preventDefault();
-    const at = all.indexOf(document.activeElement as HTMLElement);
+    const at = all.findIndex((row) => row === document.activeElement);
     const next =
       event.key === "Home"
         ? 0

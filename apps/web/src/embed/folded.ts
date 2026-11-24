@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -31,7 +32,7 @@ export const useFoldedGroups = create<FoldedState>()(
       partialize: ({ open }) => ({ open }),
       merge: (persisted, current) => ({
         ...current,
-        open: sanitize((persisted as { open?: unknown } | undefined)?.open),
+        open: sanitize(fieldsOf(persisted).get("open")),
       }),
     },
   ),

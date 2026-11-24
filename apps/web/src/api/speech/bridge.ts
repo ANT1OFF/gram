@@ -20,10 +20,10 @@ type ModelsApi = Pick<
 
 const statusOf = (answer: SpeechModelAnswer): SpeechStatus => {
   if (answer.ok) return answer.status;
-  const { _tag, ...fields } = answer.error;
-  throw _tag === "SpeechRefused"
-    ? new SpeechRefused(fields as Omit<Extract<typeof answer.error, { _tag: typeof _tag }>, "_tag">)
-    : new FsError(fields as { path: string; message: string });
+  const { error } = answer;
+  throw error._tag === "SpeechRefused"
+    ? new SpeechRefused({ model: error.model, reason: error.reason, message: error.message })
+    : new FsError({ path: error.path, message: error.message });
 };
 
 const unavailable = (model: SpeechModelId) =>

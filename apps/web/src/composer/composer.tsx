@@ -6,8 +6,7 @@ import {
   sendKeyOf,
   type DraftStash,
   type PermissionMode,
-  type ReasoningVariant,
-  type StashId,
+  StashId,
   type SuggestEvent,
   type ThreadId,
   type ThreadStatus,
@@ -112,7 +111,7 @@ import {
 } from "./models";
 import { effortSection, modelSection, modeSection, speedSection } from "./choice-sections";
 import { ComposerChoices, type ChoiceSection } from "./choices";
-import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_OPTIONS } from "./options";
+import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, MODE_OPTIONS, pickedVariant } from "./options";
 import type { PickerOption } from "./picker";
 import { chipSwitchAgent, switchChoices } from "./switch-choices";
 import { inOpenFence } from "./mention";
@@ -632,7 +631,7 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
       return false;
     }
     const draft = {
-      id: crypto.randomUUID() as StashId,
+      id: StashId.make(crypto.randomUUID()),
       text: currentText,
       attachments: files.ready,
     };
@@ -1075,11 +1074,9 @@ function ThreadComposer({ threadId, focused, placeholder, toWorker = false }: Co
   const onEffort = (next: string) => {
     if (!model || next === (model.variant ?? DEFAULT_EFFORT)) return;
     const { variant: _variant, ...rest } = model;
+    const variant = pickedVariant(next);
     void api
-      .setModel(
-        threadId,
-        next === DEFAULT_EFFORT ? rest : { ...rest, variant: next as ReasoningVariant },
-      )
+      .setModel(threadId, variant === undefined ? rest : { ...rest, variant })
       .then(() => confirmPick("Effort", effortChoices, next))
       .catch((error: unknown) => flash(errorMessage(error)));
   };
@@ -1498,7 +1495,13 @@ function DeliveryButton({
               finalFocus={() => focusAfter.current ?? true}
               className="max-w-[calc(100vw-1rem)] min-w-72 rounded-md border border-edge bg-popover p-1 text-popover-foreground shadow-overlay outline-none"
             >
-              <Menu.RadioGroup value={mode} onValueChange={(value) => onPick(value as Delivery)}>
+              <Menu.RadioGroup
+                value={mode}
+                onValueChange={(value) => {
+                  const picked = DELIVERIES.find((delivery) => delivery === value);
+                  if (picked !== undefined) onPick(picked);
+                }}
+              >
                 {DELIVERIES.map((delivery) => (
                   <Menu.RadioItem
                     key={delivery}

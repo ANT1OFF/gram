@@ -1,7 +1,7 @@
 import {
   routineNameKey,
   routineWhenKey,
-  type RoutineId,
+  RoutineId,
   type RoutineSchedule,
   type RoutineState,
   type RoutineStatus,
@@ -54,7 +54,7 @@ export function createRoutinesMock(
     const now = Date.now();
     return (state.charter.routines ?? [])
       .map((routine) => {
-        const id = (routine.id ?? routineNameKey(routine.name)) as RoutineId;
+        const id = routine.id ?? RoutineId.make(routineNameKey(routine.name));
         const key = keyOf(workspaceId, id);
         const scheduleKey = routineWhenKey(routine);
         let kept = states.get(key) ?? {};

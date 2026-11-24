@@ -1,3 +1,5 @@
+import { fieldsOf } from "@gram/contracts";
+
 /** This window as the placement markers see it. */
 export interface AppWindow {
   readonly id: string;
@@ -27,9 +29,11 @@ export function browserWindow(storage: Storage, search: string): AppWindow {
     return { id, name, primary: false, ...(open ? { initialThreadId: open } : {}) };
   }
   try {
-    const saved = JSON.parse(storage.getItem(TAB_KEY) ?? "null") as Partial<AppWindow> | null;
-    if (saved && typeof saved.id === "string" && typeof saved.name === "string") {
-      return { id: saved.id, name: saved.name, primary: saved.primary === true };
+    const saved = fieldsOf(JSON.parse(storage.getItem(TAB_KEY) ?? "null"));
+    const savedId = saved.get("id");
+    const savedName = saved.get("name");
+    if (typeof savedId === "string" && typeof savedName === "string") {
+      return { id: savedId, name: savedName, primary: saved.get("primary") === true };
     }
   } catch (_aMalformedRecordStartsTheTabOver) {}
   const fresh: AppWindow = { id: randomId(), name: "Main", primary: true };

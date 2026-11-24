@@ -196,7 +196,7 @@ function DiffFileRow({
   const path = pathParts(file);
   const actions = [onReveal, onOpenInEditor, onRevealInFileManager].filter(
     (action) => action !== undefined,
-  ).length as 0 | 1 | 2 | 3;
+  ).length;
 
   if (focusKey !== focusedKey) {
     setFocusedKey(focusKey);

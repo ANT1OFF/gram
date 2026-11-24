@@ -1,5 +1,6 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 
 import { useApi } from "@/api/context";
@@ -12,6 +13,8 @@ import { fitShell, useLayoutStore } from "@/stores/layout";
 import { openInNewWindow } from "./open-in-new-window";
 import { currentWindow } from "./window-identity";
 import { useWindowPlacements } from "./window-placements";
+
+const isThreadId = Schema.is(ThreadId);
 
 const besideOnScreen = (): ThreadId | undefined =>
   fitShell(useLayoutStore.getState()).panel === "none"
@@ -99,7 +102,8 @@ export function useWindowPlacementsSync() {
 
   useSubscription(() => {
     const open = (threadId: string) => {
-      useLayoutStore.getState().openThread(threadId as ThreadId);
+      if (!isThreadId(threadId)) return;
+      useLayoutStore.getState().openThread(threadId);
       void navigate({ to: "/t/$threadId", params: { threadId } });
     };
     const initial = currentWindow().initialThreadId;

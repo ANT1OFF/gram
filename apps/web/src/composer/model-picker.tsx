@@ -283,7 +283,7 @@ function ModelSearchBody({
       </Combobox.Empty>
       <Combobox.List className="max-h-[min(20rem,var(--available-height))] overflow-y-auto overscroll-contain p-1 empty:p-0">
         {(group: ModelGroup) => (
-          <Combobox.Group key={group.label} items={group.items as Option[]}>
+          <Combobox.Group key={group.label} items={group.items}>
             {headed &&
               (group.label === LEGACY_GROUP && !legacy.searching ? (
                 <Combobox.GroupLabel className="mt-1">

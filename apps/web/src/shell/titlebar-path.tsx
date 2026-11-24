@@ -1,5 +1,4 @@
-import type { ThreadId } from "@gram/contracts";
-import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useId } from "react";
 
@@ -10,6 +9,7 @@ import { SegmentSlab } from "@/motion/segment-slab";
 import { SEGMENT_SLAB, SEGMENT_TRACK } from "@/settings/fields";
 import { useOpenBoard } from "@/orchestration/open-board";
 import { isNewForm, newFormName } from "@/shell/new-form-name";
+import { useRouteThreadId } from "@/shell/route-params";
 import { WorkspaceSwitcher } from "@/shell/workspace-switcher";
 import { useLayoutStore } from "@/stores/layout";
 import { useViewStore } from "@/views/view-store";
@@ -49,7 +49,7 @@ export function TitlebarPath({ solo, narrow }: { solo: boolean; narrow: boolean 
   const noun = useThreadsWorkspaceNoun();
   const workspace = useViewWorkspace();
   const board = useViewStore((s) => s.view === "board");
-  const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const route = useRouteThreadId();
   const place = useEmbedShell((s) =>
     route === undefined
       ? undefined
@@ -106,7 +106,7 @@ export function useWorkspacePlaces(solo: boolean): readonly WorkspacePlace[] | u
   const word = useEmbedShell((s) => s.threadsPage.kinds?.orchestrator ?? "Orchestrator");
   const workspace = useViewWorkspace();
   const board = useViewStore((s) => s.view === "board");
-  const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const route = useRouteThreadId();
   const navigate = useNavigate();
   const openBoard = useOpenBoard();
   if (solo || isNewForm(pathname) || workspace === undefined) return undefined;

@@ -1,14 +1,15 @@
-import type { WorkspaceId } from "@gram/contracts";
+import { WorkspaceId } from "@gram/contracts";
 import type { QueryClient } from "@tanstack/react-query";
+import * as Schema from "effect/Schema";
 
 import type { ApiServerEvent } from "@/api/types";
 
 type StaleKeys = readonly (readonly string[])[];
 
+type EventOf = { [T in ApiServerEvent["type"]]: Extract<ApiServerEvent, { type: T }> };
+
 const STALE_QUERIES: {
-  readonly [T in ApiServerEvent["type"]]?:
-    | StaleKeys
-    | ((event: Extract<ApiServerEvent, { type: T }>) => StaleKeys);
+  readonly [T in keyof EventOf]?: StaleKeys | ((event: EventOf[T]) => StaleKeys);
 } = {
   "profiles.changed": [["profiles"], ["models"], ["agents-available"]],
   "reviewRequests.changed": [["reviewRequests"]],
@@ -34,6 +35,15 @@ const STALE_QUERIES: {
   ],
 };
 
+const staleKeysOf = <T extends keyof EventOf>(
+  event: EventOf[T] & { readonly type: T },
+): StaleKeys => {
+  const stale = STALE_QUERIES[event.type];
+  return typeof stale === "function" ? stale(event) : (stale ?? []);
+};
+
+const isWorkspaceId = Schema.is(WorkspaceId);
+
 const invalidateLedgers = (
   queryClient: QueryClient,
   workspaceId: WorkspaceId,
@@ -53,11 +63,7 @@ export function invalidateForEvent(
   event: ApiServerEvent,
   ledgerLive: (workspaceId: WorkspaceId) => boolean = () => false,
 ): void {
-  const stale = STALE_QUERIES[event.type] as
-    | StaleKeys
-    | ((event: ApiServerEvent) => StaleKeys)
-    | undefined;
-  for (const queryKey of typeof stale === "function" ? stale(event) : (stale ?? [])) {
+  for (const queryKey of staleKeysOf(event)) {
     void queryClient.invalidateQueries({ queryKey });
   }
   if (event.type === "orchestration.changed") {
@@ -75,6 +81,7 @@ export function invalidateAfterResync(
 ): void {
   void queryClient.invalidateQueries({
     predicate: (query) =>
-      query.queryKey[0] !== "orchestratorLedger" || !ledgerLive(query.queryKey[1] as WorkspaceId),
+      query.queryKey[0] !== "orchestratorLedger" ||
+      !(isWorkspaceId(query.queryKey[1]) && ledgerLive(query.queryKey[1])),
   });
 }

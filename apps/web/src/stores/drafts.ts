@@ -1,4 +1,4 @@
-import type { MessageId, ThreadId } from "@gram/contracts";
+import { fieldsOf, type MessageId, type ThreadId } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -16,7 +16,7 @@ interface DraftState {
 }
 
 const storedText = (persisted: unknown): Record<string, string> => {
-  const text = (persisted as { text?: unknown } | undefined)?.text;
+  const text = fieldsOf(persisted).get("text");
   if (typeof text !== "object" || text === null) return {};
   return Object.fromEntries(
     Object.entries(text).filter((entry): entry is [string, string] => typeof entry[1] === "string"),

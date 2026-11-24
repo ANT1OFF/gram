@@ -33,7 +33,7 @@ import { ModelSelect, useModelSection, type ModelPick } from "./model-select";
 import type { PickerOption } from "./picker";
 import { PickerTrigger } from "./picker-trigger";
 import { defaultModelId, effortOptions, useModels } from "./models";
-import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION } from "./options";
+import { DEFAULT_EFFORT, DEFAULT_EFFORT_OPTION, pickedVariant } from "./options";
 import { GHOST_TRIGGER } from "./styles";
 
 /** What a new thread runs on; `profileId` only when the user explicitly selects a gateway. */
@@ -160,10 +160,7 @@ function PromptBoxChoices({
         effortSection({
           efforts,
           value: value.variant,
-          onChange: (next) =>
-            onChange(
-              withVariant(value, next === DEFAULT_EFFORT ? undefined : (next as ReasoningVariant)),
-            ),
+          onChange: (next) => onChange(withVariant(value, pickedVariant(next))),
         }),
         ...(mode === undefined ? [] : [mode]),
         speedSection({
@@ -393,12 +390,7 @@ export function AgentFields({
               items={effortItems}
               onValueChange={(next) => {
                 if (next === null) return;
-                onChange(
-                  withVariant(
-                    value,
-                    next === DEFAULT_EFFORT ? undefined : (next as ReasoningVariant),
-                  ),
-                );
+                onChange(withVariant(value, pickedVariant(next)));
               }}
             >
               <PickerTrigger

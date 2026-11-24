@@ -2,7 +2,7 @@ import {
   DEFAULT_CHARTER,
   autonomyOf,
   sendKeyOf,
-  type DraftId,
+  DraftId,
   type ModelRef,
   type ProjectId,
   type StartTaskInput,
@@ -276,7 +276,7 @@ export function NewTaskDraft({
   const [carried] = useState(carriedDraft);
   useEffect(dropCarriedDraft, []);
   const [prompt, setPrompt] = useState(carried?.text ?? "");
-  const [draftId] = useState(() => carried?.draftId ?? (crypto.randomUUID() as DraftId));
+  const [draftId] = useState(() => carried?.draftId ?? DraftId.make(crypto.randomUUID()));
   const attachments = useAttachments({ draftId }, carried?.attachments);
   const hasImages = attachments.ready.some((attachment) =>
     attachment.mediaType?.startsWith("image/"),

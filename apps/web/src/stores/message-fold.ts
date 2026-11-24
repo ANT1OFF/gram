@@ -44,6 +44,8 @@ const toolNameOf = (part: Part) =>
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const approvalOf = (part: Part) => (isPlainObject(part["approval"]) ? part["approval"] : undefined);
+
 function mergeMetadata(
   base: Record<string, unknown> | undefined,
   incoming: Record<string, unknown>,
@@ -76,7 +78,7 @@ export function createMessageFold(
   const base = options.base?.role === "assistant" ? options.base : undefined;
   let id = base?.id ?? messageId;
   let metadata = base?.metadata as Record<string, unknown> | undefined;
-  const parts: Part[] = base ? [...(base.parts as unknown as Part[])] : [];
+  const parts: Part[] = base ? [...base.parts] : [];
   let published: GramUIMessage | undefined;
 
   const activeText = new Map<string, number>();
@@ -167,7 +169,7 @@ export function createMessageFold(
 
   return {
     apply(chunk) {
-      const c = chunk as unknown as LooseChunk;
+      const c: LooseChunk = chunk;
       if (c.type === "start" && typeof c["messageId"] === "string" && c["messageId"] !== id) {
         id = c["messageId"];
         published = undefined;
@@ -326,9 +328,7 @@ export function createMessageFold(
         }
         case "tool-approval-response": {
           const index = parts.findIndex(
-            (part) =>
-              isTool(part) &&
-              (part["approval"] as { id?: unknown } | undefined)?.id === c["approvalId"],
+            (part) => isTool(part) && approvalOf(part)?.["id"] === c["approvalId"],
           );
           if (index === -1) return fail(c, "approval request");
           const part = parts[index]!;
@@ -336,7 +336,7 @@ export function createMessageFold(
             ...part,
             state: "approval-responded",
             approval: {
-              ...(part["approval"] as object),
+              ...approvalOf(part),
               id: c["approvalId"],
               approved: c["approved"],
               ...(c["reason"] == null ? {} : { reason: c["reason"] }),
@@ -430,6 +430,7 @@ export function createMessageFold(
     },
 
     snapshot() {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- folded as the SDK folds
       published ??= {
         id,
         role: "assistant",

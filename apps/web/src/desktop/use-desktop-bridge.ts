@@ -1,6 +1,7 @@
-import { chimeOf, workspaceMuted, type DesktopMenuAction, type ThreadId } from "@gram/contracts";
+import { chimeOf, ThreadId, workspaceMuted, type DesktopMenuAction } from "@gram/contracts";
 import { isTranslucentLook, PRESET_PALETTES, resolvePalette } from "@gram/themes";
 import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 
 import { useApi } from "@/api/context";
@@ -32,6 +33,8 @@ import { useThreadsStore } from "@/stores/threads";
 import { themeStore } from "@/theme/store";
 import { systemSource } from "@/theme/system";
 import { resolveMode } from "@/theme/theme";
+
+const isThreadId = Schema.is(ThreadId);
 
 const toast = (title: string, body: string) =>
   useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title, body });
@@ -208,8 +211,11 @@ export function useDesktopBridge() {
     window.addEventListener("keydown", onZoomKey);
     const offClick = bridge.onNotificationClick((threadId) => {
       const target =
-        (threadId as ThreadId | null) ??
-        nextNeedsYou(Object.values(useThreadsStore.getState().byId), undefined);
+        threadId === null
+          ? nextNeedsYou(Object.values(useThreadsStore.getState().byId), undefined)
+          : isThreadId(threadId)
+            ? threadId
+            : undefined;
       if (target) void navigate({ to: "/t/$threadId", params: { threadId: target } });
     });
 

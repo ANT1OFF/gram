@@ -5,7 +5,8 @@ import { useApi } from "@/api/context";
 import { useThreadsStore } from "@/stores/threads";
 
 /** Every docs query of a workspace sits under this, so `docs.changed` refetches them all. */
-export const docsListKey = (workspaceId: WorkspaceId) => ["docs", workspaceId, "list"] as const;
+export const docsListKey = (workspaceId: WorkspaceId | undefined) =>
+  ["docs", workspaceId, "list"] as const;
 export const docKey = (workspaceId: WorkspaceId, id: DocId) =>
   ["docs", workspaceId, "doc", id] as const;
 
@@ -13,7 +14,7 @@ export const docKey = (workspaceId: WorkspaceId, id: DocId) =>
 export function useDocs(workspaceId: WorkspaceId | undefined) {
   const api = useApi();
   return useQuery({
-    queryKey: docsListKey(workspaceId ?? ("" as WorkspaceId)),
+    queryKey: docsListKey(workspaceId),
     queryFn: () => api.listDocs(workspaceId!),
     enabled: workspaceId !== undefined,
     retry: false,

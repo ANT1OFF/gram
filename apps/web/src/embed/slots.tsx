@@ -72,9 +72,6 @@ export function useCurrentDestination(): string | undefined {
   );
 }
 
-/** The added pages take their path as a string: the router's typed `to` knows only Gram's own. */
-export const linkTo = (to: string) => ({ to }) as unknown as { to: "/" };
-
 function Monogram({ label, className }: { label: string; className?: string }) {
   return (
     <span aria-hidden className={cn("grid place-items-center text-caption font-medium", className)}>
@@ -291,7 +288,7 @@ function EmbedGroup({
             className={cn("flex min-w-0 items-center gap-1", roomy && "pt-3")}
           >
             <Link
-              {...linkTo(page)}
+              to={page}
               {...{ [OVERVIEW_STOP]: "" }}
               data-testid="embed-navigation-heading-link"
               data-glide-skip=""
@@ -378,7 +375,7 @@ function EmbedGroup({
           return (
             <li key={item.id}>
               <Link
-                {...linkTo(item.to)}
+                to={item.to}
                 {...{ [OVERVIEW_STOP]: "" }}
                 data-testid="embed-navigation-item"
                 aria-current={current ? "page" : undefined}
@@ -440,7 +437,7 @@ export function EmbedFootIcons() {
           side="top"
           render={
             <Link
-              {...linkTo(item.to)}
+              to={item.to}
               {...{ [OVERVIEW_STOP]: "" }}
               data-testid="embed-navigation-item"
               aria-label={spoken}
@@ -514,7 +511,7 @@ export function EmbedRailNavigation({
                 disabled={stripOpen}
                 render={
                   <Link
-                    {...linkTo(item.to)}
+                    to={item.to}
                     {...{ [OVERVIEW_STOP]: "" }}
                     data-testid="embed-navigation-item"
                     aria-label={spoken}

@@ -84,7 +84,7 @@ export const releasesChord = (keys: string, event: KeyboardEvent, mac = isMac())
   if (modifier === undefined) {
     if (chord.key === "=") return event.key === "=" || event.key === "+";
     const bare = { key: event.key, code: event.code, ctrlKey: false, metaKey: false };
-    const key = keysFromEvent({ ...bare, altKey: false, shiftKey: false } as KeyboardEvent, mac);
+    const key = keysFromEvent({ ...bare, altKey: false, shiftKey: false }, mac);
     return key === chord.key;
   }
   return modifier === "mod" && !mac ? chord.mod || chord.ctrl : chord[modifier];

@@ -61,7 +61,10 @@ import { useSessionStart, type SessionStart } from "./connectors-start";
 import type { McpDraft } from "./mcp-config";
 import { PanelMessage } from "./panel-message";
 
-const REMOVABLE: ReadonlySet<string> = new Set<McpScope>(["local", "project", "user"]);
+const REMOVABLE: readonly McpScope[] = ["local", "project", "user"];
+
+const removableScope = (connector: Connector): McpScope | undefined =>
+  REMOVABLE.find((scope) => scope === connector.scope);
 
 /**
  * Glyph and tone per health; the words are the contract's (`CONNECTOR_HEALTH_LABEL`), the same in
@@ -184,12 +187,12 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
       }
     });
 
-  const remove = (connector: Connector) =>
+  const remove = (connector: Connector, scope: McpScope) =>
     action.mutate(async () => {
       const result = await api.removeConnector({
         threadId,
         name: connector.name,
-        scope: connector.scope as McpScope,
+        scope,
         ...(target === undefined ? {} : { target }),
       });
       setNotice(
@@ -211,6 +214,11 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
       setAdding({ target: other, draft: copy.draft, note: copy.note });
     });
 
+  const removeOf = (connector: Connector) => {
+    const scope = removableScope(connector);
+    return scope === undefined ? undefined : () => remove(connector, scope);
+  };
+
   const rows = (label: string, listed: ReadonlyArray<Connector>) =>
     listed.length === 0 ? null : (
       <ul aria-label={label} className="divide-y divide-border">
@@ -226,11 +234,7 @@ export function ConnectorsPanel({ threadId }: { threadId: ThreadId }) {
               action.mutate(() => api.reconnectConnector(threadId, connector.name))
             }
             onToggle={() => toggle(connector)}
-            onRemove={
-              connector.scope !== undefined && REMOVABLE.has(connector.scope)
-                ? () => remove(connector)
-                : undefined
-            }
+            onRemove={removeOf(connector)}
             onUseWith={
               isClaudeHosted(connector) && connector.url !== undefined
                 ? (other, url) => giveTo(connector.name, other, url)

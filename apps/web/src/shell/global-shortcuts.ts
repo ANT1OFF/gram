@@ -1,5 +1,4 @@
-import type { ThreadId } from "@gram/contracts";
-import { useNavigate, useParams, useRouter } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { HISTORY_TEST_ID, useHistoryStore } from "@/history/history-view";
@@ -20,6 +19,7 @@ import {
   useLayoutStore,
   type FocusDirection,
 } from "@/stores/layout";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useThreadsStore } from "@/stores/threads";
 import { toggleOverviewSidebar } from "@/views/shell-layout";
 
@@ -50,8 +50,7 @@ export function useGlobalShortcuts() {
   const navigate = useNavigate();
   const openSettings = useOpenSettings();
   const router = useRouter();
-  const params = useParams({ strict: false });
-  const currentId = params.threadId as ThreadId | undefined;
+  const currentId = useRouteThreadId();
 
   useShortcut({
     id: "palette.open",

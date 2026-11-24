@@ -112,7 +112,13 @@ const heldByOther = (keys: string, mac: boolean): boolean =>
 
 const TYPED_FIRST: ReadonlySet<string> = new Set(["-", "+", "="]);
 
-function eventKey(event: KeyboardEvent): string {
+/** What a chord is read from: a key event's key, its physical code and its modifiers. */
+export type KeyPress = Pick<
+  KeyboardEvent,
+  "key" | "code" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey"
+>;
+
+function eventKey(event: KeyPress): string {
   if (TYPED_FIRST.has(event.key)) return event.key;
   const { code } = event;
   if (code.startsWith("Key")) return code.slice(3).toLowerCase();
@@ -133,7 +139,7 @@ const byCharacter = (key: string) => key.length === 1 && !/[a-z0-9\\/.[\]]/.test
  * (`[` from AltGr+8 on a Nordic layout, `{` from AltGr+B on a Hungarian one) is text, not a shortcut.
  * Ctrl+Alt with a punctuation key therefore can't be a shortcut off macOS.
  */
-export const isAltGraphText = (event: KeyboardEvent, mac = isMac()): boolean =>
+export const isAltGraphText = (event: KeyPress, mac = isMac()): boolean =>
   !mac && event.ctrlKey && event.altKey && event.key.length === 1 && !/^[a-z0-9]$/i.test(event.key);
 
 const LONE_MODIFIERS: Readonly<Record<string, { readonly mac: string; readonly other: string }>> = {
@@ -190,7 +196,7 @@ const MODIFIER_KEYS: ReadonlySet<string> = new Set([
  * `?`. `undefined` for a lone modifier, a key a keys string can't name (`+`, dead keys), AltGr
  * text, or the Windows key, which keys strings have no name for.
  */
-export function keysFromEvent(event: KeyboardEvent, mac = isMac()): string | undefined {
+export function keysFromEvent(event: KeyPress, mac = isMac()): string | undefined {
   if (isAltGraphText(event, mac) || (!mac && event.metaKey)) return undefined;
   const key = eventKey(event);
   if (key === "" || key === "+" || key === "dead" || key === "unidentified") return undefined;
