@@ -162,6 +162,8 @@ const MACHINE_MOVING: Shot = {
         | ((threadId: string, machine: string, until?: number) => void)
         | undefined;
       if (move === undefined) return false;
+      // The turn the move cut off is still open: the thread waits to carry it on.
+      window.gramMock!.simulateStatus("t-docs" as never, "running");
       move.call(mock, "t-docs", "build-box", Date.now() + 20 * 60_000);
       return true;
     });
