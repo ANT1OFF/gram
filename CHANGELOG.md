@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.41.0](https://github.com/ANT1OFF/gram/compare/v1.40.0...v1.41.0) (2026-11-24)
+
+
+### Features
+
+* move a hosted worker machine when its provider asks ([#1018](https://github.com/ANT1OFF/gram/issues/1018)) ([59ac944](https://github.com/ANT1OFF/gram/commit/59ac9448b6373123224dab097022692859fa86f3))
+* **orchestration:** request_resources, so a worker's own machine grows for heavy work and shrinks back ([#1017](https://github.com/ANT1OFF/gram/issues/1017)) ([7d969d4](https://github.com/ANT1OFF/gram/commit/7d969d491c127d57302034c0b3a17cc9a4d372a0))
+
+
+### Bug Fixes
+
+* a Codex open that gets no answer no longer blocks every later Codex thread ([#1016](https://github.com/ANT1OFF/gram/issues/1016)) ([822dc9b](https://github.com/ANT1OFF/gram/commit/822dc9bdd036ab131a19404d4f548de8a28b1dff))
+* harden git argument handling for repository-supplied names ([#1012](https://github.com/ANT1OFF/gram/issues/1012)) ([a032a92](https://github.com/ANT1OFF/gram/commit/a032a926097e2a7c2cba4a4cd3e1b10b3bffe85d))
+
 ## [1.40.0](https://github.com/ANT1OFF/gram/compare/v1.39.0...v1.40.0) (2026-11-24)
 
 
