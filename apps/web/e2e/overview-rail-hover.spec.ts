@@ -28,7 +28,10 @@ test("leaving the compact strip before its hover delay cancels its pending open"
   await composer.waitFor();
   // Start away from the strip, then pass through it without resting on it.
   await page.mouse.move(600, 120);
+  // Time stands still while the pointer passes through: an installed clock keeps pace with real
+  // time until paused, and a slow machine can spend the strip's whole delay between two moves.
   await page.clock.install();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
   await page.mouse.move(20, 120);
   const box = (await composer.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
