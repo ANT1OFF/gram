@@ -10,6 +10,7 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
 import { IDLE_MULTIPLIER } from "../github/poll-backoff.ts";
+import * as Predicate from "effect/Predicate";
 
 export type PowerState = "awake" | "suspended";
 
@@ -127,8 +128,8 @@ export class AppActivity extends Context.Service<
 
 /** A message the desktop shell posts over the utility-process port. */
 export const powerStateOf = (message: unknown): PowerState | undefined => {
-  if (typeof message !== "object" || message === null) return undefined;
-  const record = message as Record<string, unknown>;
+  if (!Predicate.isObject(message)) return undefined;
+  const record = message;
   if (record["type"] !== "power") return undefined;
   const state = record["state"];
   return state === "awake" || state === "suspended" ? state : undefined;

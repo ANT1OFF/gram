@@ -1,9 +1,11 @@
+import { fieldsOf } from "@gram/contracts";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { connect, createServer } from "node:net";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { isInside, realPath } from "@gram/git";
+import * as Predicate from "effect/Predicate";
 import { LINE_CHARS, makeBoundedList, makeLineCutter, TRUNCATED } from "../bounded.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -35,13 +37,16 @@ const NAME = /^[\w .:-]{1,64}$/;
 const isStrings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string" && item.length <= 2_000);
 
+const isStringMap = (value: unknown): value is Readonly<Record<string, string>> =>
+  Predicate.isObject(value) && Object.values(value).every((item) => typeof item === "string");
+
 /** `raw` as launch configurations, or why not. */
 export function parseLaunchConfig(raw: unknown, file: string): LaunchConfig {
-  const entries = (raw as { configurations?: unknown } | null)?.configurations;
+  const entries = fieldsOf(raw).get("configurations");
   if (!Array.isArray(entries) || entries.length === 0)
     throw new LaunchConfigError(`${file} has no "configurations".`);
   const configurations = entries.map((entry, index): LaunchConfiguration => {
-    const c = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
+    const c: { readonly [field: string]: unknown } = Predicate.isObject(entry) ? entry : {};
     const where = `${file} configuration ${index + 1}`;
     if (typeof c["name"] !== "string" || !NAME.test(c["name"]))
       throw new LaunchConfigError(`${where} needs a "name" of letters, digits, spaces, . : _ -.`);
@@ -58,12 +63,7 @@ export function parseLaunchConfig(raw: unknown, file: string): LaunchConfig {
     if (cwd !== undefined && (typeof cwd !== "string" || isAbsolute(cwd)))
       throw new LaunchConfigError(`${where}: "cwd" must be relative to the project.`);
     const env = c["env"];
-    if (
-      env !== undefined &&
-      (typeof env !== "object" ||
-        env === null ||
-        !Object.values(env).every((value) => typeof value === "string"))
-    )
+    if (env !== undefined && !isStringMap(env))
       throw new LaunchConfigError(`${where}: "env" must map names to strings.`);
     return {
       name: c["name"],
@@ -71,7 +71,7 @@ export function parseLaunchConfig(raw: unknown, file: string): LaunchConfig {
       runtimeArgs: args,
       port,
       ...(cwd === undefined ? {} : { cwd }),
-      ...(env === undefined ? {} : { env: env as Record<string, string> }),
+      ...(env === undefined ? {} : { env }),
     };
   });
   const names = new Set(configurations.map((c) => c.name));

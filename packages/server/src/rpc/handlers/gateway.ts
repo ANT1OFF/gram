@@ -1,29 +1,29 @@
 import { homedir } from "node:os";
 
 import {
-  AgentUnavailable,
-  GatewayError,
-  NotFound,
-  customModelsOf,
-  gatewayAgentModel,
-  gatewayKindOf,
-  gatewayModelForAgent,
-  OPENROUTER_BASE_URL,
-  gatewayModelUsable,
-  GATEWAY_UNLISTED_WARNING,
-  withCustomModels,
   type AgentKind,
   type AgentModel,
+  AgentUnavailable,
+  customModelsOf,
+  GATEWAY_UNLISTED_WARNING,
+  gatewayAgentModel,
+  GatewayError,
+  gatewayKindOf,
   type GatewayModel,
+  gatewayModelForAgent,
+  gatewayModelUsable,
   type GatewayProfile,
-  type ProfileId,
+  keyringBackendOk,
+  NO_KEYRING_MESSAGE,
+  NotFound,
+  OPENROUTER_BASE_URL,
+  ProfileId,
   type ServerEvent,
   type SetKeyResult,
   type SlashCommand,
   type ThreadId,
   type VaultInfo,
-  keyringBackendOk,
-  NO_KEYRING_MESSAGE,
+  withCustomModels,
 } from "@gram/contracts";
 import type { AgentHost } from "@gram/agents";
 import * as Effect from "effect/Effect";
@@ -92,7 +92,7 @@ export interface GatewayDeps {
   readonly listen?: () => Promise<CodeListener>;
 }
 
-const OPENROUTER_PROFILE_ID = "openrouter" as ProfileId;
+const OPENROUTER_PROFILE_ID = ProfileId.make("openrouter");
 
 /**
  * What protects the vault's keys, for Settings: `backend` is the one `safeStorage` picked on Linux.
@@ -445,7 +445,7 @@ export const makeGateway = ({
           existing === undefined
             ? yield* upsertProfile({
                 profile: {
-                  id: id as ProfileId,
+                  id: ProfileId.make(id),
                   name: "OpenRouter",
                   baseURL: OPENROUTER_BASE_URL,
                   kind: "openrouter",

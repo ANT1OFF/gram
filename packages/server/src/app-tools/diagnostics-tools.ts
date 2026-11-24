@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { formatLogLine } from "../diagnostics/report.ts";
 import { latestLogFile, tailLines } from "../logging/daily-file.ts";
 import { defineAppTool } from "./definition.ts";
+import * as Predicate from "effect/Predicate";
 
 const DEFAULT_LINES = 200;
 const MAX_LINES = 500;
@@ -31,12 +32,12 @@ function logLineMatches(line: string, filter: LogFilter): boolean {
   } catch {
     entry = undefined;
   }
-  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+  if (!Predicate.isObject(entry)) {
     return (
       filter.threadId === undefined && filter.minLevel === undefined && filter.since === undefined
     );
   }
-  const record = entry as Record<string, unknown>;
+  const record = entry;
   if (filter.threadId !== undefined && record["threadId"] !== filter.threadId) return false;
   if (filter.minLevel !== undefined && !(Number(record["level"]) >= filter.minLevel)) return false;
   if (filter.since !== undefined) {

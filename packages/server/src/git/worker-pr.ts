@@ -744,7 +744,8 @@ export const ownershipRefusal = (
   Effect.gen(function* () {
     const ownership = yield* workerPrOwnership(thread, repo, number);
     if (typeof ownership !== "string") return undefined;
-    const state = /^it is (merged|closed)$/.exec(ownership)?.[1] as "merged" | "closed" | undefined;
+    const state =
+      ownership === "it is merged" ? "merged" : ownership === "it is closed" ? "closed" : undefined;
     if (state !== undefined) return endedPrText(repo, number, state);
     const refusal = ownershipRefusalText(ownership, options.audience, options.tool);
     if (options.audience === "worker" && thread.boundPr?.mergeWhenReady?.heldBy === "orchestrator")

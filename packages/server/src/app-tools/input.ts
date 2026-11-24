@@ -1,18 +1,19 @@
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
+import * as Predicate from "effect/Predicate";
+
+type PureFields = { readonly [x: PropertyKey]: Schema.ConstraintCodec<unknown, unknown> };
 
 /**
  * Publish and decode equivalent spellings before resolution and approval. Different values for
  * the same field are refused: an alias must never silently change the target or the approved text.
  * Handlers and existing result shapes keep the original field names.
  */
-export const inputAliases = <F extends Schema.Struct.Fields>(
+export const inputAliases = <F extends PureFields>(
   schema: Schema.Struct<F>,
   aliases: Readonly<Record<string, ReadonlyArray<string>>>,
 ) => {
-  const fields: { -readonly [K in keyof Schema.Struct.Fields]: Schema.Struct.Fields[K] } = {
-    ...schema.fields,
-  };
+  const fields: { -readonly [K in keyof PureFields]: PureFields[K] } = { ...schema.fields };
   for (const [field, alternatives] of Object.entries(aliases)) {
     const value = schema.fields[field];
     if (value === undefined) throw new Error(`Unknown input alias field: ${field}`);
@@ -41,6 +42,7 @@ export const inputAliases = <F extends Schema.Struct.Fields>(
               delete normalized[alias];
             }
           }
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- with every alias folded back into its field, what is left is the schema's own encoded shape
           return normalized as Schema.Struct<F>["Encoded"];
         }),
         encode: SchemaGetter.transform((input) => input),
@@ -54,16 +56,16 @@ export const inputLengthProblem = (
   input: unknown,
 ): string | undefined => {
   const visit = (schema: unknown, value: unknown, path: string): string | undefined => {
-    if (schema === null || typeof schema !== "object") return undefined;
-    const node = schema as Record<string, unknown>;
+    if (!Predicate.isObject(schema)) return undefined;
+    const node = schema;
     if (typeof node.$ref === "string" && node.$ref.startsWith("#/$defs/")) {
       return visit(document.definitions[node.$ref.slice(8)], value, path);
     }
     if (Array.isArray(node.anyOf)) {
       const type = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
       const branches = node.anyOf.filter((branch: unknown) => {
-        if (branch === null || typeof branch !== "object") return false;
-        const declared = (branch as Record<string, unknown>).type;
+        if (!Predicate.isObject(branch)) return false;
+        const declared = branch.type;
         return (
           declared === undefined ||
           declared === type ||
@@ -77,29 +79,28 @@ export const inputLengthProblem = (
       )
         return problems[0];
     }
-    const limit =
-      typeof value === "string" ? node.maxLength : Array.isArray(value) ? node.maxItems : undefined;
-    if (typeof limit === "number" && (value as string | unknown[]).length > limit) {
-      return `${path}: limit ${limit} ${typeof value === "string" ? "characters" : "items"}; actual length ${(value as string | unknown[]).length}`;
+    const sized =
+      typeof value === "string"
+        ? { limit: node.maxLength, length: value.length, unit: "characters" }
+        : Array.isArray(value)
+          ? { limit: node.maxItems, length: value.length, unit: "items" }
+          : undefined;
+    if (typeof sized?.limit === "number" && sized.length > sized.limit) {
+      return `${path}: limit ${sized.limit} ${sized.unit}; actual length ${sized.length}`;
     }
     if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i++) {
         const problem = visit(node.items, value[i], `${path}[${i}]`);
         if (problem !== undefined) return problem;
       }
-    } else if (value !== null && typeof value === "object") {
-      for (const [key, child] of Object.entries(
-        (node.properties ?? {}) as Record<string, unknown>,
-      )) {
-        const problem = visit(
-          child,
-          (value as Record<string, unknown>)[key],
-          path ? `${path}.${key}` : key,
-        );
+    } else if (Predicate.isObject(value)) {
+      const properties = Predicate.isObject(node.properties) ? node.properties : {};
+      for (const [key, child] of Object.entries(properties)) {
+        const problem = visit(child, value[key], path ? `${path}.${key}` : key);
         if (problem !== undefined) return problem;
       }
     }
-    for (const child of (node.allOf ?? []) as unknown[]) {
+    for (const child of Array.isArray(node.allOf) ? node.allOf : []) {
       const problem = visit(child, value, path);
       if (problem !== undefined) return problem;
     }

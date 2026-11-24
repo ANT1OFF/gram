@@ -196,6 +196,7 @@ export const readOffLoop = <A extends object>(
     const worker = yield* Effect.serviceOption(ReadWorker);
     if (Option.isSome(worker)) {
       const rows = yield* worker.value.all(sql, params);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the read worker runs the caller's own query, whose rows are the A it names
       if (Option.isSome(rows)) return rows.value as ReadonlyArray<A>;
     }
     const client = yield* SqlClient.SqlClient;
@@ -211,4 +212,5 @@ export const withReadWorker =
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, ReadWorker>> =>
     Option.isSome(worker)
       ? Effect.provideService(effect, ReadWorker, worker.value)
-      : (effect as Effect.Effect<A, E, Exclude<R, ReadWorker>>);
+      : // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- without a worker, nothing in the effect asks for one
+        (effect as Effect.Effect<A, E, Exclude<R, ReadWorker>>);

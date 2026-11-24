@@ -836,33 +836,29 @@ type CallHeaders = { readonly headers?: Readonly<Record<string, string | undefin
  * transport stamps and no caller can forge). A paired phone's socket is refused. An approved
  * `mcp_server_propose` writes in-process, through `ConnectorConfigs`' writes, not through here.
  */
-export const localAppConnectorWrites = <
-  H extends {
-    readonly "connectors.add": (request: AddConnectorPayload) => Effect.Effect<unknown, unknown>;
-    readonly "connectors.remove": (
-      request: RemoveConnectorPayload,
-    ) => Effect.Effect<unknown, unknown>;
+export const localAppConnectorWrites = <H extends object, A, E, RA, RE>(
+  handlers: H & {
+    readonly "connectors.add": (request: AddConnectorPayload) => Effect.Effect<A, E>;
+    readonly "connectors.remove": (request: RemoveConnectorPayload) => Effect.Effect<RA, RE>;
   },
->(
-  handlers: H,
 ): Omit<H, "connectors.add" | "connectors.remove"> & {
   readonly "connectors.add": (
     request: AddConnectorPayload,
     call?: CallHeaders,
-  ) => ReturnType<H["connectors.add"]> | Effect.Effect<never, InvalidState>;
+  ) => Effect.Effect<A, E | InvalidState>;
   readonly "connectors.remove": (
     request: RemoveConnectorPayload,
     call?: CallHeaders,
-  ) => ReturnType<H["connectors.remove"]> | Effect.Effect<never, InvalidState>;
+  ) => Effect.Effect<RA, RE | InvalidState>;
 } => ({
   ...handlers,
   "connectors.add": (request: AddConnectorPayload, call?: CallHeaders) =>
     isLocalApp(call?.headers)
-      ? (handlers["connectors.add"](request) as ReturnType<H["connectors.add"]>)
+      ? handlers["connectors.add"](request)
       : Effect.fail(new InvalidState({ message: CONNECTOR_WRITES_LOCAL_ONLY })),
   "connectors.remove": (request: RemoveConnectorPayload, call?: CallHeaders) =>
     isLocalApp(call?.headers)
-      ? (handlers["connectors.remove"](request) as ReturnType<H["connectors.remove"]>)
+      ? handlers["connectors.remove"](request)
       : Effect.fail(new InvalidState({ message: CONNECTOR_WRITES_LOCAL_ONLY })),
 });
 

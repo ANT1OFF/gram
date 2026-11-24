@@ -86,7 +86,7 @@ const harness = (options: {
   });
   const call = (name: string, input: unknown) => {
     const tool = tools.find((t) => t.descriptor.name === name) as AppToolDefinition;
-    return Schema.decodeUnknownEffect(tool.input as Schema.Codec<unknown, unknown>)(input).pipe(
+    return Schema.decodeUnknownEffect(tool.input)(input).pipe(
       Effect.orDie,
       Effect.flatMap((decoded) => tool.handle(THREAD, decoded, {})),
     );
@@ -625,9 +625,8 @@ describe("browser tool inputs", () => {
       expect(world.sent).toEqual([]);
       // What the schemas themselves refuse, as a transport decodes them.
       const decodes = (name: string, input: unknown) =>
-        Schema.decodeUnknownOption(
-          tools.find((t) => t.descriptor.name === name)!.input as Schema.Codec<unknown, unknown>,
-        )(input)._tag === "Some";
+        Schema.decodeUnknownOption(tools.find((t) => t.descriptor.name === name)!.input)(input)
+          ._tag === "Some";
       expect(decodes("browser_press_key", { key: "Enter" })).toBe(true);
       expect(decodes("browser_press_key", { key: "q" })).toBe(true);
       for (const input of [
@@ -925,10 +924,7 @@ describe("browser_batch", () => {
       );
       const { tools } = harness({ replies: [] });
       const decodes = Schema.decodeUnknownOption(
-        tools.find((t) => t.descriptor.name === "browser_batch")!.input as Schema.Codec<
-          unknown,
-          unknown
-        >,
+        tools.find((t) => t.descriptor.name === "browser_batch")!.input,
       );
       // No nesting, no other tools, at least one step and a bounded number of them.
       expect(decodes({ actions: [{ name: "browser_batch", input: { actions: [] } }] })._tag).toBe(
@@ -1017,7 +1013,7 @@ describe("pane ports", () => {
         let receive!: (e: { data: unknown }) => void;
         const pane = bridgePane(
           {
-            postMessage: (m) => posted.push(m as (typeof posted)[number]),
+            postMessage: (m) => posted.push(m),
             on: (_event, listener) => {
               receive = listener;
             },
@@ -1067,7 +1063,7 @@ describe("pane ports", () => {
       const posted: { id: string }[] = [];
       let listener: ((event: { readonly data: unknown }) => void) | undefined;
       const port: PaneMessagePort = {
-        postMessage: (message) => posted.push(message as { id: string }),
+        postMessage: (message) => posted.push(message),
         on: (_event, l) => (listener = l),
       };
       const pane = bridgePane(port, 50);

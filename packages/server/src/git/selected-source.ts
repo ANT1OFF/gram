@@ -12,6 +12,7 @@ import {
   readSync,
 } from "node:fs";
 import * as nodePath from "node:path";
+import * as Predicate from "effect/Predicate";
 
 /** A user-approved selection enumerates the complete candidate tree; omitted bytes are never read. */
 export interface SelectedSource {
@@ -141,9 +142,8 @@ export function selectedSourceManifest(
     )
       throw new Error("selected-source manifest identity differs");
     const doc: unknown = JSON.parse(raw.toString("utf8"));
-    if (typeof doc !== "object" || doc === null || Array.isArray(doc))
-      throw new Error("invalid selected-source document");
-    const v = doc as Record<string, unknown>;
+    if (!Predicate.isObject(doc)) throw new Error("invalid selected-source document");
+    const v = doc;
     if (
       Object.keys(v).toSorted().join(",") !== "base,entries,head,schema,tree" ||
       v.schema !== "gram.selected-source/v1" ||
@@ -160,9 +160,8 @@ export function selectedSourceManifest(
     const rows: Array<SelectedSource> = [];
     const seen = new Set<string>();
     for (const item of v.entries as Array<unknown>) {
-      if (typeof item !== "object" || item === null || Array.isArray(item))
-        throw new Error("invalid selected-source entry");
-      const row = item as Record<string, unknown>;
+      if (!Predicate.isObject(item)) throw new Error("invalid selected-source entry");
+      const row = item;
       if (
         Object.keys(row).toSorted().join(",") !== "mode,oid,path,selected" ||
         typeof row.path !== "string" ||
@@ -185,7 +184,7 @@ export function selectedSourceManifest(
       )
         throw new Error("unsafe selected-source entry");
       seen.add(row.path);
-      rows.push(row as unknown as SelectedSource);
+      rows.push({ path: row.path, mode: row.mode, oid: row.oid, selected: row.selected });
     }
     if (
       !rows.some((row) => row.selected) ||

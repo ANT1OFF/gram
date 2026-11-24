@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   GatewayError,
   type GatewayModel,
   type GatewayModelInfo,
@@ -7,6 +8,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as Predicate from "effect/Predicate";
 
 /** The subset of `fetch` discovery needs; injected in tests. */
 export type Fetcher = (
@@ -66,10 +68,10 @@ const hostOf = (baseURL: string) => {
 
 /** Model ids from an OpenAI-style `/models` body (`{ data: [{ id }] }`, or a bare array); null if neither. */
 export const parseModelIds = (body: unknown): Array<string> | null => {
-  const list = Array.isArray(body) ? body : (body as { data?: unknown } | null)?.data;
+  const list = Array.isArray(body) ? body : fieldsOf(body).get("data");
   if (!Array.isArray(list)) return null;
   const ids = list
-    .map((entry) => (entry as { id?: unknown } | null)?.id)
+    .map((entry) => fieldsOf(entry).get("id"))
     .filter((id): id is string => typeof id === "string" && id !== "");
   return [...new Set(ids)];
 };
@@ -89,6 +91,18 @@ export const catalogUrl = (
 const flag = (value: unknown): boolean | undefined =>
   typeof value === "boolean" ? value : undefined;
 
+const isInteger = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value);
+
+const fieldsIn = (value: unknown): { readonly [field: string]: unknown } =>
+  Predicate.isObject(value) ? value : {};
+
+const given = <K extends string, V>(key: K, value: V | undefined): Partial<Record<K, V>> => {
+  const field: Partial<Record<K, V>> = {};
+  if (value !== undefined) field[key] = value;
+  return field;
+};
+
 /**
  * Optional model descriptions by name from a user-configured catalog: an array of LiteLLM `model_info`
  * entries, each with its capability flags under `supports` and its token limits under `limits`.
@@ -98,34 +112,30 @@ export const parseModelInfo = (body: unknown): Map<string, GatewayModelInfo> | n
   if (!Array.isArray(body)) return null;
   const infos = new Map<string, GatewayModelInfo>();
   for (const entry of body) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const record = entry as Record<string, unknown>;
+    if (!Predicate.isObject(entry)) continue;
+    const record = entry;
     const name = record["name"];
     if (typeof name !== "string" || name === "") continue;
-    const supports = (record["supports"] ?? {}) as Record<string, unknown>;
-    const limits = (record["limits"] ?? {}) as Record<string, unknown>;
-    const maxInput = limits["max_input_tokens"];
-    const fields: Record<string, unknown> = {
-      mode: typeof record["mode"] === "string" ? record["mode"] : undefined,
-      deprecated: flag(record["deprecated"]),
-      restricted: flag(record["restricted"]),
-      tools: flag(supports["supports_function_calling"]),
-      reasoning: flag(supports["supports_reasoning"]),
-      noneEffort:
+    const supports = fieldsIn(record["supports"]);
+    const mode = record["mode"];
+    const maxInput = fieldsIn(record["limits"])["max_input_tokens"];
+    infos.set(name, {
+      ...given("mode", typeof mode === "string" ? mode : undefined),
+      ...given("deprecated", flag(record["deprecated"])),
+      ...given("restricted", flag(record["restricted"])),
+      ...given("tools", flag(supports["supports_function_calling"])),
+      ...given("reasoning", flag(supports["supports_reasoning"])),
+      ...given(
+        "noneEffort",
         record["thinking_always_on"] === true
           ? false
           : flag(supports["supports_none_reasoning_effort"]),
-      xhighEffort: flag(supports["supports_xhigh_reasoning_effort"]),
-      maxEffort: flag(supports["supports_max_reasoning_effort"]),
-      webSearch: flag(supports["supports_web_search"]),
-      maxInputTokens: Number.isInteger(maxInput) ? maxInput : undefined,
-    };
-    infos.set(
-      name,
-      Object.fromEntries(
-        Object.entries(fields).filter(([, value]) => value !== undefined),
-      ) as GatewayModelInfo,
-    );
+      ),
+      ...given("xhighEffort", flag(supports["supports_xhigh_reasoning_effort"])),
+      ...given("maxEffort", flag(supports["supports_max_reasoning_effort"])),
+      ...given("webSearch", flag(supports["supports_web_search"])),
+      ...given("maxInputTokens", isInteger(maxInput) ? maxInput : undefined),
+    });
   }
   return infos;
 };
@@ -139,7 +149,7 @@ export interface InlineModel {
 }
 
 const positiveInt = (value: unknown): number | undefined =>
-  Number.isInteger(value) && (value as number) > 0 ? (value as number) : undefined;
+  isInteger(value) && value > 0 ? value : undefined;
 
 const XAI_PRICE_PER_MTOK = 10_000;
 
@@ -152,7 +162,7 @@ const xaiModel = (record: Record<string, unknown>): InlineModel => {
   const input = xaiPrice(record["prompt_text_token_price"]);
   const output = xaiPrice(record["completion_text_token_price"]);
   const cachedInput = xaiPrice(record["cached_prompt_text_token_price"]);
-  const capabilities = (record["capabilities"] ?? {}) as Record<string, unknown>;
+  const capabilities = fieldsIn(record["capabilities"]);
   const efforts = Array.isArray(capabilities["reasoning_effort"])
     ? capabilities["reasoning_effort"].filter((effort) => typeof effort === "string")
     : [];
@@ -182,12 +192,12 @@ const xaiModel = (record: Record<string, unknown>): InlineModel => {
  * an effort; xAI's carry prices and efforts instead. A LiteLLM body has none, so this is empty for it.
  */
 export const parseInlineModels = (body: unknown): Map<string, InlineModel> => {
-  const list = Array.isArray(body) ? body : (body as { data?: unknown } | null)?.data;
+  const list = Array.isArray(body) ? body : fieldsOf(body).get("data");
   const models = new Map<string, InlineModel>();
   if (!Array.isArray(list)) return models;
   for (const entry of list) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const record = entry as Record<string, unknown>;
+    if (!Predicate.isObject(entry)) continue;
+    const record = entry;
     const id = record["id"];
     if (typeof id !== "string" || id === "") continue;
     if ("prompt_text_token_price" in record || "completion_text_token_price" in record) {

@@ -7,6 +7,10 @@ import * as Fiber from "effect/Fiber";
 import type * as Scope from "effect/Scope";
 import type { SqlClient, SqlError } from "../platform/unstable.ts";
 
+const decodeOutcome = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Struct({ ok: Schema.Boolean, value: Schema.Unknown })),
+);
+
 /** Per thread: bounds responses plus unfinished work, not permanent identity tombstones. */
 export const MESSAGE_RECEIPT_LIMIT = 1024;
 
@@ -80,7 +84,7 @@ export const makeMessageReceipts = (
               message:
                 "This message may already have been delivered. Its result is unavailable; inspect the thread before sending again.",
             });
-          const outcome = JSON.parse(prior.outcome) as { ok: boolean; value: unknown };
+          const outcome = decodeOutcome(prior.outcome);
           return outcome.ok
             ? Schema.decodeUnknownSync(success)(outcome.value)
             : yield* Effect.fail(Schema.decodeUnknownSync(error)(outcome.value));

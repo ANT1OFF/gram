@@ -12,6 +12,7 @@ import {
 } from "./remote-access.ts";
 import type { RemoteSession } from "./remote-sessions.ts";
 import type { RemoteControlShape } from "./remote-control.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Phone access settings, answered by the auth middleware itself and never by a route. */
 export const REMOTE_MANAGEMENT_PATHS: ReadonlySet<string> = new Set([
@@ -47,9 +48,7 @@ const smallJson = Effect.gen(function* () {
   if (text === "") return {};
   try {
     const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
+    return Predicate.isObject(value) ? value : undefined;
   } catch {
     return undefined;
   }

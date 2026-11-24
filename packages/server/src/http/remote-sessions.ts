@@ -15,6 +15,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import * as Predicate from "effect/Predicate";
+import { errnoCode, fieldsOf } from "@gram/contracts";
 
 export interface RemoteSession {
   readonly hash: string;
@@ -45,9 +47,21 @@ const optionalLabel = (session: object) =>
   (typeof session.label === "string" && /^[A-Za-z0-9 ·]{1,40}$/.test(session.label));
 const optionalTime = (session: object, key: "pairedAt" | "lastSeenAt") => {
   if (!(key in session)) return true;
-  const value: unknown = (session as Record<string, unknown>)[key];
+  const value = fieldsOf(session).get(key);
   return Number.isSafeInteger(value) && Number(value) > 0;
 };
+
+const isRemoteSession = (session: unknown): session is RemoteSession =>
+  Predicate.isObject(session) &&
+  "hash" in session &&
+  typeof session.hash === "string" &&
+  /^[a-f0-9]{64}$/.test(session.hash) &&
+  "expiresAt" in session &&
+  Number.isSafeInteger(session.expiresAt) &&
+  Number(session.expiresAt) > 0 &&
+  optionalLabel(session) &&
+  optionalTime(session, "pairedAt") &&
+  optionalTime(session, "lastSeenAt");
 
 /**
  * One private JSON file in `<dataDir>/remote-access`: opened without following links, refused
@@ -63,7 +77,7 @@ export const privateJsonFile = (dataDir: string, name: string, maxBytes: number)
     try {
       fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      if (errnoCode(error) === "ENOENT") return undefined;
       throw new Error("Remote access storage could not be opened safely", { cause: error });
     }
     try {
@@ -113,32 +127,19 @@ export const fileRemoteSessionStore = (
   const read = (): RemoteSession[] => {
     const value = file.read();
     if (value === undefined) return [];
-    if (typeof value !== "object" || value === null)
-      throw new Error("Remote session storage is invalid");
-    const record = value as Record<string, unknown>;
+    if (!Predicate.isObject(value)) throw new Error("Remote session storage is invalid");
+    const record = value;
+    const sessions = record.sessions;
     if (
       record.version !== 1 ||
       record.origin !== origin ||
       record.port !== port ||
-      !Array.isArray(record.sessions) ||
-      record.sessions.length > 8 ||
-      !record.sessions.every(
-        (session: unknown) =>
-          typeof session === "object" &&
-          session !== null &&
-          "hash" in session &&
-          typeof session.hash === "string" &&
-          /^[a-f0-9]{64}$/.test(session.hash) &&
-          "expiresAt" in session &&
-          Number.isSafeInteger(session.expiresAt) &&
-          Number(session.expiresAt) > 0 &&
-          optionalLabel(session) &&
-          optionalTime(session, "pairedAt") &&
-          optionalTime(session, "lastSeenAt"),
-      )
+      !Array.isArray(sessions) ||
+      sessions.length > 8 ||
+      !sessions.every(isRemoteSession)
     )
       throw new Error("Remote session storage is invalid");
-    return record.sessions as RemoteSession[];
+    return sessions;
   };
   return {
     read,

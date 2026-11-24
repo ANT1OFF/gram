@@ -1,4 +1,6 @@
+import { fieldsOf } from "@gram/contracts";
 import { createPublicKey, verify, type KeyObject } from "node:crypto";
+import * as Predicate from "effect/Predicate";
 
 /**
  * Sign-in by a trusted proxy. A deployment that puts its own sign-in in front of Gram (an identity
@@ -133,9 +135,7 @@ const decodeBase64Url = (text: string): Buffer | undefined => {
 const parseObject = (bytes: Buffer): Record<string, unknown> | undefined => {
   try {
     const value: unknown = JSON.parse(bytes.toString("utf8"));
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
+    return Predicate.isObject(value) ? value : undefined;
   } catch {
     return undefined;
   }
@@ -163,9 +163,14 @@ export const verifyIdentity = (
 ): IdentityResult => {
   if (statement === undefined || statement === "") return refuse("missing");
   if (statement.length > MAX_STATEMENT_LENGTH) return refuse("malformed");
-  const segments = statement.split(".");
-  if (segments.length !== 3) return refuse("malformed");
-  const [headerText, payloadText, signatureText] = segments as [string, string, string];
+  const [headerText, payloadText, signatureText, ...rest] = statement.split(".");
+  if (
+    headerText === undefined ||
+    payloadText === undefined ||
+    signatureText === undefined ||
+    rest.length > 0
+  )
+    return refuse("malformed");
   const headerBytes = decodeBase64Url(headerText);
   const payloadBytes = decodeBase64Url(payloadText);
   const signature = decodeBase64Url(signatureText);
@@ -279,12 +284,12 @@ const publicKeys = (text: string): ReadonlyMap<string, KeyObject> => {
   } catch {
     return invalid(`${IDENTITY_ENV.keys} is not JSON`);
   }
-  const list = (parsed as { keys?: unknown } | null)?.keys;
+  const list = fieldsOf(parsed).get("keys");
   if (!Array.isArray(list) || list.length === 0)
     return invalid(`${IDENTITY_ENV.keys} must be a JWK Set with at least one key`);
   const keys = new Map<string, KeyObject>();
   for (const jwk of list as ReadonlyArray<Record<string, unknown> | null>) {
-    if (typeof jwk !== "object" || jwk === null)
+    if (!Predicate.isObject(jwk))
       return invalid(`${IDENTITY_ENV.keys} holds something that is not a key`);
     if ("d" in jwk) return invalid(`${IDENTITY_ENV.keys} must hold public keys only`);
     if (jwk["kty"] !== "OKP" || jwk["crv"] !== "Ed25519" || typeof jwk["x"] !== "string")

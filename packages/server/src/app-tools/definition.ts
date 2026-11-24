@@ -10,6 +10,8 @@ import * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
 import type { DecisionQuestion } from "../embedding/decision-hook.ts";
 
+type ToolInput = Schema.Codec<unknown, unknown>;
+
 /** What the gate decided about one call, for a handler whose result depends on it. */
 export interface AppToolCall {
   /**
@@ -55,7 +57,7 @@ export interface SharedCard {
  * A tool definition before it's bound to a thread. `T` is what a call acts on: its decoded input,
  * or what `resolve` makes of it.
  */
-export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Type"]> {
+export interface AppToolDefinition<S extends ToolInput = ToolInput, T = S["Type"]> {
   readonly descriptor: AppToolDescriptor;
   /**
    * An object schema with at least one field, even if optional: `Schema.Struct({})` has no object
@@ -148,7 +150,8 @@ export interface AppToolDefinition<S extends Schema.Top = Schema.Top, T = S["Typ
   cardDetails?(input: T): Readonly<Record<string, unknown>>;
 }
 
-export const defineAppTool = <S extends Schema.Top, T = S["Type"]>(tool: AppToolDefinition<S, T>) =>
+export const defineAppTool = <S extends ToolInput, T = S["Type"]>(tool: AppToolDefinition<S, T>) =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- forgets a tool's own input type so tools can share a list; the registry only calls `handle` with what `input` decoded
   tool as unknown as AppToolDefinition;
 
 /** The tools that act on the calling thread's own PR, which an orchestrator hasn't got. */

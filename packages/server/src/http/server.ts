@@ -8,7 +8,7 @@ import { type AnswerNote, EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
 import { PlanKeeperLive } from "../plans/keeper.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
-import { GramRpcs, type RequestId } from "@gram/contracts";
+import { GramRpcs, RequestId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Cause from "effect/Cause";
@@ -516,7 +516,7 @@ export const AuthMiddleware = HttpRouter.middleware(
                     ? {}
                     : {
                         noteAnswer: (askId: string, note: AnswerNote | undefined) =>
-                          eventSink.noteAnswer(askId as RequestId, note),
+                          eventSink.noteAnswer(RequestId.make(askId), note),
                       }),
                   ...(answerQuestionAsUser === undefined || orchestration === undefined
                     ? {}

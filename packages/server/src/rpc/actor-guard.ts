@@ -1,11 +1,11 @@
 import {
-  type DreamId,
+  DreamId,
   effectiveCheckout,
   isPersonalSetting,
   LOCAL_HOST_ID,
   settingsPatchPaths,
-  type ThreadId,
-  type WorkspaceId,
+  ThreadId,
+  WorkspaceId,
 } from "@gram/contracts";
 import { ANSWER_OVER_HTTP } from "../embedding/answer-proof.ts";
 import { ActingPerson } from "../embedding/person.ts";
@@ -54,11 +54,13 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import * as RpcSchema from "effect/rpc/RpcSchema";
+import * as Schema from "effect/Schema";
 import { ServerConfig } from "../config.ts";
 import { actorOf } from "../http/actor.ts";
 import type { Actor, FrontedIdentityConfig } from "../http/fronted-identity.ts";
 import { ThreadStore, type ActorEventEntry } from "../persistence/thread-store.ts";
 import { embeddingEnabled } from "../settings/embedding.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * Whether people sign in through a fronting proxy (`http/fronted-identity.ts`): configured by the
@@ -383,11 +385,7 @@ export const memberMay = (action: string, payload: unknown, headless: boolean): 
   if (!headless) return true;
   if (SERVER_DISK.has(action)) return false;
   if (!SERVER_DISK_UNLESS_THREAD.has(action)) return true;
-  return (
-    typeof payload === "object" &&
-    payload !== null &&
-    typeof (payload as Record<string, unknown>)["threadId"] === "string"
-  );
+  return Predicate.isObject(payload) && typeof payload["threadId"] === "string";
 };
 
 export const DEPLOYMENT_REFUSAL =
@@ -455,26 +453,26 @@ export const UNRECORDED_RPCS: ReadonlySet<string> = new Set([
   "worktree.storage",
 ]);
 
+const isDreamId = Schema.is(DreamId);
+
 const threadsNamed = (payload: unknown): ReadonlyArray<ThreadId> => {
-  if (typeof payload !== "object" || payload === null) return [];
-  const fields = payload as Record<string, unknown>;
+  if (!Predicate.isObject(payload)) return [];
+  const fields = payload;
   const named: Array<ThreadId> = [];
   for (const key of ["threadId", "orchestratorThreadId"])
-    if (typeof fields[key] === "string") named.push(fields[key] as ThreadId);
+    if (typeof fields[key] === "string") named.push(ThreadId.make(fields[key]));
   if (Array.isArray(fields["threadIds"]))
-    for (const id of fields["threadIds"]) if (typeof id === "string") named.push(id as ThreadId);
+    for (const id of fields["threadIds"]) if (typeof id === "string") named.push(ThreadId.make(id));
   return named;
 };
 
 const workspacesNamed = (payload: unknown): ReadonlyArray<WorkspaceId> => {
-  if (typeof payload !== "object" || payload === null) return [];
-  const fields = payload as Record<string, unknown>;
+  if (!Predicate.isObject(payload)) return [];
+  const fields = payload;
   const target = fields["target"];
   return [
     fields["workspaceId"],
-    typeof target === "object" && target !== null
-      ? (target as Record<string, unknown>)["workspaceId"]
-      : undefined,
+    Predicate.isObject(target) ? target["workspaceId"] : undefined,
   ].filter((id): id is WorkspaceId => typeof id === "string");
 };
 
@@ -483,9 +481,9 @@ const workspacesNamed = (payload: unknown): ReadonlyArray<WorkspaceId> => {
  * written to their own rows, so a viewer may make it, and nobody's is recorded.
  */
 export const setsOnlyOwnView = (action: string, payload: unknown): boolean => {
-  if (action !== "settings.set" || typeof payload !== "object" || payload === null) return false;
-  const patch = (payload as Record<string, unknown>)["patch"];
-  if (typeof patch !== "object" || patch === null) return false;
+  if (action !== "settings.set" || !Predicate.isObject(payload)) return false;
+  const patch = payload["patch"];
+  if (!Predicate.isObject(patch)) return false;
   const paths = settingsPatchPaths(patch);
   return paths.length > 0 && paths.every(isPersonalSetting);
 };
@@ -510,7 +508,7 @@ const text = (value: unknown): string | undefined =>
   typeof value === "string" && /^[A-Za-z]{1,32}$/.test(value) ? value : undefined;
 
 const patchPaths = (patch: unknown, prefix = "", out: string[] = []): string[] => {
-  if (typeof patch !== "object" || patch === null || Array.isArray(patch)) {
+  if (!Predicate.isObject(patch)) {
     if (prefix !== "") out.push(prefix);
     return out;
   }
@@ -541,8 +539,8 @@ const idText = (value: unknown): string | undefined =>
 const MAX_ENTRIES_PER_CALL = 200;
 
 const answerOf = (answer: unknown): Record<string, unknown> => {
-  if (typeof answer !== "object" || answer === null) return {};
-  const { kind, decision, scope } = answer as Record<string, unknown>;
+  if (!Predicate.isObject(answer)) return {};
+  const { kind, decision, scope } = answer;
   return {
     ...(text(kind) === undefined ? {} : { kind }),
     ...(text(decision) === undefined ? {} : { decision }),
@@ -562,17 +560,14 @@ export const actorEventsOf = (
   at: number,
   result?: unknown,
 ): ReadonlyArray<ActorEventEntry> => {
-  const fields =
-    typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
+  const fields = Predicate.isObject(payload) ? payload : {};
   const entry = (source: Record<string, unknown>, data: Record<string, unknown>) => ({
     at,
     actor: { id: actor.id, name: actor.name, role: actor.role },
     action,
     threadId:
       idText(source["threadId"]) ??
-      (action === "thread.create" && typeof result === "object" && result !== null
-        ? idText((result as Record<string, unknown>)["id"])
-        : undefined),
+      (action === "thread.create" && Predicate.isObject(result) ? idText(result["id"]) : undefined),
     workspaceId: idText(source["workspaceId"]),
     data: {
       ...Object.fromEntries(
@@ -585,10 +580,10 @@ export const actorEventsOf = (
     return (fields["answers"] as ReadonlyArray<unknown>)
       .slice(0, MAX_ENTRIES_PER_CALL)
       .flatMap((item) =>
-        typeof item === "object" && item !== null
+        Predicate.isObject(item)
           ? [
               entry(item as Record<string, unknown>, {
-                answer: answerOf((item as Record<string, unknown>)["answer"]),
+                answer: answerOf(item["answer"]),
               }),
             ]
           : [],
@@ -616,13 +611,10 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
       const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
       const ownerOf = ownersOf(machines);
       const dreamWorkspaceOf = (payload: unknown) => {
-        const dreamId =
-          typeof payload === "object" && payload !== null
-            ? (payload as Record<string, unknown>)["dreamId"]
-            : undefined;
-        return typeof dreamId !== "string"
+        const dreamId = Predicate.isObject(payload) ? payload["dreamId"] : undefined;
+        return !isDreamId(dreamId)
           ? Effect.succeed([])
-          : store.getDream(dreamId as DreamId).pipe(
+          : store.getDream(dreamId).pipe(
               Effect.map((dream) => [dream.workspaceId]),
               Effect.orElseSucceed(() => []),
             );
@@ -655,7 +647,9 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
             ...workspacesMentioned(payload),
             ...dreamWorkspaces,
           ])) {
-            const state = yield* store.getWorkspace(workspaceId as WorkspaceId).pipe(Effect.option);
+            const state = yield* store
+              .getWorkspace(WorkspaceId.make(workspaceId))
+              .pipe(Effect.option);
             const holder =
               state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
             if (
@@ -709,15 +703,12 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           : Effect.map(workerHosts.placeOf(path), (host) => host === LOCAL_HOST_ID);
       const listedUnder = (payload: unknown) =>
         Effect.gen(function* () {
-          const fields =
-            typeof payload === "object" && payload !== null
-              ? (payload as Record<string, unknown>)
-              : {};
+          const fields = Predicate.isObject(payload) ? payload : {};
           const path = typeof fields["path"] === "string" ? fields["path"] : undefined;
           if (path !== undefined && isAbsolute(path)) return path;
           const threadId = fields["threadId"];
           if (typeof threadId !== "string") return path;
-          const thread = yield* store.getThread(threadId as ThreadId).pipe(Effect.option);
+          const thread = yield* store.getThread(ThreadId.make(threadId)).pipe(Effect.option);
           if (thread._tag === "None") return undefined;
           return resolve(effectiveCheckout(thread.value).path, path ?? ".");
         });
@@ -738,6 +729,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
                       base === undefined
                         ? readsServerDisk(action, payload)
                         : yield* readsHere(action, payload, base);
+                    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- withoutUnreadable hands back result's own shape, less the entries reader may not see
                     return withoutUnreadable(reader, result, base, level, onDisk) as A;
                   })
                 : Effect.succeed(result),

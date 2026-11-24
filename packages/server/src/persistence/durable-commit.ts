@@ -17,6 +17,7 @@ import * as WriterWorker from "./writer-worker.ts";
 
 const discardConnection = Symbol("discard durable SQLite connection");
 type OwnedConnection = SqlConnection & { readonly [discardConnection]: () => void };
+const isOwned = (conn: SqlConnection): conn is OwnedConnection => discardConnection in conn;
 interface Generation {
   readonly scope: Scope.Closeable;
   connection: OwnedConnection;
@@ -85,10 +86,9 @@ export const durableSqliteLayer = (
               scope,
             );
             const sql = Context.get(context, SqlClient.SqlClient);
-            const stopped =
-              WriterWorker.writerStopped in sql
-                ? (sql as WriterWorker.WriterClient)[WriterWorker.writerStopped]
-                : () => false;
+            const stopped = WriterWorker.isWriterClient(sql)
+              ? sql[WriterWorker.writerStopped]
+              : () => false;
             yield* sql`PRAGMA synchronous = NORMAL`;
             if (initialize !== undefined) yield* initialize(sql);
             const raw = yield* sql.reserve.pipe(Scope.provide(scope));
@@ -160,10 +160,10 @@ export const durableCommit = <A, E, R>(
     Effect.uninterruptible(
       Effect.gen(function* () {
         const conn = yield* sql.reserve;
-        if (!(discardConnection in conn)) {
+        if (!isOwned(conn)) {
           return yield* Effect.die(new Error("durableCommit requires durableSqliteLayer"));
         }
-        const discard = (conn as OwnedConnection)[discardConnection];
+        const discard = conn[discardConnection];
         const execute = (text: string) => conn.executeUnprepared(text, [], undefined);
         return yield* execute("PRAGMA synchronous = FULL").pipe(
           Effect.andThen(execute("BEGIN IMMEDIATE")),

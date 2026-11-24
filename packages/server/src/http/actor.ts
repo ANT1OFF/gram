@@ -1,4 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { Headers, type HttpServerRequest } from "../platform/unstable.ts";
 import { ActorRoles, type Actor } from "./fronted-identity.ts";
 
@@ -15,6 +17,12 @@ import { ActorRoles, type Actor } from "./fronted-identity.ts";
 export const ACTOR_HEADER = "x-gram-actor";
 
 const SEAL_KEY = randomBytes(32);
+
+const decodeSealed = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({ id: Schema.String, name: Schema.String, role: Schema.Literals(ActorRoles) }),
+  ),
+);
 
 const seal = (body: string): string =>
   createHmac("sha256", SEAL_KEY).update(body).digest("base64url");
@@ -48,16 +56,7 @@ export const actorOf = (
   const given = Buffer.from(value.slice(dot + 1));
   const expected = Buffer.from(seal(body));
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return undefined;
-  try {
-    const parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as Partial<Actor>;
-    return typeof parsed.id === "string" &&
-      typeof parsed.name === "string" &&
-      ActorRoles.includes(parsed.role as never)
-      ? { id: parsed.id, name: parsed.name, role: parsed.role! }
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return Option.getOrUndefined(decodeSealed(Buffer.from(body, "base64url").toString("utf8")));
 };
 
 /** The headers of a call made as `actor`, for a test that calls a handler in-process. */

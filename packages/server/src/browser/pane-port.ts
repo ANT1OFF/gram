@@ -2,6 +2,7 @@ import { fork as nodeFork, type ChildProcess, type ForkOptions } from "node:chil
 import { randomUUID } from "node:crypto";
 
 import {
+  fieldsOf,
   PANE_COMMAND_TIMEOUT_MS,
   type PaneCancelMessage,
   type PaneRequest,
@@ -73,16 +74,16 @@ const timedOut: PaneResult = {
 
 /** Electron's `process.parentPort` as the server sees it. */
 export interface PaneMessagePort {
-  postMessage(message: unknown): void;
+  postMessage(message: PaneRequestMessage | PaneCancelMessage): void;
   on(event: "message", listener: (event: { readonly data: unknown }) => void): unknown;
 }
 
 const isPaneResponse = (message: unknown): message is PaneResponseMessage =>
   typeof message === "object" &&
   message !== null &&
-  (message as { type?: unknown }).type === "pane.response" &&
-  typeof (message as { id?: unknown }).id === "string" &&
-  typeof (message as { result?: unknown }).result === "object";
+  fieldsOf(message).get("type") === "pane.response" &&
+  typeof fieldsOf(message).get("id") === "string" &&
+  typeof fieldsOf(message).get("result") === "object";
 
 /** Pane commands over `port`, each answered by id or failed after `timeoutMs`. */
 export const bridgePane = (
@@ -212,15 +213,12 @@ export const forkedPanePort = (
   };
   return {
     postMessage: (message) => {
-      const { type, id } = message as { type?: unknown; id?: unknown };
-      if (typeof id === "string") {
-        if (type === "pane.request") open.add(id);
-        else if (type === "pane.cancel") open.delete(id);
-      }
+      const { type, id } = message;
+      if (type === "pane.request") open.add(id);
+      else open.delete(id);
       const host = live();
-      host.send(message as object, (error) => {
-        if (error !== null && typeof id === "string" && type === "pane.request" && open.delete(id))
-          deliver(hostGone(id));
+      host.send(message, (error) => {
+        if (error !== null && type === "pane.request" && open.delete(id)) deliver(hostGone(id));
       });
     },
     on: (_event, listener) => {

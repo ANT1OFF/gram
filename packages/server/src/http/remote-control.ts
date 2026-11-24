@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { execFile } from "node:child_process";
 import type { RemoteAccessStatus, TailscaleState } from "@gram/contracts";
 import * as Clock from "effect/Clock";
@@ -19,6 +20,7 @@ import {
   type RemotePairings,
 } from "./remote-access.ts";
 import { fileRemoteSessionStore, privateJsonFile } from "./remote-sessions.ts";
+import * as Predicate from "effect/Predicate";
 
 export class TailscaleMissing extends Data.TaggedError("TailscaleMissing")<{}> {}
 
@@ -58,8 +60,7 @@ const runFile = (file: string, args: ReadonlyArray<string>) =>
       [...args],
       { timeout: 10_000, maxBuffer: 1024 * 1024, windowsHide: true },
       (error, stdout, stderr) => {
-        if ((error as NodeJS.ErrnoException | null)?.code === "ENOENT")
-          return resume(Effect.succeed(undefined));
+        if (errnoCode(error) === "ENOENT") return resume(Effect.succeed(undefined));
         const code = error === null ? 0 : typeof error.code === "number" ? error.code : 1;
         resume(Effect.succeed({ code, stdout: String(stdout), stderr: String(stderr) }));
       },
@@ -89,8 +90,7 @@ export const tailscaleState = (tailscale: TailscaleShape): Effect.Effect<Tailsca
       if (backend !== "Running")
         return result.code === 0 ? { state: "stopped" } : { state: "error" };
       const self = status?.["Self"];
-      const raw =
-        typeof self === "object" && self !== null && "DNSName" in self ? self.DNSName : undefined;
+      const raw = Predicate.isObject(self) && "DNSName" in self ? self.DNSName : undefined;
       const dnsName = typeof raw === "string" ? raw.replace(/\.$/, "").toLowerCase() : "";
       if (!tailnetName(dnsName)) return { state: "error" };
       const certs = status?.["CertDomains"];
@@ -104,16 +104,14 @@ export const tailscaleState = (tailscale: TailscaleShape): Effect.Effect<Tailsca
 const parseJson = (text: string): Record<string, unknown> | undefined => {
   try {
     const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null
-      ? (value as Record<string, unknown>)
-      : undefined;
+    return Predicate.isObject(value) ? value : undefined;
   } catch {
     return undefined;
   }
 };
 
 const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  Predicate.isObject(value) ? value : {};
 
 const tailnetName = (name: string) => {
   try {

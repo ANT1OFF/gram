@@ -1,16 +1,16 @@
 import {
-  currentBaseOf,
   AppToolError,
+  type BoundPr,
+  currentBaseOf,
   isLocalHost,
   MERGE_AFTER_MAX,
   mergeFreezeText,
+  type MergeIntent,
   mergeReviewPolicyOf,
   reviewBotsOf,
   samePr,
-  type BoundPr,
-  type MergeIntent,
   type Thread,
-  type ThreadId,
+  ThreadId,
 } from "@gram/contracts";
 import {
   gh,
@@ -359,7 +359,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
       }),
       handle: (caller, { refresh = false, threadId = caller }) =>
         Effect.gen(function* () {
-          const thread = yield* store.getThread(threadId as ThreadId);
+          const thread = yield* store.getThread(ThreadId.make(threadId));
           yield* refuseOrchestratorPr("pr_status", thread);
           const theirs =
             threadId === caller ? undefined : repoOfIdentity(thread.checkout.cloneIdentity);
@@ -498,7 +498,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         Effect.gen(function* () {
           const tool = "set_auto_merge";
           const thread = yield* store
-            .getThread(threadId as ThreadId)
+            .getThread(ThreadId.make(threadId))
             .pipe(Effect.mapError(failed(tool)));
           yield* refuseOrchestratorPr(tool, thread);
           yield* refuseInBabysit(thread);
@@ -826,7 +826,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
             clearHold,
           };
           const thread = yield* store
-            .getThread((input.threadId ?? caller) as ThreadId)
+            .getThread(ThreadId.make(input.threadId ?? caller))
             .pipe(Effect.mapError(failed(MERGE)));
           yield* refuseOrchestratorPr(MERGE, thread);
           if (thread.babysit?.phase === "watching") {

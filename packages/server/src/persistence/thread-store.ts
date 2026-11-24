@@ -6,74 +6,75 @@ import {
   readDreamCursor,
 } from "./dream-cursor.ts";
 import {
-  type PrWakeFired,
-  type PrWatchSeen,
-  type WakeConditionFired,
-  type WakeConditionSeen,
+  applyProjectSettingsWrites,
+  applySettingsPatch,
   CLOSED_THREADS_LIMIT,
+  type ClosedThread,
+  CompletedReason,
   DEFAULT_SETTINGS,
   DRAFT_STASH_LIMIT,
   DraftStash,
-  hostOf,
   Dream,
+  type DreamId,
   DreamWatermark,
+  embeddingOn,
   FeatureCard,
   FeatureCardSummary,
+  fieldsOf,
   GatewayProfile,
   type GitError,
+  type GramUIMessage,
+  hostOf,
   InvalidState,
   Label,
-  NotFound,
+  type LabelId,
   normalizeThreadPrs,
+  NotFound,
   Palette,
+  type PaletteId,
   PendingRequest,
-  PlanItem,
-  Project,
-  ProjectLocalCheck,
-  applyProjectSettingsWrites,
-  type SettingsWrite,
   PERSONAL_SETTINGS,
-  SettingsPatch,
-  applySettingsPatch,
   personalSettingKey,
-  splitSettingsPatch,
-  withoutPersonalSettings,
-  embeddingOn,
-  settingsPatchPaths,
+  PlanItem,
+  type ProfileId,
+  Project,
   ProjectId,
+  ProjectLocalCheck,
+  type PrWakeFired,
+  type PrWatchSeen,
+  type QueuedInput,
+  QueueItemId,
+  type RequestId,
   SeenConnector,
   Settings,
+  SettingsPatch,
+  settingsPatchPaths,
+  type SettingsWrite,
+  splitSettingsPatch,
+  type StashId,
+  type TaskChipData,
   TaskChipDataSchema,
-  WaitItem,
+  type TaskId,
   Thread,
+  ThreadId,
+  ThreadNotFound,
   ThreadPlan,
   ThreadWake,
-  ThreadNotFound,
-  UIMessageSchema,
-  UsageSummary,
-  UserInput,
-  WorkerReport,
-  WorkspaceState,
-  type ClosedThread,
-  type CompletedReason,
-  type DreamId,
-  type LabelId,
-  type QueueItemId,
-  type QueuedInput,
-  type PaletteId,
-  type ProfileId,
-  type RequestId,
-  type StashId,
-  type GramUIMessage,
-  type TaskChipData,
-  type TaskId,
-  type WaitId,
-  ThreadId,
   TurnEndReason,
-  type TurnId,
-  type WorkspaceId,
+  TurnId,
+  UIMessageSchema,
   type UsageOverview,
   type UsageOverviewQuery,
+  UsageSummary,
+  UserInput,
+  type WaitId,
+  WaitItem,
+  type WakeConditionFired,
+  type WakeConditionSeen,
+  withoutPersonalSettings,
+  WorkerReport,
+  WorkspaceId,
+  WorkspaceState,
 } from "@gram/contracts";
 import { projectRoot, projectRootKey } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -119,6 +120,7 @@ import { durableCommit, durableSqliteLayer } from "./durable-commit.ts";
 import { makeMessageReceipts } from "./message-receipts.ts";
 import { MergeFence, type PendingMerge } from "./merge-fence.ts";
 import { DAY_MS } from "../zone-time.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * `next` with `parkedAt` kept in step with `parked`: stamped `now` when an edit archives the thread,
@@ -1169,7 +1171,17 @@ const threadWakePrJson = (wake: ThreadWake): string | null =>
 
 const alreadyHere = (message: string) => new InvalidState({ message });
 
+const roleOf = (role: string): GramUIMessage["role"] =>
+  role === "user" || role === "system" ? role : "assistant";
+const isCompletedReason = Schema.is(CompletedReason);
+const completedReasonOf = (reason: string | null | undefined) =>
+  isCompletedReason(reason) ? reason : undefined;
+const isTurnEndReason = Schema.is(TurnEndReason);
+const turnEndReasonOf = (reason: string | null | undefined) =>
+  isTurnEndReason(reason) ? reason : undefined;
+
 const toJson = <S extends Schema.Top>(schema: S, value: S["Type"]): string =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored values are JSON, so any stored schema encodes to unknown
   JSON.stringify(Schema.encodeSync(schema as unknown as Schema.Codec<S["Type"], unknown>)(value));
 
 const ENCODED_DEFAULT_SETTINGS = Schema.encodeSync(Settings)(DEFAULT_SETTINGS);
@@ -1226,6 +1238,7 @@ const run = <A, E, R>(
 ): Effect.Effect<A, Exclude<E, SqlError>, R> =>
   effect.pipe(
     Effect.catch((e) =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript can't narrow a generic E by instanceof
       e instanceof SqlError ? Effect.die(e) : Effect.fail(e as Exclude<E, SqlError>),
     ),
   );
@@ -2058,7 +2071,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 continue;
               }
               yield* unreadable("threads", row.id, decoded.paths);
-              (row.parked === 1 ? unknownParked : unknown).push(row.id as ThreadId);
+              (row.parked === 1 ? unknownParked : unknown).push(ThreadId.make(row.id));
             }
             return { threads, unknown, unknownParked } as const;
           }),
@@ -2191,10 +2204,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       const actor =
                         r.actor === null ? undefined : decodeStored(StoredActorJson, r.actor);
                       return {
-                        id: r.id as QueueItemId,
+                        id: QueueItemId.make(r.id),
                         input,
                         ...(r.notice_key === null ? {} : { noticeKey: r.notice_key }),
-                        ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
+                        ...(r.turn_id === null ? {} : { turnId: TurnId.make(r.turn_id) }),
                         ...(actor === undefined ? {} : { actor: actor.ok ? actor.value : {} }),
                       };
                     }),
@@ -2244,8 +2257,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 rows[0] === undefined
                   ? undefined
                   : {
-                      role: rows[0].role as GramUIMessage["role"],
-                      turnId: (rows[0].turn_id ?? undefined) as TurnId | undefined,
+                      role: roleOf(rows[0].role),
+                      turnId: rows[0].turn_id === null ? undefined : TurnId.make(rows[0].turn_id),
                     },
               ),
             ),
@@ -2345,9 +2358,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           run(
             sql<{ completed_reason: string | null }>`SELECT completed_reason FROM threads
               WHERE id = ${id}`.pipe(
-              Effect.map(
-                (rows) => (rows[0]?.completed_reason ?? undefined) as CompletedReason | undefined,
-              ),
+              Effect.map((rows) => completedReasonOf(rows[0]?.completed_reason)),
             ),
           ),
         updateSettings: (f, touched) =>
@@ -3014,7 +3025,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 (r) =>
                   mapDecoded(decodeStored(UIMessageSchema, r.message), (message) => ({
                     message,
-                    ...(r.turn_id === null ? {} : { turnId: r.turn_id as TurnId }),
+                    ...(r.turn_id === null ? {} : { turnId: TurnId.make(r.turn_id) }),
                   })),
               )) satisfies MovedHistory["messages"];
               const turnRows = yield* sql<{
@@ -3032,7 +3043,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                     : Schema.decodeUnknownOption(TurnEndReason)(r.reason);
                 const usage = r.usage === null ? undefined : decodeStored(UsageSummary, r.usage);
                 return {
-                  id: r.id as TurnId,
+                  id: TurnId.make(r.id),
                   startedAt: Number(r.started_at),
                   ...(r.ended_at === null ? {} : { endedAt: Number(r.ended_at) }),
                   ...(reason === undefined || Option.isNone(reason)
@@ -3058,8 +3069,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               RETURNING id, thread_id, started_at, ended_at`.pipe(
               Effect.map((rows) =>
                 rows.map((r): TurnRecord => ({
-                  id: r.id as TurnId,
-                  threadId: r.thread_id as ThreadId,
+                  id: TurnId.make(r.id),
+                  threadId: ThreadId.make(r.thread_id),
                   startedAt: Number(r.started_at),
                   endedAt: Number(r.ended_at),
                   reason: "interrupted",
@@ -3092,11 +3103,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 const r = rows[0];
                 if (r === undefined) return undefined;
                 return {
-                  id: r.id as TurnId,
-                  threadId: r.thread_id as ThreadId,
+                  id: TurnId.make(r.id),
+                  threadId: ThreadId.make(r.thread_id),
                   startedAt: Number(r.started_at),
                   endedAt: r.ended_at === null ? undefined : Number(r.ended_at),
-                  reason: (r.reason ?? undefined) as TurnEndReason | undefined,
+                  reason: turnEndReasonOf(r.reason),
                 } satisfies TurnRecord;
               }),
             ),
@@ -3107,11 +3118,11 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               WHERE thread_id = ${threadId} ORDER BY started_at, rowid`.pipe(
               Effect.map((rows) =>
                 rows.map((r): TurnRecord => ({
-                  id: r.id as TurnId,
-                  threadId: r.thread_id as ThreadId,
+                  id: TurnId.make(r.id),
+                  threadId: ThreadId.make(r.thread_id),
                   startedAt: Number(r.started_at),
                   endedAt: r.ended_at === null ? undefined : Number(r.ended_at),
-                  reason: (r.reason ?? undefined) as TurnEndReason | undefined,
+                  reason: turnEndReasonOf(r.reason),
                 })),
               ),
             ),
@@ -3382,10 +3393,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             Effect.gen(function* () {
               const encoded = Schema.encodeSync(SettingsPatch)(splitSettingsPatch(patch).personal);
               for (const path of PERSONAL_SETTINGS) {
-                const section = (encoded as Record<string, unknown>)[path[0]];
-                if (typeof section !== "object" || section === null || !(path[1] in section))
-                  continue;
-                const value = (section as Record<string, unknown>)[path[1]];
+                const section = fieldsOf(encoded).get(path[0]);
+                if (!Predicate.isObject(section) || !(path[1] in section)) continue;
+                const value = section[path[1]];
                 const key = personalSettingKey(path);
                 if (value === null || value === undefined) {
                   yield* sql`DELETE FROM person_settings WHERE person = ${person} AND key = ${key}`;
@@ -3471,7 +3481,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               if (holder !== undefined) {
                 return yield* new InvalidState({
                   message: `Close the orchestrator of ${state.workspace.name} before removing the workspace.`,
-                  threadId: holder.id as ThreadId,
+                  threadId: ThreadId.make(holder.id),
                 });
               }
               const [dreaming] = yield* sql<{ id: string }>`SELECT id FROM threads WHERE id IN (
@@ -3479,7 +3489,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               if (dreaming !== undefined) {
                 return yield* new InvalidState({
                   message: `A memory update thread of ${state.workspace.name} is still open. Try removing it again.`,
-                  threadId: dreaming.id as ThreadId,
+                  threadId: ThreadId.make(dreaming.id),
                 });
               }
               for (const table of [
@@ -3895,7 +3905,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 rows.map((r): ActorEventRecord => {
                   let data: Record<string, unknown> = {};
                   try {
-                    data = JSON.parse(r.data) as Record<string, unknown>;
+                    const parsed: unknown = JSON.parse(r.data);
+                    if (Predicate.isObject(parsed)) data = parsed;
                   } catch (_aRowWhoseDetailDoesntParseStillSaysWho) {}
                   return {
                     seq: Number(r.seq),
@@ -3970,7 +3981,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                         AND json_extract(data, '$.spawnedBy.feature') = ${from}`;
               const renamed: Array<Thread> = [];
               for (const row of rows) {
-                const thread = yield* readThread(row.id as ThreadId).pipe(
+                const thread = yield* readThread(ThreadId.make(row.id)).pipe(
                   Effect.catchTag("ThreadNotFound", () => Effect.succeed(undefined)),
                 );
                 if (thread?.spawnedBy?.feature !== from) continue;
@@ -4101,7 +4112,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 rows.map((r): SettingsAuditRecord => ({
                   seq: Number(r.seq),
                   at: Number(r.at),
-                  threadId: r.thread_id as ThreadId,
+                  threadId: ThreadId.make(r.thread_id),
                   proposerRole: r.proposer_role,
                   scope:
                     r.scope === "project"
@@ -4109,14 +4120,16 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       : r.scope === "workspace"
                         ? "workspace"
                         : "app",
-                  ...(r.project_id == null ? {} : { projectId: r.project_id as ProjectId }),
+                  ...(r.project_id == null ? {} : { projectId: ProjectId.make(r.project_id) }),
                   ...(r.workspace_id === null
                     ? {}
-                    : { workspaceId: r.workspace_id as WorkspaceId }),
+                    : { workspaceId: WorkspaceId.make(r.workspace_id) }),
                   ...(r.request_id === null ? {} : { requestId: r.request_id }),
                   approvedBy: "user",
                   approvedAt: Number(r.approved_at),
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the audit row holds the changes this store wrote as JSON
                   changes: JSON.parse(r.changes) as SettingsAuditEntry["changes"],
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the audit row holds the rows this store wrote as JSON
                   shown: JSON.parse(r.shown) as SettingsAuditEntry["shown"],
                   ...(r.reason === null ? {} : { reason: r.reason }),
                 })),
