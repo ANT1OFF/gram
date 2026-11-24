@@ -49,6 +49,7 @@ import { PrRefsProvider } from "./pr-ref-link";
 import {
   beginScrollGesture,
   consumeScrollGesture,
+  holdStill,
   scrollOwner,
   type ScrollGesture,
 } from "./transcript-scroll";
@@ -845,6 +846,7 @@ export function Transcript({
             event.button === 0 &&
             event.clientX >= bounds.left + el.clientWidth;
           interruptJump(scrollbar);
+          if (!scrollbar) holdStill(virtualizer, el);
           if (scrollbar) {
             scrollbarPointer.current = { id: event.pointerId, y: event.clientY };
             manualGesture.current = beginScrollGesture(
@@ -881,7 +883,10 @@ export function Transcript({
             ) != null ||
             (event.key === " " && target?.closest("button, a, [role=button]") != null);
           interruptJump(!operatesControl);
-          if (operatesControl) return;
+          if (operatesControl) {
+            holdStill(virtualizer, event.currentTarget);
+            return;
+          }
           const forward =
             !["ArrowUp", "PageUp", "Home"].includes(event.key) &&
             !(event.key === " " && event.shiftKey);
