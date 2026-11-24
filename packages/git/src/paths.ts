@@ -55,7 +55,6 @@ export const relativeInside = (
 
 const foreignRoots = new Set<string>();
 
-/** Paths `noteForeignPath` was given that cross a kept folder: kept folders only grow, so they stay so. */
 const crossingRoots = new Set<string>();
 
 const keptRoots = new Set<string>();
@@ -157,7 +156,6 @@ export const pathForms = (path: string): ReadonlyArray<string> => {
   return [...forms];
 };
 
-/** Keeps every spelling of `resolved`, and drops the marks that cross one newly kept. */
 const keepForms = (resolved: string): void => {
   const added: Array<string> = [];
   for (const form of pathForms(resolved)) {
@@ -190,8 +188,6 @@ export const noteForeignPath = (path: string): void => {
   if (!nodePath.isAbsolute(path)) return;
   settleKept();
   const at = nodePath.resolve(path);
-  // Every mark is checked against each kept folder as that folder is kept (`dropCrossingMarks`),
-  // so a path already marked or already refused needs no second look.
   if (foreignRoots.has(at) || crossingRoots.has(at)) return;
   if (crossesKept(at)) crossingRoots.add(at);
   else foreignRoots.add(at);

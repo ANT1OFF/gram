@@ -18,7 +18,6 @@ const ownPending = new PendingPaths();
 
 const HERE_FORMS_MS = 30_000;
 
-/** `hereForms` by path, from its last call: a path's spellings asked of the disk twice a minute. */
 let hereFormsByPath = new Map<string, { forms: ReadonlyArray<string>; until: number }>();
 
 /** Forgets every `keepFoldersHere`, for tests. */
@@ -83,9 +82,8 @@ export const claimableByHost = (path: string, here: ReadonlyArray<string> = []):
     for (const form of pathForms(pending)) ownFolders.add(folded(form));
   const at = folded(resolve(path));
   for (const own of ownFolders) if (isInside(at, own) || isInside(own, at)) return false;
-  const { forms, above } = indexOfHere(here);
-  // One of `here` lies below `at`, or `at` lies below one of them.
-  if (above.has(at)) return false;
+  const { forms, foldersAbove } = indexOfHere(here);
+  if (foldersAbove.has(at)) return false;
   for (let up = at; dirname(up) !== up;) {
     up = dirname(up);
     if (forms.has(up)) return false;
@@ -93,23 +91,22 @@ export const claimableByHost = (path: string, here: ReadonlyArray<string> = []):
   return true;
 };
 
-/** `here` as a set, and every folder strictly above one of them, for `claimableByHost`. */
 const hereIndexes = new WeakMap<
   ReadonlyArray<string>,
-  { forms: ReadonlySet<string>; above: ReadonlySet<string> }
+  { forms: ReadonlySet<string>; foldersAbove: ReadonlySet<string> }
 >();
 
 const indexOfHere = (here: ReadonlyArray<string>) => {
   let index = hereIndexes.get(here);
   if (index !== undefined) return index;
-  const above = new Set<string>();
+  const foldersAbove = new Set<string>();
   for (const form of here)
     for (let up = form; dirname(up) !== up;) {
       up = dirname(up);
-      if (above.has(up)) break;
-      above.add(up);
+      if (foldersAbove.has(up)) break;
+      foldersAbove.add(up);
     }
-  index = { forms: new Set(here), above };
+  index = { forms: new Set(here), foldersAbove };
   hereIndexes.set(here, index);
   return index;
 };
