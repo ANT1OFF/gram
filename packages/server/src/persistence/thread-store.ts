@@ -1,6 +1,11 @@
 import type { StoredActor } from "../host/ownership.ts";
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
-import { DreamCursor, laterCursor } from "./dream-cursor.ts";
+import {
+  advanceDreamCursor,
+  type DreamCursor,
+  eventsAfter,
+  readDreamCursor,
+} from "./dream-cursor.ts";
 import {
   type PrWakeFired,
   type PrWatchSeen,
@@ -3775,46 +3780,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           ),
 
         listOrchestrationEventsAfter: (workspaceId, afterSeq, kinds) =>
-          run(
-            sql<{ seq: number; at: number; kind: string; data: string }>`SELECT seq, at, kind, data
-              FROM orchestration_events
-              WHERE workspace_id = ${workspaceId} AND seq > ${afterSeq}
-                AND kind IN (SELECT value FROM json_each(${JSON.stringify(kinds)}))
-              ORDER BY seq`.pipe(
-              Effect.map((rows) =>
-                rows.map((r): OrchestrationEventRecord => ({
-                  seq: Number(r.seq),
-                  workspaceId,
-                  at: Number(r.at),
-                  kind: r.kind,
-                  data: JSON.parse(r.data) as unknown,
-                })),
-              ),
-            ),
-          ),
-        getDreamCursor: (id) =>
-          run(
-            sql<{ data: string }>`SELECT data FROM dream_cursors WHERE workspace_id = ${id}`.pipe(
-              Effect.map((rows) => {
-                if (rows[0] === undefined) return undefined;
-                const decoded = decodeStored(DreamCursor, rows[0].data);
-                return decoded.ok ? decoded.value : undefined;
-              }),
-            ),
-          ),
-        advanceDreamCursor: (id, cursor) =>
-          tx(
-            Effect.gen(function* () {
-              const rows = yield* sql<{
-                data: string;
-              }>`SELECT data FROM dream_cursors WHERE workspace_id = ${id}`;
-              const decoded =
-                rows[0] === undefined ? undefined : decodeStored(DreamCursor, rows[0].data);
-              const next = decoded?.ok === true ? laterCursor(decoded.value, cursor) : cursor;
-              yield* sql`INSERT INTO dream_cursors (workspace_id, data) VALUES (${id}, ${toJson(DreamCursor, next)})
-                ON CONFLICT (workspace_id) DO UPDATE SET data = excluded.data`;
-            }),
-          ),
+          run(eventsAfter(sql, workspaceId, afterSeq, kinds)),
+        getDreamCursor: (id) => run(readDreamCursor(sql, id)),
+        advanceDreamCursor: (id, cursor) => tx(advanceDreamCursor(sql, id, cursor)),
         getAutomaticDreamState: (id) => run(readAutomaticDreamState(id)),
         updateAutomaticDreamState: (id, f) =>
           tx(

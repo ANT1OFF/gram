@@ -27,6 +27,10 @@ import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
 
 export { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
+export { MEMORY_INDEX_TEMPLATE } from "./memory-template.ts";
+export type { MemoryVersionSource } from "./memory-versions.ts";
+import { MEMORY_INDEX_TEMPLATE } from "./memory-template.ts";
+import { adoptedNote, adoptionNote, type MemoryVersionSource } from "./memory-versions.ts";
 
 /** The index every orchestrator session starts from. */
 export const MEMORY_INDEX = "MEMORY.md";
@@ -58,40 +62,6 @@ const HISTORY_DIR = ".history";
 const ADOPTED_FILE = ".adopted";
 const VERSION = /^\d{4}$/;
 const SEGMENT_MAX_LENGTH = 100;
-
-/** What a new workspace's `MEMORY.md` starts as. */
-export const MEMORY_INDEX_TEMPLATE = `# Memory index
-
-Memory is a folder of short notes, one per subject, and this index, which every session starts
-from. Keep this file under 8 KB: one line per note, as \`- [[name]]: what it holds\`, plus the few
-facts worth having in every session.
-
-The orchestrator and its workers all read and write memory; the orchestrator keeps it tidy. Read a
-note before you change it and keep what you aren't changing. Add an entry with \`memory_append\`,
-change one with \`memory_edit\`, and rewrite a whole note with \`memory_write\` and the
-\`revision\` its read gave you.
-
-A note starts with front matter: \`name\` (the note's file name without \`.md\`), \`description\`
-(one line, what decides whether it is worth reading) and \`type\` (\`goal\`, \`decision\`,
-\`repo\`, \`project\`, \`feedback\` or \`reference\`). Date every entry and name its source (a
-feature, a PR, a thread): an undated fact can't be judged stale. Nothing derivable belongs here:
-worker states, PRs and budgets come from \`list_workers\`, and what a repo's CLAUDE.md already says
-stays there. Link related notes with \`[[name]]\`.
-
-New workspaces start with only this index. The names below are suggestions, not an inventory.
-Use \`memory_list\` to see which notes exist. Make a note only when there is something to record,
-then add it here; a missing suggested note has no recorded content yet.
-
-## Suggested notes (made only when needed)
-
-- goals.md: what the user wants from this workspace, in priority order, dated
-- decisions.md: what was decided, why, and which feature or PR it came from
-- standing-decisions.md: the user's rulings that hold until they say otherwise, in their words
-- map.md: how the repos relate: who calls whom, where contracts live, merge and deploy order
-- questions.md: open questions for the user; each has an id and is closed, not deleted
-- repos/<name>.md: what was learned about working in one repo that its CLAUDE.md doesn't say
-- one note per other subject, such as a system, a trap or how the user likes something done
-`;
 
 const byPath = (a: { readonly path: string }, b: { readonly path: string }) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
@@ -153,49 +123,6 @@ export interface MemoryVersion {
   /** The version it was made from. */
   readonly basedOn?: string | undefined;
 }
-
-/** The memory update a version came from, kept beside it so History can say so. */
-export interface MemoryVersionSource {
-  readonly dreamId: string;
-  readonly mode: "review" | "auto";
-  /** Its one line on what it changed. */
-  readonly summary?: string | undefined;
-}
-
-const SOURCE_SUMMARY_MAX = 300;
-
-/** A version's `.adopted` note, as far as it can be read; nothing for a hand-edited one. */
-const adoptedNote = (
-  text: string,
-): { adoptedAt?: number; basedOn?: string; source?: MemoryVersionSource } => {
-  try {
-    const note = JSON.parse(text) as Record<string, unknown>;
-    const out: { adoptedAt?: number; basedOn?: string; source?: MemoryVersionSource } = {};
-    if (typeof note["adoptedAt"] === "number" && Number.isFinite(note["adoptedAt"]))
-      out.adoptedAt = note["adoptedAt"];
-    if (typeof note["basedOn"] === "string" && VERSION.test(note["basedOn"]))
-      out.basedOn = note["basedOn"];
-    const source = note["source"] as Record<string, unknown> | undefined;
-    if (
-      typeof source === "object" &&
-      source !== null &&
-      typeof source["dreamId"] === "string" &&
-      /^[A-Za-z0-9-]{8,64}$/.test(source["dreamId"]) &&
-      (source["mode"] === "review" || source["mode"] === "auto")
-    ) {
-      out.source = {
-        dreamId: source["dreamId"],
-        mode: source["mode"],
-        ...(typeof source["summary"] === "string"
-          ? { summary: redactText(source["summary"]).slice(0, SOURCE_SUMMARY_MAX) }
-          : {}),
-      };
-    }
-    return out;
-  } catch (_handEditedIntoSomethingElse) {
-    return {};
-  }
-};
 
 /** The current version by content hash, to tell later which files were written since. */
 export interface MemorySnapshot {
@@ -1152,20 +1079,7 @@ const make = (root: string): OrchestrationMemoryShape => {
         for (const file of files) {
           yield* writeAdoption(workspaceId, `${within}/${file.path}`, within, file.content);
         }
-        const note = {
-          adoptedAt: now,
-          ...(current === undefined ? {} : { basedOn: current }),
-          ...(source === undefined
-            ? {}
-            : {
-                source: {
-                  ...source,
-                  ...(source.summary === undefined
-                    ? {}
-                    : { summary: redactText(source.summary).slice(0, SOURCE_SUMMARY_MAX) }),
-                },
-              }),
-        };
+        const note = adoptionNote(now, current, source);
         yield* writeAdoption(
           workspaceId,
           `${within}/${ADOPTED_FILE}`,
@@ -1407,15 +1321,9 @@ const make = (root: string): OrchestrationMemoryShape => {
           const current = yield* adopted(workspaceId);
           const out: Array<MemoryVersion> = [];
           for (const version of yield* versionNames(workspaceId)) {
+            const files = (yield* listVersion(workspaceId, version)).length;
             const note = yield* noteOf(workspaceId, version);
-            out.push({
-              version,
-              adoptedAt: note.adoptedAt,
-              files: (yield* listVersion(workspaceId, version)).length,
-              current: version === current,
-              ...(note.source === undefined ? {} : { source: note.source }),
-              ...(note.basedOn === undefined ? {} : { basedOn: note.basedOn }),
-            });
+            out.push({ version, files, current: version === current, ...note });
           }
           return out;
         }),

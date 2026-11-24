@@ -106,6 +106,10 @@ const historyOf = (fixture: Fixture, key: string): ReadonlyArray<string> => {
   return existsSync(dir) ? readdirSync(dir).toSorted() : [];
 };
 
+const versionName = (n: number) => String(n).padStart(4, "0");
+const versionRange = (from: number, to: number) =>
+  Array.from({ length: to - from + 1 }, (_, i) => versionName(from + i));
+
 describe("OrchestrationMemory: layout", () => {
   it.effect("new memory is sparse and its index labels suggested files", () =>
     withMemory((f) =>
@@ -925,9 +929,6 @@ describe("OrchestrationMemory: adoption", () => {
   it.effect("keeps the newest few besides the current, and restore points back at one", () =>
     withMemory((f) =>
       Effect.gen(function* () {
-        const name = (n: number) => String(n).padStart(4, "0");
-        const range = (from: number, to: number) =>
-          Array.from({ length: to - from + 1 }, (_, i) => name(from + i));
         const last = MEMORY_VERSIONS_KEEP + 3;
         yield* f.memory.init(WS);
         for (let i = 2; i <= last; i++) {
@@ -935,17 +936,19 @@ describe("OrchestrationMemory: adoption", () => {
         }
         const kept = () => Effect.map(f.memory.versions(WS), (all) => all.map((v) => v.version));
         const oldest = last - MEMORY_VERSIONS_KEEP;
-        expect(yield* kept()).toEqual(range(oldest, last));
+        expect(yield* kept()).toEqual(versionRange(oldest, last));
 
-        yield* f.memory.restore(WS, name(oldest));
-        expect(yield* f.memory.currentVersion(WS)).toBe(name(oldest));
+        yield* f.memory.restore(WS, versionName(oldest));
+        expect(yield* f.memory.currentVersion(WS)).toBe(versionName(oldest));
         expect(yield* f.memory.index(WS)).toBe(`# v${oldest}\n`);
         // Nothing was copied or deleted, and the next number doesn't reuse a pruned or newer one.
         expect(yield* kept()).toHaveLength(MEMORY_VERSIONS_KEEP + 1);
-        expect(yield* f.memory.adopt(WS, [INDEX], { basedOn: name(oldest) })).toBe(name(last + 1));
+        expect(yield* f.memory.adopt(WS, [INDEX], { basedOn: versionName(oldest) })).toBe(
+          versionName(last + 1),
+        );
         // The restored one is no longer current and is the oldest of the others.
-        expect(yield* kept()).toEqual(range(oldest + 1, last + 1));
-        expect(yield* Effect.flip(f.memory.restore(WS, name(oldest)))).toMatchObject({
+        expect(yield* kept()).toEqual(versionRange(oldest + 1, last + 1));
+        expect(yield* Effect.flip(f.memory.restore(WS, versionName(oldest)))).toMatchObject({
           _tag: "NotFound",
         });
       }),

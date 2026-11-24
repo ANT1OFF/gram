@@ -492,11 +492,6 @@ const projectOrigins = Effect.gen(function* () {
   yield* sql`ALTER TABLE projects ADD COLUMN origin_identity TEXT`;
 });
 
-/**
- * Where each workspace's memory update reads on from: past these worker reports and orchestration
- * events, and things that happened after `at`. Every workspace starts at the moment it migrates,
- * so the transcript backlog the earlier memory updates kept is dropped rather than caught up.
- */
 const dreamCursors = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`CREATE TABLE dream_cursors (workspace_id TEXT PRIMARY KEY, data TEXT NOT NULL)`;

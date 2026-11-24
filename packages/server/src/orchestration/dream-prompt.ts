@@ -127,7 +127,6 @@ const modeLine = (mode: DreamMode | undefined): string =>
     ? "This run uses Auto mode: Gram applies valid output as a new memory version without review, keeps the version before it to revert to, and never takes a change to standing-decisions.md. A note you change that the orchestrator also changed while you ran keeps the orchestrator's text. Do not apply output yourself or request a separate adoption approval. Native permission prompts still apply."
     : "This run uses Review mode: the user reviews and adopts or discards the validated output. Do not apply output yourself.";
 
-/** How memory is shaped: the same for every memory update, since Gram and the reviewer rely on it. */
 const memoryShapeLines = (input: DreamPromptInput): ReadonlyArray<string> => [
   `Memory is a folder of short notes, one per subject, and an index. A note opens with flat front matter: \`name\` (its file name without .md), a one-line \`description\` (what decides whether it is worth reading) and \`type\` (goal, decision, repo, project, feedback or reference). Link related notes with [[name]], and only to notes that exist. These have fixed roles:`,
   `- ${MEMORY_INDEX} — the index: one line per note, \`- [[name]]: what it holds\`, plus the few facts worth having every time. Every session loads it, so keep it a table of contents: aim under ${kb(MEMORY_INDEX_TARGET_BYTES)}, and move detail into the notes. At most ${kb(MEMORY_INDEX_MAX_BYTES)}.`,
@@ -149,11 +148,6 @@ const memoryShapeLines = (input: DreamPromptInput): ReadonlyArray<string> => [
   "Where an entry a later session will act on (a command, a path, a convention, a ruling and its why) is new or changed, say how you checked it: `(verified 2026-09-25: thread t-123, seq 48)`, `(verified 2026-09-25: PR #12 merged)`, or `(unverified 2026-09-25: no session says so)`.",
 ];
 
-/**
- * The first message of a memory update that reads what happened since the last one: short
- * records Gram already keeps, not transcripts. Its cost follows how much happened, so it can run
- * often; the work is to file what lasts where it belongs and drop what no longer holds.
- */
 const recentDreamPrompt = (input: DreamPromptInput): string =>
   [
     `Consolidate the long-term memory of the orchestrator of the "${input.workspaceName}" workspace: bring it up to date with what happened since it was last updated.`,

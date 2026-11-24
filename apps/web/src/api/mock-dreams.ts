@@ -26,6 +26,7 @@ import {
 } from "@gram/contracts";
 
 import { failDreamSoon } from "./mock-dream-fails";
+import { DECISIONS_BEFORE, DECISIONS_DREAM, DECISIONS_LIVE, seedFiles } from "./mock-dream-seed";
 import { mockMerge, sidesOf } from "./mock-dream-merge";
 import { MockInvalidState } from "./mock-fs";
 import type { AdoptDreamInput, ApiServerEvent, DreamPreviewInput, StartDreamInput } from "./types";
@@ -56,7 +57,7 @@ const FILE_MAX_BYTES = 32 * 1024;
 const MAX_FILES = 40;
 const VERSIONS_KEEP = 6;
 
-interface MockFile {
+export interface MockFile {
   readonly content: string;
   readonly modifiedAt: number;
 }
@@ -79,7 +80,6 @@ interface MockOutput {
   readonly digest: string;
 }
 
-/** What happened since a workspace's last adopted update, as the mock counts it. */
 interface MockRecent {
   readonly reports: number;
   readonly merges: number;
@@ -88,7 +88,6 @@ interface MockRecent {
 }
 
 const MOCK_RECENT: MockRecent = { reports: 7, merges: 3, questions: 2, threads: 5 };
-/** About what one item of a since-file costs to read. */
 const TOKENS_PER_ITEM = 320;
 
 const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
@@ -109,84 +108,6 @@ const pathProblem = (path: string): string | undefined => {
     return "Memory files are Markdown: end the name in .md";
   }
   return undefined;
-};
-
-const QUESTIONS = `# Questions for the user
-
-## Q1 · open · 2026-09-21
-Should the mail trigger retry when the provider answers 429, or drop the mail and report it?
-Source: mail-trigger, thread "Mail trigger queue worker".
-Options (pick one):
-1. Retry with backoff — five tries, then report it (recommended)
-2. Drop and report — the sender resends
-3. Park it — hold the mail until someone looks
-
-## Q3 · open · 2026-09-23
-The docs repo has no preview deploy. Is a merged PR enough for "preview deployed" there?
-
-## Q2 · answered 2026-09-19
-Which repo owns the registry schema?
-Answer: web owns it; api reads a generated copy.
-
-## Q4 · decided 2026-09-22
-Merge api before web?
-Decided: yes. The web client is generated from the api schema, so api lands first. Source: PR api#212.
-`;
-
-const DECISIONS_BEFORE = `# Decisions
-
-- 2026-09-17 · One branch name per feature in every repo (feat/<slug>). Source: mail-trigger.
-- 2026-09-18 · The api merges before web, and docs last. Source: PR api#212.
-`;
-
-const DECISIONS_LIVE = `${DECISIONS_BEFORE}- 2026-09-23 · Queue consumers retry with backoff, five times at most. Source: mail-trigger.
-`;
-
-const DECISIONS_DREAM = `# Decisions
-
-- 2026-09-17 · One branch name per feature in every repo (feat/<slug>). Source: mail-trigger.
-- 2026-09-18 · Merge order is api, then web, then docs. Source: PR api#212.
-- 2026-09-20 · Contracts are agreed in api before web builds against them. Source: registry-paging.
-`;
-
-const seedFiles = (now: number): Map<string, MockFile> => {
-  const day = 24 * 60 * 60_000;
-  return new Map<string, MockFile>([
-    [
-      INDEX,
-      {
-        content:
-          "# Memory index\n\n- goals.md: what this workspace is for, in priority order\n- decisions.md: what was decided and why\n- map.md: how api, web and docs relate\n- questions.md: open questions for the user\n- repos/api.md: what working in api taught us\n",
-        modifiedAt: now - 6 * day,
-      },
-    ],
-    [
-      "goals.md",
-      {
-        content:
-          "# Goals\n\n1. 2026-09-16 · Ship the mail trigger across api, web and docs this quarter.\n2. 2026-09-18 · Page the registry list before it outgrows one response.\n",
-        modifiedAt: now - 5 * day,
-      },
-    ],
-    ["decisions.md", { content: DECISIONS_LIVE, modifiedAt: now - 3 * 60 * 60_000 }],
-    [
-      "map.md",
-      {
-        content:
-          "# Map\n\n- api: the HTTP service; contracts live in api/contracts\n- web: the front end; builds against api's generated client\n- docs: the how-to site; merged last\n",
-        modifiedAt: now - 4 * day,
-      },
-    ],
-    ["questions.md", { content: QUESTIONS, modifiedAt: now - day }],
-    [
-      "repos/api.md",
-      {
-        content:
-          "# api\n\n- 2026-09-19 · `uv run pytest tests/queue` needs Redis on 6380, not the default port.\n",
-        modifiedAt: now - 2 * day,
-      },
-    ],
-  ]);
 };
 
 const MERGE_MS = 2000;
@@ -475,7 +396,6 @@ export function createMockDreams(host: MockDreamsHost) {
 
     async listDreams(workspaceId: WorkspaceId): Promise<readonly Dream[]> {
       const state = requireWorkspace(workspaceId);
-      // As the server does: switching to Auto discards the drafts waiting for review.
       const mode = memoryUpdateModeOf(state.charter);
       const was = modes.get(workspaceId);
       modes.set(workspaceId, mode);
@@ -706,16 +626,15 @@ export function createMockDreams(host: MockDreamsHost) {
         current: "0002",
       });
       lastAdopted.set(workspaceId, now - 3 * day);
-      const recentRead = (reports: number, merges: number, questions: number, threads: number) => ({
-        throughReportSeq: reports,
-        throughEventSeq: merges,
+      const recentRead = (counts: MockRecent) => ({
+        throughReportSeq: counts.reports,
+        throughEventSeq: counts.merges,
         throughAt: now,
         sinceAt: now - 4 * day,
-        reports,
-        merges,
-        questions,
-        threads,
-        estimatedTokens: 300 + (reports + merges + questions + threads) * TOKENS_PER_ITEM,
+        ...counts,
+        estimatedTokens:
+          300 +
+          (counts.reports + counts.merges + counts.questions + counts.threads) * TOKENS_PER_ITEM,
       });
       const home = host.projects().find((p) => p.id === state.workspace.homeProjectId);
       if (home === undefined) throw notFound("project", state.workspace.homeProjectId);
@@ -826,7 +745,7 @@ export function createMockDreams(host: MockDreamsHost) {
             memoryVersion: "0001",
             threadIds: [],
             agentSessions: [],
-            recent: recentRead(9, 4, 1, 6),
+            recent: recentRead({ reports: 9, merges: 4, questions: 1, threads: 6 }),
           },
           model: { agent: "claude", model: "claude-sonnet-5-5" },
           usage: { tokens: { inputTokens: 31_000, outputTokens: 2_400 }, costUsd: 0.12 },
