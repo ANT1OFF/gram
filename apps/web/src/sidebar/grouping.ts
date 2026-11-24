@@ -4,6 +4,7 @@ import {
   sidebarGroup,
   type SidebarGroup,
   type ThreadId,
+  type ThreadStatus,
   type ThreadSummary,
 } from "@gram/contracts";
 
@@ -12,6 +13,18 @@ import { unseenAttention } from "./attention";
 const SECTIONS = ["pinned", "needsYou", "working", "idle", "settled", "parked"] as const;
 export type SidebarSection = (typeof SECTIONS)[number];
 
+const ASKING: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
+
+/**
+ * The status a thread is grouped by. An agent says it awaits an approval or an answer apart from
+ * the request itself, and keeps saying it after the request is answered until its turn goes on;
+ * a request the server's policy decides never shows at all. With no request left to answer, the
+ * thread asks nothing of the user: it is mid-turn, as the status that follows will say. Read as
+ * asking, every busy worker blinked into Needs you, and out, on each tool call.
+ */
+const groupedStatus = (s: Pick<ThreadSummary, "status" | "pendingRequests">): ThreadStatus =>
+  ASKING.has(s.status) && s.pendingRequests.length === 0 ? "running" : s.status;
+
 const groupOf = (
   s: ThreadSummary,
   acknowledged?: Readonly<Record<string, string>> | undefined,
@@ -19,7 +32,7 @@ const groupOf = (
   if (s.thread.awaitingMachine !== undefined)
     return s.thread.awaitingMachine.failed === undefined ? "working" : "needsYou";
   const status = sidebarGroup({
-    status: s.status,
+    status: groupedStatus(s),
     completedAt: s.thread.completedAt,
     babysit: s.thread.babysit,
   });

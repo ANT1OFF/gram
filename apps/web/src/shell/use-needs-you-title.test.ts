@@ -1,10 +1,16 @@
 // @vitest-environment happy-dom
-import type { ProjectId, ThreadId, ThreadStatus, ThreadSummary } from "@gram/contracts";
+import type {
+  ProjectId,
+  ThreadId,
+  ThreadStatus,
+  ThreadSummary,
+} from "@gram/contracts";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 import { resetDerivedAsks, useDerivedAsks } from "@/orchestration/needs-you-store";
+import { awaited } from "@/sidebar/asking-test-fixtures";
 import { useAttentionStore } from "@/sidebar/attention";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -17,7 +23,7 @@ vi.mock("@/embed/slots", () => ({ useEmbedPageTitle: () => at.page }));
 
 const summary = (id: string, status: ThreadStatus, parked = false): ThreadSummary => ({
   status,
-  pendingRequests: [],
+  pendingRequests: awaited(status),
   queue: [],
   thread: {
     id: id as ThreadId,

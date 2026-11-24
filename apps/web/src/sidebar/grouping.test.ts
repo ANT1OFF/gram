@@ -10,6 +10,7 @@ import {
 } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
+import { awaited } from "./asking-test-fixtures";
 import { livesInTree, needsYou, nextNeedsYou, sectionOf, splitForTree } from "./grouping";
 import { selectListed } from "./listed";
 
@@ -19,7 +20,7 @@ const summary = (
   thread: Partial<Thread> = {},
 ): ThreadSummary => ({
   status,
-  pendingRequests: [],
+  pendingRequests: awaited(status),
   queue: [],
   thread: {
     id: id as ThreadId,
@@ -45,6 +46,17 @@ describe("sectionOf", () => {
     expect(sectionOf(summary("a", "error"))).toBe("needsYou");
     expect(sectionOf(summary("a", "starting"))).toBe("working");
     expect(sectionOf(summary("a", "cold"))).toBe("idle");
+  });
+
+  it("reads an asking status with no request left as mid-turn, not Needs you", () => {
+    // An agent says it awaits an answer apart from the request, and keeps saying it until its
+    // turn goes on: a request answered, or decided by policy, leaves the status a beat behind.
+    for (const status of ["needsApproval", "needsInput"] as const) {
+      const answered = { ...summary("a", status), pendingRequests: [] };
+      expect(needsYou(answered)).toBe(false);
+      expect(sectionOf(answered)).toBe("working");
+      expect(needsYou(summary("a", status))).toBe(true);
+    }
   });
 
   it("puts a thread that waits for its machine with the working ones, and under Needs you once none came", () => {
