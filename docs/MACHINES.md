@@ -608,6 +608,12 @@ the local app, as the other `/machines/*` routes are.
   [before its machine](THREAD_PROFILES.md#before-its-machine) is on no machine yet, so it shows
   in no machine's `wanted`: its message waits in its queue, with no time limit, until a machine
   is named for it.
+  `wanted` also turns true ahead of work that is coming, so the machine is back when it arrives
+  (`host/pre-wake.ts`): 90 seconds before a thread's scheduled wake is due (registered with the
+  scheduler as `prewake:<wake id>`, so a control plane asleep then is woken for it), and when a
+  person starts typing a draft in one of its threads (at most once a thread in 10 minutes). Each
+  ask lets go once the machine is back, or a minute past the wake (three minutes for a draft), so a
+  machine started early is stopped when idle like any other.
 - `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
   dialled in. It answers four lists:
   - `reopened`: the sessions it opened again.

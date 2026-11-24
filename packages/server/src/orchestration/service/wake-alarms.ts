@@ -17,7 +17,14 @@ import { isBadgeOf } from "../../git/extra-prs.ts";
 import { redactText } from "../../logging/redact.ts";
 import { conditionWakeOf, type WakeConditionHost } from "../../wakes/conditions.ts";
 import { prWakeFields, prWakeWatches } from "../../wakes/thread-wakes.ts";
+import {
+  armWakeAhead,
+  disarmWake,
+  preWakeKey,
+  type MachinePreWakeShape,
+} from "../../host/pre-wake.ts";
 import { withoutWakes, type StoredWake } from "../outbox.ts";
+export { preWakeOrOff } from "../../host/pre-wake.ts";
 import {
   conditionWakeReason,
   conditionWakeText,
@@ -42,6 +49,8 @@ import type { Digests } from "./digests.ts";
 /** What scheduled wakes take from the rest of the service. */
 export interface WakeAlarmsDeps {
   readonly wake: Digests["wake"];
+  /** Asks for a wake's thread's machine ahead of it. */
+  readonly preWake: MachinePreWakeShape;
 }
 
 /** Scheduled wakes and the PR watches behind them. */
@@ -63,7 +72,7 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
     wakeLock,
     runtimes,
   } = kit;
-  const { wake } = deps;
+  const { wake, preWake } = deps;
 
   const WAKE_RETRY = Duration.minutes(1);
   const NO_WAKE =
@@ -93,6 +102,12 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
   ) =>
     Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
+      if (after === undefined && fired === undefined) {
+        const current = Effect.map(readOutbox(workspaceId), (outbox) =>
+          outbox.wakes?.find((each) => each.id === alarm.id),
+        );
+        yield* armWakeAhead({ alarms: wakeAlarms, timers: wakeClock, preWake }, alarm, current);
+      }
       yield* FiberMap.run(
         wakeAlarms,
         alarm.id,
@@ -269,7 +284,7 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
           return yield* toolError("cancel_wake", `No pending wake of yours has the id ${id}.`);
         }
         for (const alarm of dropped) {
-          yield* FiberMap.remove(wakeAlarms, alarm.id);
+          yield* disarmWake(wakeAlarms, alarm.id);
         }
         if (dropped.length > 0) {
           yield* syncPrWatches(workspaceId);
@@ -290,6 +305,7 @@ export const makeWakeAlarms = (kit: OrchestrationKit, deps: WakeAlarmsDeps) => {
         const now = yield* Clock.currentTimeMillis;
         if (fired === undefined && condition?.fired === undefined && now < alarm.at)
           return yield* armAlarm(workspaceId, alarm);
+        yield* FiberMap.remove(wakeAlarms, preWakeKey(alarm.id));
         const state = yield* findWorkspace(workspaceId);
         const thread = yield* findThread(alarm.threadId);
         if (state !== undefined && state.workspace.orchestratorThreadId === alarm.threadId) {
