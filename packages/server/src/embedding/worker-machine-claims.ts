@@ -14,6 +14,16 @@ export interface MachineClaim {
   readonly mode: MachineSharing;
   /** The picks it was asked with, by the provider's choice id. */
   readonly picks: Readonly<Record<string, string>>;
+  /**
+   * The seat of the worker it was first asked for. An exclusive machine carries that worker and
+   * no other, for life: a spawn with another seat is refused there even once it stands empty.
+   */
+  readonly seat?: string | undefined;
+  /**
+   * Whether its provider keeps who is on it (`sharing` in its choices as it was asked for). Only
+   * then is the provider asked about its seats; one that keeps none is sent no such call.
+   */
+  readonly seats?: boolean | undefined;
   /** When it was written (epoch ms). */
   readonly at: number;
 }
@@ -62,7 +72,7 @@ export const memoryMachineClaims = (): MachineClaims => claimsOver(new Map(), ()
 
 const readClaim = (raw: unknown): MachineClaim | undefined => {
   if (typeof raw !== "object" || raw === null) return undefined;
-  const { orchestrator, mode, picks, at } = raw as Record<string, unknown>;
+  const { orchestrator, mode, picks, at, seat, seats } = raw as Record<string, unknown>;
   if (
     typeof orchestrator !== "string" ||
     orchestrator === "" ||
@@ -81,7 +91,14 @@ const readClaim = (raw: unknown): MachineClaim | undefined => {
             typeof value === "string" && value.length <= 64 ? [[key, value] as const] : [],
           )
       : [];
-  return { orchestrator, mode: mode as MachineSharing, picks: Object.fromEntries(read), at };
+  return {
+    orchestrator,
+    mode: mode as MachineSharing,
+    picks: Object.fromEntries(read),
+    ...(typeof seat === "string" && seat.length <= 64 ? { seat } : {}),
+    ...(seats === true ? { seats: true } : {}),
+    at,
+  };
 };
 
 /**

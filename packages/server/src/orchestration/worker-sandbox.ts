@@ -23,6 +23,7 @@ import {
 } from "../embedding/worker-machines.ts";
 import { type MachineSharing, newSeat, requestSeat } from "../embedding/worker-seats.ts";
 import { memoryMachineClaims } from "../embedding/worker-machine-claims.ts";
+import { busyThreads } from "../embedding/hosted-machine-set-aside.ts";
 import { charterOf, workerMachineSourceFor, type WorkerSandboxDeps } from "./worker-placed.ts";
 export { workerMachineSourceFor, type WorkerSandboxDeps } from "./worker-placed.ts";
 import { refusal } from "./rules.ts";
@@ -57,6 +58,8 @@ export const makeWorkerSandbox = ({
   workerHosts,
   joined,
   claims = memoryMachineClaims(),
+  runtimes,
+  busy = runtimes === undefined ? undefined : (archived) => busyThreads(runtimes, archived),
 }: WorkerSandboxDeps) =>
   Effect.gen(function* () {
     const machineFlights = new Map<string, Flight>();
@@ -140,6 +143,7 @@ export const makeWorkerSandbox = ({
       listThreads: store.listThreads,
       claims,
       seatHolds,
+      busy,
     });
     const coming = new Map<string, string>();
     const attached = new Set<string>();
@@ -527,11 +531,7 @@ export const makeWorkerSandbox = ({
               givesBack: plan.givesBack,
               prepare,
               arrives: plan.prepare !== undefined,
-              placement: placementOf(
-                name,
-                { ...sandbox, ...picks },
-                { packing, ...(offer === undefined ? {} : { seat }) },
-              ),
+              placement: placementOf(name, { ...sandbox, ...picks }, { packing, seat }),
             };
           });
         if (sandbox.shareWith !== undefined) {

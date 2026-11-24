@@ -103,19 +103,22 @@ export const releaseFence = {
 };
 
 /**
- * The workers that count against a machine's cap: every open worker placed on it, whichever
- * orchestrator's, that isn't parked. A finished one counts as much as one at work: it is still
- * open and can be messaged back to work at any time, so its place is its own until it is archived,
- * and a worker that resumes never finds another in it.
+ * Who counts against a machine's cap: every open thread whose folder is on it, whichever
+ * orchestrator's worker it is, and one that is no orchestrator's any more (a worker detached
+ * from its workspace still runs there). A finished one counts as much as one at work: it is
+ * still open and can be messaged back to work at any time, so its place is its own until it is
+ * archived, and a worker that resumes never finds another in it. A parked one has given its
+ * place up, and is decided again as it comes back (`worker-admission.ts`, `reviving`); one
+ * archived with something still going on in its session (`busy`) keeps its place until that ends.
  */
 export const workersOnMachine = <T extends Placed>(
   threads: ReadonlyArray<T>,
   machineId: string,
+  busy: ReadonlySet<string> = new Set(),
 ): ReadonlyArray<T> =>
   threads.filter(
     (thread) =>
-      thread.spawnedBy !== undefined &&
-      thread.parked !== true &&
+      (thread.parked !== true || busy.has(thread.id)) &&
       hostOf(effectiveCheckout(thread)) === machineId,
   );
 

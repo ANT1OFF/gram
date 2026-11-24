@@ -1,6 +1,7 @@
 import {
   AppToolError,
   type Checkout,
+  effectiveCheckout,
   hostOf,
   type Thread,
   type ThreadId,
@@ -23,6 +24,8 @@ export interface WorkerAdmissionHook {
     holder: ThreadId,
     target: Checkout,
   ) => Effect.Effect<WorkerPlacement | undefined, string>;
+  /** Why an archived worker may not come back to its machine now, or nothing. */
+  readonly reviving: (thread: Thread) => Effect.Effect<string | undefined>;
 }
 
 /**
@@ -76,6 +79,11 @@ export const makeWorkerAdmitting = (
         ? Effect.succeed(undefined)
         : Effect.fail(`${machine.name} ${NOT_DECIDED}`);
     }) satisfies WorkerAdmissionHook["adopting"],
+    reviving: ((thread) => {
+      if (installed !== undefined) return installed.reviving(thread);
+      const machine = workers(hostOf(effectiveCheckout(thread)));
+      return Effect.succeed(machine === undefined ? undefined : `${machine.name} ${NOT_DECIDED}`);
+    }) satisfies WorkerAdmissionHook["reviving"],
   };
 };
 export type WorkerAdmitting = ReturnType<typeof makeWorkerAdmitting>;

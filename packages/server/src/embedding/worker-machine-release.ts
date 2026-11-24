@@ -25,7 +25,7 @@ import {
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
 import { releaseFence, reservedSeats } from "../orchestration/worker-packing.ts";
-import { makeSeatUpkeep, seatAsker, seatsHere, withReserved } from "./worker-seat-upkeep.ts";
+import { makeSeatUpkeep, seatAsker, seatsKept } from "./worker-seat-upkeep.ts";
 import { ReleaseOccupied, releaseOccupied } from "./worker-seats.ts";
 import { machineClaimsFor } from "./worker-machine-claims.ts";
 import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
@@ -603,13 +603,11 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         for (const machine of machines)
           yield* upkeep.look(
             machine,
-            withReserved(
-              seatsHere(
-                machine,
-                threads,
-                machine.via === undefined ? embeddedFinished : finished,
-                claims.get(machine.name),
-              ),
+            seatsKept(
+              claims.get(machine.name),
+              machine,
+              threads,
+              machine.via === undefined ? embeddedFinished : finished,
               reservedSeats(machine.name),
             ),
           );

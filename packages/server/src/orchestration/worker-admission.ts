@@ -9,9 +9,16 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { newSeat } from "../embedding/worker-seats.ts";
-import { seatRefusedWords, type SeatHolds, workersOnMachine } from "./worker-packing.ts";
+import {
+  releaseFence,
+  seatRefusedWords,
+  type SeatHolds,
+  workersOnMachine,
+} from "./worker-packing.ts";
 import { charterOf, workerMachineSourceFor, type WorkerSandboxDeps } from "./worker-placed.ts";
 import type { WorkerPlacementService } from "./worker-placement.ts";
+
+const NOBODY = "" as ThreadId;
 
 /**
  * The placement decision where it can't be gone round (`worker-placement.ts`). The orchestration
@@ -34,6 +41,10 @@ import type { WorkerPlacementService } from "./worker-placement.ts";
  *   placement of its own, so nothing about it ever says the machine is its new orchestrator's.
  *   The machine's claim is written down first, where it wasn't yet;
  * - a thread is never moved onto a workers' machine by being taken on.
+ *
+ * `reviving` is the same question for an archived thread coming back to the machine its folder is
+ * on, a worker or one that is no orchestrator's any more (which must then be alone there): archived, it gave its place up, and others may have been placed there since. It answers
+ * why it may not come back, or nothing; allowed, its place is held from here on.
  */
 export const makeWorkerAdmission = ({
   deps,
@@ -42,7 +53,7 @@ export const makeWorkerAdmission = ({
   tookSeat,
   hasSeat,
 }: {
-  readonly deps: Omit<WorkerSandboxDeps, "orchestration" | "claims">;
+  readonly deps: Omit<WorkerSandboxDeps, "orchestration" | "claims" | "busy" | "runtimes">;
   readonly placement: WorkerPlacementService;
   readonly seatHolds: SeatHolds;
   readonly tookSeat: (seat: string) => void;
@@ -102,20 +113,24 @@ export const makeWorkerAdmission = ({
         }
         if (answered.kind === "seats") tookSeat(seat);
       }
-      return (
-        own ?? {
-          machine: machine.name,
-          shared: true,
-          packing: "named",
-          ...(offer === undefined ? {} : { seat }),
-        }
-      );
+      return {
+        ...(own ?? { machine: machine.name, shared: true, packing: "named" as const }),
+        seat,
+      };
     });
 
+  const sharingFor = (orchestrator: ThreadId) =>
+    workerMachineSourceFor(deps, orchestrator, "adopt_thread").pipe(
+      Effect.flatMap((source) =>
+        source === undefined || "refused" in source ? Effect.succeed(undefined) : source.sharing,
+      ),
+      Effect.orElseSucceed(() => undefined),
+    );
   const adopting = (
     thread: Thread,
     holder: ThreadId,
     target: Checkout,
+    keepPlace = false,
   ): Effect.Effect<WorkerPlacement | undefined, string> =>
     Effect.gen(function* () {
       const kept = thread.spawnedBy?.placement;
@@ -143,12 +158,12 @@ export const makeWorkerAdmission = ({
             charter: yield* charterOf(store, holder, "adopt_thread").pipe(
               Effect.orElseSucceed(() => undefined),
             ),
-            sharing: undefined,
+            sharing: yield* sharingFor(holder),
             comingUp: false,
             tool: "adopt_thread",
           })
           .pipe(Effect.mapError((error) => error.message));
-        seatHolds.release(machine.name, seat);
+        if (!keepPlace) seatHolds.release(machine.name, seat);
         return kept?.machine === machine.name ? kept : undefined;
       }
       const others = workersOnMachine(threads, machine.id).filter((each) => each.id !== thread.id);
@@ -159,9 +174,19 @@ export const makeWorkerAdmission = ({
             others[0] === undefined ? "" : ` (${others[0].title} is on it)`
           }. A machine is shared within one orchestrator only, so it isn't taken on while it is there.`,
         );
+      if (keepPlace) {
+        seatHolds.hold(machine.name, seat);
+        yield* Effect.promise(() => releaseFence.settled(machine.name));
+      }
       return undefined;
     });
 
-  return { confirm, adopting };
+  const reviving = (thread: Thread): Effect.Effect<string | undefined> =>
+    adopting(thread, thread.spawnedBy?.threadId ?? NOBODY, effectiveCheckout(thread), true).pipe(
+      Effect.as(undefined),
+      Effect.catch((refused) => Effect.succeed<string | undefined>(refused)),
+    );
+
+  return { confirm, adopting, reviving };
 };
 export type WorkerAdmission = ReturnType<typeof makeWorkerAdmission>;

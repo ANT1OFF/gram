@@ -70,8 +70,10 @@ export const WorkerPlacement = Schema.Struct({
   /** How it was packed (`WorkerPacking`); absent on a worker placed before packing was said. */
   packing: Schema.optionalKey(WorkerPacking),
   /**
-   * What the machine's provider knows this worker by there, where it keeps who is on each machine:
-   * given up when the worker's work is over, so the machine is released after its last worker.
+   * This worker's place on the machine, by an id its spawn made: what counts it once (its
+   * reservation and its thread are one place) and what an exclusive machine knows its one worker
+   * by. A provider that keeps who is on each machine knows the worker by it too; one that keeps
+   * none is never told it.
    */
   seat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
   picks: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),

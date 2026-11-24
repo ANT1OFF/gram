@@ -6,6 +6,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { OrchestratorCharter, Thread, ThreadId, WorkspaceId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
 import { signedInSource, type WorkerMachinePortShape } from "../embedding/signed-in-workers.ts";
 import { memoryMachineClaims } from "../embedding/worker-machine-claims.ts";
@@ -14,6 +15,7 @@ import {
   machineCap,
   makeSeatHolds,
   packingOn,
+  releaseFence,
   picksMismatch,
   picksOn,
   reservedSeats,
@@ -52,6 +54,9 @@ describe("which workers count against a machine", () => {
     // Whether the ledger reads `done` as finished is not asked: it is open, and can be messaged
     // back to work, so its place is its own until it is archived.
     expect(workersOnMachine(threads, "m-1").map((each) => each.id)).toEqual(["a", "done"]);
+    // A worker detached from its workspace is no orchestrator's, and still runs there.
+    const detached = { ...threads[0]!, id: "detached", spawnedBy: undefined } as never as Thread;
+    expect(workersOnMachine([detached], "m-1")).toHaveLength(1);
   });
 
   it("caps a machine at what its provider says, lowered and never raised by the workspace", () => {
@@ -230,6 +235,12 @@ const setup = (
     const claims = memoryMachineClaims();
     const plan = yield* makeWorkerSandbox({
       claims,
+      busy: (archived) =>
+        Effect.succeed(
+          new Set(
+            archived.filter((each) => each.title.includes("mid-turn")).map((each) => each.id),
+          ),
+        ),
       orchestration: {
         ledger: () => Effect.succeed({ features: [] }),
       } as never,
@@ -460,7 +471,8 @@ describe("a worker packed onto a hosted machine", () => {
       expect(startsOf()[0]?.body).not.toHaveProperty("sharing");
       expect(calls.some((each) => each.call === "workers" || each.call === "machines")).toBe(false);
       expect(planned?.placement).toMatchObject({ packing: "shared" });
-      expect(planned?.placement.seat).toBeUndefined();
+      // Its seat is this Gram's own name for its place, told to no provider that keeps none.
+      expect(planned?.placement.seat).toBeDefined();
       // Its own cap still holds: four to a machine, then another.
       const names = new Set([planned?.name]);
       for (let each = 0; each < 4; each += 1) names.add((yield* spawn({ shared: true }))?.name);
@@ -721,6 +733,142 @@ describe("one decision for every way onto a workers' machine", () => {
       // Once A is archived its place is free.
       threads[0] = { ...threads[0]!, parked: true };
       expect((yield* made(CALLER, input, { shareWith: name }))?.name).toBe(name);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("round 4: the same decision on every road, and nothing counted twice", () => {
+  const name = "worker-00000000fe";
+  const id = `m-${name}`;
+  const input = { title: "Next", feature: "f", project: "shop" };
+
+  it.effect("admits the first spawn onto its own machine where the provider keeps no seats", () =>
+    Effect.gen(function* () {
+      for (const sandbox of [{ own: true }, { own: true, exclusive: true }]) {
+        let threads: Thread[] = [];
+        const { spawn, plan, calls } = yield* setup({ seats: false, threads: () => threads });
+        const planned = yield* spawn(sandbox);
+        expect(Exit.isSuccess((yield* prepare(planned!)).ready)).toBe(true);
+        // As the worker's folder is made, the spawn is decided again with its own seat, which
+        // its placement carries: its own reservation is not another worker.
+        const made = yield* Effect.exit(
+          plan.admission.confirm(CALLER, `m-${planned!.name}`, planned!.placement),
+        );
+        expect(failure(made)).toBe("placed");
+        expect(Exit.isSuccess(made) && made.value?.seat).toBe(planned!.placement.seat);
+        // With its worker made, the reservation and the worker are one place, not two.
+        threads = [worker("a", `m-${planned!.name}`, planned!.placement)];
+        expect(failure(yield* Effect.exit(spawn({ shareWith: planned!.name })))).toMatch(
+          sandbox.exclusive === true ? /never shared/ : /placed/,
+        );
+        expect(calls.some((each) => each.call === "workers" || each.call === "machines")).toBe(
+          false,
+        );
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps an exclusive machine its first worker's once it stands empty", () =>
+    Effect.gen(function* () {
+      let threads: Thread[] = [];
+      const made = yield* setup({ threads: () => threads });
+      const first = yield* made.spawn({ own: true, exclusive: true }, "Same title");
+      expect(Exit.isSuccess((yield* prepare(first!)).ready)).toBe(true);
+      expect(made.claims.get(first!.name)).toMatchObject({ seat: first!.placement.seat });
+      // Its worker is archived: nobody is on the machine now.
+      threads = [worker("a", `m-${first!.name}`, first!.placement, { parked: true })];
+      // Another exclusive spawn that works out the same name does not come to its disk.
+      expect(
+        failure(yield* Effect.exit(made.spawn({ own: true, exclusive: true }, "Same title"))),
+      ).toMatch(/never shared/);
+      const another = { machine: first!.name, packing: "exclusive" as const, seat: "another" };
+      expect(
+        failure(
+          yield* Effect.exit(made.plan.admission.confirm(CALLER, `m-${first!.name}`, another)),
+        ),
+      ).toMatch(/never shared/);
+      // The worker it was asked for comes back to it.
+      expect(yield* made.plan.admission.reviving(threads[0]!)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("decides an archived worker's return like any placement", () =>
+    Effect.gen(function* () {
+      const placement = (seat: string) => ({ machine: name, packing: "shared" as const, seat });
+      // Cap two. A was archived, and C was packed beside B in the place A gave up.
+      const a = worker("a", id, placement("sa"), { parked: true });
+      let threads = [a, worker("b", id, placement("sb")), worker("c", id, placement("sc"))];
+      const { plan, online, claims } = yield* setup({ cap: 2, threads: () => threads });
+      online.set(name, { id, name });
+      expect(yield* plan.admission.reviving(a)).toMatch(/is for 2 workers and has 2/);
+      // With C archived in turn there is room, and A's place is held from the decision on:
+      // a spawn that comes before A's thread is stored as unarchived finds the machine full.
+      threads = [a, threads[1]!, { ...threads[2]!, parked: true }];
+      expect(yield* plan.admission.reviving(a)).toBeUndefined();
+      expect(failure(yield* Effect.exit(plan(CALLER, input, { shareWith: name })))).toMatch(
+        /is for 2 workers and has 2/,
+      );
+      // A thread that is no orchestrator's any more comes back only to a machine nobody is on.
+      const detached = { ...a, spawnedBy: undefined } as never as Thread;
+      expect(yield* plan.admission.reviving(detached)).toMatch(
+        /shared within one orchestrator only/,
+      );
+      expect(claims.get(name)?.orchestrator).toBe(CALLER);
+      // Archived while its turn still runs, a worker keeps its place until that ends.
+      const busy = "worker-00000000fb";
+      const there = (title: string) => [
+        worker("b", `m-${busy}`, { ...placement("sb"), machine: busy }, { parked: true, title }),
+        worker("c", `m-${busy}`, { ...placement("sc"), machine: busy }),
+      ];
+      for (const [title, outcome] of [
+        ["Worker b, mid-turn", /is for 2 workers and has 2/],
+        ["Worker b", /placed/],
+      ] as const) {
+        const made = yield* setup({ cap: 2, threads: () => there(title) });
+        made.online.set(busy, { id: `m-${busy}`, name: busy });
+        expect(failure(yield* Effect.exit(made.spawn({ shareWith: busy })))).toMatch(outcome);
+      }
+      // A thread on no workers' machine is none of this.
+      expect(yield* plan.admission.reviving(worker("e", "m-elsewhere", undefined))).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("waits out a release on its way on every road to the machine", () =>
+    Effect.gen(function* () {
+      type Planner = Effect.Success<ReturnType<typeof setup>>["plan"];
+      const roads: Record<
+        string,
+        (plan: Planner, machine: string, archived: Thread) => Effect.Effect<unknown, unknown>
+      > = {
+        "the folder's making, with no plan": (plan, machine) =>
+          plan.admission.confirm(CALLER, `m-${machine}`, undefined),
+        "a spawn that names the machine": (plan, machine) =>
+          plan(CALLER, input, { shareWith: machine }),
+        "a spawn by `machine`": (plan, machine) => plan(CALLER, { ...input, machine }, undefined),
+        "an archived worker's return": (plan, _machine, archived) =>
+          plan.admission.reviving(archived),
+      };
+      for (const [index, [road, placing]] of Object.entries(roads).entries()) {
+        // A machine of its own a road: seats held are seen across the process.
+        const machine = `worker-0000000${index}fd`;
+        const placement = { machine, packing: "own" as const, seat: "sa" };
+        const threads = [
+          worker("a", `m-${machine}`, placement),
+          worker("z", `m-${machine}`, { ...placement, seat: "sz" }, { parked: true }),
+        ];
+        const { plan, online } = yield* setup({ threads: () => threads });
+        online.set(machine, { id: `m-${machine}`, name: machine });
+        // A release of the machine is on its way (nobody held a seat when it began).
+        const release = releaseFence.begin(machine);
+        expect(release, road).toBeDefined();
+        const fiber = yield* Effect.forkScoped(Effect.exit(placing(plan, machine, threads[1]!)));
+        for (let each = 0; each < 20; each += 1) yield* Effect.yieldNow;
+        // Its seat is held, so the pass takes the release back; until it has, nothing is placed.
+        expect(fiber.pollUnsafe(), road).toBeUndefined();
+        expect(release!.reservedNow(), road).toBe(true);
+        release!.done();
+        expect(Exit.isSuccess(yield* Fiber.join(fiber)), road).toBe(true);
+      }
     }).pipe(Effect.scoped),
   );
 });

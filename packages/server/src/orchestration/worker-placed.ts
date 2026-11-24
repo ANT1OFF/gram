@@ -1,4 +1,10 @@
-import { AppToolError, effectiveCheckout, hostOf, type ThreadId } from "@gram/contracts";
+import {
+  AppToolError,
+  effectiveCheckout,
+  hostOf,
+  type Thread,
+  type ThreadId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type { OnDemand } from "../embedding/on-demand.ts";
@@ -9,6 +15,7 @@ import type { SignedInWorkers } from "../embedding/signed-in-workers.ts";
 import type { RemoteHosts } from "../host/remote-hosts.ts";
 import type { WorkerHosts } from "../host/worker-host.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
+import type { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { isLiveWorker } from "./ledger.ts";
 import type { Orchestration } from "./service.ts";
 
@@ -25,6 +32,12 @@ export interface WorkerSandboxDeps {
   readonly joined: () => ReturnType<RemoteHosts["Service"]["list"]>;
   /** Whose each worker machine is (`worker-machine-claims.ts`). Left out: kept in memory. */
   readonly claims?: MachineClaims | undefined;
+  /** The sessions, asked which archived threads are still busy (`busy`, where that isn't given). */
+  readonly runtimes?: Pick<ThreadRuntimes["Service"], "working" | "summaryOf"> | undefined;
+  /** Of these archived threads, those still busy in their session: they keep their place. */
+  readonly busy?:
+    | ((archived: ReadonlyArray<Thread>) => Effect.Effect<ReadonlySet<ThreadId>>)
+    | undefined;
 }
 
 type Store = WorkerSandboxDeps["store"];
@@ -82,7 +95,7 @@ export const workerMachineSourceFor = (
     signedIn,
     workerHosts,
     joined,
-  }: Omit<WorkerSandboxDeps, "orchestration" | "claims">,
+  }: Omit<WorkerSandboxDeps, "orchestration" | "claims" | "busy" | "runtimes">,
   orchestratorId: ThreadId,
   tool: string,
 ) =>

@@ -88,6 +88,29 @@ export const withReserved = (
     : { ...seats, live: new Set([...seats.live, ...reserved]), any: true };
 
 /**
+ * The seats this Gram stands behind on a machine whose provider keeps seats, as its claim says
+ * (`MachineClaim.seats`): those of its workers (`seatsHere`) and of spawns on their way there.
+ * Every worker carries a seat, as this Gram's own name for its place; a provider that keeps none
+ * was never told of one, so its machine has none to look after and is asked nothing.
+ */
+export const seatsKept = (
+  claim:
+    | {
+        readonly orchestrator: string;
+        readonly picks: Readonly<Record<string, string>>;
+        readonly seats?: boolean | undefined;
+      }
+    | undefined,
+  machine: Pick<SeatedMachine, "id">,
+  threads: ReadonlyArray<Placed>,
+  finished: ReadonlySet<ThreadId>,
+  reserved: ReadonlyArray<string>,
+): ReturnType<typeof seatsHere> =>
+  claim?.seats === true
+    ? withReserved(seatsHere(machine, threads, finished, claim), reserved)
+    : { live: new Set<string>(), any: false };
+
+/**
  * Which of the seats a provider holds for a machine to give up now, and which to remember: a seat
  * no unfinished worker here holds is given up only once it was seen so on the look before too. A
  * spawn takes its seat a moment before its worker exists, and that seat is nobody's for that long.

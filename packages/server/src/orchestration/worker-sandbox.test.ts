@@ -223,8 +223,9 @@ describe("a worker's machine brought up for a spawn", () => {
         arrives: false,
         placement: { machine: NAME, shared: true, packing: "named", why: "Same build." },
       });
-      // No seat is kept where the provider keeps none.
-      expect(planned?.placement.seat).toBeUndefined();
+      // The seat is this Gram's own name for the worker's place: nothing is asked of a
+      // provider that keeps none (none is reachable here, and a call would have failed).
+      expect(planned?.placement.seat).toBeDefined();
       expect(yield* planned!.prepare).toEqual({});
     }).pipe(Effect.scoped),
   );

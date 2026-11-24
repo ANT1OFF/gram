@@ -120,7 +120,16 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const claims = machineClaimsFor(
       Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig))?.dataDir,
     );
-    const planning = { orchestration, store, onDemand, signedIn, workerHosts, joined, claims };
+    const planning = {
+      orchestration,
+      store,
+      onDemand,
+      signedIn,
+      workerHosts,
+      joined,
+      claims,
+      runtimes,
+    };
     const workerSandbox = yield* makeWorkerSandbox(planning);
     yield* orchestration.setWorkerAdmission(workerSandbox.admission);
     const visualsFor = <

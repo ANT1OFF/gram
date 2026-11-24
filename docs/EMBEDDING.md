@@ -441,8 +441,10 @@ a minute, and a reviewer placed beside its author can read the author's worktree
 - **A machine of its own carries one worker's choice.** An `own` or `exclusive` spawn that comes
   to a machine a worker is already on, or on its way to, is refused, whatever led it there (the
   same project, feature and title with no `clientRequestId`, say). A machine asked for as
-  `exclusive` carries the one worker it was asked for, for life, and one asked for otherwise
-  never becomes exclusive. A retry of one `clientRequestId` holds the place its first try did.
+  `exclusive` carries the one worker it was asked for, for life, known by the seat written into
+  its claim: no other spawn is placed there even once it stands empty (its worker archived or
+  closed). One asked for otherwise never becomes exclusive. A retry of one `clientRequestId`
+  holds the seat its first try did, and so the same place.
 - **The shared pool.** A machine is one of an orchestrator's shared machines when it was asked
   for with `shared`. A spawn joins one with the same picks (size, architecture, isolation,
   environment) that has room. Machines asked for with `own` are reached only by name.
@@ -451,11 +453,19 @@ a minute, and a reviewer placed beside its author can read the author's worktree
   card, and a seat never used lapses after ten minutes.
 - **The cap.** A machine carries at most what its provider says a machine of that size is for,
   lowered by the workspace's `workersPerMachine` (1 to 8), and 4 where the provider says nothing.
-  Counted: every open worker placed there, finished or at work, and the seats of spawns under
-  way. A finished worker is still open and can be messaged back to work, so its place is its own
-  until it is archived: a worker that resumes never finds another in it, and a machine full of
-  finished workers takes no more until one is archived. The decision is made again as the spawn
-  goes ahead, after any approval card, and once more as the worker's folder is made.
+  Counted: every open thread whose folder is there, finished or at work, a worker or one that
+  was detached from its workspace, and the seats of spawns under way. A finished worker is still
+  open and can be messaged back to work, so its place is its own until it is archived: a worker
+  that resumes never finds another in it, and a machine full of finished workers takes no more
+  until one is archived. One archived while something still goes on in its session keeps its
+  place until that ends. The decision is made again as the spawn goes ahead, after any approval
+  card, and once more as the worker's folder is made. Each spawn is counted once: its seat is on
+  its placement, so its own reservation and the worker it becomes are one place.
+- **Coming back from the archive.** An archived worker gave its place up, and is decided again
+  as it comes back: any edit that unarchives a thread whose folder is on a workers' machine asks
+  the same decision first (`ThreadRuntimes.updateThread`, whoever makes the edit), and where the
+  machine has no place for it the thread stays archived. A thread that is no orchestrator's any
+  more comes back only to a machine nobody else is on.
 - **`shareWith` checks its picks.** A size, architecture, isolation or environment named with it
   that differs from what the machine was asked with is refused; naming none takes the machine
   as it is.
@@ -465,9 +475,11 @@ a minute, and a reviewer placed beside its author can read the author's worktree
   there. Taken on by the machine's own orchestrator, it is placed as any worker named there is. A
   thread is never moved onto a workers' machine by being taken on.
 - **Release and a worker on its way.** A machine's release is begun only while no spawn holds a
-  seat on it, asked as each release is sent and not as the pass was decided. A spawn that
-  reserves while a release is on its way waits for it, and the pass takes that release back
-  before the spawn makes its folder.
+  seat on it, asked as each release is sent and not as the pass was decided. Every placement,
+  by whichever road (a spawn's `sandbox`, `machine`, a held brief or a routine's spawn reaching
+  the service, a thread taken on, an archived worker coming back), holds its seat and then waits
+  out a release that is on its way, and the pass takes that release back before any folder is
+  made.
 - **The ledger.** `list_workers` gives each worker on a machine its `packing` (`own`,
   `exclusive`, `shared`, `named`) and the other unfinished workers there (`sharesWith`), and each
   machine its `workers`. `worker_machines` gives each machine's cap, room, size and who is on it,
@@ -508,7 +520,9 @@ follows, and this Gram's own cap is all that bounds a machine.
   the provider keeps with the machine.
 - `POST /hosts/workers` `{ kind: "worker", owner, name, orchestrator?, attach?: { worker,
   environment? }, detach?: [seat] }` takes a seat for a worker (`worker` is an id this Gram makes
-  for it, kept as `spawnedBy.placement.seat`), gives seats up, or with neither reads them. `200
+  for it, kept as `spawnedBy.placement.seat`: every worker on a workers' machine has one, as
+  this Gram's own name for its place, and only a provider that says `sharing` is ever told it),
+  gives seats up, or with neither reads them. `200
   { workers, cap?, size?, mode? }`. `409 { code, message, cap?, workers? }` refuses the seat:
   `machine_full`, `exclusive`, `other_orchestrator`, `environment_mismatch` or `released`. The
   spawn is then refused in the provider's words, and a machine it started is given back. `404`

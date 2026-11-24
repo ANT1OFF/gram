@@ -18,6 +18,7 @@ import {
   picksKey,
   picksMismatch,
   picksOn,
+  releaseFence,
   type SeatHolds,
   workersOnMachine,
 } from "./worker-packing.ts";
@@ -61,7 +62,7 @@ const ELSEWHERE =
  *   carries nobody, and only those count.
  *
  * A machine is its claim's orchestrator's alone. An exclusive one carries the one worker it was
- * asked for. A machine "of its own" is one nobody else is on, so an `own` or `exclusive` spawn
+ * asked for, known by its seat: no other is placed there, even once it stands empty. A machine "of its own" is one nobody else is on, so an `own` or `exclusive` spawn
  * that comes to a machine carrying a worker is refused, whatever name led it there. A `shared`
  * spawn joins only a machine asked for as shared, with the same picks; a machine named outright
  * (`named`) is taken as it is unless a pick named with it differs. The cap is counted last.
@@ -76,6 +77,10 @@ export const decidePlacement = (facts: {
   readonly coming: number;
   readonly cap: number;
   readonly now: number;
+  /** The seat of the worker being placed: an exclusive machine takes its first one only. */
+  readonly seat?: string | undefined;
+  /** Whether the machine's provider keeps seats, written into a claim made now. */
+  readonly keepsSeats?: boolean | undefined;
 }): PlacementDecision => {
   const { caller, machine: name, claim, as, picks, on, coming, cap } = facts;
   const notYours = refuse(
@@ -88,7 +93,14 @@ export const decidePlacement = (facts: {
     return {
       ok: true,
       fresh: true,
-      claim: { orchestrator: caller, mode: as, picks: { ...picks }, at: facts.now },
+      claim: {
+        orchestrator: caller,
+        mode: as,
+        picks: { ...picks },
+        ...(facts.seat === undefined ? {} : { seat: facts.seat }),
+        ...(facts.keepsSeats === true ? { seats: true } : {}),
+        at: facts.now,
+      },
     };
   }
   if (claim.orchestrator !== caller) return notYours;
@@ -98,7 +110,10 @@ export const decidePlacement = (facts: {
       "other_orchestrator",
       `${name} carries another orchestrator's worker (${guest.title}), so yours isn't placed there: a machine is shared within one orchestrator only.`,
     );
-  if (claim.mode === "exclusive" && (as !== "exclusive" || others > 0))
+  if (
+    claim.mode === "exclusive" &&
+    (as !== "exclusive" || others > 0 || claim.seat === undefined || claim.seat !== facts.seat)
+  )
     return refuse(
       "exclusive",
       `${name} was started for one worker only and is never shared. ${ELSEWHERE}`,
@@ -157,10 +172,15 @@ export const claimFromWorkers = (
   const [owner] = owners;
   if (owners.size !== 1 || owner === undefined) return undefined;
   const packing = packingOn(placed, machineId);
+  const first = placed.find((thread) => {
+    const how = thread.spawnedBy?.placement?.packing;
+    return how !== undefined && how !== "named";
+  })?.spawnedBy?.placement?.seat;
   return {
     orchestrator: owner,
     mode: packing === undefined || packing === "named" ? "own" : packing,
     picks: { ...picksOn(placed, machineId) },
+    ...(first === undefined ? {} : { seat: first }),
     at,
   };
 };
@@ -196,12 +216,18 @@ export interface PlacementAsk {
 /**
  * The placements of one Gram: `place` decides one (`decidePlacement`) from the claim on record
  * and the workers there now, writes the claim of a machine first asked for, and holds the
- * worker's seat. One at a time, so two spawns never both take a machine's last place.
+ * worker's seat. One at a time, so two spawns never both take a machine's last place. Its seat
+ * held, every placement then waits out a release of the machine that is on its way
+ * (`releaseFence`): whichever road led here, no folder is made on a machine being released.
  */
 export const makeWorkerPlacement = (deps: {
   readonly listThreads: Effect.Effect<ReadonlyArray<Thread>, unknown>;
   readonly claims: MachineClaims;
   readonly seatHolds: SeatHolds;
+  /** Of these archived threads, those with something still going on in their session. */
+  readonly busy?:
+    | ((archived: ReadonlyArray<Thread>) => Effect.Effect<ReadonlySet<ThreadId>>)
+    | undefined;
   readonly now?: () => number;
 }) =>
   Effect.gen(function* () {
@@ -209,6 +235,27 @@ export const makeWorkerPlacement = (deps: {
     const now = deps.now ?? Date.now;
     const one = yield* Semaphore.make(1);
     const capsSaid = new Map<string, number>();
+    const openOn = (
+      threads: ReadonlyArray<Thread>,
+      machine: PlacedOnMachine | undefined,
+      placing?: ThreadId,
+    ) =>
+      Effect.gen(function* () {
+        if (machine === undefined) return [];
+        const archived = threads.filter(
+          (thread) =>
+            thread.parked === true &&
+            thread.id !== placing &&
+            hostOf(effectiveCheckout(thread)) === machine.id,
+        );
+        const busy =
+          deps.busy === undefined || archived.length === 0
+            ? new Set<ThreadId>()
+            : yield* deps.busy(archived);
+        return workersOnMachine(threads, machine.id, busy).filter(
+          (thread) => thread.id !== placing,
+        );
+      });
     const claimOf = (
       name: string,
       machine: PlacedOnMachine | undefined,
@@ -242,12 +289,7 @@ export const makeWorkerPlacement = (deps: {
                       }),
                   ),
                 );
-          const on =
-            ask.machine === undefined
-              ? []
-              : workersOnMachine(threads, ask.machine.id).filter(
-                  (thread) => thread.id !== ask.thread,
-                );
+          const on = yield* openOn(threads, ask.machine, ask.thread);
           const seated = new Set(on.map((thread) => thread.spawnedBy?.placement?.seat));
           const coming = seatHolds
             .on(ask.name)
@@ -266,6 +308,7 @@ export const makeWorkerPlacement = (deps: {
             coming,
             cap,
             now: now(),
+            keepsSeats: ask.sharing !== undefined,
           });
           if (!decided.ok)
             return yield* new AppToolError({ tool: ask.tool, message: decided.message });
@@ -273,14 +316,14 @@ export const makeWorkerPlacement = (deps: {
           seatHolds.hold(ask.name, ask.seat);
           return { claim: kept, cap, on, coming };
         }),
-      );
+      ).pipe(Effect.tap(() => Effect.promise(() => releaseFence.settled(ask.name))));
     return {
       place,
       /** Whether `place` would find room there now, with nothing held or written. */
       room: (ask: Omit<PlacementAsk, "seat">) =>
         Effect.gen(function* () {
           const threads = yield* deps.listThreads.pipe(Effect.orElseSucceed(() => []));
-          const on = ask.machine === undefined ? [] : workersOnMachine(threads, ask.machine.id);
+          const on = yield* openOn(threads, ask.machine);
           const seated = new Set(on.map((thread) => thread.spawnedBy?.placement?.seat));
           const coming = seatHolds.on(ask.name).filter((seat) => !seated.has(seat)).length;
           const claim =

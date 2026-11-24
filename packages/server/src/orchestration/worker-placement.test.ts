@@ -61,13 +61,38 @@ describe("who may be placed on a workers' machine", () => {
   });
 
   it("keeps an exclusive machine to its one worker, and a machine of its own to nobody else", () => {
-    expect(decide({ as: "exclusive", claim: claim("exclusive") })).toBe("ok");
-    expect(decide({ as: "exclusive", claim: claim("exclusive"), on: [on("x", A)] })).toBe(
+    // An exclusive machine is its first seat's for life: the claim made for it says which.
+    const fresh = decidePlacement({
+      caller: A,
+      machine: NAME,
+      claim: undefined,
+      as: "exclusive",
+      picks: {},
+      on: [],
+      coming: 0,
+      cap: 4,
+      now: 5,
+      seat: "s-first",
+      keepsSeats: true,
+    });
+    expect(fresh).toMatchObject({
+      ok: true,
+      claim: { mode: "exclusive", seat: "s-first", seats: true },
+    });
+    const exclusive = { ...claim("exclusive"), seat: "s-first" };
+    const first = { as: "exclusive" as const, claim: exclusive, seat: "s-first" };
+    expect(decide(first)).toBe("ok");
+    expect(decide({ ...first, on: [on("x", A)] })).toBe("exclusive");
+    expect(decide({ ...first, coming: 1 })).toBe("exclusive");
+    // Standing empty (its worker archived or closed), it still takes no other worker: another
+    // spawn that works out its name comes with another seat.
+    expect(decide({ ...first, seat: "s-second" })).toBe("exclusive");
+    expect(decide({ as: "exclusive", claim: exclusive })).toBe("exclusive");
+    expect(decide({ as: "exclusive", claim: claim("exclusive"), seat: "s-first" })).toBe(
       "exclusive",
     );
-    expect(decide({ as: "exclusive", claim: claim("exclusive"), coming: 1 })).toBe("exclusive");
     for (const as of ["own", "shared", "named"] as const)
-      expect(decide({ as, claim: claim("exclusive") })).toBe("exclusive");
+      expect(decide({ as, claim: exclusive, seat: "s-first" })).toBe("exclusive");
     // A machine others may be placed on never becomes one worker's alone.
     expect(decide({ as: "exclusive", claim: claim("own") })).toBe("mode");
     expect(decide({ as: "exclusive", claim: claim("shared") })).toBe("mode");
@@ -99,8 +124,13 @@ describe("who may be placed on a workers' machine", () => {
   it("works out the claim of a machine from before claims only from spawns that named it", () => {
     const named = { machine: NAME, packing: "shared", picks: { size: "large" } };
     expect(
-      claimFromWorkers(NAME, "m-1", [on("x", A, named), on("y", A, { machine: NAME })], 9),
-    ).toEqual({ orchestrator: A, mode: "shared", picks: { size: "large" }, at: 9 });
+      claimFromWorkers(
+        NAME,
+        "m-1",
+        [on("x", A, { ...named, seat: "s-x" }), on("y", A, { machine: NAME })],
+        9,
+      ),
+    ).toEqual({ orchestrator: A, mode: "shared", picks: { size: "large" }, seat: "s-x", at: 9 });
     // A worker another orchestrator took on carries no placement, and says nothing of the machine.
     expect(
       claimFromWorkers(NAME, "m-1", [on("x", A, named), on("guest", B)], 9)?.orchestrator,

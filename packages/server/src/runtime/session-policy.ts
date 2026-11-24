@@ -5,7 +5,7 @@ import {
   type OutwardGate,
   dreamSupportFor,
 } from "@gram/agents";
-import type { PermissionMode, Thread } from "@gram/contracts";
+import type { PermissionMode, Thread, ThreadId, ThreadNotFound } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -85,6 +85,11 @@ export interface SessionPolicyPort {
    * whose new session takes the thread's handoff.
    */
   switchHandoff?(thread: Thread): Effect.Effect<SystemDelivery | undefined>;
+  /**
+   * Why an archived thread may not come back now, or nothing: asked before any edit that
+   * unarchives one is stored, whoever makes it. Reads the store only.
+   */
+  reviving?(thread: Thread): Effect.Effect<string | undefined>;
 }
 
 export const PLAIN_POLICY: SessionPolicy = { audience: "plain", outwardGate: undefined };
@@ -156,29 +161,56 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
       ? Effect.succeed(undefined)
       : sessionPolicy.switchHandoff(thread);
 
-  const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf" | "browserStatusOf"> =
-    {
-      setSessionPolicy: (port) =>
-        Effect.sync(() => {
-          sessionPolicy = port;
-        }),
-      audienceOf: (threadId) =>
-        store.getThread(threadId).pipe(
-          Effect.flatMap((thread) =>
-            thread.role === "dream"
-              ? Effect.succeed("dream" as const)
-              : Effect.map(policyFor(thread), (policy) => policy.audience),
-          ),
-          Effect.orElseSucceed((): ToolAudience => "plain"),
+  const methods: Pick<
+    ThreadRuntimesShape,
+    "setSessionPolicy" | "audienceOf" | "browserStatusOf"
+  > & {
+    /**
+     * The thread as it stands, and the edit to store for it: `edit` itself, or, where it would
+     * unarchive a thread the policy says may not come back (`reviving`), `edit` with the thread
+     * kept archived. A policy that dies keeps it archived too.
+     */
+    readonly unparking: (
+      threadId: ThreadId,
+      edit: (thread: Thread) => Thread,
+    ) => Effect.Effect<readonly [Thread, (thread: Thread) => Thread], ThreadNotFound>;
+  } = {
+    unparking: (threadId, edit) =>
+      Effect.gen(function* () {
+        const before = yield* store.getThread(threadId);
+        const asked = sessionPolicy?.reviving;
+        if (asked === undefined || before.parked !== true || edit(before).parked === true)
+          return [before, edit] as const;
+        const refused = yield* asked(before).pipe(
+          Effect.catchCause(() => Effect.succeed<string | undefined>("undecided")),
+        );
+        if (refused === undefined) return [before, edit] as const;
+        yield* Effect.logWarning("an archived thread was kept archived").pipe(
+          Effect.annotateLogs({ threadId, reason: refused }),
+        );
+        return [before, (thread: Thread) => ({ ...edit(thread), parked: true })] as const;
+      }),
+    setSessionPolicy: (port) =>
+      Effect.sync(() => {
+        sessionPolicy = port;
+      }),
+    audienceOf: (threadId) =>
+      store.getThread(threadId).pipe(
+        Effect.flatMap((thread) =>
+          thread.role === "dream"
+            ? Effect.succeed("dream" as const)
+            : Effect.map(policyFor(thread), (policy) => policy.audience),
         ),
-      browserStatusOf: (threadId) =>
-        Effect.gen(function* () {
-          const thread = yield* store.getThread(threadId);
-          const settings = yield* store.getSettings;
-          const resume = yield* resumeOptions(thread, undefined);
-          return browserStatus(thread, settings, yield* policyFor(thread), resume);
-        }),
-    };
+        Effect.orElseSucceed((): ToolAudience => "plain"),
+      ),
+    browserStatusOf: (threadId) =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId);
+        const settings = yield* store.getSettings;
+        const resume = yield* resumeOptions(thread, undefined);
+        return browserStatus(thread, settings, yield* policyFor(thread), resume);
+      }),
+  };
 
   return { policyFor, opening, modeAfterSwitch, switchHandoff, methods };
 };

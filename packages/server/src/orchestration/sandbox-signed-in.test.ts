@@ -23,6 +23,7 @@ import { makeStopMarks } from "../host/stop-marks.ts";
 import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
 import { workerMachineName } from "../embedding/worker-machines.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, outboxOf, serverLayer, waitReal } from "./test-harness.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
@@ -170,6 +171,37 @@ describe("sandbox from a signed-in hosted server", () => {
         expect((yield* store.getThread("t-anothers" as ThreadId)).spawnedBy?.threadId).toBe(
           "t-another-orchestrator",
         );
+        // An archived worker of this orchestrator whose folder is on that machine does not come
+        // back to it either, whoever unarchives it: the edit is stored with it still archived.
+        yield* store.insertThread({
+          ...rest,
+          id: "t-archived" as ThreadId,
+          workspaceId,
+          parked: true,
+          spawnedBy: { threadId: thread.id, feature: "earlier" },
+          checkout: { ...thread.checkout, hostId: machine.id },
+        });
+        const runtimes = yield* ThreadRuntimes;
+        const back = yield* runtimes.updateThread("t-archived" as ThreadId, (each) => ({
+          ...each,
+          title: "Renamed",
+          parked: false,
+        }));
+        expect(back).toMatchObject({ parked: true, title: "Renamed" });
+        // One archived on this orchestrator's own machine comes back as it always did.
+        yield* store.insertThread({
+          ...rest,
+          id: "t-archived-here" as ThreadId,
+          workspaceId,
+          parked: true,
+          spawnedBy: { threadId: thread.id, feature: "earlier" },
+        });
+        expect(
+          (yield* runtimes.updateThread("t-archived-here" as ThreadId, (each) => ({
+            ...each,
+            parked: false,
+          }))).parked,
+        ).toBe(false);
       }).pipe(Effect.provide(context));
     }).pipe(Effect.scoped),
   );

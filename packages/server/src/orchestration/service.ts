@@ -718,6 +718,7 @@ export const OrchestrationLive = Layer.effect(
     yield* runtimes.setSessionPolicy({
       forThread: policyFor,
       opening,
+      reviving: admitting.reviving,
       modeAfterSwitch,
       switchHandoff: (thread) =>
         Effect.succeed(

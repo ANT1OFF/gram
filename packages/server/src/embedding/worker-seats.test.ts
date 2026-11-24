@@ -5,7 +5,7 @@ import { describe, expect, it } from "@effect/vitest";
 import type { Thread, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { parseChoices } from "./on-demand.ts";
-import { makeSeatUpkeep, seatsHere, staleSeats } from "./worker-seat-upkeep.ts";
+import { makeSeatUpkeep, seatsHere, seatsKept, staleSeats } from "./worker-seat-upkeep.ts";
 import {
   askSeats,
   parseProvidedMachines,
@@ -168,6 +168,21 @@ describe("the upkeep of a machine's seats", () => {
     expect([...over.live]).toEqual([]);
     expect(over.any).toBe(true);
     expect(seatsHere(machine, [placed("unseated", "m-1", undefined)], new Set()).any).toBe(false);
+  });
+
+  it("stands behind no seat, and asks nothing, where the provider keeps none", () => {
+    const threads = [placed("a", "m-1", "sa")];
+    const claim = { orchestrator: "t-orch", picks: {} };
+    // Every worker carries a seat as this Gram's own name for its place. Only a machine whose
+    // provider keeps seats, as its claim says, has any looked after there.
+    expect(seatsKept({ ...claim, seats: true }, machine, threads, new Set(), ["sr"])).toMatchObject(
+      { live: new Set(["sa", "sr"]), any: true },
+    );
+    for (const none of [claim, { ...claim, seats: false }, undefined])
+      expect(seatsKept(none, machine, threads, new Set(), ["sr"])).toEqual({
+        live: new Set(),
+        any: false,
+      });
   });
 
   it("gives a seat up only once it was nobody's on two looks in a row", () => {
