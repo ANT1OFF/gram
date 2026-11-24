@@ -529,6 +529,8 @@ machine instead of failing:
 - The thread shows a quiet line, `build-box is moving to a new machine · this thread resumes on
   its own`, and its sidebar row and an orchestrator's worker row say `Moving`. It has no error,
   no failure card and no failure notification, and isn't counted as failing.
+- While it waits, the machine counts as wanted (`wanted` in `POST /machines/stop/status`), so
+  whoever runs it starts it again if it was stopped rather than replaced at once.
 - When a host of the machine dials in on the same disk, the turn carries on as after a restart,
   with a note telling the agent the machine was replaced mid-turn and to check the state of what
   it was doing. The transcript marks it `build-box moved to a new machine · continued the turn`.

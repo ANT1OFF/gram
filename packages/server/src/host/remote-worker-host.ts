@@ -137,6 +137,8 @@ export interface Machine {
   readonly reattachMs?: () => number;
   /** How long its sessions wait for it while it is being replaced, or undefined (`RemoteHosts.moves`). */
   readonly moving?: () => number | undefined;
+  /** Runs a wait for it as one that wants it started (`StopMarks.wanting`). */
+  readonly wanting?: <A, E>(wait: Effect.Effect<A, E>) => Effect.Effect<A, E>;
   /** Why a thread's session mustn't open there now, asked as it goes (`followingSessions`). */
   readonly admit?: (threadId: ThreadId) => string | undefined;
 }
@@ -541,6 +543,7 @@ export const machineWorkerHost = (
         : followingSessions(machine.connection, {
             ...(machine.reattachMs === undefined ? {} : { reattachMs: machine.reattachMs }),
             ...(machine.moving === undefined ? {} : { moving: machine.moving }),
+            ...(machine.wanting === undefined ? {} : { wanting: machine.wanting }),
             ...(machine.admit === undefined
               ? {}
               : { admit: (request: HostSessionOpen) => machine.admit?.(request.threadId) }),
@@ -743,6 +746,7 @@ export const machineHosts = (
             reattachMs: () =>
               remote.stops.recently(id) ? STOPPED_REATTACH_MS : REATTACH_WITHIN_MS,
             moving: () => remote.moves.of(id),
+            wanting: <A, E>(wait: Effect.Effect<A, E>) => remote.stops.wanting(id, wait),
             admit: (threadId: ThreadId) =>
               remote.stops.blocked(id, threadId) ??
               (remote.stops.resuming(id) && !remote.stops.isThreadBack(id, threadId)

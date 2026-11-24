@@ -85,6 +85,11 @@ export const followingSessions = (
      * a `machineMoving` event, and `moved` then answers for it.
      */
     readonly moving?: () => number | undefined;
+    /**
+     * Runs a wait for the machine's move as one that wants the machine, so whoever runs it starts
+     * it again if it is stopped (`StopMarks.wanting`).
+     */
+    readonly wanting?: <A, E>(wait: Effect.Effect<A, E>) => Effect.Effect<A, E>;
   } = {},
 ): HostSessionsConnection => {
   const reattach = timing.reattachMs ?? REATTACH_WITHIN_MS;
@@ -207,33 +212,37 @@ export const followingSessions = (
         );
       const waitBack = (since: number): ReturnType<HostSessionsConnection["events"]> =>
         Stream.unwrap(
-          Effect.gen(function* () {
-            for (;;) {
-              const back = yield* Effect.result(current);
-              if (Result.isSuccess(back))
-                return Stream.unwrap(
-                  Effect.logInfo("worker host: a session picked up after a redial").pipe(
-                    Effect.as(follow(Effect.succeed(back.success))),
-                  ),
-                );
-              const moving = moves.get(handle) ?? timing.moving?.();
-              if (moving !== undefined && !moves.has(handle)) {
-                moves.set(handle, moving);
-                yield* Effect.logInfo("worker host: a session waits for its machine to move");
-                return Stream.concat(
-                  Stream.make<[SequencedEvent]>({
-                    seq: seen,
-                    event: { type: "machineMoving", until: since + moving },
-                  }),
-                  waitBack(since),
-                );
+          wantedWhileMoving(
+            Effect.gen(function* () {
+              for (;;) {
+                const back = yield* Effect.result(current);
+                if (Result.isSuccess(back))
+                  return Stream.unwrap(
+                    Effect.logInfo("worker host: a session picked up after a redial").pipe(
+                      Effect.as(follow(Effect.succeed(back.success))),
+                    ),
+                  );
+                const moving = moves.get(handle) ?? timing.moving?.();
+                if (moving !== undefined && !moves.has(handle)) {
+                  moves.set(handle, moving);
+                  yield* Effect.logInfo("worker host: a session waits for its machine to move");
+                  return Stream.concat(
+                    Stream.make<[SequencedEvent]>({
+                      seq: seen,
+                      event: { type: "machineMoving", until: since + moving },
+                    }),
+                    waitBack(since),
+                  );
+                }
+                const now = yield* Clock.currentTimeMillis;
+                if (now - since >= (moving ?? reattachOf())) return Stream.fail(back.failure);
+                yield* Effect.sleep(LOOK_EVERY);
               }
-              const now = yield* Clock.currentTimeMillis;
-              if (now - since >= (moving ?? reattachOf())) return Stream.fail(back.failure);
-              yield* Effect.sleep(LOOK_EVERY);
-            }
-          }),
+            }),
+          ),
         );
+      const wantedWhileMoving = <A, E>(wait: Effect.Effect<A, E>) =>
+        moves.has(handle) && timing.wanting !== undefined ? timing.wanting(wait) : wait;
       return follow(awaitConnection(current, callMs));
     },
     ack: (handle, seq) => quiet((s) => s.ack(handle, seq)),

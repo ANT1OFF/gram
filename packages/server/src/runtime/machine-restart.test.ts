@@ -186,6 +186,7 @@ const onMachine = (
   machine: ReturnType<typeof fakeMachine>,
   reattachMs = 5_000,
   moving?: () => number | undefined,
+  wanting?: <A, E>(wait: Effect.Effect<A, E>) => Effect.Effect<A, E>,
 ) => {
   const agents = Layer.effectContext(
     Effect.gen(function* () {
@@ -196,6 +197,7 @@ const onMachine = (
         reattachMs,
         callMs: 2_000,
         ...(moving === undefined ? {} : { moving }),
+        ...(wanting === undefined ? {} : { wanting }),
       });
       return Context.make(
         AgentHosts,
@@ -508,9 +510,16 @@ const KILLED: AgentEvent = {
 
 describe("a joined machine replaced mid-turn", () => {
   it.live(
-    "waits for it with a notice, not an error, and carries the turn on once it is back",
+    "waits for it with a notice, not an error, wanting it, and carries the turn on once it is back",
     () => {
       const machine = fakeMachine();
+      let wanted = 0;
+      const wanting = <A, E>(wait: Effect.Effect<A, E>) =>
+        Effect.acquireUseRelease(
+          Effect.sync(() => (wanted += 1)),
+          () => wait,
+          () => Effect.sync(() => (wanted -= 1)),
+        );
       return Effect.gen(function* () {
         const { thread, first } = yield* midTurn(machine);
         const store = yield* ThreadStore;
@@ -525,6 +534,11 @@ describe("a joined machine replaced mid-turn", () => {
           store.getThread(thread.id).pipe(Effect.map((t) => t.machineMove)),
         );
         expect(moving.machine).toBe(NAME);
+        // Whoever runs the machine is told a thread wants it, so a stopped one is started again.
+        yield* eventually(
+          "the machine wanted",
+          Effect.sync(() => wanted > 0),
+        );
         const runtimes = yield* ThreadRuntimes;
         expect(yield* runtimes.status(thread.id)).toBe("running");
         expect((yield* store.getThread(thread.id)).lastError).toBeUndefined();
@@ -547,10 +561,11 @@ describe("a joined machine replaced mid-turn", () => {
         expect(kept.lastError).toBeUndefined();
         expect(kept.machineMove).toBeUndefined();
         expect(kept.machineIncident).toBeUndefined();
+        expect(wanted).toBe(0);
       }).pipe(
         Effect.ensuring(machine.stop),
         Effect.scoped,
-        Effect.provide(onMachine(machine, 1_000, () => 10_000)),
+        Effect.provide(onMachine(machine, 1_000, () => 10_000, wanting)),
       );
     },
     30_000,
