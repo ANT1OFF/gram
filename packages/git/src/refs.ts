@@ -174,7 +174,7 @@ export const fetchOriginBranch = (
     const before = yield* tipOf(repoTop, ref);
     const out = yield* remoteGit(
       repoTop,
-      ["fetch", "--quiet", "--end-of-options", "origin", name],
+      ["fetch", "--quiet", "--end-of-options", "origin", `refs/heads/${name}`],
       {
         tier: "network",
       },

@@ -380,11 +380,32 @@ export const outwardKind = (command: string): OutwardKind | undefined => {
   }
 };
 
+const PUSH_CONFIG = /^remote\..+\.(?:push|mirror)(?:=|$)/i;
+
+const configuresPush = (args: ReadonlyArray<string>): boolean => {
+  let i = 0;
+  for (
+    ;
+    i < args.length && args[i]!.startsWith("-");
+    i += GIT_VALUE_OPTIONS.has(args[i]!) ? 2 : 1
+  ) {
+    const arg = args[i]!;
+    if (arg === "-c" && PUSH_CONFIG.test(args[i + 1] ?? "")) return true;
+    if (arg.startsWith("--config-env=") && PUSH_CONFIG.test(arg.slice("--config-env=".length)))
+      return true;
+    if (arg === "--config-env" && PUSH_CONFIG.test(args[i + 1] ?? "")) return true;
+  }
+  const [subcommand, ...rest] = args.slice(i);
+  if (subcommand === "config") return rest.some((arg) => PUSH_CONFIG.test(arg));
+  if (subcommand === "remote") return rest.some((arg) => arg.startsWith("--mirror"));
+  return false;
+};
+
 const forcesOf = (raw: ReadonlyArray<string>): boolean => {
   const [head, ...args] = unwrap(raw);
   if (head === undefined) return false;
   const name = binaryName(head);
-  if (name === "git") return gitKind(args) === "irreversible";
+  if (name === "git") return gitKind(args) === "irreversible" || configuresPush(args);
   if (name === "eval") return isForcePush(args.join(" "));
   if (SHELLS.has(name)) {
     const at = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
@@ -397,8 +418,10 @@ const forcesOf = (raw: ReadonlyArray<string>): boolean => {
 /**
  * Whether a shell command line pushes over or deletes what a remote holds by an ordinary spelling:
  * a `git push` that `outwardKind` calls `irreversible` (`--force`, `-f`, `--force-with-lease`, a
- * `+` refspec, `--delete`, a `:branch` refspec, `--mirror`, `--prune`). A decision about the push
- * is asked as a force push then; a line too strange to read counts as one.
+ * `+` refspec, `--delete`, a `:branch` refspec, `--mirror`, `--prune`), or a line that sets a
+ * remote's `push` refspecs or `mirror` itself (`git -c …`, `git config …`, `git remote add
+ * --mirror`). A decision about the push is asked as a force push then; a line too strange to read
+ * counts as one. A remote's push config set beforehand, or a git alias, isn't in the line.
  */
 export const isForcePush = (command: string): boolean => {
   const commands: Array<ReadonlyArray<string>> = [];

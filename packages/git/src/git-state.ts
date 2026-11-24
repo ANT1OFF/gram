@@ -41,7 +41,7 @@ export const localGitState = (cwd: string): Effect.Effect<GitState, ProcError, P
     ]);
     const [topLine, gitDirLine, oidLine, branchLine] = info.stdout
       .split("\n")
-      .map((line) => line.trim());
+      .map((line) => line.replace(/\r$/, ""));
     if (!topLine) return notARepoState;
     const top = topLine;
     const born = oidLine !== undefined && /^[0-9a-f]{40,64}$/.test(oidLine);

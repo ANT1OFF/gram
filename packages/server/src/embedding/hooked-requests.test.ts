@@ -20,6 +20,8 @@ describe("requestActions", () => {
       "git push origin +HEAD:feat",
       "git push origin :feat",
       "bash -c 'git push --delete origin feat'",
+      "git -c remote.origin.mirror=true push",
+      "git config remote.origin.push '+refs/heads/*:refs/heads/*' && git push origin feat",
     ])
       expect(requestActions({ toolName: "Bash", input: { command } })).toEqual([
         { action: "push", detail: { command, force: true } },

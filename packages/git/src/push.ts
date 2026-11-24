@@ -42,7 +42,7 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
     const head = yield* git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).pipe(
       Effect.mapError(toPushFailed),
     );
-    const branch = head.status === 0 ? head.stdout.trim() : "";
+    const branch = head.status === 0 ? head.stdout.replace(/\r?\n$/, "") : "";
     if (branch === "" || branch === "HEAD") {
       return yield* new PushFailed({
         message: "HEAD isn't on a branch, so there's nothing to push",
@@ -64,7 +64,7 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
     const hasUpstream =
       Option.isSome(upstream) &&
       upstream.value.status === 0 &&
-      upstream.value.stdout.trim() === `origin/${branch}`;
+      upstream.value.stdout.replace(/\r?\n$/, "") === `origin/${branch}`;
     if (hasUpstream) {
       const out = yield* git(cwd, [
         "rev-list",

@@ -129,7 +129,7 @@ const maybeFetch = (
         "--quiet",
         "--end-of-options",
         "origin",
-        ...refs,
+        ...refs.map((name) => `refs/heads/${name}`),
       ],
       {
         tier: "network",
