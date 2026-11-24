@@ -621,7 +621,9 @@ export const makeOpenCodeHost = (
             keys.map((key) => {
               const server = servers.get(key);
               servers.delete(key);
-              return server?.then((running) => running.stop()).catch(() => undefined);
+              return server === undefined
+                ? Promise.resolve()
+                : server.then((running) => running.stop()).catch(() => undefined);
             }),
           );
         }),

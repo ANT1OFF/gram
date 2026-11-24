@@ -39,12 +39,12 @@ test("scrolling a Markdown preview under a resting pointer doesn't flash its blo
   }, ACTIONS);
 
   const box = (await markdown.boundingBox())!;
-  const scroller = (await page.evaluate(() => {
+  const scroller = await page.evaluate(() => {
     const rect = document
       .querySelector('[data-testid="markdown-preview"]')!
       .parentElement!.getBoundingClientRect();
     return { top: rect.top, height: rect.height };
-  }))!;
+  });
   await page.mouse.move(box.x + box.width / 2, scroller.top + scroller.height / 3);
   for (let step = 0; step < 30; step += 1) {
     await page.mouse.wheel(0, 120);
