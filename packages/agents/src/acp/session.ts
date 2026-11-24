@@ -173,9 +173,9 @@ export const openAcpSession = (
       }),
     );
 
-    const call = <T = unknown>(what: string, method: string, params: Record<string, unknown>) =>
+    const call = (what: string, method: string, params: Record<string, unknown>) =>
       Effect.tryPromise({
-        try: () => connection.request<T>(method, params),
+        try: () => connection.request(method, params),
         catch: (error) => acpFailure(spec, what, error),
       });
 

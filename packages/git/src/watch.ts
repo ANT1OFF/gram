@@ -1,13 +1,12 @@
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
-import type { GitState } from "@gram/contracts";
+import { errnoCode, type GitState } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { tryRepoRoots, type RepoRoots } from "./exec.ts";
 import { localGitState } from "./git-state.ts";
-import { errnoCode } from "./errors.ts";
 import { tryRealPathSync } from "./paths.ts";
 import type { Proc } from "./proc.ts";
 

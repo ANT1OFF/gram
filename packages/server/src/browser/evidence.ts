@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
-import { errnoCode, isStrictlyInside, realPath } from "@gram/git";
+import { errnoCode } from "@gram/contracts";
+import { isStrictlyInside, realPath } from "@gram/git";
 
 /** Why a path can't take evidence; the message the tool returns. */
 export class EvidencePathError extends Error {}

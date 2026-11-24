@@ -1,6 +1,6 @@
 import { lstat } from "node:fs/promises";
 
-import { errnoCode } from "@gram/git";
+import { errnoCode } from "@gram/contracts";
 
 /** Refuse static aliases before writing or cleaning up Gram's native home. */
 export const assertOwnedCodexPath = async (path: string, directory = false): Promise<void> => {

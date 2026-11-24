@@ -1,10 +1,10 @@
-import type {
-  AgentEvent,
-  ApprovalRequest,
-  GramUIMessageChunk,
-  MessageId,
+import {
+  type AgentEvent,
+  type ApprovalRequest,
+  type GramUIMessageChunk,
+  type MessageId,
   RequestId,
-  TokenUsage,
+  type TokenUsage,
 } from "@gram/contracts";
 
 import {
@@ -267,7 +267,7 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
     }
     if (tokens !== undefined) out.push({ type: "usage", tokens, costUsd });
     tokens = undefined;
-    for (const id of asked) out.push({ type: "requestResolved", requestId: id as RequestId });
+    for (const id of asked) out.push({ type: "requestResolved", requestId: RequestId.make(id) });
     asked.clear();
     out.push({ type: "turnEnd", reason, ...(error === undefined ? {} : { error }) });
     out.push({ type: "status", status: "idle" });
@@ -278,7 +278,7 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
     const toolName = call?.name ?? ACTION_TOOLS[permission.action] ?? permission.action;
     return {
       kind: "approval",
-      id: permission.id as RequestId,
+      id: RequestId.make(permission.id),
       ...(permission.source === undefined ? {} : { toolUseId: permission.source.id }),
       toolName,
       displayName: toolName,
@@ -476,7 +476,7 @@ export const makeOpenCodeMapper = (options: OpenCodeMapperOptions): OpenCodeMapp
       case "permission.replied": {
         const id = field.string(data, "requestID");
         if (id === undefined || !asked.delete(id)) break;
-        out.push({ type: "requestResolved", requestId: id as RequestId });
+        out.push({ type: "requestResolved", requestId: RequestId.make(id) });
         if (turn !== undefined) out.push({ type: "status", status: "running" });
         break;
       }

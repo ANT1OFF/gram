@@ -18,6 +18,7 @@ import {
 } from "../host.ts";
 import { APP_TOOL_SERVER } from "./apptools.ts";
 import { DEFAULT_SIGN_IN_HINT } from "./mapper.ts";
+import * as Predicate from "effect/Predicate";
 
 /** What a thread says when the SDK in use can't start a sign-in, so `/mcp` is the only way. */
 export const CLAUDE_SIGN_IN_HINT =
@@ -48,9 +49,7 @@ export const GATEWAY_CLAUDE_AI_NOTE =
 export const CLAUDE_SIGN_IN_AGAIN = `claude.ai turned down Claude Code's own sign-in, so signing in to the connector can't help. Sign in to Claude again: ${DEFAULT_SIGN_IN_HINT}`;
 
 const untyped = (value: unknown, key: string): unknown =>
-  typeof value === "object" && value !== null
-    ? (value as Readonly<Record<string, unknown>>)[key]
-    : undefined;
+  Predicate.isObject(value) ? value[key] : undefined;
 
 const toTool = ({ name, annotations }: NonNullable<McpServerStatus["tools"]>[number]) => {
   const tool: ConnectorTool = {
@@ -175,7 +174,7 @@ export const nextLapsedConnectors = (
 
 /** A status read as `nextLapsedConnectors` takes it, with the `error_code` the SDK leaves untyped. */
 export const seenServer = (server: McpServerStatus): SeenServer => {
-  const code = (server as { readonly error_code?: unknown }).error_code;
+  const code: unknown = "error_code" in server ? server.error_code : undefined;
   return {
     name: server.name,
     status: server.status,

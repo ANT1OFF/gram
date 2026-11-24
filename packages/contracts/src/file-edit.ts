@@ -1,4 +1,5 @@
 import type { StructuredPatchHunk } from "./ui-message.ts";
+import * as Predicate from "effect/Predicate";
 
 /** What happened to the file. `write` is a whole-file write over contents nobody reported. */
 export type FileEditKind = "create" | "modify" | "delete" | "write";
@@ -227,20 +228,16 @@ export function replacementHunk(oldString: string, newString: string): Structure
 }
 
 const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  Predicate.isObject(value) ? value : {};
 
 const text = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
 
+const isPatchHunk = (hunk: unknown): hunk is StructuredPatchHunk =>
+  Array.isArray(record(hunk)["lines"]) && typeof record(hunk)["oldStart"] === "number";
+
 const patchOf = (value: unknown): StructuredPatchHunk[] | undefined =>
-  Array.isArray(value) &&
-  value.every(
-    (hunk) => Array.isArray(record(hunk)["lines"]) && typeof record(hunk)["oldStart"] === "number",
-  )
-    ? (value as StructuredPatchHunk[])
-    : undefined;
+  Array.isArray(value) && value.every(isPatchHunk) ? value : undefined;
 
 const edit = (
   path: string,

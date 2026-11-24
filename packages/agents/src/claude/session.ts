@@ -121,6 +121,7 @@ import {
   toSessionSummary,
   toSessionTranscript,
 } from "./sessions.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * What a Claude thread supports.
@@ -158,17 +159,17 @@ export const claudeSettingsDir = (env: Readonly<Record<string, string | undefine
 export const widenedEntries = (
   allowlist: ReadonlyArray<string>,
   added: ReadonlyArray<unknown>,
-): ReadonlyArray<Record<string, unknown>> =>
-  added.flatMap((entry) => {
+): ReadonlyArray<object> =>
+  added.flatMap((entry): ReadonlyArray<object> => {
     if (typeof entry !== "object" || entry === null) return [];
-    const record = entry as Record<string, unknown>;
+    const record = Predicate.isObject(entry) ? entry : {};
     const as =
       typeof record["serverName"] === "string"
         ? record["serverName"]
         : typeof record["serverUrl"] === "string"
           ? record["serverUrl"]
           : undefined;
-    return as !== undefined && coveredBy(allowlist, as) ? [] : [record];
+    return as !== undefined && coveredBy(allowlist, as) ? [] : [entry];
   });
 
 const ALL_SETTING_SOURCES: ReadonlyArray<SettingSource> = ["user", "project", "local"];
@@ -221,10 +222,10 @@ export const chromeArgs = (
 
 const mcpListSettings = (
   o: McpLists,
-  widened: ReadonlyArray<Record<string, unknown>> = [],
+  widened: ReadonlyArray<object> = [],
 ): {
   allowedMcpServers?: Array<{ serverName: string } | { serverUrl: string }>;
-  deniedMcpServers?: Array<Record<string, unknown>>;
+  deniedMcpServers?: Array<object>;
 } => {
   const denied = [...(o.mcpDenylist ?? []).map(mcpServerEntry), ...widened];
   return {
@@ -428,7 +429,7 @@ const reachesPeer = (toolName: string, toolInput: unknown, switchFailed: boolean
   if (toolName === "ListAgents") return true;
   if (toolName !== "SendMessage") return false;
   if (switchFailed) return true;
-  const to = (toolInput as { readonly to?: unknown } | null)?.to;
+  const to = Predicate.isObject(toolInput) ? toolInput["to"] : undefined;
   return typeof to === "string" && PEER_ADDRESS.test(to.trim());
 };
 

@@ -6,10 +6,10 @@ import {
   type CiJobDiagnostic,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import { gh, ghApi } from "./exec.ts";
 
-const object = (v: unknown): Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+const object = (v: unknown): Record<string, unknown> => (Predicate.isObject(v) ? v : {});
 const string = (v: unknown): string => (typeof v === "string" ? v : "");
 const id = (v: unknown): string =>
   typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? String(v) : "";

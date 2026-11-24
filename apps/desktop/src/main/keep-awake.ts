@@ -1,4 +1,5 @@
 import type { powerSaveBlocker } from "electron";
+import * as Predicate from "effect/Predicate";
 
 /** One blocker for every open agent turn, including workers and turns waiting for input. */
 export const createKeepAwake = (blocker: Pick<typeof powerSaveBlocker, "start" | "stop">) => {
@@ -12,8 +13,8 @@ export const createKeepAwake = (blocker: Pick<typeof powerSaveBlocker, "start" |
   };
   return {
     accept: (message: unknown) => {
-      if (typeof message !== "object" || message === null) return;
-      const record = message as Record<string, unknown>;
+      if (!Predicate.isObject(message)) return;
+      const record = message;
       if (record["type"] === "keepAwake" && typeof record["active"] === "boolean")
         setActive(record["active"]);
     },

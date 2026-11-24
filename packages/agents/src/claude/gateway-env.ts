@@ -13,15 +13,17 @@ export const anthropicBaseUrl = (baseURL: string): string => {
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
 };
 
-const FAMILIES = {
+const FAMILY_NAMES = ["opus", "sonnet", "haiku", "fable"] as const;
+
+const FAMILIES: Readonly<Record<Family, string>> = {
   opus: "ANTHROPIC_DEFAULT_OPUS_MODEL",
   sonnet: "ANTHROPIC_DEFAULT_SONNET_MODEL",
   haiku: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   fable: "ANTHROPIC_DEFAULT_FABLE_MODEL",
-} as const;
+};
 
 /** A Claude model family, as Claude Code's aliases name it. */
-export type Family = keyof typeof FAMILIES;
+export type Family = (typeof FAMILY_NAMES)[number];
 
 const versionOf = (text: string): ReadonlyArray<number> => text.split(".").map(Number);
 
@@ -89,9 +91,7 @@ export const gatewayModelEnv = (
   if (own === undefined || own === "") return {};
   const eu = inEuZone(own);
   const env: Record<string, string> = {};
-  for (const [family, name] of Object.entries(FAMILIES) as Array<[Family, string]>) {
-    env[name] = familyModel(models, family, eu) ?? own;
-  }
+  for (const family of FAMILY_NAMES) env[FAMILIES[family]] = familyModel(models, family, eu) ?? own;
   env["ANTHROPIC_SMALL_FAST_MODEL"] = env[FAMILIES.haiku]!;
   return env;
 };

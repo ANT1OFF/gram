@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { spawnServe, stopChild } from "../child-process.ts";
 import { isTokenChildStripped } from "../claude/env.ts";
 import { makeOpenCodeClient, type OpenCodeClient } from "./client.ts";
+import * as Predicate from "effect/Predicate";
 
 const START_TIMEOUT_MS = 30_000;
 
@@ -100,8 +101,8 @@ export const withShell = (config: string | undefined, shell: string): string | u
   } catch {
     return undefined;
   }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  return JSON.stringify({ ...(value as Record<string, unknown>), shell });
+  if (!Predicate.isObject(value)) return undefined;
+  return JSON.stringify({ ...value, shell });
 };
 
 const systemShell = (): string => (existsSync("/bin/bash") ? "/bin/bash" : "/bin/sh");

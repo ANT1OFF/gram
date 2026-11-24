@@ -17,8 +17,7 @@ export type FollowEffort = typeof FollowEffort.Type;
 const EFFORT_ORDER: ReadonlyArray<FollowEffort> = FollowEffort.literals;
 
 /** An effort past the recommendation's ceiling: `xhigh` or `max`. */
-export const aboveHigh = (effort: ReasoningVariant): boolean =>
-  !EFFORT_ORDER.includes(effort as FollowEffort);
+export const aboveHigh = (effort: ReasoningVariant): boolean => !Schema.is(FollowEffort)(effort);
 
 /**
  * A slot that follows the recommendation: resolved through the table each time it's used, on the
@@ -201,7 +200,7 @@ export const clampEffort = (
   if (!model.supportsEffort) return undefined;
   const listed = EFFORT_ORDER.filter((effort) => model.efforts?.includes(effort) ?? false);
   if (listed.length === 0) return undefined;
-  const asked = EFFORT_ORDER.indexOf(wanted as FollowEffort);
+  const asked = EFFORT_ORDER.findIndex((effort) => effort === wanted);
   const ceiling = asked === -1 ? EFFORT_ORDER.length - 1 : asked;
   const below = listed.filter((effort) => EFFORT_ORDER.indexOf(effort) <= ceiling);
   return below.at(-1) ?? listed[0];
@@ -364,7 +363,7 @@ export const escalationStep = (model: Pick<ModelRef, "variant">): string => {
   const at = model.variant;
   if (at === undefined)
     return "checks failing at the model's default effort: next is one effort level up, never past high, then the next tier up";
-  const index = EFFORT_ORDER.indexOf(at as FollowEffort);
+  const index = EFFORT_ORDER.findIndex((effort) => effort === at);
   const high = EFFORT_ORDER.length - 1;
   if (index === -1 || index >= high)
     return `checks failing at ${at}: effort stops at high, so next is the next tier up`;

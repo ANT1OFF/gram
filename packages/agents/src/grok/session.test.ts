@@ -225,18 +225,18 @@ const fakeAgent = (options: { readonly promptFails?: AcpError } = {}) => {
     started.push(input);
     handlers = input.handlers;
     return {
-      request: async <T>(method: string, params: Record<string, unknown>) => {
+      request: async (method: string, params: Record<string, unknown>) => {
         calls.push({ method, params });
         switch (method) {
           case "initialize":
             return {
               agentCapabilities: { sessionCapabilities: { resume: {} } },
               _meta: { modelState: { availableModels: [] } },
-            } as T;
+            };
           case "session/new":
-            return { sessionId: "new-session", models: { currentModelId: "grok-4.7" } } as T;
+            return { sessionId: "new-session", models: { currentModelId: "grok-4.7" } };
           case "session/resume":
-            return { models: { currentModelId: "grok-4.7" } } as T;
+            return { models: { currentModelId: "grok-4.7" } };
           case "_x.ai/mcp/list":
             return {
               result: {
@@ -246,7 +246,7 @@ const fakeAgent = (options: { readonly promptFails?: AcpError } = {}) => {
                   { name: "linear", session: { enabled: true, status: "ready" } },
                 ],
               },
-            } as T;
+            };
           case "session/prompt": {
             if (options.promptFails !== undefined) throw options.promptFails;
             const answer = (await handlers!.request("session/request_permission", {
@@ -259,10 +259,10 @@ const fakeAgent = (options: { readonly promptFails?: AcpError } = {}) => {
               ],
             })) as Record<string, unknown>;
             calls.push({ method: "answered", params: answer });
-            return { stopReason: "end_turn" } as T;
+            return { stopReason: "end_turn" };
           }
           default:
-            return {} as T;
+            return {};
         }
       },
       notify: (method, params) => notes.push({ method, params }),
@@ -429,9 +429,9 @@ describe("Grok Build host", () => {
 const recording = () => {
   const methods: Array<string> = [];
   const connection: AcpConnection = {
-    request: async <T>(method: string) => {
+    request: async (method: string) => {
       methods.push(method);
-      return {} as T;
+      return {};
     },
     notify: () => {},
     ended: new Promise(() => {}),

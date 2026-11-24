@@ -1,6 +1,7 @@
 import { currentBaseOf, type ChecksRollup, type PrStatus } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Predicate from "effect/Predicate";
 import { ghApi, git } from "./exec.ts";
 import { CI_LANES, ciDiffArgs, ciLanes, DOCUMENTATION_POLICY } from "./ci-policy.ts";
 
@@ -36,9 +37,8 @@ const Policy = Schema.Struct({
 const POLICY_QUERY =
   "query($o:String!,$n:String!,$ref:String!){repository(owner:$o,name:$n){object(expression:$ref){__typename ... on Blob{text}}}}";
 const record = (value: unknown): Record<string, unknown> => {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    throw new Error("Invalid GitHub CI response");
-  return value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) throw new Error("Invalid GitHub CI response");
+  return value;
 };
 const list = (body: Record<string, unknown>, key: string) => {
   const nodes = body[key];

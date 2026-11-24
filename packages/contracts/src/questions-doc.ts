@@ -43,7 +43,7 @@ const storedEntry = ({ question, source }: Draft): StoredEntry => {
   const { detail: _detail, ...rest } = question;
   const kept = Object.entries(rest).filter(([, value]) => value !== undefined);
   return {
-    question: Object.fromEntries(kept) as StoredEntry["question"],
+    question: Schema.decodeUnknownSync(StoredQuestion)(Object.fromEntries(kept)),
     source,
   };
 };

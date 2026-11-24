@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -107,7 +108,7 @@ const kindOf = (abs: string): { readonly kind: FsKind; readonly stat?: fs.Stats 
           : "other";
     return { kind, stat };
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const code = errnoCode(error);
     if (code === "ENOENT" || code === "ENOTDIR") return { kind: "absent" };
     throw error;
   }

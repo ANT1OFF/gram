@@ -56,7 +56,7 @@ import { acquireHeld } from "../servers-hold.ts";
 import { startupDiagnostic } from "./startup-diagnostic.ts";
 import { makeCodexMapper } from "./mapper.ts";
 import type { ServerRequest } from "./protocol/ServerRequest.ts";
-import type { JsonValue } from "./protocol/serde_json/JsonValue.ts";
+import { jsonValueOf } from "./json-value.ts";
 import type { ApprovalsReviewer } from "./protocol/v2/ApprovalsReviewer.ts";
 import type { AskForApproval } from "./protocol/v2/AskForApproval.ts";
 import type { ConfigReadResponse } from "./protocol/v2/ConfigReadResponse.ts";
@@ -319,7 +319,7 @@ const serverEdit = (name: string, entry: Record<string, unknown> | undefined) =>
   edits: [
     {
       keyPath: `mcp_servers.${name}`,
-      value: (entry ?? null) as JsonValue,
+      value: entry === undefined ? null : jsonValueOf(entry),
       mergeStrategy: "replace" as const,
     },
   ],

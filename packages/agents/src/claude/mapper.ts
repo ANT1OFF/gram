@@ -22,6 +22,7 @@ import type {
 import { claudeFailure } from "../failure.ts";
 import { offered, toSlashCommand, type ReportedCommand } from "./commands.ts";
 import type { TaskOutputRead } from "./task-output.ts";
+import * as Predicate from "effect/Predicate";
 export type { TaskOutputRead };
 import { makeUsageLedger } from "./usage.ts";
 
@@ -89,6 +90,7 @@ export interface ClaudeMapper {
 }
 
 type Chunk = GramUIMessageChunk;
+type CompactionChunk = Extract<Chunk, { type: "data-compaction" }>;
 
 interface RunningShell {
   readonly taskId: string;
@@ -145,8 +147,7 @@ const isDynamicTool = (name: string): boolean => name.startsWith("mcp__");
 const toolFlags = (dynamic: boolean) =>
   dynamic ? { providerExecuted: true, dynamic: true } : { providerExecuted: true };
 
-const asRecord = (u: unknown): Record<string, unknown> =>
-  typeof u === "object" && u !== null ? (u as Record<string, unknown>) : {};
+const asRecord = (u: unknown): Record<string, unknown> => (Predicate.isObject(u) ? u : {});
 
 const summaryText = (raw: string): string | undefined => {
   const open = raw.indexOf("<summary>");
@@ -539,7 +540,7 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
 
   let compactSummary: string | undefined;
   let compaction: CompactionActivity | undefined;
-  let lastCompaction: { readonly messageId: MessageId; readonly part: Chunk } | undefined;
+  let lastCompaction: { readonly messageId: MessageId; readonly part: CompactionChunk } | undefined;
   const ledger = makeUsageLedger(options);
   let apiError: string | undefined;
   let apiErrorText: string | undefined;
@@ -860,12 +861,11 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         return;
       case "informational": {
         if (m.tag !== "hook_no_verdict") return;
-        const detail = (m as { readonly hook_no_verdict?: { readonly timed_out?: boolean } })
-          .hook_no_verdict;
+        const detail = "hook_no_verdict" in m ? asRecord(m.hook_no_verdict) : {};
         out.push(
           notice(
             "warning",
-            detail?.timed_out === true
+            detail["timed_out"] === true
               ? "A tool check timed out without an answer, so Claude went ahead with the call. Other checks and rules still applied."
               : "A tool check failed without an answer, so Claude went ahead with the call. Other checks and rules still applied.",
           ),
@@ -888,7 +888,7 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         if (postTokens !== undefined) ledger.setContextTokens(postTokens);
         const summary = compactSummary;
         compactSummary = undefined;
-        const part: Chunk = {
+        const part: CompactionChunk = {
           type: "data-compaction",
           id: `compaction:${m.uuid}`,
           data: {
@@ -1110,8 +1110,7 @@ export const makeMapper = (options: MapperOptions): ClaudeMapper => {
         compactSummary = summary;
         return [];
       }
-      const part = last.part as Extract<Chunk, { type: "data-compaction" }>;
-      return [chunk(open, { ...part, data: { ...part.data, summary } })];
+      return [chunk(open, { ...last.part, data: { ...last.part.data, summary } })];
     },
     runningShells: () => {
       for (const [taskId, shell] of shells) if (!tools.has(shell.toolCallId)) shells.delete(taskId);

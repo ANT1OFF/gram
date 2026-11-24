@@ -1,5 +1,6 @@
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import { branchExists, gh, git, gitFailMsg } from "./exec.ts";
 import { remoteGit } from "./remote-git.ts";
 import { parseOwnerRepo } from "./pr.ts";
@@ -85,7 +86,7 @@ export const prHead = (
     let view: Record<string, unknown> = {};
     try {
       const parsed: unknown = JSON.parse(out.stdout);
-      if (typeof parsed === "object" && parsed !== null) view = parsed as Record<string, unknown>;
+      if (Predicate.isObject(parsed)) view = parsed;
     } catch {
       view = {};
     }
@@ -93,10 +94,7 @@ export const prHead = (
     const nwo = repoFromPrUrl(text("url"));
     const nested = (key: string, field: string) => {
       const value = view[key];
-      const inner =
-        typeof value === "object" && value !== null
-          ? (value as Record<string, unknown>)[field]
-          : undefined;
+      const inner = Predicate.isObject(value) ? value[field] : undefined;
       return typeof inner === "string" && inner !== "" ? inner : undefined;
     };
     const headOwner = nested("headRepositoryOwner", "login");

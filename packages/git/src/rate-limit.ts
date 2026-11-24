@@ -1,3 +1,4 @@
+import * as Predicate from "effect/Predicate";
 import { splitGhInclude } from "./rate-limit-headers.ts";
 
 /**
@@ -27,16 +28,11 @@ const graphqlRefused = (body: string): boolean => {
   } catch {
     return GRAPHQL_REFUSED.test(text);
   }
-  if (typeof parsed !== "object" || parsed === null) return false;
-  const errors: unknown = (parsed as Record<string, unknown>)["errors"];
+  if (!Predicate.isObject(parsed)) return false;
+  const errors: unknown = parsed["errors"];
   return (
     Array.isArray(errors) &&
-    errors.some(
-      (error) =>
-        typeof error === "object" &&
-        error !== null &&
-        (error as Record<string, unknown>)["type"] === "RATE_LIMIT",
-    )
+    errors.some((error) => Predicate.isObject(error) && error["type"] === "RATE_LIMIT")
   );
 };
 

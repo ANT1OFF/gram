@@ -79,16 +79,16 @@ export const withHeadlessSignIn = (
   let signedIn = false;
   return {
     ...connection,
-    request: async <T>(method: string, params: Record<string, unknown>) => {
+    request: async (method: string, params: Record<string, unknown>) => {
       try {
-        return await connection.request<T>(method, params);
+        return await connection.request(method, params);
       } catch (error) {
         if (signedIn || !SIGNED_METHODS.has(method) || !SIGNED_OUT.test(baseMessageOf(error)))
           throw error;
         await connection.request("authenticate", { methodId: "gemini-api-key" });
         signedIn = true;
         notice(API_KEY_NOTICE);
-        return connection.request<T>(method, params);
+        return connection.request(method, params);
       }
     },
   };

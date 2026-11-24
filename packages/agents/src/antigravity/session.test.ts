@@ -323,17 +323,17 @@ const fakeAgent = (options: { signedOut?: boolean; promptFails?: AcpError } = {}
     started.push(input);
     handlers = input.handlers;
     return {
-      request: async <T>(method: string, params: Record<string, unknown>) => {
+      request: async (method: string, params: Record<string, unknown>) => {
         calls.push({ method, params });
         if (method === "authenticate") authenticated = true;
         if (options.signedOut === true && !authenticated && method.startsWith("session/"))
           throw new Error("error getting token source: You are not logged into Antigravity.");
         switch (method) {
           case "initialize":
-            return { agentCapabilities: { sessionCapabilities: { resume: {} } } } as T;
+            return { agentCapabilities: { sessionCapabilities: { resume: {} } } };
           case "session/new":
           case "session/resume":
-            return SESSION_NEW as T;
+            return SESSION_NEW;
           case "session/prompt": {
             if (options.promptFails !== undefined) throw options.promptFails;
             const sessionId = params["sessionId"];
@@ -353,10 +353,10 @@ const fakeAgent = (options: { signedOut?: boolean; promptFails?: AcpError } = {}
             return {
               stopReason: "end_turn",
               usage: { inputTokens: 100, outputTokens: 20, cachedReadTokens: 50 },
-            } as T;
+            };
           }
           default:
-            return {} as T;
+            return {};
         }
       },
       notify: () => {},
@@ -511,12 +511,12 @@ const recording = (signedOut: boolean) => {
   const methods: Array<string> = [];
   let authenticated = false;
   const connection: AcpConnection = {
-    request: async <T>(method: string) => {
+    request: async (method: string) => {
       methods.push(method);
       if (method === "authenticate") authenticated = true;
       if (signedOut && !authenticated && method === "session/new")
         throw new Error("You are not logged into Antigravity.");
-      return {} as T;
+      return {};
     },
     notify: () => {},
     ended: new Promise(() => {}),

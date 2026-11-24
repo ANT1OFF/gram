@@ -13,7 +13,8 @@ import { join, resolve } from "node:path";
 import { OUTWARD_RULES_FILE } from "./codex-home.ts";
 import { assertOwnedCodexPath } from "./codex-owned-path.ts";
 import { APP_TOOLS_SERVER_NAME } from "@gram/agents";
-import { errnoCode, realPathOrOwned } from "@gram/git";
+import { errnoCode } from "@gram/contracts";
+import { realPathOrOwned } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { parse, stringify } from "smol-toml";
 
