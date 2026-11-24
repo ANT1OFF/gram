@@ -57,20 +57,18 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
 import { refuseOutOfReach } from "../git/repo-reach.ts";
 import { makeDependsOn } from "./depends-on-tool.ts";
-import { makeRequestResources } from "./request-resources-tool.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand } from "../embedding/on-demand.ts";
 import { SignedInWorkers } from "../embedding/signed-in-workers.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { WorkerHosts } from "../host/worker-host.ts";
-import { placementOf } from "../embedding/worker-machines.ts";
 import { confineQuestionVisuals } from "../preview/mocks.ts";
 import { ThreadPlans } from "../plans/service.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { WakeConditions } from "../wakes/conditions.ts";
 import { ThreadWakes, type WakeInput } from "../wakes/thread-wakes.ts";
-import { compactWorkerRow } from "./ledger.ts";
+import { compactSharedRow } from "./worker-packing.ts";
 import {
   checkRevision,
   decodeWakeCondition,
@@ -88,7 +86,8 @@ import { noQuestionsAsked } from "./question-edits.ts";
 import { prWakeEventOf, prWatchSeenOf, refusal } from "./rules.ts";
 import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
-import { makeWorkerSandbox, requestWorkerResize } from "./worker-sandbox.ts";
+import { makeWorkerMachineTools } from "./worker-machines-tool.ts";
+import { makeWorkerSandbox } from "./worker-sandbox.ts";
 
 /**
  * The tools only an orchestrator or a worker is bound, and the wake
@@ -161,7 +160,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "spawn_worker",
         class: "crossThread",
         description:
-          "Start a worker thread on a brief, in a new git worktree of one of this workspace's projects. This, not `spawn_task`, is how work for this workspace starts. `alsoIn` names the other repos a change spans (most of the work goes in `project`): a worktree in each on the same branch, one pull request per repo; if any can't give it a worktree, no worker starts. Workers sharing a `feature` are one group in the ledger and share its branch (feat/<feature>) unless `branch` says otherwise. The worker sees only `brief`, so make it stand alone, with procedure and full scope. Give `title` a concise, task-specific sidebar name, usually 2–5 words (about 24–40 characters), keeping the key bug, system or feature identifier and telling review from implementation (“Review browser safety”, “Fix browser safety”); never a truncated or vague label. `group` puts the feature in a group run as one effort (a release, say), making it if need be. `model` names one of the charter's worker models as `list_workers` lists them (`agent:model`, or the bare id when only one entry has it): pick it by what the user said each is for; without it, the default one, else your model. `scope` is an advisory list of paths it will touch (overlaps with a live worker come back as a warning); `readAlso` lists your own workers whose worktrees it may read; `clientRequestId` makes a retried call return the worker or held brief it already made (a retry without one holds a second copy). `machine` puts it on a joined machine (list_workers' `machines`; `local` means here); only when the user asks. Where offered, `sandbox` gives heavy work (a large build, tests on the other processor) a machine of its own, `{own: true, size, architecture, isolation, environment}` as your workspace allows (each by the option's id or its name as offered, such as `container` or `Shared container`, `No Internet` for an environment; `environment`: what it installs and may reach; left out, your machine's; a pick not offered is refused with the ones that are), or `{shareWith}` one your workers have (its name, or a worker's threadId on it); left out, as for light work, it runs on yours Give `reason` with it: one sentence on why this work needs that machine, which the user reads on the worker's row. Over your total it is refused with `over_total`, what is in use and what you can do. `plan` is the brief's checklist, if any, as the worker's first plan, which the board counts (2 of 3). `userMessages` (1–5) appends the user's latest messages after the brief, word for word. Inside the charter this needs no approval; a project outside the workspace (in `project` or `alsoIn`), or one worker more than the charter allows at once, asks the user. When a subscription limit the worker would run on stands at the workspace's pause threshold, the user is asked once whether to pause new workers until it resets; while paused, the call is refused and running workers carry on. `priority: \"low\"` marks a brief that can wait (chores, follow-ups, nice-to-haves; never what the user is waiting on): when its agent refuses turns at a subscription limit, or the limit is at the user's pause threshold, it is held instead (`held: true`, and in list_workers' `held`) until the limit allows or the user starts it; a share alone, even 100%, never holds it. A recent auth, model-unavailable or network failure before any output also holds spawns on that model, at either priority. `manage_held_spawn` cancels or retargets a held brief. A spawn a limit stops may list models clear of it in `alternatives`; one not made returns `routeOffer: true`, to call again with a `model` or `atLimit: \"stay\"`. Refused while orchestration is paused. `browser: true` lends it the user's signed-in browser, if Settings allow. `conversations` hands it ones you own; they come back when it closes.",
+          "Start a worker thread on a brief, in a new git worktree of one of this workspace's projects. This, not `spawn_task`, is how work for this workspace starts. `alsoIn` names the other repos a change spans (most of the work goes in `project`): a worktree in each on the same branch, one pull request per repo; if any can't give it a worktree, no worker starts. Workers sharing a `feature` are one group in the ledger and share its branch (feat/<feature>) unless `branch` says otherwise. The worker sees only `brief`, so make it stand alone, with procedure and full scope. Give `title` a concise, task-specific sidebar name, usually 2–5 words (about 24–40 characters), keeping the key bug, system or feature identifier and telling review from implementation (“Review browser safety”, “Fix browser safety”); never a truncated or vague label. `group` puts the feature in a group run as one effort (a release, say), making it if need be. `model` names one of the charter's worker models as `list_workers` lists them (`agent:model`, or the bare id when only one entry has it): pick it by what the user said each is for; without it, the default one, else your model. `scope` is an advisory list of paths it will touch (overlaps with a live worker come back as a warning); `readAlso` lists your own workers whose worktrees it may read (on its machine: `shareWith` puts it there); `clientRequestId` makes a retried call return the worker or held brief it already made (a retry without one holds a second copy). `machine` puts it on a joined machine (list_workers' `machines`; `local` means here); only when the user asks. Where offered, `sandbox` says where it runs: `{own: true, size, architecture, isolation, environment}` a machine of its own for heavy work (a large build, tests on the other processor), as your workspace allows (each by the option's id or its name as offered, such as `container` or `Shared container`, `No Internet` for an environment; `environment`: what it installs and may reach; left out, your machine's; a pick not offered is refused with the ones that are), with `exclusive: true` never shared (work that reads what outsiders wrote or holds a secret); `{shared: true}` one of your shared machines with room, or a new one; `{shareWith}` a machine your workers have (its name, or a worker's threadId on it); `{own: false}` yours. Left out: the workspace's default, yours unless the user set another. A machine takes only so many workers, and those on one can read each other's files. Give `reason` with it: one sentence on why this work goes there, which the user reads on the worker's row. Over your total it is refused with `over_total`, what is in use and what you can do. `plan` is the brief's checklist, if any, as the worker's first plan, which the board counts (2 of 3). `userMessages` (1–5) appends the user's latest messages after the brief, word for word. Inside the charter this needs no approval; a project outside the workspace (in `project` or `alsoIn`), or one worker more than the charter allows at once, asks the user. When a subscription limit the worker would run on stands at the workspace's pause threshold, the user is asked once whether to pause new workers until it resets; while paused, the call is refused and running workers carry on. `priority: \"low\"` marks a brief that can wait (chores, follow-ups, nice-to-haves; never what the user is waiting on): when its agent refuses turns at a subscription limit, or the limit is at the user's pause threshold, it is held instead (`held: true`, and in list_workers' `held`) until the limit allows or the user starts it; a share alone, even 100%, never holds it. A recent auth, model-unavailable or network failure before any output also holds spawns on that model, at either priority. `manage_held_spawn` cancels or retargets a held brief. A spawn a limit stops may list models clear of it in `alternatives`; one not made returns `routeOffer: true`, to call again with a `model` or `atLimit: \"stay\"`. Refused while orchestration is paused. `browser: true` lends it the user's signed-in browser, if Settings allow. `conversations` hands it ones you own; they come back when it closes.",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -205,12 +204,12 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
               message: "Give machine or sandbox, not both.",
             });
           const placed =
-            sandbox === undefined ? undefined : yield* workerSandbox(caller, asked, sandbox);
+            asked.machine === undefined ? yield* workerSandbox(caller, asked, sandbox) : undefined;
           const input =
-            placed === undefined || sandbox === undefined
+            placed === undefined
               ? asked
-              : { ...asked, machine: placed.name, placement: placementOf(placed.name, sandbox) };
-          if (placed?.prepare === undefined) yield* orchestration.checkSpawnMachine(caller, input);
+              : { ...asked, machine: placed.name, placement: placed.placement };
+          if (placed?.arrives !== true) yield* orchestration.checkSpawnMachine(caller, input);
           const brief = yield* attachUserWords(
             store,
             "spawn_worker",
@@ -233,10 +232,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
             identities,
           };
           if (placed !== undefined)
-            sandboxPlans.set(resolved, {
-              ...(placed.prepare === undefined ? {} : { prepare: placed.prepare }),
-              givesBack: placed.givesBack,
-            });
+            sandboxPlans.set(resolved, { prepare: placed.prepare, givesBack: placed.givesBack });
           return resolved;
         }),
       needsApproval: (caller, _input, pinned) => orchestration.spawnNeedsApproval(caller, pinned),
@@ -368,7 +364,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "list_workers",
         class: "read",
         description:
-          "The ledger of your workers, grouped by feature with each feature's stage and group, and the groups with theirs; how many workers are live beside the charter's cap; the subscription limits in use and the share at which new workers pause; the workspace's `autonomy`; `app` (the running Gram's version and build, to tell whether a merged fix is live yet); and `workerModels`, the models spawn_worker takes, each with what the user wants it for (`useFor`) and the `default`. A full window on credits is no reason to avoid that agent's models. A worker's row gives its state, status, project, `machine` (name, `online`) if on another machine, branch and pull request (and those of each other repo it spans), the start of its last report, pending requests (each with its requestId and what it asks), overlaps, changed files, and cost only on a gateway; what is empty or zero is left out. `detail` gives full rows: the whole last report with its interface, the activity line, context use and how many messages you sent it. `live` keeps the workers that count against the cap, `state` those in the states named. Archived groups, their stage notes and archived workers are left out unless includeArchived (or `state` names `archived`); `since` (epoch ms) also leaves out archived, merged and delivered ones last active before it. Link a thread for the user as [title](#threadId).",
+          "The ledger of your workers, grouped by feature with each feature's stage and group, and the groups with theirs; how many workers are live beside the charter's cap; the subscription limits in use and the share at which new workers pause; the workspace's `autonomy`; `app` (the running Gram's version and build, to tell whether a merged fix is live yet); and `workerModels`, the models spawn_worker takes, each with what the user wants it for (`useFor`) and the `default`. A full window on credits is no reason to avoid that agent's models. A worker's row gives its state, status, project, `machine` (name, `online`) if on another machine, with its `packing` and the workers it shares it with (`sharesWith`), branch and pull request (and those of each other repo it spans), the start of its last report, pending requests (each with its requestId and what it asks), overlaps, changed files, and cost only on a gateway; what is empty or zero is left out. `detail` gives full rows: the whole last report with its interface, the activity line, context use and how many messages you sent it. `live` keeps the workers that count against the cap, `state` those in the states named. Archived groups, their stage notes and archived workers are left out unless includeArchived (or `state` names `archived`); `since` (epoch ms) also leaves out archived, merged and delivered ones last active before it. Link a thread for the user as [title](#threadId).",
       },
       audience: ["orchestrator"],
       input: Schema.Struct({
@@ -391,7 +387,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
                     budget,
                     features: ledger.features.map((feature) => ({
                       ...feature,
-                      workers: feature.workers.map(compactWorkerRow),
+                      workers: feature.workers.map(compactSharedRow),
                     })),
                   };
             }),
@@ -595,9 +591,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     });
 
     const dependsOn = yield* makeDependsOn;
-    const requestResources = makeRequestResources((caller, input) =>
-      requestWorkerResize({ store, onDemand, signedIn, workerHosts, joined }, caller, input),
-    );
+    const sandbox = { orchestration, store, onDemand, signedIn, workerHosts, joined };
+    const planner = workerSandbox;
+    const machineTools = yield* makeWorkerMachineTools({ sandbox, planner, runtimes, remoteHosts });
 
     const setStage = defineAppTool({
       descriptor: {
@@ -1120,7 +1116,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       scheduleWake,
       cancelWake,
       dependsOn,
-      requestResources,
+      ...machineTools,
       memoryList,
       memoryRead,
       memoryWrite,

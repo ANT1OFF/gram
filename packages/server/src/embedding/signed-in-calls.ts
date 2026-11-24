@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import { fenceRefusalOf, RELEASE_ACTS_WITHIN_MS } from "./signed-in-fences.ts";
 import type { MachineRun, Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
 import { codeOf, isNotFound, type NameLocks, withName } from "./worker-machine-stops.ts";
+import { ReleaseOccupied, releaseOccupied } from "./worker-seats.ts";
 
 /** How many times a start the server is unavailable for (`503`) is asked, and the first wait. */
 export const START_ATTEMPTS = 3;
@@ -357,6 +358,7 @@ export const tellSignedInRelease = (
           ? (answered.body as { known?: unknown }).known
           : undefined;
       if (known === false) return yield* Effect.fail(new Error("the server knows no such machine"));
+      if (releaseOccupied(answered.body)) return yield* Effect.fail(new ReleaseOccupied());
       const fenced = fenceRefusalOf(answered);
       if (fenced === "expired") {
         last = "it came after its time";

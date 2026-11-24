@@ -38,19 +38,19 @@ import {
   type Settings,
 } from "./settings.ts";
 import {
-  AutomaticDreamThreshold,
   IdleCompactKind,
   idleCompactOf,
   autonomyOf,
-  PauseAtLimitPct,
   OrchestratorCharter,
   WORKER_BRIEF_FOOTER_MAX,
   WORKER_MODEL_NOTE_MAX,
   WorkerBriefFooter,
+  workerPackingOf,
   type RosterModel,
   type WorkerModel,
   type WorkspaceState,
 } from "./workspaces.ts";
+import { decodeCharterScalar } from "./settings-chat-scalars.ts";
 import {
   ROUTINES_MAX,
   routineWhenText,
@@ -235,6 +235,15 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
     "workspace.maxConcurrentWorkers",
     "Max concurrent workers",
     (w) => charterOf(w)?.maxConcurrentWorkers,
+  ),
+  ws("workspace.workerPacking", "Where workers run by default", (w) =>
+    charterOf(w) === undefined ? undefined : workerPackingOf(charterOf(w)),
+  ),
+  ws(
+    "workspace.workersPerMachine",
+    "Most workers on one machine",
+    (w) => charterOf(w)?.workersPerMachine,
+    "what the machine's provider allows",
   ),
   ws(
     "workspace.pauseAtLimitPct",
@@ -972,24 +981,14 @@ export const planSettingsChanges = (
         } else into[field] = [...new Set(decoded.success)];
         break;
       }
+      case "workspace.workerPacking":
+      case "workspace.workersPerMachine":
       case "workspace.pauseAtLimitPct":
       case "workspace.automaticDreamThreshold": {
-        if (value === null) {
-          delete into[field];
-          break;
-        }
-        const schema =
-          key === "workspace.pauseAtLimitPct" ? PauseAtLimitPct : AutomaticDreamThreshold;
-        const decoded = decodeWith(schema, value);
-        if (Result.isFailure(decoded)) {
-          errors.push(
-            `${key}: ${
-              key === "workspace.pauseAtLimitPct"
-                ? "expected a whole percent from 1 to 100, or null for never"
-                : "expected a whole number from 1 to 1000, or null for off"
-            }.`,
-          );
-        } else into[field] = decoded.success;
+        const decoded = decodeCharterScalar(key, value);
+        if (!decoded.ok) errors.push(`${key}: ${decoded.expected}.`);
+        else if (decoded.value === undefined) delete into[field];
+        else into[field] = decoded.value;
         break;
       }
       case "workspace.workerBriefFooter": {

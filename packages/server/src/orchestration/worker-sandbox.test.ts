@@ -193,9 +193,11 @@ describe("a worker's machine brought up for a spawn", () => {
         orchestration: {} as never,
         store: {
           getThread: () => Effect.succeed({ checkout: { kind: "main", path: "/repo" } }),
+          listThreads: Effect.succeed([]),
         } as never,
-        // Never reached: a share asks the provider nothing.
-        onDemand: {} as never,
+        // What the provider offers Grace was asked a moment ago and is kept: nothing, so it keeps
+        // no seats either, and a share asks it nothing.
+        onDemand: { choices: new Map([["grace", { at: Date.now() }]]) } as never,
         signedIn: undefined,
         workerHosts: { ownerOf: () => "grace" } as never,
         joined: () => [{ ...machine, owner: "grace" }] as never,
@@ -203,7 +205,15 @@ describe("a worker's machine brought up for a spawn", () => {
       const planned = yield* plan(CALLER, INPUT, { shareWith: NAME, reason: "Same build." });
       // By name alone, as before hosted machines: no wait for it to join ahead of the spawn,
       // which would stall up to five minutes and then refuse it, a retry of a made spawn too.
-      expect(planned).toEqual({ name: NAME, givesBack: false });
+      expect(planned).toMatchObject({
+        name: NAME,
+        givesBack: false,
+        arrives: false,
+        placement: { machine: NAME, shared: true, packing: "named", why: "Same build." },
+      });
+      // No seat is kept where the provider keeps none.
+      expect(planned?.placement.seat).toBeUndefined();
+      expect(yield* planned!.prepare).toEqual({});
     }).pipe(Effect.scoped),
   );
 

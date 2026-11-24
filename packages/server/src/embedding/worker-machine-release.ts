@@ -23,6 +23,8 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
+import { makeSeatUpkeep, seatAsker, seatsHere } from "./worker-seat-upkeep.ts";
+import { ReleaseOccupied, releaseOccupied } from "./worker-seats.ts";
 import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
 import { setAsideReleased } from "./hosted-machine-set-aside.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -191,7 +193,10 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
     timeoutMs: 15_000,
   }).pipe(
     Effect.flatMap((response) =>
-      Effect.promise(() => response.body?.cancel() ?? Promise.resolve()),
+      Effect.promise(() => response.json().catch(() => undefined) as Promise<unknown>),
+    ),
+    Effect.flatMap((body) =>
+      releaseOccupied(body) ? Effect.fail(new ReleaseOccupied()) : Effect.void,
     ),
   );
 
@@ -289,8 +294,11 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
     const store = yield* ThreadStore;
     const runtimes = Option.getOrUndefined(yield* Effect.serviceOption(ThreadRuntimes));
     const told = new Map<string, { readonly released: boolean; readonly at: number }>();
+    const asker = seatAsker(hosts, relayed);
+    const upkeep = asker === undefined ? undefined : makeSeatUpkeep(asker);
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
+      upkeep?.prune(new Set(machines.map((machine) => machine.id)));
       if (machines.length === 0) return;
       const runs = new Map<string, MachineRun | null | undefined>(
         machines.flatMap((machine) =>
@@ -313,6 +321,12 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
         for (const id of finishedWorkers(ledger.value.features)) embeddedFinished.add(id);
       }
+      if (upkeep !== undefined)
+        for (const machine of machines)
+          yield* upkeep.look(
+            machine,
+            seatsHere(machine, threads, machine.via === undefined ? embeddedFinished : finished),
+          );
       const decided = releaseDecisions(
         machines,
         threads,
@@ -324,6 +338,10 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       for (const { machine, released, run } of decided) {
         const sent = yield* tell(machine, released, run).pipe(Effect.result);
         recordTold(told, machine, released, sent._tag === "Success", Date.now());
+        if (sent._tag === "Failure" && sent.failure instanceof ReleaseOccupied) {
+          upkeep?.occupied(machine);
+          continue;
+        }
         if (sent._tag === "Failure" && !(sent.failure instanceof ReleaseHeldOff)) {
           yield* Effect.logWarning("a worker machine's release could not be told").pipe(
             Effect.annotateLogs({ machine: machine.name, reason: sent.failure.message }),

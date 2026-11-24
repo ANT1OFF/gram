@@ -7,6 +7,8 @@ export const WORKER_MACHINE_CALLS = [
   "stop",
   "resize",
   "move",
+  "workers",
+  "machines",
 ] as const;
 export type WorkerMachineCall = (typeof WORKER_MACHINE_CALLS)[number];
 

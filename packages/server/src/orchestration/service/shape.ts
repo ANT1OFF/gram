@@ -781,8 +781,15 @@ export interface OrchestrationShape {
       };
       /** The running Gram app's version and build (`appLabelOf`), when known. */
       readonly app?: string;
-      /** The joined machines `spawn_worker`'s `machine` can name, when any is joined. */
-      readonly machines?: ReadonlyArray<{ readonly name: string; readonly online: boolean }>;
+      /**
+       * The joined machines `spawn_worker`'s `machine` can name, when any is joined, each with
+       * the unfinished workers of this orchestrator on it.
+       */
+      readonly machines?: ReadonlyArray<{
+        readonly name: string;
+        readonly online: boolean;
+        readonly workers?: ReadonlyArray<ThreadId>;
+      }>;
     },
     AppToolError
   >;

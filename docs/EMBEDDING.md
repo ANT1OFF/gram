@@ -338,11 +338,12 @@ owner, is taken: anything else is `404`. Progress is kept in memory, for the per
 An orchestrator on a person's host may ask for a machine of a worker's own, through `spawn_worker`'s
 `sandbox`: `{own: true, size?, architecture?, isolation?, environment?}` asks for one (each by the
 provider's own id for it; `isolation` is how strongly it is kept from other machines), `{shareWith}` places the worker on one
-it already has (by machine name or a worker's thread id), and leaving it out keeps the worker on the
-orchestrator's machine. `reason` says in a sentence why the work needs that machine; the worker
-keeps it with the machine and what was named as `spawnedBy.placement`, and its row in the workers
-panel shows "Own · VM · x86 · L" (by the person's own choices' short labels) with the reason on
-hover. This is the one path by which an agent, not a person's own request, starts a
+it already has (by machine name or a worker's thread id), `{shared: true}` packs it onto any of
+its shared machines with room ([several workers on one machine](#several-workers-on-one-machine)),
+and `{own: false}` keeps the worker on the orchestrator's machine. Left out, the workspace's
+default applies, which unset is the orchestrator's machine. `reason` says in a sentence why the
+work needs that machine; the worker keeps it with the machine, how it was packed and what was
+named as `spawnedBy.placement`, and `list_workers` gives it on the worker's row. This is the one path by which an agent, not a person's own request, starts a
 host, so the provider holds it to what the person and their organisation allow:
 
 - the server asks `POST /hosts/start` with `{ kind: "worker", owner, name, options: { orchestrator,
@@ -372,7 +373,7 @@ provider keeps the disk. Each is told once; after a restart it may be told again
 takes as the same word. `404` means the provider keeps none of this.
 
 A worker host can hold a larger size for a while (`request_resources`,
-`orchestration/request-resources-tool.ts`). A worker asks for its own host before a heavy step,
+`orchestration/request-resources-tool.ts`). A worker asks for its host before a heavy step,
 such as a full check, a big build or a long test run. The server
 asks `POST /hosts/resize` with `{ kind: "worker", owner, name, size, holdMinutes?, reason? }`. `size`
 is one of the provider's size ids, or `null` to go back to the size the host started at. The
@@ -399,6 +400,116 @@ logged as `machine resume timing`, and an hourly `idle machine measurement` log 
 last week and hour: eligible machine-minutes after a warm minute, minutes blocked by gate and
 blocker, and the resume latency's p50 and p95. Nothing here stops or starts a host. Desktop-relayed
 hosts are measured only while the desktop runs.
+
+### Several workers on one machine
+
+An orchestrator decides how tightly its workers are packed onto hosted machines, spawn by spawn.
+A worker on a machine that is already running starts in seconds, where a new machine takes most of
+a minute, and a reviewer placed beside its author can read the author's worktree (`readAlso`).
+
+| `sandbox`                             | Where the worker runs                                                                                    |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `{own: true, …}`                      | A new machine of its own. Another worker is placed there only by naming it.                              |
+| `{own: true, exclusive: true, …}`     | A machine of its own that is never shared.                                                               |
+| `{shared: true, …}`                   | Any of the orchestrator's shared machines with room and the same picks; with none, a new shared machine. |
+| `{shareWith: <thread id or machine>}` | The machine named.                                                                                       |
+| `{own: false}`                        | The orchestrator's own machine, whatever the default says.                                               |
+| left out                              | The workspace's default (`workerPacking`): `orchestrator` unless the user set `shared` or `own`.         |
+
+- **Opt-in.** No worker goes on a machine another worker is on unless its spawn says so
+  (`shareWith`, `shared`) or the workspace's `workerPacking` does. A workspace that sets nothing
+  behaves exactly as before. With `shared` or `own` set and no provider offering machines, a spawn
+  with no `sandbox` runs on the orchestrator's machine as before.
+- **One orchestrator's workers only.** A machine is placed on only by the orchestrator whose
+  workers are on it: naming one that carries another orchestrator's worker is refused.
+- **The shared pool.** A machine is one of an orchestrator's shared machines once a worker was
+  placed on it with `shared`. A spawn joins one with the same named picks (size, architecture,
+  isolation, environment) that has room. Machines started with `own` are reached only by name.
+  Spawns that come while a new shared machine is still coming up join it, so a burst fills one
+  machine instead of starting several: each takes a seat as it is resolved, before any approval
+  card, and a seat never used lapses after ten minutes.
+- **The cap.** A machine carries at most what its provider says a machine of that size is for,
+  lowered by the workspace's `workersPerMachine` (1 to 8), and 4 where the provider says nothing.
+  Counted: the orchestrator's open workers there that the ledger doesn't read as finished, and
+  the seats of spawns under way. A named machine with no room is refused with who is on it.
+- **`shareWith` checks its picks.** A size, architecture, isolation or environment named with it
+  that differs from what the machine was started with is refused; naming none takes the machine
+  as it is. A machine started `exclusive` is never shared, and a worker placed exclusive is never
+  moved onto a machine it would share.
+- **The ledger.** `list_workers` gives each worker on a machine its `packing` (`own`,
+  `exclusive`, `shared`, `named`) and the other unfinished workers there (`sharesWith`), and each
+  machine its `workers`. `worker_machines` gives each machine's cap, room, size and who is on it,
+  to an orchestrator for all of its machines and to a worker for its own.
+
+**What workers on one machine share.** Everything but their worktrees. They run as one user in
+one container: one home folder, one temp folder, one process table, one set of ports, one disk
+and the machine's memory and CPU. A worker can read and change another's files, read what
+another's tools stored or exported, and signal its processes. Each has its own worktree in the
+machine's clone, and the prompt tells a worker on a shared machine to bind ports of its own, to
+install nothing globally and to leave other workers' folders alone, which guards against
+accidents and nothing more. Nothing here limits one worker's memory or CPU: a build that
+outgrows the machine is the provider's to kill, and a worker asks for room first
+(`request_resources`, which on a shared machine is that worker's own hold). So work that reads
+what outsiders wrote (web pages, other people's issues or pull requests), or that holds a secret
+of its own, gets `{own: true, exclusive: true}`. Separating workers on one machine (a home and a
+temp folder each, confinement to their own folders) is not built.
+
+**What the provider keeps.** A provider may keep who is on each machine, and then holds a machine
+to rules this Gram alone could get wrong. It says so in its choices answer:
+
+```json
+{ "sharing": { "workers": { "large": 4, "xlarge": 8 }, "size": "large" } }
+```
+
+`workers` is how many workers a machine of each size is for, and `size` the size a machine
+starts at when none is named. A provider that says nothing of `sharing` is sent none of what
+follows, and this Gram's own cap is all that bounds a machine.
+
+- `POST /hosts/start` carries `options.sharing: { mode }`, `own`, `exclusive` or `shared`, which
+  the provider keeps with the machine.
+- `POST /hosts/workers` `{ kind: "worker", owner, name, orchestrator?, attach?: { worker,
+  environment? }, detach?: [seat] }` takes a seat for a worker (`worker` is an id this Gram makes
+  for it, kept as `spawnedBy.placement.seat`), gives seats up, or with neither reads them. `200
+  { workers, cap?, size?, mode? }`. `409 { code, message, cap?, workers? }` refuses the seat:
+  `machine_full`, `exclusive`, `other_orchestrator`, `environment_mismatch` or `released`. The
+  spawn is then refused in the provider's words, and a machine it started is given back. `404`
+  or `501`: it keeps none.
+- `POST /hosts/machines` `{ kind: "worker", owner }` lists the person's worker machines: `{
+  machines: [{ name, size?, held?, architecture?, isolation?, environment?, running, mode?,
+  cap?, workers, usage?: { cpu, memoryGb } }] }`.
+- `POST /hosts/resize` carries `worker`, the asking worker's seat: the hold is then that
+  worker's, and the provider has the machine hold the largest of its workers' holds.
+- `POST /hosts/release` may answer `{ applied: false, code: "occupied", workers }`: workers still
+  have seats there, and the machine is kept. Every pass this Gram looks at the seats of each
+  machine a worker of its has one on and gives up those whose worker's work is over, once a seat
+  was nobody's on two looks in a row (a spawn takes its seat a moment before its worker exists).
+  So a machine is released only after its last worker is done.
+
+A hosted server the desktop is signed in to takes the same as `…/workers` and `…/machines`, with
+no `kind` or `owner`.
+
+### Moving a worker
+
+`place_worker` moves a worker to another hosted machine, with `to` in `sandbox`'s shape. An
+orchestrator moves its own workers. A worker may only ask `{own: true}` for itself: packing
+workers together is its orchestrator's decision, since a worker that could put itself beside
+another could reach that worker's files.
+
+A turn can't be carried: its processes, its terminals and the agent's own session file stay on
+the machine. So a worker moves between turns. One at rest (cold, idle or failed) moves at once.
+One in a turn is queued and moves when it next rests, looked at every half minute for a day;
+`cancel: true` drops it. Queued moves are kept in memory and are lost when this Gram restarts.
+
+The move uses what a machine's stop does (`orchestration/worker-moves.ts`): the worker's folders
+are kept at the remote on its hidden ref (`host.stop.keep`), the machine it goes to makes them
+again from the remote and that ref (`host.stop.restore`, a host that names `wip-restore-ref`),
+and only then is the thread pointed there. Its next session opens on the new machine and reads
+the recent turns, as after a machine came back on another disk. A step that fails leaves the
+worker where it was. The folder it leaves is removed only when nothing in it is uncommitted.
+Folders it was only let read on the old machine (`readAlso`) are let go.
+
+Not moved: a worker to or from its orchestrator's own machine or this one, a worker in a
+worktree it made itself, and one whose folder wasn't made from a clone its machine keeps.
 
 ### Workers' own machines for a desktop orchestrator
 

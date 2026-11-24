@@ -950,7 +950,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
                 tool,
                 refusal(
                   "not_allowed",
-                  `readAlso names “${sibling.title}” [thread ${id}], which runs on another machine than this worker would.`,
+                  `readAlso names “${sibling.title}” [thread ${id}], which runs on another machine than this worker would. Put this worker on that machine with sandbox: {"shareWith": "${id}"}.`,
                 ),
               );
             }

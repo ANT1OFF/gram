@@ -15,6 +15,7 @@ import { DigestWaiting, type DigestWaitingEnded } from "./digest-waiting.ts";
 import type { WaitKind } from "./waits.ts";
 import { StoredWakeCondition, WakeCondition, wakeConditionWhen } from "./wake-conditions.ts";
 import { WorkerQuestion } from "./worker-questions.ts";
+import { WorkerPacking } from "./worker-packing.ts";
 
 /** What a thread is beyond a conversation: a workspace's orchestrator, or its memory's dream pass. */
 export const ThreadRole = Schema.Literals(["orchestrator", "dream"]);
@@ -60,6 +61,13 @@ export const WorkerPlacement = Schema.Struct({
   machine: Schema.String.check(Schema.isMaxLength(200)),
   /** Set when it shares another worker's machine rather than starting its own. */
   shared: Schema.optionalKey(Schema.Boolean),
+  /** How it was packed (`WorkerPacking`); absent on a worker placed before packing was said. */
+  packing: Schema.optionalKey(WorkerPacking),
+  /**
+   * What the machine's provider knows this worker by there, where it keeps who is on each machine:
+   * given up when the worker's work is over, so the machine is released after its last worker.
+   */
+  seat: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(64))),
   picks: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   why: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(400))),
 });
@@ -525,6 +533,13 @@ export const WorkerLedgerEntry = Schema.Struct({
    * only, for a worker on another machine. One no longer joined keeps its `hostId` alone.
    */
   machine: Schema.optionalKey(Schema.Struct({ name: Schema.String, online: Schema.Boolean })),
+  /** How it was packed onto that machine, when its orchestrator chose (`WorkerPlacement.packing`). */
+  packing: Schema.optionalKey(WorkerPacking),
+  /**
+   * The other workers of this orchestrator on the same machine and not yet finished, as
+   * `list_workers` says it: who it shares the machine's files, processes and ports with.
+   */
+  sharesWith: Schema.optionalKey(Schema.Array(ThreadId)),
   /** The other repos this worker was given; `project`, `branch` and `pr` above are its first. */
   alsoIn: Schema.optionalKey(Schema.Array(WorkerRepo)),
   /** Workers in the same project whose changed files intersect this one's. */
