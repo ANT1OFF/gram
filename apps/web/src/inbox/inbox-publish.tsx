@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/motion";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import type { InboxEntry } from "@/orchestration/inbox-model";
+import { keptDiff } from "@/panels/kept-diff";
 import { useThreadsStore } from "@/stores/threads";
 
 import { publishSummaryOf } from "./inbox-publish-model";
@@ -146,8 +147,10 @@ function PublishRow({
       ? null
       : `${git.changesToken}:${git.base ?? ""}:${git.behindBase}:${git.aheadBase}`;
   });
+  const diffKey = ["git.diff", threadId, "branch", null, stamp] as const;
   const query = useQuery({
-    queryKey: ["git.diff", threadId, "branch", null, stamp, false],
+    queryKey: [...diffKey, false],
+    placeholderData: keptDiff(diffKey),
     queryFn: () => api.gitDiff(threadId, { kind: "branch" }),
     retry: false,
   });

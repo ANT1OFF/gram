@@ -1,6 +1,7 @@
 import type { ProjectId, Thread, ThreadId, ThreadStatus, ThreadSummary } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
+import { awaited } from "./asking-test-fixtures";
 import { rollupOf } from "./grouping";
 
 const summary = (
@@ -9,7 +10,7 @@ const summary = (
   thread: Partial<Thread> = {},
 ): ThreadSummary => ({
   status,
-  pendingRequests: [],
+  pendingRequests: awaited(status),
   queue: [],
   thread: {
     id: id as ThreadId,

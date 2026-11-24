@@ -24,6 +24,7 @@ import {
   useAttentionStore,
 } from "./attention";
 import { useThreadsStore } from "@/stores/threads";
+import { awaited } from "./asking-test-fixtures";
 import { needsYou, nextNeedsYou, sectionOf, rollupOf } from "./grouping";
 
 /** How many of `summaries` need the user, each of which Needs you gives an item. */
@@ -235,8 +236,8 @@ describe("worker-owned CI across badges and notifications", () => {
   it("keeps approval requests and questions actionable beside owned CI", () => {
     setWorker();
     const red = live();
-    expect(needsYouCount([{ ...red, status: "needsApproval" }])).toBe(1);
-    expect(needsYouCount([{ ...red, status: "needsInput" }])).toBe(1);
+    for (const status of ["needsApproval", "needsInput"] as const)
+      expect(needsYouCount([{ ...red, status, pendingRequests: awaited(status) }])).toBe(1);
   });
 });
 
