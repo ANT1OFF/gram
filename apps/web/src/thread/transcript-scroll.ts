@@ -1,3 +1,5 @@
+import type { Virtualizer } from "@tanstack/react-virtual";
+
 /** The nearest viewport which will consume vertical input, respecting native wheel chaining. */
 export function scrollOwner(
   target: EventTarget | null,
@@ -73,4 +75,22 @@ export function consumeScrollGesture(
     viewport.scrollTop > previousTop &&
     viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= 1;
   return { resume, gesture: resume || gesture.kind === "wheel" ? undefined : gesture };
+}
+
+/**
+ * Ends every scroll the virtualizer still means to make, so the rows stay where the reader sees
+ * them. `cancelScroll` stops a scroll command, but not a correction the browser clamped: rows that
+ * grew before the list did ask for more than the list can scroll yet, and the virtualizer writes
+ * the rest on a later update (virtual-core 3.19.11). A press can be that update, and move the rows
+ * between pressing and releasing. Writing where the list is now replaces the correction. Where the
+ * list is, not the virtualizer's `scrollOffset`: a clamped write that moved nothing leaves that at
+ * the correction's target. For a press or a key that doesn't scroll; a wheel, a touch or a
+ * scrollbar drag moves the list, and the virtualizer drops the correction on that scroll itself.
+ */
+export function holdStill(
+  virtualizer: Pick<Virtualizer<Element, Element>, "scrollToOffset" | "cancelScroll">,
+  list: Pick<Element, "scrollTop">,
+): void {
+  virtualizer.scrollToOffset(list.scrollTop);
+  virtualizer.cancelScroll();
 }
