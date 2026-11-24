@@ -78,8 +78,8 @@ const parseCounts = (stdout: string) => {
     .split(/\s+/)
     .map((part) => Number.parseInt(part, 10));
   return {
-    behind: Number.isFinite(behind) ? (behind as number) : 0,
-    ahead: Number.isFinite(ahead) ? (ahead as number) : 0,
+    behind: behind !== undefined && Number.isFinite(behind) ? behind : 0,
+    ahead: ahead !== undefined && Number.isFinite(ahead) ? ahead : 0,
   };
 };
 

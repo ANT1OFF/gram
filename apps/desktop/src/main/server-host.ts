@@ -2,6 +2,7 @@ import type { UpdateEssential } from "@gram/contracts";
 import { createInterface } from "node:readline";
 
 import { bootUrlFromLine, bootUrlFromMessage, isBootLine } from "./boot.ts";
+import * as Predicate from "effect/Predicate";
 
 const STOP_TIMEOUT_MS = 10_000;
 const FORCE_KILL_GRACE_MS = 2_000;
@@ -226,7 +227,9 @@ interface Running {
   };
 }
 
-const ESSENTIALS = new Set<unknown>(["sessions", "agents", "database"]);
+const ESSENTIALS: ReadonlyArray<UpdateEssential> = ["sessions", "agents", "database"];
+const isEssential = (failed: unknown): failed is UpdateEssential =>
+  ESSENTIALS.some((each) => each === failed);
 const RESOURCE_KIND = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
 const MAX_RESOURCE_KINDS = 16;
 
@@ -234,11 +237,10 @@ const MAX_RESOURCE_KINDS = 16;
 export function essentialsFromMessage(
   message: unknown,
 ): { readonly failed: UpdateEssential } | { readonly waitingOn: Record<string, number> } | null {
-  if (typeof message !== "object" || message === null) return null;
-  const { type, success, failed, waitingOn } = message as Record<string, unknown>;
+  if (!Predicate.isObject(message)) return null;
+  const { type, success, failed, waitingOn } = message;
   if (type !== "shutdownEssentials") return null;
-  if (success === false)
-    return ESSENTIALS.has(failed) ? { failed: failed as UpdateEssential } : null;
+  if (success === false) return isEssential(failed) ? { failed } : null;
   if (success !== true) return null;
   const kinds: Record<string, number> = {};
   if (typeof waitingOn === "object" && waitingOn !== null) {

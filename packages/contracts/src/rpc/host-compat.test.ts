@@ -255,7 +255,7 @@ describe("the host protocol as released", () => {
   });
 });
 
-const wire = (...rpcs: ReadonlyArray<Rpc.Any>): HostWire =>
+const wire = (...rpcs: ReadonlyArray<Rpc.AnyWithProps>): HostWire =>
   describeHostWire(RpcGroup.make(...rpcs), { protocol: 2, requires: ["files"] });
 
 describe("what breaks a released peer", () => {
@@ -265,7 +265,8 @@ describe("what breaks a released peer", () => {
     success: Schema.Struct({ kind: Kind, size: Schema.Int }),
   };
   const was = wire(Rpc.make("list", base), Rpc.make("watch", { success: Kind, stream: true }));
-  const against = (...rpcs: ReadonlyArray<Rpc.Any>) => told(hostWireBreaks(was, wire(...rpcs)));
+  const against = (...rpcs: ReadonlyArray<Rpc.AnyWithProps>) =>
+    told(hostWireBreaks(was, wire(...rpcs)));
   const watch = Rpc.make("watch", { success: Kind, stream: true });
 
   it("lets a protocol grow: a new call, a new optional field either way", () => {

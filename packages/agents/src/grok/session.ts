@@ -95,8 +95,8 @@ export const withHeadlessSignIn = (
   if (command === undefined || command.trim() === "") return connection;
   return {
     ...connection,
-    request: async <T>(method: string, params: Record<string, unknown>) => {
-      const result = await connection.request<T>(method, params);
+    request: async (method: string, params: Record<string, unknown>) => {
+      const result = await connection.request(method, params);
       if (method === "initialize")
         await connection.request("authenticate", {
           methodId: "grok.com",

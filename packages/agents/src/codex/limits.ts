@@ -1,7 +1,8 @@
 import type { AgentEvent, SubscriptionLimitReport } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 const object = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  Predicate.isObject(value) ? value : {};
 
 function codexLimitSnapshot(snapshot: unknown): ReadonlyArray<SubscriptionLimitReport> {
   const raw = object(snapshot);

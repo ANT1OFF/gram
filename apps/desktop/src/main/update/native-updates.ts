@@ -10,6 +10,8 @@ import {
 
 import type { CandidateSnapshot } from "./native-snapshot.ts";
 import { UpdateTeardownRefused } from "./shutdown.ts";
+import { nodeTimers } from "../node-timers.ts";
+import * as Predicate from "effect/Predicate";
 
 /** The first automatic check waits for launch to settle. */
 export const STARTUP_CHECK_DELAY_MS = 15_000;
@@ -179,7 +181,7 @@ const sentence = (text: string) => (/[.!?…]$/.test(text) ? text : `${text}.`);
 export function plainNotes(notes: unknown): string | null {
   const text = Array.isArray(notes)
     ? notes
-        .map((note: unknown) => (note as { note?: unknown } | null)?.note)
+        .map((note: unknown) => (Predicate.isObject(note) ? note["note"] : undefined))
         .filter((note): note is string => typeof note === "string")
         .join("\n\n")
     : typeof notes === "string"
@@ -222,10 +224,10 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
   const target = options.target ?? "mac";
   const copy = COPY[target];
   const now = options.now ?? Date.now;
-  const later = options.setTimeout ?? ((callback, ms) => setTimeout(callback, ms));
+  const timers = nodeTimers();
+  const later = options.setTimeout ?? timers.setTimeout;
   const every = options.setInterval ?? ((callback, ms) => setInterval(callback, ms));
-  const cancelLater =
-    options.clearTimeout ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>));
+  const cancelLater = options.clearTimeout ?? timers.clearTimeout;
 
   function detectionBudget() {
     let expired = false;

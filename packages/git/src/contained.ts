@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
@@ -40,7 +41,7 @@ const walkDirs = (root: string, dirs: ReadonlyArray<string>, create: boolean): s
       try {
         fs.mkdirSync(dir);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+        if (errnoCode(error) !== "EEXIST") throw error;
       }
       stat = lstatOrUndefined(dir);
     }

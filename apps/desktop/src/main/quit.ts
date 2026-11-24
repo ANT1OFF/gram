@@ -1,3 +1,4 @@
+import * as Predicate from "effect/Predicate";
 /** The whole quit's bound; past it, the quit is forced. */
 export const QUIT_DEADLINE_MS = 10_000;
 /** A quit still running after this shows its progress, with Quit now. */
@@ -23,8 +24,8 @@ const count = (value: unknown) =>
 
 /** The `ServerShutdown` in a server message, or null for any other message. */
 export function serverShutdownFromMessage(message: unknown): ServerShutdown | null {
-  if (typeof message !== "object" || message === null) return null;
-  const { type, agents, working } = message as Record<string, unknown>;
+  if (!Predicate.isObject(message)) return null;
+  const { type, agents, working } = message;
   if (type !== "shutdown") return null;
   return { agents: count(agents), working: count(working) };
 }
@@ -34,8 +35,8 @@ export function serverShutdownFromMessage(message: unknown): ServerShutdown | nu
  * quits, or null for any other message.
  */
 export function keptRunningFromMessage(message: unknown): number | null {
-  if (typeof message !== "object" || message === null) return null;
-  const { type, agents } = message as Record<string, unknown>;
+  if (!Predicate.isObject(message)) return null;
+  const { type, agents } = message;
   if (type !== "keptRunning") return null;
   const left = count(agents);
   return left > 0 ? left : null;

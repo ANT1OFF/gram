@@ -1,15 +1,15 @@
 import type { LogLevel } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 const BOOT_PREFIX = "boot ";
-const LOG_LEVELS: ReadonlySet<string> = new Set(["error", "warn", "info", "debug", "trace"]);
+const LOG_LEVELS: ReadonlyArray<LogLevel> = ["error", "warn", "info", "debug", "trace"];
+const isLogLevel = (level: unknown): level is LogLevel => LOG_LEVELS.some((each) => each === level);
 
 /** The level from the server's `{ type: "logLevel", level }` message, posted when the setting changes. */
 export function logLevelFromMessage(message: unknown): LogLevel | null {
-  if (typeof message !== "object" || message === null) return null;
-  const { type, level } = message as Record<string, unknown>;
-  return type === "logLevel" && typeof level === "string" && LOG_LEVELS.has(level)
-    ? (level as LogLevel)
-    : null;
+  if (!Predicate.isObject(message)) return null;
+  const { type, level } = message;
+  return type === "logLevel" && isLogLevel(level) ? level : null;
 }
 
 function launchUrl(candidate: unknown): string | null {
@@ -28,8 +28,8 @@ function launchUrl(candidate: unknown): string | null {
  * `process.parentPort` under utilityProcess. Null for any other message.
  */
 export function bootUrlFromMessage(message: unknown): string | null {
-  if (typeof message !== "object" || message === null) return null;
-  const { type, url } = message as Record<string, unknown>;
+  if (!Predicate.isObject(message)) return null;
+  const { type, url } = message;
   return type === "boot" ? launchUrl(url) : null;
 }
 

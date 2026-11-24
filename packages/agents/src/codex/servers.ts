@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import {
   AgentUnavailable,
   type CodexHome,
+  fieldsOf,
   type GatewayProfile,
   type ProfileId,
   type ThreadId,
@@ -285,9 +286,9 @@ const cacheKey = (
 export const SERVER_WIDE = "";
 
 const threadOf = (message: ServerMessage): string | undefined => {
-  const params = (message as { params?: { threadId?: unknown; thread?: { id?: unknown } } }).params;
-  if (typeof params?.threadId === "string") return params.threadId;
-  return typeof params?.thread?.id === "string" ? params.thread.id : undefined;
+  const params = fieldsOf("params" in message ? message.params : undefined);
+  const id = params.get("threadId") ?? fieldsOf(params.get("thread")).get("id");
+  return typeof id === "string" ? id : undefined;
 };
 
 const homeIdentity = (env: Readonly<Record<string, string | undefined>>): string => {

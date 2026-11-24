@@ -12,6 +12,7 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it, vi } from "@effect/vitest";
 import type { AgentHost, OpenSessionOptions } from "@gram/agents";
 import {
+  errnoCode,
   HOST_PROTOCOL_VERSION,
   HostId,
   HostUnavailable,
@@ -19,7 +20,7 @@ import {
   type HostCapability,
   ThreadId,
 } from "@gram/contracts";
-import { errnoCode, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
+import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";

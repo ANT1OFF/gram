@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type { GatewayModel, ProfileId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 
 /**
  * Codex's model catalog, as `codex debug models --bundled` prints it and `model_catalog_json`
@@ -31,13 +32,12 @@ const ALIASES: Readonly<Record<string, string>> = {
 /** The body of `codex debug models --bundled`, or `undefined` when it isn't a catalog. */
 export const parseCatalog = (text: string): CodexCatalog | undefined => {
   try {
-    const body = JSON.parse(text) as { models?: unknown } | null;
-    if (!Array.isArray(body?.models)) return undefined;
-    const models = body.models.filter(
+    const body: unknown = JSON.parse(text);
+    const listed = Predicate.isObject(body) ? body["models"] : undefined;
+    if (!Array.isArray(listed)) return undefined;
+    const models = listed.filter(
       (entry): entry is CatalogEntry =>
-        typeof entry === "object" &&
-        entry !== null &&
-        typeof (entry as { slug?: unknown }).slug === "string",
+        Predicate.isObject(entry) && typeof entry["slug"] === "string",
     );
     return models.length === 0 ? undefined : { models };
   } catch {

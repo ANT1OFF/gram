@@ -46,13 +46,13 @@ const part = (schema: Schema.Top): WirePart => {
 
 /** Writes down `rpcs` as the JSON each call puts on the wire. */
 export const describeHostWire = (
-  rpcs: { readonly requests: ReadonlyMap<string, unknown> },
+  rpcs: { readonly requests: ReadonlyMap<string, Rpc.AnyWithProps> },
   about: { readonly protocol: number; readonly requires: ReadonlyArray<string> },
 ): HostWire => {
   const calls: Record<string, WireCall> = {};
   const tags = [...rpcs.requests.keys()].toSorted();
   for (const tag of tags) {
-    const rpc = rpcs.requests.get(tag) as Rpc.AnyWithProps;
+    const rpc = rpcs.requests.get(tag)!;
     const success = rpc.successSchema;
     calls[tag] = RpcSchema.isStreamSchema(success)
       ? {
@@ -117,6 +117,29 @@ const values = (node: WireSchema): ReadonlyArray<unknown> | undefined =>
 const isObject = (value: unknown): value is WireSchema =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const fieldsOfSchema = (value: unknown): Record<string, WireSchema> =>
+  isObject(value)
+    ? Object.fromEntries(
+        Object.entries(value).map(([name, field]: [string, unknown]) => [
+          name,
+          isObject(field) ? field : {},
+        ]),
+      )
+    : {};
+
+const schemaList = (value: unknown): ReadonlyArray<WireSchema> =>
+  Array.isArray(value) ? value.map((each: unknown) => (isObject(each) ? each : {})) : [];
+
+const names = (value: unknown): ReadonlyArray<string> =>
+  Array.isArray(value)
+    ? value.filter((each: unknown): each is string => typeof each === "string")
+    : [];
+
+const under = (node: WireSchema, definitions: WirePart["definitions"]): Side => ({
+  node,
+  definitions,
+});
+
 const compare = (
   released: Side,
   current: Side,
@@ -134,10 +157,6 @@ const compare = (
   const b = now.side.node;
   const found: Array<WireBreak> = [];
   const say = (what: string, where = at) => found.push({ at: where, what });
-  const under = (node: WireSchema, definitions: WirePart["definitions"]): Side => ({
-    node,
-    definitions,
-  });
 
   const aChoice = shapes(a);
   const bChoice = shapes(b);
@@ -194,10 +213,10 @@ const compare = (
     }
   }
 
-  const aFields = isObject(a["properties"]) ? (a["properties"] as Record<string, WireSchema>) : {};
-  const bFields = isObject(b["properties"]) ? (b["properties"] as Record<string, WireSchema>) : {};
-  const aRequired = new Set(Array.isArray(a["required"]) ? (a["required"] as string[]) : []);
-  const bRequired = new Set(Array.isArray(b["required"]) ? (b["required"] as string[]) : []);
+  const aFields = fieldsOfSchema(a["properties"]);
+  const bFields = fieldsOfSchema(b["properties"]);
+  const aRequired = new Set(names(a["required"]));
+  const bRequired = new Set(names(b["required"]));
   for (const [name, old] of Object.entries(aFields)) {
     const fresh = bFields[name];
     const where = `${at}.${name}`;
@@ -234,8 +253,8 @@ const compare = (
   each("items", "[]");
   each("additionalProperties", "{}");
 
-  const aTuple = Array.isArray(a["prefixItems"]) ? (a["prefixItems"] as WireSchema[]) : [];
-  const bTuple = Array.isArray(b["prefixItems"]) ? (b["prefixItems"] as WireSchema[]) : [];
+  const aTuple = schemaList(a["prefixItems"]);
+  const bTuple = schemaList(b["prefixItems"]);
   if (aTuple.length !== bTuple.length)
     say(`its tuple went from ${aTuple.length} to ${bTuple.length} places`);
   for (const [index, old] of aTuple.entries()) {
@@ -273,9 +292,7 @@ const shapes = (node: WireSchema): ReadonlyArray<WireSchema> | undefined => {
 
 const tagOf = (node: WireSchema, side: Side): string => {
   const resolved = resolve({ node, definitions: side.definitions }).side.node;
-  const fields = isObject(resolved["properties"])
-    ? (resolved["properties"] as Record<string, WireSchema>)
-    : {};
+  const fields = fieldsOfSchema(resolved["properties"]);
   return Object.entries(fields)
     .flatMap(([name, field]) => {
       const named = values(field);

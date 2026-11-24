@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as Predicate from "effect/Predicate";
 
 /** The record the mock kit's `new-mock.mjs` keeps beside a mock's version pages. */
 export const MOCK_RECORD = "mock.json";
@@ -182,8 +183,8 @@ export const parseMockRecord = (content: string): MockRecord | undefined => {
   } catch {
     return undefined;
   }
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
-  const record = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return undefined;
+  const record = raw;
   const versions = (Array.isArray(record["versions"]) ? record["versions"] : []).flatMap(
     (version: unknown) => {
       if (typeof version !== "object" || version === null) return [];

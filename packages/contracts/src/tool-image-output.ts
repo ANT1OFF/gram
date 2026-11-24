@@ -1,3 +1,4 @@
+import * as Predicate from "effect/Predicate";
 /** Inline image bytes in supported MCP and dynamic tool result blocks. No URLs are fetched. */
 export interface InlineToolImage {
   readonly mediaType: string;
@@ -15,8 +16,8 @@ export function splitToolImageOutput(output: unknown): {
 } {
   const images: InlineToolImage[] = [];
   const block = (value: unknown, dynamic: boolean): unknown => {
-    if (typeof value !== "object" || value === null) return value;
-    const fields = value as Record<string, unknown>;
+    if (!Predicate.isObject(value)) return value;
+    const fields = value;
     if (
       !dynamic &&
       fields["type"] === "image" &&
@@ -38,8 +39,8 @@ export function splitToolImageOutput(output: unknown): {
     return value;
   };
   if (Array.isArray(output)) return { output: output.map((value) => block(value, true)), images };
-  if (typeof output === "object" && output !== null) {
-    const fields = output as Record<string, unknown>;
+  if (Predicate.isObject(output)) {
+    const fields = output;
     if (Array.isArray(fields["content"]))
       return {
         output: { ...fields, content: fields["content"].map((value) => block(value, false)) },

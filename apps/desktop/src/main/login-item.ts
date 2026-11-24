@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { basename, dirname, isAbsolute, join } from "node:path";
 
-import type { LaunchAtLogin } from "@gram/contracts";
+import { errnoCode, type LaunchAtLogin } from "@gram/contracts";
 
 import { appImageOrigin, nodeExecFs, type ExecFs } from "./appimage-origin.ts";
 
@@ -146,7 +146,7 @@ export const fileAutostart = (path: string, exec: string): Autostart => ({
     try {
       return readFileSync(path, "utf8");
     } catch (error) {
-      if ((error as { code?: string }).code === "ENOENT") return undefined;
+      if (errnoCode(error) === "ENOENT") return undefined;
       throw error;
     }
   },

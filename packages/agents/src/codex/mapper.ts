@@ -8,18 +8,17 @@ import {
   type AgentStatus,
   type BackgroundTask,
   patchChangeHunks,
-  type FileChange,
   type MessageId,
-  type PlanItem,
   type GramUIMessageChunk,
   type TokenUsage,
 } from "@gram/contracts";
 import { codexFailure, type CodexTurnError } from "../failure.ts";
 import { startupDiagnostic } from "./startup-diagnostic.ts";
 import type { ServerNotification } from "./protocol/ServerNotification.ts";
-import type { FileUpdateChange } from "./protocol/v2/FileUpdateChange.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import { autoReviewNotice } from "./auto-review-notice.ts";
+import type { FileUpdateChange } from "./protocol/v2/FileUpdateChange.ts";
+import { COLLAB_TITLES, FILE_KIND, PLAN_STATUS } from "./item-tables.ts";
 import {
   addCodexCounts,
   codexCounts,
@@ -117,30 +116,7 @@ interface Turn {
 
 const TOOL_FLAGS = { providerExecuted: true, dynamic: true } as const;
 const commandKey = (turnId: string, itemId: string) => JSON.stringify([turnId, itemId]);
-
-const COLLAB_TITLES = {
-  spawnAgent: "Spawn agent",
-  sendInput: "Send agent input",
-  resumeAgent: "Resume agent",
-  wait: "Wait for agents",
-  closeAgent: "Close agent",
-  sendMessage: "Message agent",
-  followupTask: "Assign agent task",
-  interruptAgent: "Interrupt agent",
-  listAgents: "List agents",
-} as const;
-
-const PLAN_STATUS: Record<string, PlanItem["status"]> = {
-  pending: "pending",
-  inProgress: "inProgress",
-  completed: "completed",
-};
-
-const FILE_KIND: Record<FileUpdateChange["kind"]["type"], FileChange["kind"]> = {
-  add: "add",
-  delete: "delete",
-  update: "modify",
-};
+const textOf = (value: unknown) => (typeof value === "string" ? value : undefined);
 
 /** A tool item as the tool part Claude's cards expect, or `undefined` for non-tool items. */
 export const toolOf = (
@@ -1009,7 +985,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         out.push({
           type: "notice",
           level: "warning",
-          message: (p as { message?: string }).message ?? p.summary ?? "Codex warning",
+          message: ("message" in p ? textOf(p.message) : undefined) ?? p.summary ?? "Codex warning",
           ...(options.diagnosticScope === undefined
             ? {}
             : {
@@ -1033,7 +1009,7 @@ export const makeCodexMapper = (options: CodexMapperOptions): CodexMapper => {
         out.push({
           type: "notice",
           level: "warning",
-          message: p.message ?? (p as { summary?: string }).summary ?? "Codex warning",
+          message: p.message ?? ("summary" in p ? textOf(p.summary) : undefined) ?? "Codex warning",
           ...(mcp && options.diagnosticScope !== undefined
             ? {
                 startupDiagnostic: startupDiagnostic(options.diagnosticScope, "Codex MCP startup", [

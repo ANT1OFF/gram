@@ -1,7 +1,8 @@
 import type { SubscriptionLimitReport } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 const object = (value: unknown): Record<string, unknown> =>
-  value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  Predicate.isObject(value) ? value : {};
 
 /** `get_usage` uses percentages and ISO resets; stream events use fractions and epoch seconds. */
 export function claudeSubscriptionLimits(

@@ -1,6 +1,7 @@
 import type { MergeStrategy } from "@gram/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import { gh, ghApi, gitFailMsg } from "./exec.ts";
 import { invalidatePrBadges } from "./pr-cache.ts";
 import type { Proc } from "./proc.ts";
@@ -115,8 +116,7 @@ export const repoMergeSettings = (
     } catch {
       return yield* new PrActionError({ message: "gh repo view returned no settings" });
     }
-    const settings =
-      typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+    const settings: Record<string, unknown> = Predicate.isObject(body) ? body : {};
     const autoMerge = yield* ghApi(workTree, [`repos/${repo}`, "--jq", ".allow_auto_merge"]).pipe(
       Effect.map((out) => out.status === 0 && !out.truncated && out.stdout.trim() === "true"),
       Effect.orElseSucceed(() => false),

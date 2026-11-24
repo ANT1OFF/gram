@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 
@@ -50,7 +51,7 @@ export const untrustedHeads = (commonDir: string): ReadonlyArray<UntrustedHead> 
   try {
     text = fs.readFileSync(nodePath.join(commonDir, HEADS_FILE), "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if (errnoCode(error) === "ENOENT") return [];
     throw error;
   }
   return text.split("\n").flatMap((line) => {

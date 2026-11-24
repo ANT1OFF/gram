@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import { devNull } from "node:os";
@@ -651,7 +652,7 @@ const isFree = (dir: string): boolean => {
   try {
     return fs.lstatSync(dir).isDirectory() && fs.readdirSync(dir).length === 0;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT";
+    return errnoCode(error) === "ENOENT";
   }
 };
 

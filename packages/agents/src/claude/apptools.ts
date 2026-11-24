@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import * as z from "zod";
 import { appToolAnnotations, appToolResultContent } from "../app-tools.ts";
 import type { AppTool, AppToolRegistryPort, RemoteAppTools, ToolAudience } from "../host.ts";
+import * as Predicate from "effect/Predicate";
 
 export const APP_TOOL_SERVER = "gram";
 
@@ -83,7 +84,7 @@ export interface AppToolServer {
 }
 
 const signalOf = (extra: unknown): AbortSignal | undefined => {
-  const signal = (extra as { readonly signal?: unknown } | undefined)?.signal;
+  const signal = Predicate.isObject(extra) ? extra["signal"] : undefined;
   return signal instanceof AbortSignal ? signal : undefined;
 };
 
@@ -106,6 +107,7 @@ export const buildAppToolServer = (
       sdk.tool(
         appTool.descriptor.name,
         appTool.descriptor.description,
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the Agent SDK's tool() takes a whole Zod object at run time; its types name only a raw shape
         toZodObject(appTool.input) as unknown as z.ZodRawShape,
         (args, extra) => {
           const signal = signalOf(extra);
@@ -145,6 +147,7 @@ export const buildRemoteAppToolServer = (
       return sdk.tool(
         listed.name,
         listed.description,
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the Agent SDK's tool() takes a whole Zod object at run time; its types name only a raw shape
         zod.loose() as unknown as z.ZodRawShape,
         (args, extra) =>
           remote

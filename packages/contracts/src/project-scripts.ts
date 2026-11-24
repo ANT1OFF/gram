@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { ProjectId } from "./ids.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Where a project keeps its scripts, relative to the project's folder. */
 export const SCRIPTS_FILE = ".gram/scripts.json";
@@ -109,12 +110,11 @@ export const scriptProblem = (
   if (script.shortcut !== undefined) {
     const shortcut = normalizeShortcut(script.shortcut);
     if ("error" in shortcut) return shortcut.error;
-    const taken = others.find(
-      (other) =>
-        other.shortcut !== undefined &&
-        "keys" in normalizeShortcut(other.shortcut) &&
-        (normalizeShortcut(other.shortcut) as { keys: string }).keys === shortcut.keys,
-    );
+    const taken = others.find((other) => {
+      if (other.shortcut === undefined) return false;
+      const theirs = normalizeShortcut(other.shortcut);
+      return "keys" in theirs && theirs.keys === shortcut.keys;
+    });
     if (taken !== undefined) return `${taken.name} already uses that shortcut.`;
   }
   return undefined;
@@ -153,11 +153,11 @@ export const parseScriptsFile = (
   } catch {
     return { error: `${SCRIPTS_FILE} isn't valid JSON.` };
   }
-  const entries = (raw as { scripts?: unknown } | null)?.scripts;
+  const entries = Predicate.isObject(raw) ? raw["scripts"] : undefined;
   if (!Array.isArray(entries)) return { error: `${SCRIPTS_FILE} has no "scripts" list.` };
   const scripts: ProjectScript[] = [];
   for (const [index, entry] of entries.entries()) {
-    const e = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
+    const e: Record<string, unknown> = Predicate.isObject(entry) ? entry : {};
     const { name, command, cwd, shortcut } = e;
     if (typeof name !== "string" || typeof command !== "string")
       return { error: `${SCRIPTS_FILE} script ${index + 1} needs a "name" and a "command".` };

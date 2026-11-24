@@ -37,6 +37,7 @@
     "gram/max-lines": "error",
     "gram/no-cross-package-path": "error",
     "typescript/ban-ts-comment": "error",
+    "typescript/no-unsafe-type-assertion": "off",
     "anti-slop/no-reflect-apply": "error",
     "anti-slop/no-reflect-get": "error",
     "anti-slop/no-widen-then-assert": "error",
@@ -64,7 +65,6 @@
     "typescript/no-unnecessary-type-arguments": "off",
     "typescript/no-unnecessary-type-conversion": "off",
     "typescript/no-unnecessary-type-parameters": "off",
-    "typescript/no-unsafe-type-assertion": "off",
     "typescript/no-useless-default-assignment": "off",
     "typescript/require-array-sort-compare": "off",
     "typescript/restrict-template-expressions": "off",
@@ -76,6 +76,18 @@
     "typescript/unbound-method": "off"
   },
   "overrides": [
+    {
+      "files": [
+        "packages/agents/src/**",
+        "packages/contracts/src/**",
+        "packages/git/src/**",
+        "packages/themes/src/**",
+        "apps/desktop/src/**"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "error"
+      }
+    },
     {
       "files": ["packages/*/src/**", "apps/*/src/**"],
       "rules": {
@@ -348,6 +360,13 @@
       }
     },
     {
+      "files": ["**/testing.ts", "**/testing/**", "**/test-utils.ts", "**/*-fixture.ts"],
+      "rules": {
+        // Fixture loaders and fakes for tests read recordings as the types they were recorded as.
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
       "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.test.mts", "**/*.test.mjs", "**/test/**"],
       "rules": {
         "no-restricted-imports": "off",
@@ -356,7 +375,8 @@
         "typescript/no-unsafe-assignment": "off",
         "typescript/no-unsafe-call": "off",
         "typescript/no-unsafe-member-access": "off",
-        "typescript/no-unsafe-return": "off"
+        "typescript/no-unsafe-return": "off",
+        "typescript/no-unsafe-type-assertion": "off"
       }
     }
   ],
