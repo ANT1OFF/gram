@@ -1184,14 +1184,16 @@ const make = Effect.gen(function* () {
       if (unarchived) {
         yield* locked(rt, drainQueue(rt));
       } else if (thread.parked && !before.parked) {
-        const idle = yield* locked(
+        const atRest = yield* locked(
           rt,
           Effect.sync(
             () =>
-              rt.status === "idle" && !rt.activity.subagentsRunning && rt.background.length === 0,
+              (rt.status === "idle" || rt.status === "error") &&
+              !rt.activity.subagentsRunning &&
+              rt.background.length === 0,
           ),
         );
-        if (idle) yield* stopSession(rt, "evict");
+        if (atRest) yield* stopSession(rt, "evict");
       } else if (thread.pinned !== before.pinned) {
         if (thread.pinned) {
           yield* cancelIdleTimer(rt);

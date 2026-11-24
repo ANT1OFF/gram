@@ -5,6 +5,7 @@ import type { ProcError } from "./errors.ts";
 import { git, tryRepoRoots, type RepoRoots } from "./exec.ts";
 import { tryRealPathSync } from "./paths.ts";
 import { Proc } from "./proc.ts";
+import { originTrackingRef } from "./ref-format.ts";
 
 /** How long a kept root or URL answers before it is asked again, unchanged files or not. */
 export const REPO_FACTS_TTL_MS = 5 * 60_000;
@@ -143,11 +144,12 @@ export const cachedOriginUrl = (cwd: string): Effect.Effect<string | undefined, 
 
 const readOriginHead = (cwd: string) =>
   git(cwd, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]).pipe(
-    Effect.map((out) => (out.status === 0 ? out.stdout.trim() || undefined : undefined)),
+    Effect.map((out) => (out.status === 0 ? originTrackingRef(out.stdout.trim()) : undefined)),
   );
 
 /**
- * What `refs/remotes/origin/HEAD` points at (such as `origin/main`), `undefined` without one; kept
+ * What `refs/remotes/origin/HEAD` points at (such as `origin/main`), `undefined` without one or
+ * when it isn't a valid `origin/<branch>` (the repository writes that file); kept
  * per checkout while that ref's file is unchanged. A symbolic ref is never packed, so `git remote
  * set-head`, a clone or its removal all show in the file's stamp. Fails as the `git` run does.
  */

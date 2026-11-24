@@ -715,7 +715,7 @@ export const CodexServersLive = (
             ),
             Effect.provideService(Scope.Scope, layerScope),
           );
-          threadOwner = ownership.owner(homeIdentity(env), rpc, () => {
+          threadOwner = ownership.owner(homeIdentity(env), rpc, child.pid, () => {
             retired = true;
             if (self !== undefined && servers.get(key) === self) servers.delete(key);
             if (users === 0) run(stopIfUnused);

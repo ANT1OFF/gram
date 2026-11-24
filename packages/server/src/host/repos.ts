@@ -237,7 +237,15 @@ export const reposOn = (
             yield* on(
               remoteGit(
                 dest,
-                ["-c", "credential.interactive=false", "fetch", "--quiet", "--prune", "origin"],
+                [
+                  "-c",
+                  "credential.interactive=false",
+                  "fetch",
+                  "--quiet",
+                  "--prune",
+                  "--end-of-options",
+                  "origin",
+                ],
                 {
                   timeoutMs: FETCH_TIMEOUT_MS,
                   env,
@@ -253,7 +261,15 @@ export const reposOn = (
             const cloned = yield* on(
               remoteGit(
                 dirname(dest),
-                ["-c", "credential.interactive=false", "clone", "--quiet", "--", url, partial],
+                [
+                  "-c",
+                  "credential.interactive=false",
+                  "clone",
+                  "--quiet",
+                  "--end-of-options",
+                  url,
+                  partial,
+                ],
                 { timeoutMs: CLONE_TIMEOUT_MS, env },
               ),
             ).pipe(Effect.mapError((error) => failed(error.message)));

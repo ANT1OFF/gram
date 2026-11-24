@@ -17,6 +17,7 @@ import {
   appendGitConfig,
   discoverySignature,
   gitEnvKey,
+  gitVersionProblem,
   type Guard,
   type ConfigEntry,
   guardFor,
@@ -521,6 +522,15 @@ const makeProc = Effect.gen(function* () {
   const probe = yield* PathProbe;
   const resolved = new Map<string, string>();
   const repoConfigGuard = makeRepoConfigGuard(runner);
+  const recentGit = new Set<string>();
+  const requireRecentGit = (exe: string, cwd: string, env: Readonly<Record<string, string>>) =>
+    Effect.gen(function* () {
+      if (recentGit.has(exe)) return;
+      const out = yield* runner.run(exe, "git", ["--version"], { cwd, tier: "local" }, env);
+      const problem = gitVersionProblem(out.status === 0 ? out.stdout : "");
+      if (problem !== undefined) return yield* new ProcSpawnError({ bin: "git", message: problem });
+      recentGit.add(exe);
+    });
   const run: ProcShape["run"] = (bin, args, options) =>
     Effect.gen(function* () {
       const pathValue = yield* probe.path;
@@ -535,6 +545,7 @@ const makeProc = Effect.gen(function* () {
         const env = { ...base, ...rest.env };
         const gitExe = resolved.get("git") ?? resolveExecutable("git", process.platform, pathValue);
         resolved.set("git", gitExe);
+        yield* requireRecentGit(gitExe, rest.cwd, base);
         const guard = yield* repoConfigGuard(gitExe, [], rest, env);
         return yield* runner.run(
           exe,
@@ -546,6 +557,7 @@ const makeProc = Effect.gen(function* () {
       }
       if (!isGitExecutable(exe)) return yield* runner.run(exe, bin, args, rest, base);
       const env = { ...base, ...rest.env };
+      yield* requireRecentGit(exe, rest.cwd, base);
       const guard = yield* repoConfigGuard(exe, args, rest, env);
       if (pinnedUrl !== undefined && redirectedBy(guard, pinnedUrl))
         return yield* Effect.fail(

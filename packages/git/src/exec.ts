@@ -2,17 +2,34 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import * as Effect from "effect/Effect";
-import type { ProcError } from "./errors.ts";
+import { ProcSpawnError, type ProcError } from "./errors.ts";
 import { GhCallEnv } from "./gh-caller.ts";
 import { canonicalizeOrOwned, fromGitPath } from "./paths.ts";
 import { Proc, type ProcOutput, type RunOptions } from "./proc.ts";
+import { isOptionShaped } from "./ref-format.ts";
 import { splitGhInclude } from "./rate-limit-headers.ts";
 
 export type GitOptions = Omit<RunOptions, "cwd">;
 
 /**
+ * The first argument after `--end-of-options` (and before a `--`, after which paths may start with
+ * anything) that git could still be meant to read as an option, or `undefined`. A ref or remote in
+ * such a slot came from somewhere other than the caller's own spelling.
+ */
+export const optionAfterEnd = (args: ReadonlyArray<string>): string | undefined => {
+  const end = args.indexOf("--end-of-options");
+  if (end < 0) return undefined;
+  for (const arg of args.slice(end + 1)) {
+    if (arg === "--") return undefined;
+    if (isOptionShaped(arg)) return arg;
+  }
+  return undefined;
+};
+
+/**
  * Run `git` in `cwd`. `GIT_OPTIONAL_LOCKS=0` so a child killed at its bound can't strand an optional
- * `.git/index.lock` (SIGKILL bypasses git's tempfile cleanup).
+ * `.git/index.lock` (SIGKILL bypasses git's tempfile cleanup). Refs and paths go after
+ * `--end-of-options` (or `--`); an option-shaped value there is refused and nothing starts.
  */
 export const git = (
   cwd: string,
@@ -20,6 +37,11 @@ export const git = (
   options: GitOptions = {},
 ): Effect.Effect<ProcOutput, ProcError, Proc> =>
   Effect.gen(function* () {
+    if (optionAfterEnd(args) !== undefined)
+      return yield* new ProcSpawnError({
+        bin: "git",
+        message: "Gram refused a git argument that git could read as an option.",
+      });
     const proc = yield* Proc;
     return yield* proc.run("git", args, {
       ...options,

@@ -6,6 +6,7 @@ import type { ProcError } from "./errors.ts";
 import { branchExists, git, gitFailMsg } from "./exec.ts";
 import { fromGitPath, mtimeMs } from "./paths.ts";
 import type { Proc } from "./proc.ts";
+import { isBranchName } from "./ref-format.ts";
 import { remoteGit } from "./remote-git.ts";
 import { cachedOriginHead, cachedOriginTips } from "./repo-facts.ts";
 
@@ -32,7 +33,15 @@ export const baseRef = (
       for (const branch of order) {
         const out = yield* remoteGit(
           cwd,
-          ["-c", "credential.interactive=false", "fetch", "--quiet", "origin", branch],
+          [
+            "-c",
+            "credential.interactive=false",
+            "fetch",
+            "--quiet",
+            "--end-of-options",
+            "origin",
+            branch,
+          ],
           { tier: "network" },
         ).pipe(Effect.option);
         if (Option.isSome(out) && out.value.status === 0) return `origin/${branch}`;
@@ -160,11 +169,16 @@ export const fetchOriginBranch = (
 > =>
   Effect.gen(function* () {
     const name = ref.startsWith("origin/") ? ref.slice("origin/".length) : "";
-    if (name === "") return yield* new FetchFailed({ message: `${ref} is not an origin branch` });
+    if (!isBranchName(name))
+      return yield* new FetchFailed({ message: `${ref} is not an origin branch` });
     const before = yield* tipOf(repoTop, ref);
-    const out = yield* remoteGit(repoTop, ["fetch", "--quiet", "origin", name], {
-      tier: "network",
-    }).pipe(Effect.mapError((e) => new FetchFailed({ message: e.message })));
+    const out = yield* remoteGit(
+      repoTop,
+      ["fetch", "--quiet", "--end-of-options", "origin", `refs/heads/${name}`],
+      {
+        tier: "network",
+      },
+    ).pipe(Effect.mapError((e) => new FetchFailed({ message: e.message })));
     if (out.status !== 0) {
       return yield* new FetchFailed({ message: gitFailMsg(out, "git fetch failed") });
     }

@@ -12,6 +12,25 @@ describe("requestActions", () => {
     ]);
   });
 
+  it("asks about a push that rewrites or deletes the remote's history as a force push", () => {
+    for (const command of [
+      "git push --force origin feat",
+      "git push -f",
+      "git push --force-with-lease",
+      "git push origin +HEAD:feat",
+      "git push origin :feat",
+      "bash -c 'git push --delete origin feat'",
+      "git -c remote.origin.mirror=true push",
+      "git config remote.origin.push '+refs/heads/*:refs/heads/*' && git push origin feat",
+    ])
+      expect(requestActions({ toolName: "Bash", input: { command } })).toEqual([
+        { action: "push", detail: { command, force: true } },
+      ]);
+    expect(
+      requestActions({ toolName: "Bash", input: { command: "git push origin HEAD:feat" } }),
+    ).toEqual([{ action: "push", detail: { command: "git push origin HEAD:feat" } }]);
+  });
+
   it("asks about a connector's call, and not about Gram's own tools", () => {
     expect(
       requestActions({ toolName: "mcp__tracker__create_issue", input: { title: "Bug" } }),

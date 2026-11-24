@@ -990,9 +990,11 @@ describe("remote-git-only", () => {
   it("allows remoteGit, a remote… wrapper of it, and git that stays local", () => {
     expect(
       lint(
-        `remoteGit(cwd, ["fetch", "--quiet", "origin", branch]);
-        remoteG(own, ["-c", "protocol.file.allow=always", "fetch", url, sha]);
-        remoteGit(cwd, ok ? ["push", "--quiet"] : ["push", "-u", "origin", branch]);
+        `remoteGit(cwd, ["fetch", "--quiet", "--end-of-options", "origin", branch]);
+        remoteG(own, ["-c", "protocol.file.allow=always", "fetch", "--end-of-options", url, sha]);
+        remoteGit(cwd, ok ? ["push", "--quiet"] : ["push", "-u", "--end-of-options", "origin", b]);
+        remoteGit(cwd, ["push", \`--force-with-lease=\${ref}:\${oid}\`, "--end-of-options", r, s]);
+        remoteGit(cwd, [...QUIET, "fetch", "--all", "--prune"]);
         git(cwd, ["remote", "get-url", "origin"]);
         git(cwd, ["submodule", "status"]);
         const action = ["push"];
@@ -1001,6 +1003,19 @@ describe("remote-git-only", () => {
         rule,
       ),
     ).toEqual([]);
+  });
+
+  it("refuses a remote, ref, URL or folder where git still reads options", () => {
+    const found = lint(
+      `remoteGit(cwd, ["fetch", "--quiet", "origin", branch]);
+      remoteGit(cwd, ["fetch", ...args]);
+      remoteGit(cwd, ["clone", "--", url, into]);
+      remoteG(own, ["fetch", flag, "--end-of-options", "origin"]);
+      remoteGit(cwd, ["push", \`\${name}\`, "--end-of-options", "origin"]);
+    `,
+      rule,
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 2, 3, 4, 5]);
   });
 });
 

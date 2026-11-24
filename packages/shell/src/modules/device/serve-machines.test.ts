@@ -431,6 +431,10 @@ describe("the codes a server's answers carry", () => {
       ["stop", { code: "superseded", stopped: false }],
       ["stop", { code: "expired", stopped: false }],
       ["release", { code: "superseded", known: true, applied: false }],
+      // The machine provider asking to move a machine, and how its move went.
+      ["status", { phase: "running", moveRequested: "2027-01-15T08:00:00Z" }],
+      ["move", { moved: true }],
+      ["move", { moved: false, code: "not_movable" }],
     ] as const) {
       const device = deviceFor([], { on: true }, body);
       expect(

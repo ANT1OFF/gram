@@ -622,6 +622,25 @@ describe("restarting a thread's session", () => {
     }).pipe(Effect.provide(RuntimeTestLayer)),
   );
 
+  it.effect("archiving a thread whose last turn failed stops its session", () =>
+    Effect.gen(function* () {
+      const runtimes = yield* ThreadRuntimes;
+      const { thread, session } = yield* answered;
+      yield* runtimes.send(thread.id, { text: "deploy it" });
+      yield* waitFor(
+        "the second send",
+        Effect.sync(() => session.sent.length === 2),
+      );
+      yield* session.emit({ type: "turnEnd", reason: "error", error: "no deployments" });
+      yield* waitFor("error", runtimes.status(thread.id).pipe(Effect.map((s) => s === "error")));
+      expect(session.closed).toBe(false);
+      // Its idle timer never evicts a thread in error, so archiving is what ends its agent.
+      yield* runtimes.updateThread(thread.id, (t) => ({ ...t, parked: true }));
+      yield* waitFor("cold", runtimes.status(thread.id).pipe(Effect.map((s) => s === "cold")));
+      expect(session.closed).toBe(true);
+    }).pipe(Effect.provide(RuntimeTestLayer)),
+  );
+
   it.effect("opens a cold thread's session, and has nothing to restart in a new one", () =>
     Effect.gen(function* () {
       const runtimes = yield* ThreadRuntimes;

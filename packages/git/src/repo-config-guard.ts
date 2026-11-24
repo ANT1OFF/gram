@@ -10,6 +10,20 @@ export interface ConfigEntry {
   readonly value: string | undefined;
 }
 
+/**
+ * Why the git that printed `version` (`git --version`) can't run under the guard, or `undefined`.
+ * The guard's overrides reach git through `GIT_CONFIG_COUNT`, which Git 2.31 first reads; an older
+ * git takes a repository's own config (`core.fsmonitor`, hooks, filters) as it is.
+ */
+export const gitVersionProblem = (version: string): string | undefined => {
+  const match = /git version (\d+)\.(\d+)/.exec(version);
+  if (match === null)
+    return "Gram couldn't tell which Git is installed. Install Git 2.31 or newer, then try again.";
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  if (major > 2 || (major === 2 && minor >= 31)) return undefined;
+  return `Git ${major}.${minor} can't take the settings Gram uses to stop a repository's own git config from running programs. Install Git 2.31 or newer, then try again.`;
+};
+
 /** `git config --list --show-scope -z`: `scope NUL key LF value NUL`, the LF and value absent for a bare key. */
 export const parseConfigList = (out: string): ReadonlyArray<ConfigEntry> => {
   const parts = out.split("\0");

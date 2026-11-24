@@ -166,6 +166,7 @@ export const checksOn = (
                 "fetch",
                 "--no-tags",
                 "--quiet",
+                "--end-of-options",
                 pathToFileURL(source).href,
                 sha,
               ],
@@ -179,7 +180,7 @@ export const checksOn = (
           yield* net(
             remoteGit(
               source,
-              ["fetch", "--no-tags", "--quiet", "origin", sha],
+              ["fetch", "--no-tags", "--quiet", "--end-of-options", "origin", sha],
               isolatedGitOptions(),
             ),
           );

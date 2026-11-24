@@ -363,10 +363,21 @@ const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> 
     "sandboxId",
     "generation",
   ],
-  status: ["code", "phase", "message", "step", "publicKey", "platform", "sandboxId", "generation"],
+  status: [
+    "code",
+    "phase",
+    "message",
+    "step",
+    "publicKey",
+    "platform",
+    "sandboxId",
+    "generation",
+    "moveRequested",
+  ],
   release: ["code", "known", "released", "applied", "message"],
   stop: ["code", "stopped", "message"],
   resize: ["code", "state", "size", "start", "until", "message", "asked", "inUse", "total"],
+  move: ["code", "moved", "message"],
 };
 
 const answerFields = (call: WorkerMachineCall, body: unknown): unknown => {

@@ -29,6 +29,7 @@ import {
 import { expandHome, fromGitPath, isDir, mtimeMs, samePathKey, tryRealPathSync } from "./paths.ts";
 import { Proc } from "./proc.ts";
 import { listBaseRefs, localBaseRef, originBaseRef } from "./refs.ts";
+import { isValidGitRefCharset, sanitizeBranch } from "./ref-format.ts";
 import { remoteGit } from "./remote-git.ts";
 import { copyWorktreeIncludes } from "./worktree-include.ts";
 import {
@@ -82,20 +83,6 @@ export const parseWorktrees = (stdout: string): Array<ParsedWorktree> => {
 
 const parseWorktreesNative = (stdout: string): Array<ParsedWorktree> =>
   parseWorktrees(stdout).map((w) => ({ ...w, path: fromGitPath(w.path) }));
-
-/** ASCII alnum plus `. _ / -`, no leading `-` (git would read an option). Gates refs entering argv. */
-export const isValidGitRefCharset = (raw: string): boolean =>
-  raw !== "" && !raw.startsWith("-") && /^[A-Za-z0-9._/-]+$/.test(raw);
-
-/** The branch that may enter git argv, or `undefined` when invalid. */
-export const sanitizeBranch = (raw: string): string | undefined =>
-  isValidGitRefCharset(raw) &&
-  raw !== "HEAD" &&
-  !raw.includes("..") &&
-  !raw.endsWith(".") &&
-  raw.split("/").every((part) => part !== "" && !part.startsWith(".") && !part.endsWith(".lock"))
-    ? raw
-    : undefined;
 
 const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
@@ -530,6 +517,7 @@ const originBranch = (repoTop: string, branch: string) =>
         "credential.interactive=false",
         "ls-remote",
         "--exit-code",
+        "--end-of-options",
         "origin",
         `refs/heads/${branch}`,
       ],
@@ -604,7 +592,12 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
       if (remote === "present") {
         const fetched = yield* remoteGit(
           repoTop,
-          ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
+          [
+            "fetch",
+            "--end-of-options",
+            "origin",
+            `+refs/heads/${branch}:refs/remotes/origin/${branch}`,
+          ],
           { tier: "network" },
         ).pipe(Effect.mapError(toFailed));
         if (fetched.status !== 0) {
@@ -618,7 +611,7 @@ export const restoreWorktree = (request: RestoreWorktreeRequest) =>
         const ref = `refs/gram/restore/pr-${request.fromPr}-${process.pid}-${Date.now()}`;
         const fetched = yield* remoteGit(
           repoTop,
-          ["fetch", "origin", `+refs/pull/${request.fromPr}/head:${ref}`],
+          ["fetch", "--end-of-options", "origin", `+refs/pull/${request.fromPr}/head:${ref}`],
           { tier: "network" },
         ).pipe(Effect.mapError(toFailed));
         if (fetched.status !== 0) {
