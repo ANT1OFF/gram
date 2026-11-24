@@ -17,6 +17,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, readdir, rename, rm, rmdir, unlink, utimes } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { isStrictlyInside } from "@gram/git";
+import { bytesOf } from "./bytes.ts";
 
 const INCOMING = `${SHARED_RESERVED_PREFIX}incoming`;
 const MAX_DEPTH = 32;
@@ -69,7 +70,8 @@ const hashFile = async (path: string): Promise<string> => {
   const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   try {
     const hash = createHash("sha256");
-    for await (const chunk of handle.createReadStream({ autoClose: false })) hash.update(chunk);
+    for await (const chunk of bytesOf(handle.createReadStream({ autoClose: false })))
+      hash.update(chunk);
     return hash.digest("hex");
   } finally {
     await handle.close();

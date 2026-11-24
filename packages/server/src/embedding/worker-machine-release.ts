@@ -1,5 +1,6 @@
 import {
   effectiveCheckout,
+  fieldsOf,
   type FeatureLedgerEntry,
   hostOf,
   type Thread,
@@ -10,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { finishedWorkers, isLiveWorker } from "../orchestration/ledger.ts";
 import { Orchestration } from "../orchestration/service.ts";
@@ -348,6 +350,28 @@ const RELEASES_KEPT_MOST = 512;
  * wait from now, so a clock stepped back keeps nothing waiting longer. A file that can't be read is
  * started afresh, as after a restart before this was kept.
  */
+const SafeInteger = Schema.Number.check(Schema.makeFilter(Number.isSafeInteger));
+const WaitMs = (most: number) =>
+  Schema.Number.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(most));
+
+const kept = (value: unknown): ReadonlyArray<unknown> =>
+  Array.isArray(value) ? value.slice(0, RELEASES_KEPT_MOST) : [];
+
+const decodeTold = Schema.decodeUnknownOption(
+  Schema.Struct({ key: Schema.String, at: SafeInteger }),
+);
+const decodeRetry = Schema.decodeUnknownOption(
+  Schema.Struct({
+    key: Schema.String,
+    released: Schema.Boolean,
+    at: SafeInteger,
+    waitMs: WaitMs(TOLD_FOR_MS),
+  }),
+);
+const decodePaused = Schema.decodeUnknownOption(
+  Schema.Struct({ until: SafeInteger, waitMs: WaitMs(RELEASE_PAUSE_MOST_MS) }),
+);
+
 export const fileReleaseState = (dataDir: string, now: () => number = Date.now): ReleaseState => {
   const file = privateJsonFile(dataDir, RELEASES_FILE, RELEASES_FILE_MOST);
   const state: ReleaseState = {
@@ -368,41 +392,27 @@ export const fileReleaseState = (dataDir: string, now: () => number = Date.now):
       }),
   };
   const at = now();
-  const time = (value: unknown, most: number) =>
-    typeof value === "number" && Number.isSafeInteger(value)
-      ? Math.min(value, at + most)
-      : undefined;
   try {
-    const read = file.read() as
-      | { version?: unknown; told?: unknown; retry?: unknown; paused?: unknown }
-      | undefined;
-    if (read?.version === 1) {
-      for (const each of Array.isArray(read.told) ? read.told.slice(0, RELEASES_KEPT_MOST) : []) {
-        const told = time(each?.at, 0);
-        if (typeof each?.key === "string" && told !== undefined)
-          state.told.set(each.key, { released: true, at: told });
-      }
-      for (const each of Array.isArray(read.retry) ? read.retry.slice(0, RELEASES_KEPT_MOST) : []) {
-        const due = time(each?.at, TOLD_FOR_MS);
-        if (
-          typeof each?.key === "string" &&
-          typeof each.released === "boolean" &&
-          due !== undefined &&
-          typeof each.waitMs === "number" &&
-          each.waitMs > 0 &&
-          each.waitMs <= TOLD_FOR_MS
-        )
-          state.retry.set(each.key, { released: each.released, at: due, waitMs: each.waitMs });
-      }
-      const paused = read.paused as { until?: unknown; waitMs?: unknown } | undefined;
-      const until = time(paused?.until, RELEASE_PAUSE_MOST_MS);
-      if (
-        until !== undefined &&
-        typeof paused?.waitMs === "number" &&
-        paused.waitMs > 0 &&
-        paused.waitMs <= RELEASE_PAUSE_MOST_MS
-      )
-        state.paused = { until, waitMs: paused.waitMs };
+    const read = fieldsOf(file.read());
+    if (read.get("version") === 1) {
+      for (const each of kept(read.get("told")).flatMap((entry) =>
+        Option.toArray(decodeTold(entry)),
+      ))
+        state.told.set(each.key, { released: true, at: Math.min(each.at, at) });
+      for (const each of kept(read.get("retry")).flatMap((entry) =>
+        Option.toArray(decodeRetry(entry)),
+      ))
+        state.retry.set(each.key, {
+          released: each.released,
+          at: Math.min(each.at, at + TOLD_FOR_MS),
+          waitMs: each.waitMs,
+        });
+      const paused = decodePaused(read.get("paused"));
+      if (Option.isSome(paused))
+        state.paused = {
+          until: Math.min(paused.value.until, at + RELEASE_PAUSE_MOST_MS),
+          waitMs: paused.value.waitMs,
+        };
     }
   } catch {
     return state;

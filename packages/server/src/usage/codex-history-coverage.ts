@@ -38,7 +38,7 @@ const meets = (counter: TokenUsage | undefined, minimum: Threshold | undefined) 
 /** Independent requests constrain coverage; these requirements never become session counters or amounts. */
 export function makeCodexHistoryCoverage() {
   const scopes = new Map<string, Scope>(),
-    requests = new Map<string, string>();
+    requests = new Map<string, { readonly turn: string; readonly signature: string }>();
   const ordered: string[] = [];
   const changed = new Map<string, boolean>();
   const mark = (turn: string, allocations: boolean) =>
@@ -170,8 +170,8 @@ export function makeCodexHistoryCoverage() {
       const signature = JSON.stringify([turn, tokens]),
         prior = requests.get(response);
       if (prior !== undefined) {
-        if (prior === signature) return "duplicate";
-        const priorTurn = JSON.parse(prior)[0] as string;
+        if (prior.signature === signature) return "duplicate";
+        const priorTurn = prior.turn;
         refuse(
           Math.min(
             scopes.get(priorTurn)?.order ?? ordered.length,
@@ -196,7 +196,7 @@ export function makeCodexHistoryCoverage() {
       const barrier = state.barrier ?? counter ?? zero();
       state.barrier = barrier;
       state.requests = combined;
-      requests.set(response, signature);
+      requests.set(response, { turn, signature });
       if (state.order === undefined) refuse(ordered.length);
       invalidate(state);
       return "new";
@@ -253,7 +253,7 @@ export function makeCodexHistoryCoverage() {
           0,
         ) +
         [...requests].reduce(
-          (n, [id, signature]) => n + Buffer.byteLength(id) + Buffer.byteLength(signature),
+          (n, [id, { signature }]) => n + Buffer.byteLength(id) + Buffer.byteLength(signature),
           0,
         )
       );

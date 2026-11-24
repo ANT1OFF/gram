@@ -73,7 +73,7 @@ const TOOL_PAYLOAD: ReadonlySet<string> = new Set(["input", "output", "rawInput"
  */
 export const scrubbed = <A>(value: A, tools = false): A => {
   if (typeof value === "string") return redactText(value) as A;
-  if (Array.isArray(value)) return value.map((each) => scrubbed(each, tools)) as A;
+  if (Array.isArray(value)) return value.map((each: unknown) => scrubbed(each, tools)) as A;
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
       Object.entries(value).map(([key, inner]) => [

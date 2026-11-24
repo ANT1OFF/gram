@@ -1880,10 +1880,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             const stored = held.get(personalSettingKey(path));
             if (stored === undefined) continue;
             try {
+              const value: unknown = JSON.parse(stored);
               patches.push(
-                Schema.decodeUnknownSync(SettingsPatch)({
-                  [path[0]]: { [path[1]]: JSON.parse(stored) },
-                }),
+                Schema.decodeUnknownSync(SettingsPatch)({ [path[0]]: { [path[1]]: value } }),
               );
             } catch {
               yield* Effect.logWarning("a person's setting is unreadable; ignored").pipe(

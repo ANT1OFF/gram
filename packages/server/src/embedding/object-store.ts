@@ -16,6 +16,7 @@ import { ServerConfig } from "../config.ts";
 import { EventHub, isThreadRemoved } from "../events/event-hub.ts";
 import type { OutsideService } from "./config.ts";
 import { Embedding } from "./embedding.ts";
+import { bytesOf } from "../shared/bytes.ts";
 import { callOutside } from "./outside.ts";
 
 /** Where the deployment keeps a thread's agent sessions, by thread: deleted with the thread. */
@@ -146,15 +147,9 @@ const readCapped = async (response: Response, max: number): Promise<Buffer | und
   }
   const chunks: Array<Uint8Array> = [];
   let size = 0;
-  const reader = response.body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  for await (const value of bytesOf(response.body)) {
     size += value.byteLength;
-    if (size > max) {
-      await reader.cancel().catch(() => undefined);
-      return undefined;
-    }
+    if (size > max) return undefined;
     chunks.push(value);
   }
   return Buffer.concat(chunks);

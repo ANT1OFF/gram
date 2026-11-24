@@ -54,7 +54,8 @@ export function outsideProvider(threadId: string): UsageProvider | undefined {
   try {
     const parsed: unknown = JSON.parse(threadId);
     if (!Array.isArray(parsed) || parsed[0] !== "cli") return undefined;
-    return parsed[1] === "claude" || parsed[1] === "codex" ? parsed[1] : undefined;
+    const provider: unknown = parsed[1];
+    return provider === "claude" || provider === "codex" ? provider : undefined;
   } catch {
     return undefined;
   }

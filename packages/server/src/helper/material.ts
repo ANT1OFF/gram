@@ -1,8 +1,8 @@
-import type { GramUIMessage } from "@gram/contracts";
+import { fieldsOf, type GramUIMessage } from "@gram/contracts";
 
 import { redactText } from "../logging/redact.ts";
 
-const field = (part: object, key: string): unknown => Reflect.get(part, key);
+const field = (part: unknown, key: string): unknown => fieldsOf(part).get(key);
 
 const oneLine = (text: string, max: number): string => {
   const line = text.replace(/\s+/g, " ").trim();

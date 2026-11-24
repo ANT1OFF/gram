@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import type { EndpointConfig } from "../config.ts";
+import { bytesOf } from "../shared/bytes.ts";
 
 /** A call to an embedding endpoint that got no usable answer. Its message never holds the token. */
 export class EndpointFailed extends Data.TaggedError("EndpointFailed")<{
@@ -63,7 +64,7 @@ export const postJson = (
       }
       const chunks: Array<Uint8Array> = [];
       let size = 0;
-      for await (const chunk of response.body ?? []) {
+      for await (const chunk of bytesOf(response.body ?? [])) {
         size += chunk.byteLength;
         if (size > MAX_ANSWER_BYTES) throw new Error("the answer was too long");
         chunks.push(chunk);

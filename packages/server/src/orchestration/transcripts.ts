@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   fenceThreadMessage,
   type SessionTranscriptMessage,
   type SessionTranscriptRole,
@@ -199,7 +200,7 @@ const asText = (value: unknown): string | undefined => {
   }
 };
 
-const field = (part: object, key: string): unknown => Reflect.get(part, key);
+const field = (part: unknown, key: string): unknown => fieldsOf(part).get(key);
 
 const dataLine = (type: string, data: unknown): string | undefined => {
   if (typeof data !== "object" || data === null) return undefined;

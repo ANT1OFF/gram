@@ -72,7 +72,8 @@ export function parseKeybindings(text: string): {
   } catch (error) {
     return { bindings: {}, problems: [`keybindings.json isn't valid JSON: ${message(error)}`] };
   }
-  const raw = typeof data === "object" && data !== null ? Reflect.get(data, "bindings") : undefined;
+  const raw =
+    typeof data === "object" && data !== null && "bindings" in data ? data.bindings : undefined;
   if (raw === undefined) return { bindings: {}, problems: [] };
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return { bindings: {}, problems: ['"bindings" must map shortcut ids to keys'] };
