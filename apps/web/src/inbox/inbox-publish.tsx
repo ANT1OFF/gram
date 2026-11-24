@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/motion";
 import { useAskStackStore } from "@/orchestration/ask-stack-store";
 import type { InboxEntry } from "@/orchestration/inbox-model";
+import { keptDiff } from "@/panels/kept-diff";
 import { useThreadsStore } from "@/stores/threads";
 
 import { publishSummaryOf } from "./inbox-publish-model";
@@ -146,8 +147,12 @@ function PublishRow({
       ? null
       : `${git.changesToken}:${git.base ?? ""}:${git.behindBase}:${git.aheadBase}`;
   });
+  const diffKey = ["git.diff", threadId, "branch", null, stamp] as const;
   const query = useQuery({
-    queryKey: ["git.diff", threadId, "branch", null, stamp, false],
+    queryKey: [...diffKey, false],
+    // The summary on screen stays while the tree's newer one is read: a worker at work moves its
+    // stamp often, and "Reading its changes…" blinked in between each time.
+    placeholderData: keptDiff(diffKey),
     queryFn: () => api.gitDiff(threadId, { kind: "branch" }),
     retry: false,
   });
