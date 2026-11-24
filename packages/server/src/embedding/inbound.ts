@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import { bearerToken, tokensEqual } from "../http/auth.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { Embedding } from "./embedding.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Every inbound path starts with this. */
 export const EMBED_PREFIX = "/embed/v1/";
@@ -12,6 +13,8 @@ export const EMBED_PREFIX = "/embed/v1/";
 const BODY_MAX = 256 * 1024;
 
 export type EmbedMethod = "GET" | "POST" | "PUT" | "DELETE";
+const isEmbedMethod = (method: string): method is EmbedMethod =>
+  method === "GET" || method === "POST" || method === "PUT" || method === "DELETE";
 
 export interface EmbedAnswer {
   readonly status: number;
@@ -65,9 +68,7 @@ const readBody = (request: HttpServerRequest.HttpServerRequest, max: number) =>
     if (text.trim() === "") return undefined;
     try {
       const value: unknown = JSON.parse(text);
-      return typeof value === "object" && value !== null && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : ("malformed" as const);
+      return Predicate.isObject(value) ? value : ("malformed" as const);
     } catch {
       return "malformed" as const;
     }
@@ -97,7 +98,7 @@ export class EmbedInbound extends Context.Service<EmbedInbound, EmbedInboundShap
           }
           const methods = routes.get(path.slice(EMBED_PREFIX.length));
           if (methods === undefined) return json(refusal(404, "no such path"));
-          const handler = methods.get(request.method as EmbedMethod);
+          const handler = isEmbedMethod(request.method) ? methods.get(request.method) : undefined;
           if (handler === undefined) return json(refusal(405, "method not allowed"));
           const body = yield* readBody(
             request,

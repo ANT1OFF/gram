@@ -1,4 +1,6 @@
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import { createHash, randomBytes } from "node:crypto";
 import type { OnDemandHosts } from "./on-demand.ts";
 import { callOutside } from "./outside.ts";
@@ -13,8 +15,9 @@ import { callOutside } from "./outside.ts";
  */
 
 /** How a machine may be shared, as its start says it. */
-export type MachineSharing = "own" | "exclusive" | "shared";
-const SHARINGS: ReadonlySet<string> = new Set(["own", "exclusive", "shared"]);
+export const MachineSharing = Schema.Literals(["own", "exclusive", "shared"]);
+export type MachineSharing = typeof MachineSharing.Type;
+export const isMachineSharing = Schema.is(MachineSharing);
 
 const SHORT = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const NAME = /^worker-[a-z0-9]{8,16}$/;
@@ -72,20 +75,15 @@ export interface WorkerSeatsAsk {
 }
 
 /** Why a provider gave a worker no seat. `other`: a refusal this Gram has no word for. */
-export type SeatRefusal =
-  | "machine_full"
-  | "exclusive"
-  | "other_orchestrator"
-  | "environment_mismatch"
-  | "released"
-  | "other";
-const REFUSALS: ReadonlySet<string> = new Set([
+export type SeatRefusal = typeof KnownSeatRefusal.Type | "other";
+const KnownSeatRefusal = Schema.Literals([
   "machine_full",
   "exclusive",
   "other_orchestrator",
   "environment_mismatch",
   "released",
 ]);
+const isKnownSeatRefusal = Schema.is(KnownSeatRefusal);
 
 /**
  * How an ask about a machine's seats came out. `none`: the provider keeps no seats, or knows no
@@ -124,11 +122,11 @@ const capIn = (value: unknown): number | undefined =>
     : undefined;
 
 const sharingIn = (value: unknown): MachineSharing | undefined =>
-  typeof value === "string" && SHARINGS.has(value) ? (value as MachineSharing) : undefined;
+  isMachineSharing(value) ? value : undefined;
 
 /** A provider's answer about a machine's seats, read field by field. */
 export const parseSeatsAnswer = (status: number, body: unknown): WorkerSeats => {
-  const fields = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+  const fields = Predicate.isObject(body) ? body : {};
   const workers = seatsIn(fields["workers"]);
   const cap = capIn(fields["cap"]);
   if (status >= 200 && status < 300 && workers !== undefined) {
@@ -147,7 +145,7 @@ export const parseSeatsAnswer = (status: number, body: unknown): WorkerSeats => 
     const code = fields["code"];
     return {
       kind: "refused",
-      code: typeof code === "string" && REFUSALS.has(code) ? (code as SeatRefusal) : "other",
+      code: isKnownSeatRefusal(code) ? code : "other",
       message: text(fields["message"], 300) ?? "The machine takes no more workers.",
       ...(cap === undefined ? {} : { cap }),
       ...(workers === undefined ? {} : { workers }),
@@ -263,8 +261,8 @@ export const parseProvidedMachines = (
   if (!Array.isArray(listed)) return undefined;
   const machines: ProvidedWorkerMachine[] = [];
   for (const raw of listed.slice(0, MAX_MACHINES)) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const entry = raw as Record<string, unknown>;
+    if (!Predicate.isObject(raw)) continue;
+    const entry = raw;
     const name = entry["name"];
     if (typeof name !== "string" || !NAME.test(name)) continue;
     const short = (key: string) => {
@@ -279,10 +277,8 @@ export const parseProvidedMachines = (
     const mode = sharingIn(entry["mode"]);
     const orchestrator = text(entry["orchestrator"], 200);
     const cap = capIn(entry["cap"]);
-    const usage =
-      typeof entry["usage"] === "object" && entry["usage"] !== null
-        ? (entry["usage"] as Record<string, unknown>)
-        : {};
+    const given = entry["usage"];
+    const usage = Predicate.isObject(given) ? given : {};
     const cpu = amount(usage["cpu"]);
     const memoryGb = amount(usage["memoryGb"]);
     machines.push({

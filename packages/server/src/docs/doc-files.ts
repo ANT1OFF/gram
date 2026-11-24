@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
@@ -51,7 +52,7 @@ class Moved extends DocRefusal {
 }
 const READ_ATTEMPTS = 8;
 
-const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
+const codeOf = (error: unknown): unknown => errnoCode(error);
 const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
 
 const statOrMissing = async (path: string): Promise<Stats | undefined> => {

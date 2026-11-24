@@ -14,6 +14,7 @@ import {
   type RuntimeStore,
 } from "./store.ts";
 import { extractTarGz, safeArchivePath, UnsafeArchive } from "./tar.ts";
+import * as Predicate from "effect/Predicate";
 
 export class RuntimeRefused extends Schema.TaggedError<RuntimeRefused>()("RuntimeRefused", {
   reason: Schema.String,
@@ -77,10 +78,8 @@ interface PackageManifest {
 
 const readManifest = async (dir: string): Promise<PackageManifest> => {
   const value: unknown = JSON.parse(await readFile(join(dir, "codex-package.json"), "utf8"));
-  const m = value as Record<string, unknown> | null;
+  const m = Predicate.isObject(value) ? value : {};
   if (
-    m === null ||
-    typeof m !== "object" ||
     m["layoutVersion"] !== 1 ||
     typeof m["version"] !== "string" ||
     typeof m["target"] !== "string" ||

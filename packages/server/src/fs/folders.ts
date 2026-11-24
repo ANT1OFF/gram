@@ -41,7 +41,7 @@ export const folderError = (
   path: string,
   platform: NodeJS.Platform = process.platform,
 ): NotFound | InvalidState => {
-  const code = (error as { code?: unknown } | undefined)?.code;
+  const code = errnoCode(error);
   switch (code) {
     case "ENOENT":
       return new NotFound({ entity: "project", id: path, message: `Folder not found: ${path}` });

@@ -1,4 +1,10 @@
-import { type ServerEvent, type ThreadFeedEvent, type ThreadId, waitsFor } from "@gram/contracts";
+import {
+  fieldsOf,
+  type ServerEvent,
+  type ThreadFeedEvent,
+  ThreadId,
+  waitsFor,
+} from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -186,8 +192,8 @@ export const readableEventFor = (
   }
   if (event.type === "thread.upsert")
     return readerMay(reader, privacyOfThread(event.thread)) ? event : undefined;
-  const threadId = (event as { readonly threadId?: unknown }).threadId;
-  if (typeof threadId === "string" && !readerMay(reader, privacyOf(threadId as ThreadId)))
+  const threadId = fieldsOf(event).get("threadId");
+  if (typeof threadId === "string" && !readerMay(reader, privacyOf(ThreadId.make(threadId))))
     return undefined;
   return event;
 };
@@ -334,6 +340,7 @@ export class EventHub extends Context.Service<EventHub, EventHubShape>()("@gram/
           });
         },
 
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one implementation of both overloads: a guard's stream holds only what it selected
         internalEvents: ((select: (event: ServerEvent) => boolean, name?: string) =>
           ownEvents(
             (event) => !isOwnEvent(event) && select(event),

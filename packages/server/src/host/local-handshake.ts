@@ -3,6 +3,7 @@ import { chmodSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "no
 import type { Socket } from "node:net";
 import { Duplex } from "node:stream";
 import { dirname } from "node:path";
+import * as Predicate from "effect/Predicate";
 
 /** How long either side waits for the other's line before it closes the connection. */
 export const HANDSHAKE_TIMEOUT_MS = 5_000;
@@ -92,8 +93,8 @@ const readLine = (socket: Socket, timeoutMs: number): Promise<Record<string, unk
       if (rest.length > 0) socket.unshift(rest);
       try {
         const value: unknown = JSON.parse(buffered.subarray(0, end).toString("utf8"));
-        if (typeof value !== "object" || value === null) throw new Error("not an object");
-        done(undefined, value as Record<string, unknown>);
+        if (!Predicate.isObject(value)) throw new Error("not an object");
+        done(undefined, value);
       } catch {
         done(new Error("handshake line isn't JSON"));
       }

@@ -398,7 +398,8 @@ export const summarize = (
   }
   const asMinutes = <K extends string>(record: Partial<Record<K, number>>) =>
     Object.fromEntries(
-      Object.entries(record as Record<string, number>)
+      Object.entries<number | undefined>(record)
+        .flatMap(([key, ms]) => (ms === undefined ? [] : [[key, ms] as const]))
         .toSorted(([, a], [, b]) => b - a)
         .map(([key, ms]) => [key, minutes(ms)]),
     );

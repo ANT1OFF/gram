@@ -6,6 +6,7 @@ import * as Layer from "effect/Layer";
 import { embeddingOn, type ThreadId } from "@gram/contracts";
 import { ENDPOINT_UNUSABLE, type EndpointConfig, ServerConfig } from "../config.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { bytesOf } from "../shared/bytes.ts";
 
 /** A relay configured on a server that runs work itself: refused at start. */
 export const GITHUB_ROUTE_NEEDS_HEADLESS =
@@ -93,12 +94,12 @@ const answer = (res: ServerResponse, status: number, message: string) => {
 };
 
 const bodyOf = async (req: IncomingMessage): Promise<Buffer | undefined> => {
-  const parts: Buffer[] = [];
+  const parts: Uint8Array[] = [];
   let size = 0;
-  for await (const chunk of req) {
-    size += (chunk as Buffer).byteLength;
+  for await (const chunk of bytesOf(req)) {
+    size += chunk.byteLength;
     if (size > MAX_REQUEST_BYTES) return undefined;
-    parts.push(chunk as Buffer);
+    parts.push(chunk);
   }
   return Buffer.concat(parts);
 };

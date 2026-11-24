@@ -1,18 +1,18 @@
 import {
-  MAX_OPEN_WAITS,
-  plainWaitText,
-  isWaitLink,
-  WAIT_BODY_MAX,
-  WAIT_COPY_MAX,
-  WaitKind,
-  waitIsKept,
-  type MessageId,
   type GramUIMessage,
+  isWaitLink,
+  MAX_OPEN_WAITS,
+  MessageId,
+  plainWaitText,
   type Thread,
   type ThreadId,
   type TurnId,
-  type WaitId,
+  WAIT_BODY_MAX,
+  WAIT_COPY_MAX,
+  WaitId,
+  waitIsKept,
   type WaitItem,
+  WaitKind,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -172,7 +172,9 @@ export const validWait = (
   options: { readonly adds: boolean; readonly decisions: boolean },
 ): WaitVerdict => {
   const shown = new Set<string>(m.open.slice(0, MAX_OPEN_WAITS).map((item) => item.id));
-  const resolve = [...new Set(output.resolve)].filter((id) => shown.has(id)) as Array<WaitId>;
+  const resolve = [...new Set(output.resolve)]
+    .filter((id) => shown.has(id))
+    .map((id) => WaitId.make(id));
   const add = options.adds ? suggestion(output, m, options.decisions) : undefined;
   return { resolve, ...(add === undefined ? {} : { add }) };
 };
@@ -358,7 +360,7 @@ export const makeWaitHelper = (deps: WaitHelperDeps): WaitHelper => {
       if (!handled()) yield* resolveAll(thread.id, verdict.resolve, open);
       if (verdict.add === undefined || (yield* deps.lastTurnId(thread.id)) !== end.turnId) return;
       const fresh = Effect.sync(() => inputs(thread.id) === inputsThen);
-      if (yield* deps.waits.suggest(thread.id, verdict.add, final.id as MessageId, fresh)) {
+      if (yield* deps.waits.suggest(thread.id, verdict.add, MessageId.make(final.id), fresh)) {
         yield* deps.recordEvent("wait", "suggested");
       }
     }).pipe(

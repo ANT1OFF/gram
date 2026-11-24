@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { statSync, watch } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -120,7 +121,7 @@ export async function readKeybindings(dataDir: string): Promise<KeybindingsState
   try {
     text = await readFile(path, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+    if (errnoCode(error) !== "ENOENT") {
       text = undefined;
       readProblem = `Couldn't read keybindings.json: ${message(error)}`;
     }

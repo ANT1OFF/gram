@@ -1,11 +1,12 @@
 import {
+  type CloneSuggestions,
+  errnoCode,
   GitError,
   InvalidState,
   parseRepoRemote,
+  type Project,
   remoteKey,
   remoteLabel,
-  type CloneSuggestions,
-  type Project,
   type RepoRemote,
 } from "@gram/contracts";
 import {
@@ -28,7 +29,7 @@ import { expandHome, registerRepo } from "./folders.ts";
 
 type Store = Pick<ThreadStoreShape, "listProjects" | "registerProject">;
 
-const codeOf = (error: unknown) => (error as { code?: unknown } | undefined)?.code;
+const codeOf = (error: unknown) => errnoCode(error);
 
 /** What a failed clone said, without git's "Cloning into '<the temp folder>'…" line. */
 export const cloneFailure = (out: ProcOutput): string => {

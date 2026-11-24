@@ -1,5 +1,5 @@
 import {
-  type ProjectId,
+  ProjectId,
   type RoutineId,
   type RoutineSchedule,
   type RoutineState,
@@ -92,7 +92,7 @@ export const workerRoutine = (
   addRoutine(workspaceId, {
     name,
     brief: "Look at main's failing jobs and open one PR per real failure.",
-    project: projectId as ProjectId,
+    project: ProjectId.make(projectId),
     schedule,
   });
 

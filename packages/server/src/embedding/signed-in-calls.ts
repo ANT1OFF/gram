@@ -8,6 +8,7 @@ import { fenceRefusalOf, RELEASE_ACTS_WITHIN_MS } from "./signed-in-fences.ts";
 import type { MachineRun, Refused, WorkerMachinePortShape } from "./signed-in-port.ts";
 import { codeOf, isNotFound, type NameLocks, withName } from "./worker-machine-stops.ts";
 import { ReleaseOccupied, releaseOccupied } from "./worker-seats.ts";
+import * as Predicate from "effect/Predicate";
 
 /** How many times a start the server is unavailable for (`503`) is asked, and the first wait. */
 export const START_ATTEMPTS = 3;
@@ -35,8 +36,8 @@ export const parseMachineStatus = (
    */
   readonly moveRequested?: number;
 } => {
-  if (typeof value !== "object" || value === null) return {};
-  const body = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return {};
+  const body = value;
   const line = (field: string, most: number) => {
     const each = body[field];
     return typeof each === "string" && each.length <= most && !/[\0\n\r]/.test(each)
@@ -367,10 +368,9 @@ export const tellSignedInRelease = (
         return yield* Effect.fail(new ReleaseRateLimited("the server answered 429"));
       if (answered.status >= 300)
         return yield* Effect.fail(new Error(`the server answered ${answered.status}`));
-      const known =
-        typeof answered.body === "object" && answered.body !== null
-          ? (answered.body as { known?: unknown }).known
-          : undefined;
+      const known = Predicate.isObject(answered.body)
+        ? (answered.body as { known?: unknown }).known
+        : undefined;
       if (known === false) return yield* Effect.fail(new Error("the server knows no such machine"));
       if (releaseOccupied(answered.body)) return yield* Effect.fail(new ReleaseOccupied());
       const fenced = fenceRefusalOf(answered);
@@ -378,10 +378,9 @@ export const tellSignedInRelease = (
         last = "it came after its time";
         continue;
       }
-      const applied =
-        typeof answered.body === "object" && answered.body !== null
-          ? (answered.body as { applied?: unknown }).applied
-          : undefined;
+      const applied = Predicate.isObject(answered.body)
+        ? (answered.body as { applied?: unknown }).applied
+        : undefined;
       if (fenced === "superseded" || applied === false) {
         yield* port.call(
           machine.via,

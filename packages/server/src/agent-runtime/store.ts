@@ -1,3 +1,4 @@
+import { errnoCode, fieldsOf } from "@gram/contracts";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -5,6 +6,7 @@ import { homedir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isStrictlyInside } from "@gram/git";
+import * as Predicate from "effect/Predicate";
 
 /** What was verified about one installed version; written once, when it is moved into place. */
 export interface RuntimeReceipt {
@@ -56,7 +58,7 @@ export const runtimeRoot = (
 export const versionId = (version: string, target: string) => `${version}-${target}`;
 
 const LOCKED = new Set(["EPERM", "EBUSY", "EACCES"]);
-const codeOf = (error: unknown) => (error as { code?: string } | null)?.code;
+const codeOf = (error: unknown) => errnoCode(error);
 
 const renameRetrying = async (
   from: string,
@@ -108,8 +110,8 @@ export const hashFile = (
   });
 
 const isReceipt = (value: unknown): value is RuntimeReceipt => {
-  if (typeof value !== "object" || value === null) return false;
-  const r = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return false;
+  const r = value;
   return (
     typeof r["id"] === "string" &&
     typeof r["version"] === "string" &&
@@ -126,15 +128,16 @@ const isReceipt = (value: unknown): value is RuntimeReceipt => {
 
 const parseActive = (text: string): ActiveRecord => {
   const value: unknown = JSON.parse(text);
-  if (typeof value !== "object" || value === null) return {};
-  const record = value as Record<string, unknown>;
-  const rejected = record["rejected"] as ActiveRecord["rejected"] | undefined;
+  if (!Predicate.isObject(value)) return {};
+  const record = value;
+  const rejected = fieldsOf(record["rejected"]);
+  const [id, message, at] = [rejected.get("id"), rejected.get("message"), rejected.get("at")];
   return {
     ...(isReceipt(record["current"]) ? { current: record["current"] } : {}),
     ...(isReceipt(record["previous"]) ? { previous: record["previous"] } : {}),
     ...(record["unproven"] === true ? { unproven: true } : {}),
-    ...(typeof rejected?.id === "string" && typeof rejected.message === "string"
-      ? { rejected }
+    ...(typeof id === "string" && typeof message === "string"
+      ? { rejected: { id, message, at: typeof at === "string" ? at : "" } }
       : {}),
   };
 };

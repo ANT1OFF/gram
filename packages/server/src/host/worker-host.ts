@@ -75,6 +75,7 @@ export interface HostMachine {
 }
 
 const missing = <A extends object>(part: string): A =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a stand-in whose every member dies, so it can be any service a test leaves out
   new Proxy({} as A, {
     get: (_, key) =>
       typeof key === "symbol"

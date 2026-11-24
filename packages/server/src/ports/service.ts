@@ -3,7 +3,7 @@ import {
   hostOf,
   LOCAL_HOST_ID,
   type TerminalProcess,
-  type ThreadId,
+  ThreadId,
 } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -103,7 +103,7 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
               else busy.set(threadId, processes);
               yield* hub.publish({
                 type: "thread.terminalProcesses",
-                threadId: threadId as ThreadId,
+                threadId: ThreadId.make(threadId),
                 processes,
               });
             }
@@ -124,7 +124,7 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
             if (samePorts(current.get(threadId) ?? [], ports)) continue;
             if (ports.length === 0) current.delete(threadId);
             else current.set(threadId, ports);
-            yield* hub.publish({ type: "thread.ports", threadId: threadId as ThreadId, ports });
+            yield* hub.publish({ type: "thread.ports", threadId: ThreadId.make(threadId), ports });
           }
           yield* publishTerminals(swept);
         }).pipe(Effect.ignore);

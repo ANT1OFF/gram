@@ -780,6 +780,7 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
       });
 
     const schedule = <A, I>(job: HelperJob<A, I>): Effect.Effect<HelperResult<A>> =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a job's entry is keyed by its kind and basis, so the result it shares is that job's A
       Effect.gen(function* () {
         if (!helperOn(yield* deps.store.getSettings, job.kind)) {
           return yield* logSkip(job, "off");

@@ -1,4 +1,4 @@
-import type { QuestionAnswer, WorkerQuestion, WorkspaceId } from "@gram/contracts";
+import { type QuestionAnswer, type WorkerQuestion, WorkspaceId } from "@gram/contracts";
 import {
   ASK_OPTION_LABEL_MAX_CHARS,
   ASK_OPTIONS_MAX,
@@ -21,7 +21,7 @@ export const parseWorkerQuestionAskId = (
   if (at <= 0 || at === rest.length - 1) return undefined;
   const questionId = rest.slice(at + 1);
   if (!/^WQ\d+$/.test(questionId)) return undefined;
-  return { workspaceId: rest.slice(0, at) as WorkspaceId, questionId };
+  return { workspaceId: WorkspaceId.make(rest.slice(0, at)), questionId };
 };
 
 /** Whether a question waits on the user, which is when a receiver shows it. */

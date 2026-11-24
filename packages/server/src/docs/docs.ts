@@ -1,18 +1,19 @@
 import {
+  type Doc,
   DOC_ID_PATTERN,
   DOC_MAX_BYTES,
   DOC_META_MAX_BYTES,
-  DOCS_PER_WORKSPACE_MAX,
-  DocMeta,
+  type DocEditor,
   docExcerpt,
+  DocId,
+  DocMeta,
+  DOCS_PER_WORKSPACE_MAX,
   docTitle,
+  errnoCode,
   FsError,
   InvalidState,
   NotFound,
   redactText,
-  type Doc,
-  type DocEditor,
-  type DocId,
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -85,7 +86,7 @@ export interface DocsShape {
 
 const refuse = (message: string) => new InvalidState({ message });
 
-const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
+const codeOf = (error: unknown): unknown => errnoCode(error);
 
 const fsError = (shown: string, error: unknown) => {
   const code = codeOf(error);
@@ -109,7 +110,7 @@ export const newDocId = (title: string): DocId => {
     .slice(0, 48)
     .replace(/-+$/, "");
   const id = `${words === "" ? "doc" : words}-${randomBytes(3).toString("hex")}`;
-  return id as DocId;
+  return DocId.make(id);
 };
 
 const decodeMeta = Schema.decodeUnknownOption(DocMeta);
@@ -121,7 +122,7 @@ const RECORD_MAX = HEAD_MAX + DOC_MAX_BYTES;
 
 const checkedId = (id: string) =>
   DOC_ID_PATTERN.test(id)
-    ? Effect.succeed(id as DocId)
+    ? Effect.succeed(DocId.make(id))
     : Effect.fail(refuse(`${id} isn't a doc id`));
 
 const notFound = (id: string) =>
@@ -202,7 +203,7 @@ export const makeDocs = (
         if (!name.endsWith(RECORD)) continue;
         const id = name.slice(0, -RECORD.length);
         if (!DOC_ID_PATTERN.test(id)) continue;
-        const meta = yield* readHead(at, workspaceId, id as DocId).pipe(
+        const meta = yield* readHead(at, workspaceId, DocId.make(id)).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
         if (meta !== undefined) docs.push(meta);

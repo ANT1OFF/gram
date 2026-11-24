@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { MachineRun, WorkerMachinePortShape } from "./signed-in-port.ts";
 
@@ -28,7 +29,7 @@ export const fenceRefusalOf = (
   if (!answered.ok || answered.status >= 300) return undefined;
   const code =
     typeof answered.body === "object" && answered.body !== null
-      ? (answered.body as { code?: unknown }).code
+      ? fieldsOf(answered.body).get("code")
       : undefined;
   return code === "expired" || code === "superseded" ? code : undefined;
 };
@@ -101,12 +102,12 @@ export const fencedCalls = (port: WorkerMachinePortShape): WorkerMachinePortShap
           const refused = fenceRefusalOf(answered);
           if (refused === "superseded" && run !== undefined && sameRun(runs.get(key), run))
             runs.delete(key);
-          const said = answered.body as { stopped?: unknown; moved?: unknown } | null;
+          const said = fieldsOf(answered.body);
           const stopped =
             answered.status < 300 &&
             refused === undefined &&
-            ((call === "stop" && said?.stopped === true) ||
-              (call === "move" && said?.moved === true));
+            ((call === "stop" && said.get("stopped") === true) ||
+              (call === "move" && said.get("moved") === true));
           if (stopped && sameRun(runs.get(key), run)) runs.delete(key);
           return fenced && refused === "expired"
             ? Effect.logWarning(

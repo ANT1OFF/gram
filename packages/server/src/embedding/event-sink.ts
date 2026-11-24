@@ -6,19 +6,19 @@ import {
   EMBEDDING_WIRE_VERSION,
   embeddingOn,
   type FeatureCard,
+  type MemoryQuestion,
+  type OrchestrationPause,
+  parseQuestions,
   type PendingRequest,
+  QUESTIONS_FILE,
   type RequestId,
   type ServerEvent,
   SinkAck,
   type SinkBatch,
   type SinkEvent,
   type SinkEventType,
-  type MemoryQuestion,
-  type OrchestrationPause,
-  parseQuestions,
-  QUESTIONS_FILE,
   type Thread,
-  type ThreadId,
+  ThreadId,
   type WorkerQuestion,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -858,7 +858,7 @@ export const makeEventSink = (
           return "done" as const;
         }
         if (outbox.last() > outbox.confirmed()) return "wait" as const;
-        const threadId = next.threadId as ThreadId;
+        const threadId = ThreadId.make(next.threadId);
         const streamingBefore = streaming(threadId);
         const page = yield* read(threadId, { afterSeq: next.afterSeq, limit: MESSAGES_PAGE });
         const now = yield* Clock.currentTimeMillis;

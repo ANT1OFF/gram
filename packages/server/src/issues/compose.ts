@@ -9,6 +9,7 @@ import {
 } from "@gram/contracts";
 import { tildeHome } from "../diagnostics/report.ts";
 import { redactText } from "../logging/redact.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Who is filing: an agent through `report_issue`, or the user through the form. */
 export type IssueFiler = "agent" | "user";
@@ -103,9 +104,7 @@ export interface IssueHit {
 }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  Predicate.isObject(value) ? value : undefined;
 
 /** A REST issue as `number` and `url`, or `undefined` when the response isn't one. */
 export const parseFiledIssue = (stdout: string): FiledIssue | undefined => {

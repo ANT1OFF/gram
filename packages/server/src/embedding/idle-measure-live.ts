@@ -1,5 +1,6 @@
 import {
   effectiveCheckout,
+  fieldsOf,
   HostId,
   hostOf,
   type Thread,
@@ -56,11 +57,12 @@ const keptMeasurements = (dataDir: string | undefined) => {
   const file = dataDir === undefined ? undefined : privateJsonFile(dataDir, FILE, FILE_MOST);
   let kept: Kept = { spans: [], wakes: [] };
   try {
-    const read = file?.read() as
-      | { version?: unknown; spans?: unknown; wakes?: unknown }
-      | undefined;
-    if (read?.version === 1 && Array.isArray(read.spans) && Array.isArray(read.wakes))
-      kept = { spans: read.spans as IdleSpan[], wakes: read.wakes as ResumeTiming[] };
+    const read = fieldsOf(file?.read());
+    const spans = read.get("spans");
+    const wakes = read.get("wakes");
+    if (read.get("version") === 1 && Array.isArray(spans) && Array.isArray(wakes))
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the measurements file is the one this module writes and keeps private
+      kept = { spans: spans as IdleSpan[], wakes: wakes as ResumeTiming[] };
   } catch {
     kept = { spans: [], wakes: [] };
   }

@@ -50,6 +50,7 @@ export const fitMessage = (
   let total = bytesOf(message);
   if (total <= budget) return { message, truncated: false };
   const parts = (message.parts as ReadonlyArray<Part>).map((part): Part => ({ ...part }));
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the parts are the message's own, each with fields cut down and none removed or retyped
   const result = (): GramUIMessage => ({ ...message, parts }) as unknown as GramUIMessage;
 
   const cut = (
@@ -117,6 +118,7 @@ export const fitMessage = (
   }
   if (bytesOf(result()) <= budget) return { message: result(), truncated: true };
   return {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a message cut to only its truncation mark, a data part every reader of the sink knows
     message: {
       id: message.id,
       role: message.role,

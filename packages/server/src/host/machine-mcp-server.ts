@@ -1,3 +1,4 @@
+import * as Predicate from "effect/Predicate";
 /**
  * The variable that gives every agent session a joined machine opens one more MCP server, the
  * machine's own (`machineMcpServerFrom`). Whatever starts the host sets it, such as a platform
@@ -31,9 +32,8 @@ export const machineMcpServerFrom = (
   } catch {
     return { server: undefined, error: "isn't JSON" };
   }
-  if (typeof parsed !== "object" || parsed === null)
-    return { server: undefined, error: "isn't an object" };
-  const { name, url } = parsed as Record<string, unknown>;
+  if (!Predicate.isObject(parsed)) return { server: undefined, error: "isn't an object" };
+  const { name, url } = parsed;
   if (typeof name !== "string" || !TOML_KEY_SERVER_NAME.test(name))
     return { server: undefined, error: "names no server (letters, digits, _ and -, at most 64)" };
   if (typeof url !== "string") return { server: undefined, error: "has no url" };

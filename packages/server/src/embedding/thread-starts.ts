@@ -31,6 +31,7 @@ import { fileOrigin } from "../thread-profiles/repositories.ts";
 import { answer, EmbedInbound, refusal } from "./inbound.ts";
 import { ActingPerson } from "./person.ts";
 import { THREAD_MESSAGE_MAX } from "./thread-messages.ts";
+import * as Predicate from "effect/Predicate";
 
 /** The most repositories one start names, as a profile's workplace takes them. */
 export const THREAD_START_REPOSITORIES_MAX = 8;
@@ -52,12 +53,14 @@ export const THREAD_START_MODES: ReadonlyArray<PermissionMode> = [
   "auto",
   "bypassPermissions",
 ];
+const isStartMode = (mode: unknown): mode is PermissionMode =>
+  THREAD_START_MODES.some((each) => each === mode);
 
 /** The person a call names, or why the body doesn't name one. */
 export const personOf = (value: unknown): Actor | string => {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
+  if (!Predicate.isObject(value))
     return "`person` is the person the platform signed in, with their `id`";
-  const { id, name } = value as Record<string, unknown>;
+  const { id, name } = value;
   if (typeof id !== "string" || !PERSON.test(id)) return "`person.id` is a person's id";
   if (name !== undefined && (typeof name !== "string" || name.trim() === "" || name.length > 200))
     return "`person.name` is 1 to 200 characters";
@@ -135,7 +138,7 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
         if (model !== undefined && Option.isNone(model))
           return refusal(400, "`model` is `{ agent, model }`");
         const mode = body?.["mode"];
-        if (mode !== undefined && !THREAD_START_MODES.includes(mode as PermissionMode))
+        if (mode !== undefined && !isStartMode(mode))
           return refusal(400, `\`mode\` is one of ${THREAD_START_MODES.join(", ")}`);
         const listed = body?.["repositories"];
         if (
@@ -196,7 +199,7 @@ export const ThreadStartsInboundLive = Layer.effectDiscard(
                 ? {}
                 : { additionalDirectories: place.additionalDirectories }),
               ...(model === undefined ? {} : { model: model.value }),
-              ...(mode === undefined ? {} : { mode: mode as PermissionMode }),
+              ...(isStartMode(mode) ? { mode } : {}),
               ...(typeof title === "string" ? { title: title.trim() } : {}),
               input: { text },
             })

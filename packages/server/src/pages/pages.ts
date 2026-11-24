@@ -1,4 +1,5 @@
 import {
+  errnoCode,
   FsError,
   InvalidState,
   isCredentialPath,
@@ -10,10 +11,10 @@ import {
   PAGE_MANIFEST,
   PAGE_PATH_PATTERN,
   PAGE_TITLE_MAX,
-  PAGES_PER_WORKSPACE_MAX,
+  PageId,
   PageManifest,
   PageMeta,
-  type PageId,
+  PAGES_PER_WORKSPACE_MAX,
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -89,7 +90,7 @@ const refuse = (message: string) => new InvalidState({ message });
 const notFound = (id: string) =>
   new NotFound({ entity: "file", id, message: `The page ${id} isn't pinned` });
 
-const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
+const codeOf = (error: unknown): unknown => errnoCode(error);
 
 const fsError = (shown: string, error: unknown) => {
   const code = codeOf(error);
@@ -114,7 +115,7 @@ export const newPageId = (title: string): PageId => {
     .replace(/^-+|-+$/g, "")
     .slice(0, 48)
     .replace(/-+$/, "");
-  return `${words === "" ? "page" : words}-${randomBytes(3).toString("hex")}` as PageId;
+  return PageId.make(`${words === "" ? "page" : words}-${randomBytes(3).toString("hex")}`);
 };
 
 const ENTITIES: Readonly<Record<string, string>> = {
@@ -271,7 +272,7 @@ const checkedWorkspace = (workspaceId: WorkspaceId) =>
     ? Effect.succeed(workspaceId)
     : Effect.fail(refuse("That isn't a workspace's id"));
 const checkedId = (id: string) =>
-  PAGE_ID_PATTERN.test(id) ? Effect.succeed(id as PageId) : Effect.fail(notFound(id));
+  PAGE_ID_PATTERN.test(id) ? Effect.succeed(PageId.make(id)) : Effect.fail(notFound(id));
 
 const versionDir = (at: string, id: PageId, version: number) => join(at, id, `v${version}`);
 
@@ -350,7 +351,7 @@ export const makePages = (
       const metas: PageMeta[] = [];
       for (const name of names) {
         if (!PAGE_ID_PATTERN.test(name)) continue;
-        const meta = yield* readMeta(at, workspaceId, name as PageId);
+        const meta = yield* readMeta(at, workspaceId, PageId.make(name));
         if (meta !== undefined) metas.push(meta);
       }
       return metas.toSorted((a, b) => b.pinnedAt - a.pinnedAt);

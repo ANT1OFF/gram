@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -96,7 +97,7 @@ export const runOverSsh = (
       resume(
         Effect.fail(
           new SshJoinFailed(
-            (error as NodeJS.ErrnoException).code === "ENOENT"
+            errnoCode(error) === "ENOENT"
               ? "ssh isn't installed on this computer."
               : `ssh didn't start: ${error.message}`,
             "",

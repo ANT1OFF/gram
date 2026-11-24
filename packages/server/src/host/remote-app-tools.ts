@@ -8,6 +8,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { DAY_MS } from "../zone-time.ts";
+import * as Predicate from "effect/Predicate";
 
 const CALL_TIMEOUT_MS = DAY_MS;
 
@@ -88,8 +89,9 @@ export const appToolsAt = (
         ...(tool.annotations === undefined ? {} : { annotations: tool.annotations }),
       })),
       call: async (name, args, signal) =>
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- without an output schema the MCP SDK answers a CallToolResult; its union also names a legacy shape
         (await client.callTool(
-          { name, arguments: (args ?? {}) as Record<string, unknown> },
+          { name, arguments: Predicate.isObject(args) ? args : {} },
           undefined,
           { timeout: CALL_TIMEOUT_MS, ...(signal === undefined ? {} : { signal }) },
         )) as CallToolResult,

@@ -1,13 +1,13 @@
 import {
-  AppToolError,
-  reviewBotsOf,
-  samePr,
   type AppToolDescriptor,
+  AppToolError,
   type PrReview,
   type ReviewBot,
+  reviewBotsOf,
   type ReviewThread,
+  samePr,
   type Thread,
-  type ThreadId,
+  ThreadId,
 } from "@gram/contracts";
 import { isBotLogin, originOwnerRepo, Proc, repoFromPrUrl } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -246,7 +246,7 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
       }),
       handle: (caller, { refresh = false, threadId = caller }) =>
         Effect.gen(function* () {
-          const { thread, cwd, review } = yield* load("pr_review_state", threadId as ThreadId);
+          const { thread, cwd, review } = yield* load("pr_review_state", ThreadId.make(threadId));
           if (refresh) yield* refreshes.request(cwd, true);
           if (review.pr !== undefined) yield* publisher.reconcile(thread, review.pr);
           return {

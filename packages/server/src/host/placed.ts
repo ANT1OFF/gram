@@ -30,6 +30,7 @@ import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import type { ThreadStore } from "../persistence/thread-store.ts";
+import type { AgentHost } from "@gram/agents";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { CheckoutServiceShape } from "../runtime/hooks.ts";
 import type { Terminals } from "../terminal/terminals.ts";
@@ -480,11 +481,11 @@ export const placedHost = (
       });
     });
 
-  const wrapped = new WeakMap<object, unknown>();
+  const wrapped = new WeakMap<AgentHost, AgentHost>();
   const sessions = AgentHosts.of({
     get: (kind) =>
       Effect.map(local.sessions.get(kind), (agent) => {
-        const known = wrapped.get(agent) as typeof agent | undefined;
+        const known = wrapped.get(agent);
         if (known !== undefined) return known;
         const through: typeof agent = {
           ...agent,

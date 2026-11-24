@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { keepRunningAfterQuitOn } from "@gram/contracts";
+import { fieldsOf, keepRunningAfterQuitOn } from "@gram/contracts";
 import { GitStateRuntime, PathProbe, Proc, Worktrees } from "@gram/git";
 import * as Option from "effect/Option";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -54,11 +54,9 @@ const sessionsRecord = (dataDir: string) => join(dataDir, "local-host", "session
 
 const recordHolds = (dataDir: string, pid: number): boolean => {
   try {
-    const record = JSON.parse(readFileSync(sessionsRecord(dataDir), "utf8")) as {
-      hostPid?: unknown;
-      sessions?: unknown;
-    };
-    return record.hostPid === pid && Array.isArray(record.sessions) && record.sessions.length > 0;
+    const record = fieldsOf(JSON.parse(readFileSync(sessionsRecord(dataDir), "utf8")));
+    const sessions = record.get("sessions");
+    return record.get("hostPid") === pid && Array.isArray(sessions) && sessions.length > 0;
   } catch {
     return false;
   }
