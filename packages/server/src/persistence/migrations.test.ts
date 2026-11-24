@@ -70,6 +70,7 @@ describe("migration ordering gate", () => {
         [15, "private_readers"],
         [16, "workspace_holders"],
         [17, "project_origins"],
+        [18, "dream_cursors"],
       ]);
     }).pipe(
       Effect.provide(SqliteMigrator.layer(migratorOptions({})).pipe(Layer.provideMerge(memory))),
@@ -179,6 +180,7 @@ describe("the baseline", () => {
         "table closed_threads",
         "table closed_turns",
         "table draft_stashes",
+        "table dream_cursors",
         "table dream_watermarks",
         "table dreams",
         "table feature_cards",
@@ -616,6 +618,44 @@ describe("the baseline", () => {
       }
     }),
   );
+  it.effect("starts each workspace's memory updates from the upgrade, past what it already had", () =>
+    Effect.gen(function* () {
+      const file = join(yield* tempDir, "previous-to-dream-cursors.db");
+      const entries = Object.entries(migrations);
+      const index = entries.findIndex(([key]) => /^\d+_dream_cursors$/.test(key));
+      expect(index).toBeGreaterThan(0);
+      const open = (record: Parameters<typeof migratorOptions>[0]) =>
+        SqliteMigrator.layer(migratorOptions(record)).pipe(
+          Layer.provideMerge(SqliteClient.layer({ filename: file })),
+        );
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        for (const id of ["w-busy", "w-quiet"]) {
+          yield* sql`INSERT INTO workspaces (id, created_at, data) VALUES (${id}, 1, '{}')`;
+        }
+        for (let n = 0; n < 3; n++) {
+          yield* sql`INSERT INTO worker_reports (thread_id, workspace_id, at, data)
+            VALUES ('t-1', 'w-busy', 1, '{}')`;
+          yield* sql`INSERT INTO orchestration_events (workspace_id, at, kind, data)
+            VALUES ('w-busy', 1, 'merge', '{}')`;
+        }
+      }).pipe(Effect.provide(open(Object.fromEntries(entries.slice(0, index)))));
+      const before = Date.now();
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const rows = yield* sql<{ workspace_id: string; data: string }>`SELECT workspace_id, data
+          FROM dream_cursors ORDER BY workspace_id`;
+        const cursors = Object.fromEntries(
+          rows.map((row) => [row.workspace_id, JSON.parse(row.data) as Record<string, number>]),
+        );
+        // The backlog is dropped: what was there before the upgrade is never read.
+        expect(cursors["w-busy"]).toMatchObject({ reportSeq: 3, eventSeq: 3 });
+        expect(cursors["w-quiet"]).toMatchObject({ reportSeq: 0, eventSeq: 0 });
+        expect(cursors["w-busy"]!["at"]).toBeGreaterThanOrEqual(Math.floor(before / 1000) * 1000);
+      }).pipe(Effect.provide(open(migrations)));
+    }),
+  );
+
   it.effect("upgrades the database before a wait item named a person: each is for anyone", () =>
     Effect.gen(function* () {
       const file = join(yield* tempDir, "previous-to-wait-person.db");
