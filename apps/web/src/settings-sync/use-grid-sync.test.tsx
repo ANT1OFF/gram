@@ -89,7 +89,9 @@ describe("useGridSync", () => {
   it("on its own, saves a changed grid to the server's settings", () => {
     launch();
     act(() => useLayoutStore.getState().setGrid(EMPTY_GRID));
-    act(() => vi.advanceTimersByTime(1_000));
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
 
     expect(updateSettings).toHaveBeenCalledWith({
       layout: { grid: expect.objectContaining({ panes: [null] }) },
@@ -128,7 +130,9 @@ describe("useGridSync", () => {
     embedWithHome();
     launch();
     act(() => useLayoutStore.getState().openThread("t-mine" as ThreadId));
-    act(() => vi.advanceTimersByTime(1_000));
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
 
     expect(updateSettings).toHaveBeenCalledWith({
       layout: { grid: expect.objectContaining({ panes: ["t-mine"] }) },

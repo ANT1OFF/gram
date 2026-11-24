@@ -83,9 +83,9 @@ describe("History's grouping control", () => {
 
     act(() => press(trigger()));
     drawFrames();
-    act(() =>
-      fireEvent.click(screen.getByRole("menuitemradio", { name: "Group by orchestrator" })),
-    );
+    act(() => {
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Group by orchestrator" }));
+    });
     drawFrames();
     expect(useLayoutStore.getState().doneGrouping).toBe("orchestrator");
   });

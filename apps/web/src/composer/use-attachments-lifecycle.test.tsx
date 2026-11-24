@@ -199,7 +199,9 @@ describe("attachment owner lifetime", () => {
     const s = fixture();
     const initial = [{ path: "/invented/carried.png", name: "carried.png" }];
     const view = s.mount({ draftId: D }, initial);
-    act(() => view.result.current.add(files()));
+    act(() => {
+      view.result.current.add(files());
+    });
     await waitFor(() => expect(view.result.current.ready).toHaveLength(2));
     const url = view.result.current.items[1]!.previewUrl!;
     view.unmount();

@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { OUTWARD_RULES_FILE } from "./codex-home.ts";
 import { assertOwnedCodexPath } from "./codex-owned-path.ts";
 import { APP_TOOLS_SERVER_NAME } from "@gram/agents";
-import { realPathOrOwned } from "@gram/git";
+import { errnoCode, realPathOrOwned } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { parse, stringify } from "smol-toml";
 
@@ -117,8 +117,8 @@ const userHomeOf = (home: string, env: Readonly<Record<string, string | undefine
 const readUserConfig = (source: string): Promise<Record<string, unknown>> =>
   readFile(join(source, "config.toml"), "utf8").then(
     (text) => parse(text),
-    (error: NodeJS.ErrnoException) => {
-      if (error.code !== "ENOENT") throw error;
+    (error: unknown) => {
+      if (errnoCode(error) !== "ENOENT") throw error;
       return {};
     },
   );
@@ -154,8 +154,8 @@ export const ownedCodexProvider = (
 const somethingAt = (path: string): Promise<boolean> =>
   lstat(path).then(
     () => true,
-    (error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return false;
+    (error: unknown) => {
+      if (errnoCode(error) === "ENOENT") return false;
       throw error;
     },
   );

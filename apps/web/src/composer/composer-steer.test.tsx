@@ -91,7 +91,9 @@ describe("Composer hint lifetime", () => {
     fireEvent.change(textarea, { target: { value: "first direction" } });
     await act(async () => steerNow());
     expect(screen.getByText("Steering…")).toBeTruthy();
-    act(() => vi.advanceTimersByTime(2000));
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
     expect(screen.getByText("Steering…")).toBeTruthy();
 
     steer.mockRejectedValueOnce(new Error("turn finished"));
@@ -100,12 +102,18 @@ describe("Composer hint lifetime", () => {
     expect(screen.queryByText("Steering…")).toBeNull();
     expect(screen.getByText("Couldn't steer: turn finished")).toBeTruthy();
     expect(textarea.value).toBe("second direction");
-    act(() => vi.advanceTimersByTime(500));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
     expect(expired).not.toHaveBeenCalled();
     expect(screen.getByText("Couldn't steer: turn finished")).toBeTruthy();
-    act(() => vi.advanceTimersByTime(1999));
+    act(() => {
+      vi.advanceTimersByTime(1999);
+    });
     expect(screen.getByText("Couldn't steer: turn finished")).toBeTruthy();
-    act(() => vi.advanceTimersByTime(1));
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     expect(screen.queryByText("Couldn't steer: turn finished")).toBeNull();
     expect(expired).toHaveBeenCalledTimes(1);
   });
@@ -118,7 +126,9 @@ describe("Composer hint lifetime", () => {
     expect(screen.getByText("Steering…")).toBeTruthy();
     expect(timers.mock.calls.filter(([, delay]) => delay === 2500)).toHaveLength(1);
     unmount();
-    act(() => vi.advanceTimersByTime(2500));
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
     expect(expired).not.toHaveBeenCalled();
   });
 
@@ -134,7 +144,9 @@ describe("Composer hint lifetime", () => {
     unmount();
     await act(async () => inFlight.resolve());
     expect(timers.mock.calls.filter(([, delay]) => delay === 2500)).toHaveLength(0);
-    act(() => vi.advanceTimersByTime(2500));
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
     expect(expired).not.toHaveBeenCalled();
   });
 });

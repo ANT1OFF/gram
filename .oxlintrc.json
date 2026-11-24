@@ -37,12 +37,21 @@
     "gram/max-lines": "error",
     "gram/no-cross-package-path": "error",
     "typescript/ban-ts-comment": "error",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "allowForKnownSafeCalls": [
+          { "from": "package", "package": "node:test", "name": ["describe", "it", "suite", "test"] }
+        ]
+      }
+    ],
+    // An async JSX handler is React's own idiom; the handlers catch their own failures.
+    "typescript/no-misused-promises": ["error", { "checksVoidReturn": { "attributes": false } }],
+    "typescript/use-unknown-in-catch-callback-variable": "error",
     // Type-aware rules (`--type-aware`, run by tsrs) that the categories above turn on. Each is
     // off until the change that clears its existing hits turns it back on.
-    "typescript/await-thenable": "off",
     "typescript/no-base-to-string": "off",
     "typescript/no-duplicate-type-constituents": "off",
-    "typescript/no-floating-promises": "off",
     "typescript/no-implied-eval": "off",
     "typescript/no-meaningless-void-operator": "off",
     "typescript/no-misused-spread": "off",
@@ -311,6 +320,13 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "files": ["**/*.js", "**/*.mjs", "**/*.cjs"],
+      "rules": {
+        // Plain JavaScript has no annotation to give a catch callback's parameter `unknown`.
+        "typescript/use-unknown-in-catch-callback-variable": "off"
       }
     },
     {

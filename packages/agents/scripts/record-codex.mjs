@@ -138,32 +138,39 @@ async function record(name, drive, replies, options = {}) {
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (d) => (body += d));
-    req.on("end", async () => {
-      if (req.url?.startsWith("/mcp")) return mcp(req, res, body);
-      const parsed = body ? JSON.parse(body) : {};
-      if (DUMP_TOOLS && n === 0) writeFileSync(DUMP_TOOLS, JSON.stringify(parsed.tools, null, 1));
-      requests.push({
-        tools: (parsed.tools ?? []).map((t) => t.name ?? t.type),
-        input: (parsed.input ?? []).map((i) => i.type),
-        outputs: (parsed.input ?? [])
-          .filter((i) => i.type?.endsWith("_output"))
-          .map((i) => JSON.stringify(i.output ?? i).slice(0, 2_000)),
+    req.on("end", () => {
+      answer(req, res, body).catch((error) => {
+        console.error(error);
+        if (!res.headersSent) res.writeHead(500);
+        res.end();
       });
-      const reply = replies[Math.min(n++, replies.length - 1)];
-      const events = reply(n);
-      if (!Array.isArray(events)) {
-        res.writeHead(events.status, { "content-type": "application/json", ...events.headers });
-        return res.end(JSON.stringify(events.body));
-      }
-      res.writeHead(200, { "content-type": "text/event-stream" });
-      for (const event of events) {
-        if (res.destroyed) return;
-        if (typeof event === "number") await sleep(event);
-        else res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-      }
-      res.end();
     });
   });
+  const answer = async (req, res, body) => {
+    if (req.url?.startsWith("/mcp")) return mcp(req, res, body);
+    const parsed = body ? JSON.parse(body) : {};
+    if (DUMP_TOOLS && n === 0) writeFileSync(DUMP_TOOLS, JSON.stringify(parsed.tools, null, 1));
+    requests.push({
+      tools: (parsed.tools ?? []).map((t) => t.name ?? t.type),
+      input: (parsed.input ?? []).map((i) => i.type),
+      outputs: (parsed.input ?? [])
+        .filter((i) => i.type?.endsWith("_output"))
+        .map((i) => JSON.stringify(i.output ?? i).slice(0, 2_000)),
+    });
+    const reply = replies[Math.min(n++, replies.length - 1)];
+    const events = reply(n);
+    if (!Array.isArray(events)) {
+      res.writeHead(events.status, { "content-type": "application/json", ...events.headers });
+      return res.end(JSON.stringify(events.body));
+    }
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    for (const event of events) {
+      if (res.destroyed) return;
+      if (typeof event === "number") await sleep(event);
+      else res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    }
+    res.end();
+  };
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
   const home = realpathSync(mkdtempSync(join(tmpdir(), "gram-codex-home-")));

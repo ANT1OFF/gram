@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { lstat, mkdir, open } from "node:fs/promises";
 import { dirname, relative, resolve, sep } from "node:path";
-import { isStrictlyInside, realPath } from "@gram/git";
+import { errnoCode, isStrictlyInside, realPath } from "@gram/git";
 
 /** Why a path can't take evidence; the message the tool returns. */
 export class EvidencePathError extends Error {}
@@ -50,8 +50,9 @@ export async function writeEvidence(
     final,
     constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW,
     0o644,
-  ).catch((error: NodeJS.ErrnoException) => {
-    throw error.code === "ELOOP" || error.code === "EISDIR"
+  ).catch((error: unknown) => {
+    const code = errnoCode(error);
+    throw code === "ELOOP" || code === "EISDIR"
       ? new EvidencePathError("Something other than a file is at that path.")
       : error;
   });

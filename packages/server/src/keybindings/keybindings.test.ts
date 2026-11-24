@@ -23,8 +23,8 @@ const tempDir = async () => {
   return dir;
 };
 
-afterEach(async () => {
-  for (const dir of dirs.splice(0)) await removeDirStrict(dir);
+afterEach(() => {
+  for (const dir of dirs.splice(0)) removeDirStrict(dir);
 });
 
 describe("parseKeybindings", () => {

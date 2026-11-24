@@ -178,7 +178,9 @@ describe("FilesPanel", () => {
     expect(useFilesStore.getState().byThread[THREAD]?.selected).toBe(`${ROOT}/src/retry.ts`);
     expect(useLayoutStore.getState().panelTargets.files).toBeUndefined();
 
-    act(() => target(202, `${ROOT}/README.md`));
+    act(() => {
+      target(202, `${ROOT}/README.md`);
+    });
     await waitFor(() =>
       expect(within(screen.getByTestId("file-preview")).getByText("README.md")).toBeTruthy(),
     );
@@ -193,10 +195,14 @@ describe("FilesPanel", () => {
     expect(useFilesStore.getState().byThread[THREAD]?.selected).toBeUndefined();
 
     // Such as a report the agent wrote to a temp folder: `fs.file` decides whether it shows.
-    act(() => target(204, "/tmp/report/REPORT.md"));
+    act(() => {
+      target(204, "/tmp/report/REPORT.md");
+    });
     await waitFor(() => expect(useLayoutStore.getState().panelTargets.files).toBeUndefined());
     expect(useFilesStore.getState().byThread[THREAD]?.selected).toBe("/tmp/report/REPORT.md");
-    act(() => target(205, "../outside.md"));
+    act(() => {
+      target(205, "../outside.md");
+    });
     await waitFor(() => expect(useLayoutStore.getState().panelTargets.files).toBeUndefined());
     expect(useFilesStore.getState().byThread[THREAD]?.selected).toBe("/tmp/report/REPORT.md");
   });

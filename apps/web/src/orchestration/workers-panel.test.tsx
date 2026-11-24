@@ -530,7 +530,9 @@ describe("a worker open in the pane", () => {
       earlierOmitted: 0,
     };
     seed([], []);
-    act(() => openRecordBeside("gone" as ThreadId));
+    act(() => {
+      openRecordBeside("gone" as ThreadId);
+    });
     renderWithApi(<Pane />, api);
     await waitFor(() =>
       expect(screen.getByTestId("beside-tab-changes").textContent).toBe("Changes2"),

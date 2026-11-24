@@ -234,7 +234,9 @@ describe("TerminalPanel", () => {
       first.type("ls\r");
       await waitFor(() => expect(first.output).toContain("echo: ls"));
 
-      act(() => themeStore.setState({ mode: "light" }));
+      act(() => {
+        themeStore.setState({ mode: "light" });
+      });
       await waitFor(() => expect(first.disposed).toBe(true));
       await waitFor(() => expect(live()[0]?.output).toContain("echo: ls"));
       expect(live()).toHaveLength(1);
@@ -390,7 +392,9 @@ describe("TerminalPanel", () => {
       expect(screen.getByTestId("terminal-find-status").textContent).toBe("1 of 3");
 
       // A new theme is a new emulator, which knows nothing of the find the bar still shows.
-      act(() => themeStore.setState({ mode: "light" }));
+      act(() => {
+        themeStore.setState({ mode: "light" });
+      });
       await waitFor(() => expect(term.disposed).toBe(true));
       await waitFor(() =>
         expect(live()[0]?.finds.at(-1)).toEqual({

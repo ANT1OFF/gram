@@ -142,7 +142,9 @@ describe("Notifications center", () => {
       act(() =>
         useThreadsStore.getState().applyEvent({ type: "notify", kind: "info", title: "A notice" }),
       );
-      act(() => vi.advanceTimersByTime(6001));
+      act(() => {
+        vi.advanceTimersByTime(6001);
+      });
       vi.useRealTimers();
       expect(screen.queryByTestId("toast")).toBeNull();
       expect(screen.getByTestId("notification-entry")).toBeTruthy();

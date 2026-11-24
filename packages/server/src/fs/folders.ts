@@ -11,6 +11,7 @@ import {
   type RepositoryCandidates,
 } from "@gram/contracts";
 import {
+  errnoCode,
   git as runGit,
   isForeignPath,
   projectRoot,
@@ -226,8 +227,8 @@ export const canonicalRepoFolder = (
     const dotGit = join(path, ".git");
     const own = yield* Effect.tryPromise({
       try: () =>
-        lstat(dotGit).catch((error: { code?: unknown }) => {
-          if (error.code === "ENOENT") return undefined;
+        lstat(dotGit).catch((error: unknown) => {
+          if (errnoCode(error) === "ENOENT") return undefined;
           throw error;
         }),
       catch: (error) => folderError(error, dotGit),

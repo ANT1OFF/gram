@@ -180,6 +180,10 @@ export async function installAppImage(
   }
   try {
     const dir = await open(dirname(target), constants.O_RDONLY);
-    await dir.sync().finally(() => dir.close());
+    try {
+      await dir.sync();
+    } finally {
+      await dir.close();
+    }
   } catch (_theRenameItselfAlreadyHappened) {}
 }

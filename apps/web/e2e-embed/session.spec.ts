@@ -16,10 +16,10 @@ test("an embedded session renews after a rejected reconnect, preserving its page
     accepting = true;
     await route.fulfill({ status: 200 });
   });
-  await page.routeWebSocket("**/cell/ws", (ws) => {
+  await page.routeWebSocket("**/cell/ws", async (ws) => {
     socket = ws;
     if (!accepting) {
-      ws.close({ code: 1008 });
+      await ws.close({ code: 1008 });
       return;
     }
     const send = (value: unknown) => ws.send(JSON.stringify(value));

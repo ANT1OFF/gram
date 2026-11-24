@@ -65,7 +65,7 @@
     const probe = () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
-      fetch(location.href, { cache: "no-store", signal: controller.signal })
+      void fetch(location.href, { cache: "no-store", signal: controller.signal })
         .then(
           (response) => response.ok,
           () => false,
