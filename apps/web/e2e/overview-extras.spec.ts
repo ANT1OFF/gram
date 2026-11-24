@@ -317,27 +317,23 @@ test("⌘J opens the Workers tab whether the overview is open or hidden, and put
   await expect(list).toBeHidden();
 });
 
-test("Settings' Sidebar sections hides and shows each section, kept across a reload", async ({
-  page,
-}) => {
-  await start(page);
-  // The pull requests are in At rest: opened, so they show (its fold is kept across reloads).
-  await section(page, "rest")
-    .getByRole("button", { name: /^At rest, \d+$/ })
-    .click();
+/** Settings → General's Sidebar sections, and where each of its boxes shows in the overview. */
+const sidebarSections = (page: Page) => {
+  const group = page.getByRole("group", { name: "Sidebar sections" });
+  const box = (name: string) => group.getByRole("checkbox", { name });
+  const labels = {
+    solo: "Solo threads",
+    pullRequests: "Pull requests",
+    doneToday: "History",
+    usage: "Usage and slots",
+  } as const;
   const shown = {
     solo: section(page, "solo"),
     pullRequests: section(page, "pullRequests"),
     doneToday: overview(page).getByTestId("overview-history"),
     usage: overview(page).getByTestId("overview-foot"),
   } as const;
-  await expect(shown.usage).toHaveCount(0);
-  for (const key of ["solo", "pullRequests", "doneToday"] as const) {
-    await expect(shown[key]).toBeVisible();
-  }
-
   // Settings keeps the overview's column for its Back strip, so each box's effect shows on leaving.
-  const group = page.getByRole("group", { name: "Sidebar sections" });
   const open = async () => {
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(group).toBeVisible();
@@ -346,20 +342,35 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
     await page.getByTestId("settings-back").click();
     await expect(overview(page)).toBeVisible();
   };
-  await open();
-  const box = (name: string) => group.getByRole("checkbox", { name });
-  const labels = {
-    solo: "Solo threads",
-    pullRequests: "Pull requests",
-    doneToday: "History",
-    usage: "Usage and slots",
-  } as const;
-  await expect(group.getByRole("checkbox")).toHaveCount(4);
-  await expect(box(labels.usage)).not.toBeChecked();
+  // A reload loses the mock's threads, and an empty section stays away by itself, so they are seeded
+  // again: what stays away after it does so because it is turned off.
   const reseed = async () => {
     await page.evaluate(() => window.gramMock!.simulateOneThread());
     await expect(section(page, "orchestrators")).toBeVisible();
   };
+  /** What the settings store for the boxes in `off`: only what differs from the defaults. */
+  const stored = (off: Partial<Record<keyof typeof labels, false>>) => {
+    const { usage, ...rest } = off;
+    return usage === false ? rest : { ...rest, usage: true };
+  };
+  return { group, box, labels, shown, open, leave, reseed, stored };
+};
+
+test("Settings' Sidebar sections hides each section, kept across a reload", async ({ page }) => {
+  await start(page);
+  const { group, box, labels, shown, open, leave, reseed, stored } = sidebarSections(page);
+  // The pull requests are in At rest: opened, so they show (its fold is kept across reloads).
+  await section(page, "rest")
+    .getByRole("button", { name: /^At rest, \d+$/ })
+    .click();
+  await expect(shown.usage).toHaveCount(0);
+  for (const key of ["solo", "pullRequests", "doneToday"] as const) {
+    await expect(shown[key]).toBeVisible();
+  }
+
+  await open();
+  await expect(group.getByRole("checkbox")).toHaveCount(4);
+  await expect(box(labels.usage)).not.toBeChecked();
 
   // Usage starts off, so turning it on is what is stored; it is shown from there.
   await box(labels.usage).check();
@@ -372,17 +383,13 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
   await open();
 
   // One at a time: each off leaves the ones still on, and only what differs is stored.
-  const off: Record<string, false> = {};
-  const stored = () => {
-    const { usage, ...rest } = off;
-    return usage === false ? rest : { ...rest, usage: true };
-  };
+  const off: Partial<Record<keyof typeof labels, false>> = {};
   for (const [key, label] of Object.entries(labels) as [keyof typeof labels, string][]) {
     await box(label).uncheck();
     off[key] = false;
     await expect
       .poll(async () => (await storedLayout(page))["overviewSections"] ?? {})
-      .toEqual(stored());
+      .toEqual(stored(off));
     await leave();
     await expect(shown[key]).toHaveCount(0);
     for (const [other, where] of Object.entries(shown)) {
@@ -391,15 +398,30 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
     await open();
   }
 
-  // Kept across a reload. The mock's threads went with it, and an empty section stays away by
-  // itself, so they are seeded again: what stays away now does so because it is turned off.
+  // Kept across a reload.
   await page.reload();
   await expect(group).toBeVisible();
   for (const label of Object.values(labels)) await expect(box(label)).not.toBeChecked();
   await leave();
   await reseed();
   for (const where of Object.values(shown)) await expect(where).toHaveCount(0);
+});
+
+// Where the test above leaves off, every section off and At rest open, as stored settings.
+test("Settings' Sidebar sections shows each section again, kept across a reload", async ({
+  page,
+}) => {
+  const off: Partial<Record<"solo" | "pullRequests" | "doneToday" | "usage", false>> = {
+    solo: false,
+    pullRequests: false,
+    doneToday: false,
+    usage: false,
+  };
+  const { group, box, labels, shown, open, leave, reseed, stored } = sidebarSections(page);
+  await start(page, { overviewUnfolded: ["rest"] }, { overviewSections: stored(off) });
+  for (const where of Object.values(shown)) await expect(where).toHaveCount(0);
   await open();
+  for (const label of Object.values(labels)) await expect(box(label)).not.toBeChecked();
 
   // Back on, one by one, each showing again.
   for (const [key, label] of Object.entries(labels) as [keyof typeof labels, string][]) {
@@ -407,7 +429,7 @@ test("Settings' Sidebar sections hides and shows each section, kept across a rel
     delete off[key];
     await expect
       .poll(async () => (await storedLayout(page))["overviewSections"] ?? {})
-      .toEqual(stored());
+      .toEqual(stored(off));
     await leave();
     await expect(shown[key]).toBeVisible();
     await open();

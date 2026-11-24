@@ -5,6 +5,7 @@ import { openPanelTab } from "./panel-tab";
 declare global {
   interface Window {
     shownActions: number[];
+    scrolledTo: number;
   }
 }
 
@@ -28,11 +29,21 @@ test("scrolling a Markdown preview under a resting pointer doesn't flash its blo
   const markdown = panel.getByTestId("markdown-preview");
   await expect(markdown.locator('[data-streamdown="code-block"]')).toHaveCount(16);
 
-  // Every frame, how many of the preview's block buttons are showing at all.
+  // Every frame, how many of the preview's block buttons are showing at all; and where the last
+  // scroll event the preview's scroller fired left it.
   await page.evaluate((actions) => {
     const preview = document.querySelector('[data-testid="markdown-preview"]')!;
     const seen: number[] = [];
     window.shownActions = seen;
+    window.scrolledTo = 0;
+    document.addEventListener(
+      "scroll",
+      (event) => {
+        if (event.target instanceof Element && event.target.contains(preview))
+          window.scrolledTo = event.target.scrollTop;
+      },
+      { capture: true, passive: true },
+    );
     const tick = () => {
       seen.push(
         [...preview.querySelectorAll(actions)].filter(
@@ -52,9 +63,14 @@ test("scrolling a Markdown preview under a resting pointer doesn't flash its blo
     return { top: rect.top, height: rect.height };
   });
   await page.mouse.move(box.x + box.width / 2, scroller.top + scroller.height / 3);
-  for (let step = 0; step < 30; step += 1) {
+  const steps = 30;
+  for (let step = 0; step < steps; step += 1) {
     await page.mouse.wheel(0, 120);
   }
+  // A wheel only starts its scroll: the browser lands it on a later frame, and on a slow machine
+  // after this spec has gone on to measure the blocks and move the pointer. Its scroll events would
+  // then come after that move and, rightly, hide the buttons again. Wait for the last one to land.
+  await expect.poll(() => page.evaluate(() => window.scrolledTo)).toBe(steps * 120);
   const shown = await page.evaluate(() => window.shownActions);
   expect(shown.length).toBeGreaterThan(10);
   expect(Math.max(...shown)).toBe(0);
