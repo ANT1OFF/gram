@@ -1,4 +1,4 @@
-import { hostListing, type WorkerPlacement } from "@gram/contracts";
+import { hostListing, type WorkerPacking, type WorkerPlacement } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -8,6 +8,14 @@ import {
   type OnDemandHosts,
 } from "./on-demand.ts";
 import { callOutside } from "./outside.ts";
+import {
+  type MachineSharing,
+  type ProvidedWorkerMachine,
+  providedMachines,
+  seatsOnMachine,
+  type WorkerSeats,
+  type WorkerSeatsAsk,
+} from "./worker-seats.ts";
 
 /** What an orchestrator asks of a worker's own machine. Short ids, as the provider offers them. */
 export interface WorkerMachineAsk {
@@ -25,6 +33,11 @@ export interface WorkerMachineAsk {
   readonly isolation?: string | undefined;
   /** What the machine installs, sets and may reach as it starts, by the provider's id for it. */
   readonly environment?: string | undefined;
+  /**
+   * How it may be shared, told only to a provider that keeps who is on each machine
+   * (`WorkerMachineSource.sharing`); another's start would refuse the field.
+   */
+  readonly sharing?: MachineSharing | undefined;
 }
 
 /** A machine an orchestrator already has for its workers, as the provider reports it. */
@@ -204,6 +217,10 @@ export const choicesOfAsk = (ask: Omit<WorkerMachineAsk, "owner">): Record<strin
   ...(ask.environment === undefined ? {} : { environment: ask.environment }),
 });
 
+/** An ask's sharing as a start carries it: only when one was named. */
+export const sharingOfAsk = (ask: Pick<WorkerMachineAsk, "sharing">) =>
+  ask.sharing === undefined ? {} : { sharing: { mode: ask.sharing } };
+
 /**
  * A start, from whichever provider is asked (`send`). 409 is over the person's total; 403 or 404
  * is not allowed (the person or their organisation turned it off, or the provider starts none).
@@ -293,6 +310,7 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
           orchestrator: ask.orchestrator,
           title: ask.title.slice(0, 120),
           choices: choicesOfAsk(ask),
+          ...sharingOfAsk(ask),
         },
       },
       accept: [403, 404, 409],
@@ -320,6 +338,11 @@ export interface WorkerMachineResizeAsk {
   readonly size: string | null;
   readonly holdMinutes?: number | undefined;
   readonly reason?: string | undefined;
+  /**
+   * The asking worker's seat on a machine it shares: the hold is then that worker's own, and the
+   * machine holds the largest of its workers' holds. Told only to a provider that keeps seats.
+   */
+  readonly worker?: string | undefined;
 }
 
 /** How a resize came out, as the provider said. */
@@ -382,6 +405,7 @@ export const resizeBody = (ask: WorkerMachineResizeAsk): Record<string, unknown>
   size: ask.size,
   ...(ask.holdMinutes === undefined ? {} : { holdMinutes: ask.holdMinutes }),
   ...(ask.reason === undefined ? {} : { reason: ask.reason.slice(0, 200) }),
+  ...(ask.worker === undefined ? {} : { worker: ask.worker }),
 });
 
 /** Asks a provider for a resize (`send`), or refuses one that isn't well formed. */
@@ -505,6 +529,7 @@ export const placementOf = (
     readonly environment?: string | undefined;
     readonly reason?: string | undefined;
   },
+  packed: { readonly packing?: WorkerPacking | undefined; readonly seat?: string | undefined } = {},
 ): WorkerPlacement => {
   const picks = Object.fromEntries(
     (["isolation", "architecture", "size", "environment"] as const).flatMap((id) => {
@@ -515,7 +540,9 @@ export const placementOf = (
   const why = sandbox.reason?.trim();
   return {
     machine,
-    ...(sandbox.shareWith === undefined ? {} : { shared: true }),
+    ...(sandbox.shareWith === undefined && packed.packing !== "shared" ? {} : { shared: true }),
+    ...(packed.packing === undefined ? {} : { packing: packed.packing }),
+    ...(packed.seat === undefined ? {} : { seat: packed.seat }),
     ...(Object.keys(picks).length === 0 ? {} : { picks }),
     ...(why === undefined || why === "" ? {} : { why }),
   };
@@ -585,6 +612,16 @@ export interface WorkerMachineSource {
    * (`request_resources`). Absent: this provider resizes nothing.
    */
   readonly resize?: (ask: WorkerMachineResizeAsk) => Effect.Effect<WorkerMachineResize>;
+  /**
+   * How many workers a machine of each size is for, by the provider's size id, where it keeps who
+   * is on each machine. Undefined: it keeps none, so `seats` is never asked, no start carries
+   * `sharing`, no resize a `worker`, and this Gram's own cap is all that bounds a machine.
+   */
+  readonly sharing: Effect.Effect<OnDemandChoices["sharing"]>;
+  /** Takes or gives up seats on a machine, or reads them (`worker-seats.ts`). */
+  readonly seats: (ask: WorkerSeatsAsk) => Effect.Effect<WorkerSeats>;
+  /** The person's worker machines as the provider describes them. Undefined: it lists none. */
+  readonly machines: Effect.Effect<ReadonlyArray<ProvidedWorkerMachine> | undefined>;
   /**
    * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
    * here, where this provider does so. `unsettled`: its start's outcome isn't known, so the server
@@ -712,6 +749,9 @@ export const embeddedSource = (
   models: Effect.succeed(undefined),
   start: (ask) => startWorkerMachine(hosts, { ...ask, owner }),
   resize: (ask) => resizeWorkerMachine(hosts, owner, ask),
+  sharing: Effect.map(choicesFor(hosts, owner), (offered) => offered?.sharing),
+  seats: (ask) => seatsOnMachine(hosts, owner, ask),
+  machines: providedMachines(hosts, owner),
   theirs: (machine) => machine.onDemand === "worker" && machine.owner === owner,
   arrive: (name) =>
     awaitWorkerMachine(machines, { name, owner }).pipe(

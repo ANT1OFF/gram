@@ -194,14 +194,36 @@ const CodeBlockContainer = ({
   />
 );
 
-/** Plain text is visible immediately; stale async results never replace newer input. */
+interface Highlighted {
+  code: string;
+  language: BundledLanguage;
+  tokens: TokenizedCode;
+}
+
+const keepColoursOfUnchangedLines = (
+  code: string,
+  raw: TokenizedCode,
+  last: Highlighted,
+): TokenizedCode => {
+  const lines = code.split("\n");
+  const before = last.code.split("\n");
+  let kept = 0;
+  const tokens = raw.tokens.map((line, at) => {
+    const colored = last.tokens.tokens[at];
+    if (colored === undefined || before[at] !== lines[at]) return line;
+    kept += 1;
+    return colored;
+  });
+  return kept === 0 ? raw : { ...last.tokens, tokens };
+};
+
+/**
+ * Plain text is visible immediately; stale async results never replace newer input, though lines it
+ * shares with the code they were for keep their colours until the new ones arrive.
+ */
 export const useCodeTokens = (code: string, language: BundledLanguage, enabled = true) => {
   const rawTokens = useMemo(() => createRawTokens(code), [code]);
-  const [result, setResult] = useState<{
-    code: string;
-    language: BundledLanguage;
-    tokens: TokenizedCode;
-  }>();
+  const [result, setResult] = useState<Highlighted>();
 
   useEffect(() => {
     if (!enabled) return;
@@ -216,9 +238,14 @@ export const useCodeTokens = (code: string, language: BundledLanguage, enabled =
     };
   }, [code, language, enabled]);
 
-  return enabled && result?.code === code && result.language === language
-    ? result.tokens
-    : rawTokens;
+  const current = enabled && result?.language === language ? result : undefined;
+  const stale = current !== undefined && current.code !== code;
+  const kept = useMemo(
+    () => (stale ? keepColoursOfUnchangedLines(code, rawTokens, current) : undefined),
+    [stale, code, rawTokens, current],
+  );
+  if (current === undefined) return rawTokens;
+  return kept ?? current.tokens;
 };
 
 /** Inline tokens preserve the exact source, including blank lines and trailing newlines. */

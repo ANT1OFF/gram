@@ -263,11 +263,15 @@ const replyFor = (answer: RequestAnswer): OpenCodePermissionReply | undefined =>
   return answer.scope === "always" ? "always" : "once";
 };
 
-const startFor = (config: OpenCodeHostConfig, profileId: ProfileId | undefined) =>
+const serverKey = (profileId: ProfileId | undefined, tmpDir: string | undefined) =>
+  tmpDir === undefined ? (profileId ?? "") : `${profileId ?? ""}\0${tmpDir}`;
+
+const startFor = (config: OpenCodeHostConfig, profileId: ProfileId | undefined, tmpDir?: string) =>
   Effect.gen(function* () {
     const binary = yield* config.binary;
     const base = yield* config.env;
-    let env: Record<string, string | undefined> = { ...base };
+    let env: Record<string, string | undefined> =
+      tmpDir === undefined ? { ...base } : { ...base, TMPDIR: tmpDir };
     if (profileId !== undefined) {
       const credentials = yield* config.credentials(profileId);
       env = {
@@ -295,6 +299,7 @@ export const makeOpenCodeHost = (
 ): Effect.Effect<AgentHost, never, Scope.Scope> =>
   Effect.gen(function* () {
     const servers = new Map<string, Promise<OpenCodeServer>>();
+    const using = new Map<string, number>();
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {
         const all = [...servers.values()];
@@ -305,9 +310,9 @@ export const makeOpenCodeHost = (
       }),
     );
 
-    const serverFor = (profileId: ProfileId | undefined) =>
+    const serverFor = (profileId: ProfileId | undefined, tmpDir?: string) =>
       Effect.gen(function* () {
-        const key = profileId ?? "";
+        const key = serverKey(profileId, tmpDir);
         const existing = servers.get(key);
         if (existing !== undefined) {
           const running = yield* Effect.promise(() => existing.catch(() => undefined));
@@ -316,7 +321,7 @@ export const makeOpenCodeHost = (
         }
         let starting = servers.get(key);
         if (starting === undefined) {
-          starting = Effect.runPromise(startFor(config, profileId));
+          starting = Effect.runPromise(startFor(config, profileId, tmpDir));
           servers.set(key, starting);
         }
         const current = starting;
@@ -339,7 +344,27 @@ export const makeOpenCodeHost = (
           return yield* Effect.fail(
             unavailable("OpenCode can't keep a session's writes, shell and network bounded."),
           );
-        const server = yield* serverFor(options.model?.profileId);
+        const ownKey =
+          options.tmpDir === undefined
+            ? undefined
+            : serverKey(options.model?.profileId, options.tmpDir);
+        if (ownKey !== undefined) {
+          using.set(ownKey, (using.get(ownKey) ?? 0) + 1);
+          yield* Effect.addFinalizer(() =>
+            Effect.promise(async () => {
+              const left = (using.get(ownKey) ?? 1) - 1;
+              if (left > 0) {
+                using.set(ownKey, left);
+                return;
+              }
+              using.delete(ownKey);
+              const own = servers.get(ownKey);
+              servers.delete(ownKey);
+              await own?.then((running) => running.stop()).catch(() => undefined);
+            }),
+          );
+        }
+        const server = yield* serverFor(options.model?.profileId, options.tmpDir);
         const client: OpenCodeClient = server.client;
         let mode = options.permissionMode ?? "default";
         let changingMode = false;
@@ -589,9 +614,18 @@ export const makeOpenCodeHost = (
         }),
       invalidateProfile: (profileId) =>
         Effect.promise(async () => {
-          const server = servers.get(profileId);
-          servers.delete(profileId);
-          await server?.then((running) => running.stop()).catch(() => undefined);
+          const keys = [...servers.keys()].filter(
+            (key) => key === profileId || key.startsWith(`${profileId}\0`),
+          );
+          await Promise.all(
+            keys.map((key) => {
+              const server = servers.get(key);
+              servers.delete(key);
+              return server === undefined
+                ? Promise.resolve()
+                : server.then((running) => running.stop()).catch(() => undefined);
+            }),
+          );
         }),
     };
     return host;

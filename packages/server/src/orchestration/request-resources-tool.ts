@@ -45,7 +45,7 @@ export const makeRequestResources = (
     descriptor: {
       name: "request_resources",
       class: "self",
-      description: `On a machine of your own, which runs small: before a heavy step (full checks, a big build, many tests) ask for \`size\` \`large\` (\`xlarge\` where allowed) for \`minutes\` (30 unless given) with a \`reason\`, and give it back with \`default\` after. Asking again extends it.`,
+      description: `On a hosted machine of your own or one you share, which runs small: before a heavy step (full checks, a big build, many tests) ask for \`size\` \`large\` (\`xlarge\` where allowed) for \`minutes\` (30 unless given) with a \`reason\`, and give it back with \`default\` after. Asking again extends it. On a shared machine the hold is yours: the machine holds the largest any worker on it asked for.`,
     },
     audience: ["worker"],
     input: Schema.Struct({

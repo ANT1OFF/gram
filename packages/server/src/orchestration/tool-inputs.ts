@@ -70,11 +70,16 @@ export const decodeWakeCondition = Schema.decodeUnknownEffect(WakeCondition);
 
 /**
  * Where a worker runs: on a machine of its own (`own`, with the size and processor its work needs,
- * as the host provider offers them), on one its orchestrator already has (`shareWith`, by its name
- * or a worker's thread id on it), or on its orchestrator's own (left out, or `own: false`).
+ * as the host provider offers them; `exclusive` with it for one that is never shared), on one its
+ * orchestrator already has (`shareWith`, by its name or a worker's thread id on it), on any of its
+ * orchestrator's shared machines with room (`shared`), or on its orchestrator's own (`own: false`).
+ * Left out, or naming none of them: where the workspace puts workers by default
+ * (`OrchestratorCharter.workerPacking`), which unset is its orchestrator's own.
  */
 export const WorkerSandbox = Schema.Struct({
   own: Schema.optionalKey(Schema.Boolean),
+  shared: Schema.optionalKey(Schema.Boolean),
+  exclusive: Schema.optionalKey(Schema.Boolean),
   size: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
   architecture: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),
   isolation: Schema.optionalKey(Schema.NonEmptyString.check(Schema.isMaxLength(40))),

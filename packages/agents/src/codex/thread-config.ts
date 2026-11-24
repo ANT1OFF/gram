@@ -84,3 +84,13 @@ export const unconfinedServers = (
     .filter((status) => !(ownServer && status.name === APP_TOOLS_SERVER_NAME))
     .filter((status) => status.runtimeStatus !== "disabled")
     .map((status) => status.name);
+
+/**
+ * The thread config that gives what a session's commands run a temp folder of the thread's own
+ * (`OpenSessionOptions.tmpDir`). Codex serves every session from one process, so the folder can't
+ * be that process's `TMPDIR`: it is set on the environment each command of this thread gets
+ * (`shell_environment_policy.set`, which wins over what the command would inherit). A `set` table
+ * in the thread config merges into the user's, as `mcp_servers` does.
+ */
+export const tmpConfig = (tmpDir: string | undefined) =>
+  tmpDir === undefined ? {} : { shell_environment_policy: { set: { TMPDIR: tmpDir } } };

@@ -19,7 +19,6 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
 import { repoIdentity } from "../../fs/folders.ts";
 import { redactText } from "../../logging/redact.ts";
 import { withOwnedBranch } from "../../git/worker-pr.ts";
@@ -57,6 +56,8 @@ import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
 import { type JoinInput, type AdoptPin, type OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
+import { folderIdentity, samePin } from "./adopt-pin.ts";
+import { joinedBy, type WorkerAdmitting } from "./worker-admitting.ts";
 
 const realPath = (path: string) => Effect.promise(() => realPathOrOwned(path));
 
@@ -85,22 +86,6 @@ const heldProjectsOf = (
     }
     return held;
   });
-
-const samePin = (now: AdoptPin, pinned: AdoptPin) =>
-  now.project === pinned.project &&
-  samePath(now.worktree, pinned.worktree) &&
-  now.folder === pinned.folder &&
-  now.branch === pinned.branch &&
-  Object.entries(now.outside).every(([id, identity]) => pinned.outside[id] === identity);
-
-const folderIdentity = (path: string): string | undefined => {
-  try {
-    const stat = statSync(path, { bigint: true, throwIfNoEntry: false });
-    return stat?.isDirectory() === true ? `${stat.dev}:${stat.ino}` : undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 /** What membership takes from the rest of the service. */
 export interface AdoptionDeps {
@@ -131,6 +116,8 @@ export interface AdoptionDeps {
     withoutDiff?: boolean,
     about?: Omit<PendingReason, "reason">,
   ) => Effect.Effect<void>;
+  /** Decides who is placed on a workers' machine (`worker-admitting.ts`). */
+  readonly admitting: WorkerAdmitting;
 }
 
 /** Joining, adopting, detaching and reopening threads. */
@@ -302,6 +289,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
       )
         return yield* Effect.fail(OWNERS_DIFFER);
       if (!sameReaders(thread, holder)) return yield* Effect.fail(READERS_DIFFER);
+      const placement = yield* deps.admitting.adopting(thread, holderId, checkout);
       const refused = joinRefusal({
         thread: { ...thread, checkout },
         holder: holderId,
@@ -370,6 +358,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
         project,
         checkout,
         relocate,
+        placement,
         outside,
         branch,
         verified: head.kind !== "unknown",
@@ -418,7 +407,7 @@ export const makeAdoption = (kit: OrchestrationKit, deps: AdoptionDeps) => {
               ...current,
               projectId: plan.project.id,
               workspaceId,
-              spawnedBy: { threadId: plan.holder.id, feature: plan.feature },
+              spawnedBy: joinedBy(plan.holder.id, plan.feature, plan.placement),
             },
             plan.checkout,
             plan.branch,
