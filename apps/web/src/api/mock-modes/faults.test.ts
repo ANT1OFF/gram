@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { tagOf } from "../errors";
 import { withFaults } from "./faults";
 
 class Api {
@@ -31,7 +32,7 @@ describe("withFaults", () => {
     for (let index = 0; index < 40; index++) {
       const call = faulty.save(index).then(
         (value) => outcomes.push(value === index * 2 ? "ok" : "wrong"),
-        (error: { _tag?: string }) => outcomes.push(error._tag ?? "untagged"),
+        (error: unknown) => outcomes.push(tagOf(error) ?? "untagged"),
       );
       await vi.runAllTimersAsync();
       await call;
@@ -55,7 +56,7 @@ describe("withFaults", () => {
       const faulty = withFaults(new Api(), { rate: 1, seed: 3, maxDelayMs: 1000 });
       const tags: unknown[] = [];
       for (let index = 0; index < 20; index++) {
-        const call = faulty.refuse().catch((error: { _tag?: string }) => tags.push(error._tag));
+        const call = faulty.refuse().catch((error: unknown) => tags.push(tagOf(error)));
         await vi.runAllTimersAsync();
         await call;
       }

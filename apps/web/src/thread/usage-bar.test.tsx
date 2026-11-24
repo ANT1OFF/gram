@@ -44,7 +44,9 @@ const withoutContextTokens = (): UsageSummary => {
 };
 
 const setMotion = (motion: "system" | "reduced" | "off") =>
-  act(() => themeStore.setState({ motion }));
+  act(() => {
+    themeStore.setState({ motion });
+  });
 
 afterEach(() => {
   cleanup();

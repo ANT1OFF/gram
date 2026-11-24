@@ -103,7 +103,9 @@ describe("a typed setting's draft", () => {
 
     fireEvent.blur(input());
     expect(screen.getByTestId("setting-undo")).toBeTruthy();
-    act(() => vi.advanceTimersByTime(UNDO_SHOW_MS + 10));
+    act(() => {
+      vi.advanceTimersByTime(UNDO_SHOW_MS + 10);
+    });
     expect(screen.queryByTestId("setting-undo")).toBeNull();
   });
 });

@@ -32,7 +32,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     startPort: 5194,
     spawnServer: (port, key) =>
       spawnVite(port, key, serverEnv, dir, isolatedDir ? { isolatedDir } : {}),
-  }).catch((error) => {
+  }).catch((error: unknown) => {
     clean();
     throw error;
   });

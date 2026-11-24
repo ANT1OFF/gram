@@ -18,7 +18,9 @@ const setup = (stored: unknown, answers: LinkAnswer[] = []) => {
     open: async (url) => {
       opened.push(url);
     },
-    copy: (text) => copied.push(text),
+    copy: async (text) => {
+      copied.push(text);
+    },
     changed: (hosts) => changed.push(hosts),
   });
   return { gate, opened, copied, asked, saved, changed };

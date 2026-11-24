@@ -184,14 +184,16 @@ describe("a thread's header in the title bar", () => {
     act(() => useViewStore.setState({ view: "chat" }));
     expect(within(slot).getByTestId("pane-header")).toBeTruthy();
 
-    act(() =>
+    act(() => {
       useLayoutStore.setState({
         grid: { ...EMPTY_GRID, preset: "2c", panes: [FLAKY, "t-deps" as ThreadId], focused: 0 },
-      }),
-    );
+      });
+    });
     expect(within(slot).queryByTestId("pane-header")).toBeNull();
     expect(screen.getAllByTestId("pane-header")).toHaveLength(2);
-    act(() => useLayoutStore.setState({ grid: { ...EMPTY_GRID, panes: [FLAKY] } }));
+    act(() => {
+      useLayoutStore.setState({ grid: { ...EMPTY_GRID, panes: [FLAKY] } });
+    });
     expect(within(slot).getByTestId("pane-header")).toBeTruthy();
 
     act(() => useTitlebarSlot.getState().setSlot(null));

@@ -87,7 +87,9 @@ describe("useLandOnOrchestrator", () => {
   it("gives up after a while when the server doesn't answer, and never lands after", () => {
     const { result, rerender } = landing();
     expect(result.current).toBe(true);
-    act(() => vi.advanceTimersByTime(LANDING_WAIT_MS));
+    act(() => {
+      vi.advanceTimersByTime(LANDING_WAIT_MS);
+    });
     expect(result.current).toBe(false);
 
     query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };

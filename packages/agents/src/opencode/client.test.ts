@@ -93,11 +93,15 @@ describe("the OpenCode client", () => {
     );
     const client = makeOpenCodeClient({ baseUrl: "http://h", password: "secret", fetch });
     expect(await client.getSession("ses_x")).toBeUndefined();
-    const error = await client.setModel("ses_x", { providerID: "p", id: "m" }).catch((e) => e);
+    const error = await client
+      .setModel("ses_x", { providerID: "p", id: "m" })
+      .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(OpenCodeRequestError);
-    expect(error).toMatchObject({ status: 400 });
-    expect(error.message).toBe("OpenCode answered 400 to POST /api/session/ses_x/model: bad model");
-    expect(error.message).not.toContain("secret");
+    expect(error).toMatchObject({
+      status: 400,
+      message: "OpenCode answered 400 to POST /api/session/ses_x/model: bad model",
+    });
+    expect(String(error)).not.toContain("secret");
   });
 
   it("lists only models it can read", async () => {

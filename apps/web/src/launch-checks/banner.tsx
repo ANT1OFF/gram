@@ -115,10 +115,11 @@ export function useLaunchIssues(): {
   const standing = new Set(all.map((issue) => dismissalKey(version, issue.id)));
   const kept = saved.filter((key) => standing.has(key));
   const cleared = ready && kept.length < saved.length;
-  const dropCleared = () =>
+  const dropCleared = () => {
     save({ onboarding: { dismissedLaunchIssues: kept } }).catch((error: unknown) =>
       console.error("launch checks: drop cleared dismissals", error),
     );
+  };
   const dismiss = (only: readonly LaunchIssue[] = shown) => {
     const keys = only.map((issue) => dismissalKey(version, issue.id));
     setDismissedHere(new Set([...dismissedHere, ...keys]));

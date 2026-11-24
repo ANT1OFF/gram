@@ -1,6 +1,7 @@
-const tagOf = (error: unknown): string | undefined =>
-  typeof error === "object" && error !== null && typeof Reflect.get(error, "_tag") === "string"
-    ? (Reflect.get(error, "_tag") as string)
+/** The `_tag` a failed RPC's error carries; undefined for anything else. */
+export const tagOf = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "_tag" in error && typeof error._tag === "string"
+    ? error._tag
     : undefined;
 
 /** The server has no handler for this RPC yet (W1–W4 land them one group at a time). */

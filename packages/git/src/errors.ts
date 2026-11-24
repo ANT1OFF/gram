@@ -38,3 +38,9 @@ export class WorktreeError extends Data.TaggedError("WorktreeError")<{
 export class CheckpointError extends Data.TaggedError("CheckpointError")<{
   readonly message: string;
 }> {}
+
+/** The `code` a Node system error carries (`ENOENT`, `EEXIST`, …); undefined for anything else. */
+export const errnoCode = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    ? error.code
+    : undefined;

@@ -35,7 +35,7 @@ export interface LinkGateDeps<W> {
   save(hosts: readonly string[]): void;
   ask(prompt: LinkPrompt, window: W | undefined): Promise<LinkAnswer>;
   open(url: string): Promise<void>;
-  copy(text: string): void;
+  copy(text: string): Promise<void>;
   /** Tells every window the list changed, so an open Settings page follows. */
   changed(hosts: readonly string[]): void;
 }
@@ -89,7 +89,7 @@ export function createLinkGate<W>(deps: LinkGateDeps<W>): LinkGate<W> {
       return true;
     }
     const answer = await deps.ask(linkPrompt(url, link), window);
-    if (answer.action === "copy") deps.copy(url);
+    if (answer.action === "copy") await deps.copy(url);
     if (answer.action !== "open") return false;
     if (answer.trust && link.untrustable === undefined && !hosts.includes(link.host)) {
       setHosts(trustedHostsOf([...hosts, link.host]));

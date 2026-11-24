@@ -59,7 +59,7 @@ async function startFakeGitHub(repos) {
     assets: release.assets.map(({ bytes: _bytes, ...asset }) => asset),
   });
 
-  const server = createServer(async (req, res) => {
+  const respond = async (req, res) => {
     // No keep-alive: a client reusing a socket the server just timed out reads ECONNRESET.
     res.setHeader("connection", "close");
     const chunks = [];
@@ -233,6 +233,9 @@ async function startFakeGitHub(repos) {
       return json(res, 200, view(name, release));
     }
     return json(res, 404, { message: "Not Found" });
+  };
+  const server = createServer((req, res) => {
+    respond(req, res).catch((error) => json(res, 500, { message: String(error?.stack ?? error) }));
   });
 
   /** Adds a release with `assets` (`{ name, base64 }`), as if cut earlier. */

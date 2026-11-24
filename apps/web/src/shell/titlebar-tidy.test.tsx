@@ -111,7 +111,9 @@ it("sends the board's tidy-up message, says so, rests across a reopen, then come
   fireEvent.click(item());
   expect(send).toHaveBeenCalledOnce();
 
-  act(() => vi.advanceTimersByTime(TIDY_SENT_MS));
+  act(() => {
+    vi.advanceTimersByTime(TIDY_SENT_MS);
+  });
   expect(item().hasAttribute("data-sent")).toBe(false);
   expect(item().getAttribute("aria-disabled")).not.toBe("true");
 });
@@ -169,6 +171,8 @@ it("sends the discover message, says so, and rests on its own, apart from Tidy u
   // Tidy up is not resting on Discover's send.
   expect(item().getAttribute("aria-disabled")).not.toBe("true");
 
-  act(() => vi.advanceTimersByTime(TIDY_SENT_MS));
+  act(() => {
+    vi.advanceTimersByTime(TIDY_SENT_MS);
+  });
   expect(discover().hasAttribute("data-sent")).toBe(false);
 });
