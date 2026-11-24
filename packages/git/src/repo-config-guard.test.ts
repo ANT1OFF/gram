@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { git, STRICT_STATUS_ARGS } from "./exec.ts";
 import { Proc, ProcLive } from "./proc.ts";
-import { guardFor, parseConfigList, pinnedTransport, withGuardArgs } from "./repo-config-guard.ts";
+import {
+  gitVersionProblem,
+  guardFor,
+  parseConfigList,
+  pinnedTransport,
+  withGuardArgs,
+} from "./repo-config-guard.ts";
 import { hasGit, removeDir, run, tempDir } from "./test-utils.ts";
 
 const dirs: Array<string> = [];
@@ -408,6 +414,22 @@ describe.skipIf(!hasGit)("Gram's own git and a submodule's config", () => {
       expect(ran()).toEqual([]);
     }).pipe(provide),
   );
+});
+
+describe("gitVersionProblem", () => {
+  it("runs git only from 2.31, the first to read the guard's GIT_CONFIG_COUNT overrides", () => {
+    for (const ok of [
+      "git version 2.31.0",
+      "git version 2.43.0\n",
+      "git version 2.39.3 (Apple Git-145)",
+      "git version 2.45.1.windows.1",
+      "git version 3.0.0",
+    ])
+      expect(gitVersionProblem(ok), ok).toBeUndefined();
+    for (const old of ["git version 2.30.9", "git version 2.26.0", "git version 1.9.5"])
+      expect(gitVersionProblem(old), old).toMatch(/Install Git 2\.31 or newer/);
+    expect(gitVersionProblem("")).toMatch(/Install Git 2\.31 or newer/);
+  });
 });
 
 describe("guardFor", () => {

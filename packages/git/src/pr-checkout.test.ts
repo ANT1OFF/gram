@@ -139,8 +139,14 @@ describe("fetchPrHead", () => {
       expect(branch).toBe("fix/it");
       expect(gitCalls(calls)).toEqual([
         ["rev-parse", "--verify", "--quiet", "refs/heads/fix/it"],
-        ["fetch", "--quiet", "origin", "+refs/heads/fix/it:refs/remotes/origin/fix/it"],
-        ["branch", "--track", "fix/it", "origin/fix/it"],
+        [
+          "fetch",
+          "--quiet",
+          "--end-of-options",
+          "origin",
+          "+refs/heads/fix/it:refs/remotes/origin/fix/it",
+        ],
+        ["branch", "--track", "--end-of-options", "fix/it", "origin/fix/it"],
       ]);
     }),
   );
@@ -155,9 +161,9 @@ describe("fetchPrHead", () => {
       const [fetch, resolve, create, cleanup] = gitCalls(calls).slice(1);
       const ref = fetch?.at(-1)?.replace(/^\+refs\/pull\/12\/head:/, "") ?? "";
       expect(ref).toMatch(/^refs\/gram\/pr-checkout\/pr-12-/);
-      expect(fetch?.slice(0, 3)).toEqual(["fetch", "--quiet", "origin"]);
+      expect(fetch?.slice(0, 4)).toEqual(["fetch", "--quiet", "--end-of-options", "origin"]);
       expect(resolve).toEqual(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
-      expect(create).toEqual(["branch", "pr-12-main", "f00d"]);
+      expect(create).toEqual(["branch", "--end-of-options", "pr-12-main", "f00d"]);
       expect(cleanup).toEqual(["update-ref", "-d", ref]);
     }),
   );
@@ -181,11 +187,33 @@ describe("fetchPrHead", () => {
     Effect.gen(function* () {
       const { proc, calls } = repo("remote.origin.url git@github.com:me/web.git\n");
       yield* fetchPrHead("/r", head()).pipe(Effect.provideService(Proc, proc));
-      expect(gitCalls(calls)[1]?.slice(0, 3)).toEqual([
+      expect(gitCalls(calls)[1]?.slice(0, 4)).toEqual([
         "fetch",
         "--quiet",
+        "--end-of-options",
         "https://github.com/acme/web.git",
       ]);
+    }),
+  );
+
+  it.effect("passes over a remote whose name git would read as an option", () =>
+    Effect.gen(function* () {
+      const { proc, calls } = repo(
+        "remote.--upload-pack=touch_x.url git@github.com:acme/web.git\n",
+      );
+      yield* fetchPrHead("/r", head()).pipe(Effect.provideService(Proc, proc));
+      const fetch = gitCalls(calls)[1];
+      expect(fetch?.slice(0, 4)).toEqual([
+        "fetch",
+        "--quiet",
+        "--end-of-options",
+        "https://github.com/acme/web.git",
+      ]);
+      expect(
+        gitCalls(calls)
+          .flat()
+          .some((arg) => arg.includes("upload-pack")),
+      ).toBe(false);
     }),
   );
 

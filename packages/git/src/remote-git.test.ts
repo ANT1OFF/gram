@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { ProcLive } from "./proc.ts";
 import { fetchOriginBranch } from "./refs.ts";
-import { guardOrigins, pinnedArgs, remoteGit } from "./remote-git.ts";
+import { guardOrigins, pinnedArgs, positionalProblem, remoteGit } from "./remote-git.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-utils.ts";
 
 const URLS = { fetch: "https://example.test/good.git", push: "https://example.test/push.git" };
@@ -42,6 +42,40 @@ describe("pinnedArgs", () => {
     expect(pinnedArgs(["fetch", "--all"], URLS)).toBeUndefined();
     expect(pinnedArgs(["pull", "origin", "main"], URLS)).toBeUndefined();
     expect(pinnedArgs(["submodule", "update", "--init"], URLS)).toBeUndefined();
+  });
+});
+
+describe("positionalProblem", () => {
+  it("takes a remote, refs, URL or folder only after --end-of-options, none option-shaped", () => {
+    for (const args of [
+      ["fetch", "--quiet", "--end-of-options", "origin", "main"],
+      ["-c", "a=b", "push", "--force-with-lease=x:y", "--end-of-options", "origin", "+a:b"],
+      ["ls-remote", "--", "origin", "refs/heads/x"],
+      ["clone", "--quiet", "--end-of-options", "https://example.test/r.git", "/tmp/r"],
+      ["fetch", "--all", "--prune"],
+      ["rev-parse", "HEAD"],
+    ])
+      expect(positionalProblem(args)).toBeUndefined();
+    for (const args of [
+      ["fetch", "--quiet", "origin", "main"],
+      ["fetch", "--end-of-options", "origin", "--upload-pack=x"],
+      ["push", "--end-of-options", "--receive-pack=x", "HEAD"],
+      ["clone", "--", "-u", "/tmp/r"],
+      ["fetch", "--depth", "1", "--end-of-options", "origin"],
+    ])
+      expect(positionalProblem(args)).toBeDefined();
+  });
+
+  it("pins the checked URL after --end-of-options", () => {
+    expect(
+      pinnedArgs(["fetch", "--quiet", "--end-of-options", "origin", "main"], URLS)?.args,
+    ).toEqual([
+      "fetch",
+      "--quiet",
+      "--end-of-options",
+      URLS.fetch,
+      "+refs/heads/main:refs/remotes/origin/main",
+    ]);
   });
 });
 

@@ -39,6 +39,7 @@ export * from "./push.ts";
 export * from "./rate-limit.ts";
 export * from "./rate-limit-headers.ts";
 export * from "./rate-limit-probe.ts";
+export * from "./ref-format.ts";
 export * from "./refs.ts";
 export * from "./remote-git.ts";
 export * from "./repo-facts.ts";
