@@ -562,7 +562,7 @@ export function createMockDreams(host: MockDreamsHost) {
       if (file.merge?.status === "running") return file.merge;
       const started: DreamMerge = { status: "running", model: dream.model, startedAt: Date.now() };
       const entry = { sides: sidesOf(file), state: started };
-      const made = merges.get(id) ?? new Map();
+      const made = merges.get(id) ?? new Map<string, { sides: string; state: DreamMerge }>();
       made.set(path, entry);
       merges.set(id, made);
       changed(dream.workspaceId);

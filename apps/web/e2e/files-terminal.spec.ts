@@ -36,7 +36,7 @@ test("browses the checkout and previews a file in the Files tab", async ({ page 
     "src",
     /^data:image\/svg\+xml;base64,/,
   );
-  expect(await page.evaluate(() => Reflect.get(window, "__svgScriptRan"))).toBeUndefined();
+  expect(await page.evaluate(() => "__svgScriptRan" in window)).toBe(false);
 });
 
 test("drags the split between the file tree and the preview, and keeps it after a reload", async ({

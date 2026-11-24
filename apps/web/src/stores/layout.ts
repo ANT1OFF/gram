@@ -628,14 +628,11 @@ const LEGACY_REST_SECTIONS: readonly string[] = ["pullRequests", "doneToday"];
 export function sanitizeOverviewView(raw: unknown): Partial<OverviewView> {
   const r = (raw ?? {}) as Record<string, unknown>;
   const folded = r["overviewFolded"];
-  const unfolded = Array.isArray(r["overviewUnfolded"])
-    ? [
-        ...r["overviewUnfolded"],
-        ...(r["overviewUnfolded"].some((section) => LEGACY_REST_SECTIONS.includes(section))
-          ? ["rest"]
-          : []),
-      ]
+  const stored: unknown = r["overviewUnfolded"];
+  const unfolded = Array.isArray(stored)
+    ? stored.filter((section): section is string => typeof section === "string")
     : undefined;
+  if (unfolded?.some((section) => LEGACY_REST_SECTIONS.includes(section))) unfolded.push("rest");
   const hidden = r["overviewHidden"];
   const before = r["overviewBeforeHide"] as OverviewSidebar;
   const grouping = r["doneGrouping"] as DoneGrouping;

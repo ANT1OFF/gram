@@ -127,6 +127,7 @@ export function gateClient<C extends object>(
   };
   return new Proxy(client, {
     get(target, key, receiver) {
+      // oxlint-disable-next-line anti-slop/no-reflect-get -- a Proxy trap forwards through Reflect
       const value: unknown = Reflect.get(target, key, receiver);
       if (typeof key !== "string" || typeof value !== "function" || !GramRpcs.requests.has(key))
         return value;

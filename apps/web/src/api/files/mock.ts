@@ -60,11 +60,11 @@ const writtenBy = (
   for (const message of messages) {
     for (const part of message.parts) {
       if (typeof part !== "object" || part === null) continue;
-      if (Reflect.get(part, "type") !== "tool-Write") continue;
-      const input: unknown = Reflect.get(part, "input");
+      if (("type" in part ? part.type : undefined) !== "tool-Write") continue;
+      const input: unknown = "input" in part ? part.input : undefined;
       if (typeof input !== "object" || input === null) continue;
-      if (Reflect.get(input, "file_path") !== path) continue;
-      const written: unknown = Reflect.get(input, "content");
+      if (("file_path" in input ? input.file_path : undefined) !== path) continue;
+      const written: unknown = "content" in input ? input.content : undefined;
       content = typeof written === "string" ? written : "";
     }
   }

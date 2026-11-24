@@ -64,6 +64,7 @@ function installDate(clock: MockClock) {
   const RealDate = Date;
   function MockDate(this: unknown, ...args: unknown[]) {
     if (new.target === undefined) return new RealDate(clock.now()).toString();
+    // oxlint-disable-next-line typescript/no-unsafe-return -- a Date stand-in constructs the real one for `new.target`
     return Reflect.construct(RealDate, args.length === 0 ? [clock.now()] : args, new.target);
   }
   Object.setPrototypeOf(MockDate, RealDate);

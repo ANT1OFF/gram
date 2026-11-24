@@ -1,4 +1,4 @@
-import { isCredentialPath, previewFileKind, type PreviewFileKind } from "@gram/contracts";
+import { fieldsOf, isCredentialPath, previewFileKind, type PreviewFileKind } from "@gram/contracts";
 
 /**
  * The folder a Markdown file's links resolve within, and root-relative ones against: the thread's
@@ -19,8 +19,7 @@ export interface PreviewableFile {
 
 const WRITERS = new Set(["tool-Write", "tool-Edit", "tool-MultiEdit"]);
 
-const field = (value: unknown, key: string): unknown =>
-  typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
+const field = (value: unknown, key: string): unknown => fieldsOf(value).get(key);
 
 function finishedWrite(part: unknown): { input: object; paths: string[] } | undefined {
   if (!WRITERS.has(String(field(part, "type")))) return undefined;

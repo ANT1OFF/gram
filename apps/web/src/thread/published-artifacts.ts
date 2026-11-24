@@ -40,18 +40,21 @@ export function publishedArtifacts(parts: readonly unknown[]): PublishedArtifact
   const seen = new Map<string, PublishedArtifact>();
   for (const part of parts) {
     if (typeof part !== "object" || part === null) continue;
-    if (Reflect.get(part, "type") !== "tool-Artifact") continue;
-    if (Reflect.get(part, "state") !== "output-available") continue;
-    const output: unknown = Reflect.get(part, "output");
+    if (("type" in part ? part.type : undefined) !== "tool-Artifact") continue;
+    if (("state" in part ? part.state : undefined) !== "output-available") continue;
+    const output: unknown = "output" in part ? part.output : undefined;
     if (typeof output !== "object" || output === null) continue;
-    const url: unknown = Reflect.get(output, "url");
+    const url: unknown = "url" in output ? output.url : undefined;
     if (!claudeAiPage(url)) continue;
-    const input: unknown = Reflect.get(part, "input");
+    const input: unknown = "input" in part ? part.input : undefined;
     const filePath: unknown =
-      typeof input === "object" && input !== null ? Reflect.get(input, "file_path") : undefined;
-    const source = previewSource(filePath) ?? previewSource(Reflect.get(output, "path"));
-    const title = text(Reflect.get(output, "title"));
-    const version = text(Reflect.get(output, "version"));
+      typeof input === "object" && input !== null && "file_path" in input
+        ? input.file_path
+        : undefined;
+    const source =
+      previewSource(filePath) ?? previewSource("path" in output ? output.path : undefined);
+    const title = text("title" in output ? output.title : undefined);
+    const version = text("version" in output ? output.version : undefined);
     seen.delete(url);
     seen.set(url, {
       url,

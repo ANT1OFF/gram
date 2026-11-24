@@ -72,8 +72,8 @@ const NAMED_KEYS = [
   "pagedown",
 ] as const;
 
-const KEY_WORDS: Readonly<Record<string, string>> = Object.fromEntries([
-  ...NAMED_KEYS.flatMap((key) => [
+const KEY_WORDS: Readonly<Record<string, string>> = Object.fromEntries<string>([
+  ...NAMED_KEYS.flatMap((key): Array<[string, string]> => [
     [key, key],
     [formatKeys(key, true).toLowerCase(), key],
     [formatKeys(key, false).toLowerCase(), key],

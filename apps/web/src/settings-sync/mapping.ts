@@ -94,7 +94,10 @@ const sidebarPatch = (prev: SyncedSettings, next: SyncedSettings) =>
 const mergeLayout = (
   ...patches: readonly { layout?: NonNullable<SettingsPatch["layout"]> }[]
 ): Pick<SettingsPatch, "layout"> => {
-  const layout = Object.assign({}, ...patches.map((patch) => patch.layout ?? {}));
+  const layout = patches.reduce<NonNullable<SettingsPatch["layout"]>>(
+    (merged, patch) => ({ ...merged, ...patch.layout }),
+    {},
+  );
   return Object.keys(layout).length > 0 ? { layout } : {};
 };
 
