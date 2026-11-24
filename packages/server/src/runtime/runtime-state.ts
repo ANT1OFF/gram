@@ -1,5 +1,6 @@
 import type { StoredActor } from "../host/ownership.ts";
 import {
+  type EndedEvent,
   type AgentUnavailable,
   type MessageId,
   type ModelRef,
@@ -223,13 +224,21 @@ export interface Runtime {
   endedReason: string | undefined;
   /** The joined machine the session's `ended` said restarted under it (`EndedEvent.restartedMachine`). */
   restartedMachine: string | undefined;
+  /** With `restartedMachine`: the machine was replaced rather than restarted (`EndedEvent.moved`). */
+  machineMoved?: true | undefined;
   /** The joined machine the session's `ended` said was lost under it (`EndedEvent.lostMachine`). */
   lostMachine: string | undefined;
   /**
    * The joined machine whose restart the next session to open resumes after, so it puts that in the
    * transcript; and whether a cut turn is continued or only the queue goes on.
    */
-  machineRestart: { readonly machine: string; readonly continued: "turn" | "queue" } | undefined;
+  machineRestart:
+    | {
+        readonly machine: string;
+        readonly continued: "turn" | "queue";
+        readonly moved?: true;
+      }
+    | undefined;
   /** The turn the user asked to stop, which a machine restart under it never continues. */
   stopAsked: TurnId | undefined;
   /**
@@ -483,6 +492,14 @@ export const statusEvent = (
 });
 
 /** The top-level reply turn `turnId` streamed, finished or not; read before `finishTurn` drops it. */
+/** What a session's `ended` says, kept for its exit to read (`handleSessionExit`). */
+export const noteEnded = (rt: Runtime, event: typeof EndedEvent.Type): void => {
+  rt.endedReason = event.reason;
+  rt.restartedMachine = event.restartedMachine;
+  rt.machineMoved = event.moved;
+  rt.lostMachine = event.lostMachine;
+};
+
 export const replyOf = (rt: Runtime, turnId: TurnId | undefined) =>
   turnId === undefined
     ? undefined

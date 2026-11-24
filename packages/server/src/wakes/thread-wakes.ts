@@ -30,6 +30,7 @@ import { Timers } from "../embedding/timers.ts";
 import { EventHub, isThreadRemoved } from "../events/event-hub.ts";
 import { isBadgeOf } from "../git/extra-prs.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
+import { armWakeAhead, disarmWake, preWakeKey, preWakeOrOff } from "../host/pre-wake.ts";
 import { readableOnly } from "../embedding/readable-by.ts";
 import { redactText } from "../logging/redact.ts";
 import {
@@ -161,6 +162,7 @@ export const ThreadWakesLive = Layer.effect(
     const publisher = yield* GitStatePublisher;
     const conditions = yield* WakeConditions;
     const timers = yield* Timers;
+    const preWake = yield* preWakeOrOff;
     const alarms = yield* FiberMap.make<string>();
     const armed = new Map<string, ThreadId>();
     const lock = yield* Semaphore.make(1);
@@ -182,6 +184,8 @@ export const ThreadWakesLive = Layer.effect(
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis;
         armed.set(wake.id, wake.threadId);
+        if (after === undefined && fired === undefined)
+          yield* armWakeAhead({ alarms, timers, preWake }, wake, findWake(wake.id));
         yield* FiberMap.run(
           alarms,
           wake.id,
@@ -213,6 +217,7 @@ export const ThreadWakesLive = Layer.effect(
           const met = wake.conditionState?.fired !== undefined;
           const now = yield* Clock.currentTimeMillis;
           if (fired === undefined && !met && now < wake.at) return yield* arm(wake);
+          yield* FiberMap.remove(alarms, preWakeKey(wake.id));
           const thread = yield* store.getThread(wake.threadId).pipe(Effect.option);
           if (thread._tag === "Some" && (yield* held(thread.value))) {
             return yield* arm(wake, THREAD_WAKE_RETRY, fired);
@@ -379,7 +384,7 @@ export const ThreadWakesLive = Layer.effect(
           if (ids.length === 0) return;
           for (const id of ids) {
             armed.delete(id);
-            yield* FiberMap.remove(alarms, id);
+            yield* disarmWake(alarms, id);
           }
           yield* changed;
         }),
@@ -424,7 +429,7 @@ export const ThreadWakesLive = Layer.effect(
           const dropped = yield* store.removeThreadWakes(threadId, id);
           for (const wake of dropped) {
             armed.delete(wake.id);
-            yield* FiberMap.remove(alarms, wake.id);
+            yield* disarmWake(alarms, wake.id);
           }
           if (dropped.length > 0) yield* changed;
           return { cancelled: dropped.length };

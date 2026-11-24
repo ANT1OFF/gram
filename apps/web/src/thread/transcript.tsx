@@ -31,7 +31,6 @@ import { AwaitingToolsProvider } from "./awaiting-tools";
 import { CompactingLine } from "./compaction-marker";
 import { StartingProgress } from "./starting-progress";
 import { StopReceiptLine, useStopReceipt } from "./stop-receipt";
-import { LimitWaitLine } from "./limit-wait-line";
 import { startingSteps } from "./starting-progress-model";
 import { EmptyThread } from "./empty-thread";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
@@ -43,6 +42,7 @@ import type { ScrollAnchor } from "./find-bar";
 import { ConversationRail } from "./table-of-contents";
 import { showsInConversation } from "./conversation-only";
 import { reuseFolds, turnFolds, type MessageFold } from "./tool-group-model";
+import { useWaitLine, WaitLine } from "./wait-line";
 import { WorkingLine } from "./working-line";
 import { FileRefsProvider } from "./file-ref-link";
 import { PrRefsProvider } from "./pr-ref-link";
@@ -271,9 +271,7 @@ export function Transcript({
     return () => observer.disconnect();
   }, []);
   const stopReceipt = useStopReceipt(threadId);
-  const limitWait = useThreadsStore((s) => s.byId[threadId]?.thread.limitWait);
-  const limitCleared = useThreadsStore((s) => s.byId[threadId]?.thread.limitCleared);
-  const limitLine = limitWait !== undefined || limitCleared !== undefined;
+  const waitLine = useWaitLine(threadId);
   const conversationOnly = useConversationOnly((s) => s.on);
   const working = useThreadsStore(
     (s) => conversationOnly && WORKING.has(s.byId[threadId]?.status ?? ""),
@@ -288,7 +286,7 @@ export function Transcript({
     compactingLine !== undefined ||
     startLine !== undefined ||
     stopLine !== undefined ||
-    limitLine ||
+    waitLine ||
     workingSince !== undefined;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
   const orchestrated = useOrchestratorStreamContext() !== undefined;
@@ -999,18 +997,10 @@ export function Transcript({
                         <StartingProgress threadId={threadId} steps={startLine} />
                       ) : stopLine !== undefined ? (
                         <StopReceiptLine threadId={threadId} receipt={stopLine} />
-                      ) : workingSince !== undefined && !limitLine ? (
+                      ) : workingSince !== undefined && !waitLine ? (
                         <WorkingLine since={workingSince} />
                       ) : (
-                        limitLine && (
-                          <LimitWaitLine
-                            thread={{
-                              id: threadId,
-                              ...(limitWait === undefined ? {} : { limitWait }),
-                              ...(limitCleared === undefined ? {} : { limitCleared }),
-                            }}
-                          />
-                        )
+                        waitLine && <WaitLine threadId={threadId} />
                       )}
                     </div>
                   )}

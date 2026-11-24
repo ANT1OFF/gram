@@ -1,4 +1,4 @@
-import { recentTurnsOf } from "./session-lifecycle.ts";
+import { recentTurnsOf } from "./recent-turns.ts";
 import { renderFreshOn } from "./switch-handoff.ts";
 import {
   type AgentUnavailable,

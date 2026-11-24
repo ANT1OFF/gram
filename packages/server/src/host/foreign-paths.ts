@@ -1,18 +1,30 @@
 import { type Checkout, isLocalHost, type Thread } from "@gram/contracts";
-import { isInside, keepPathsHere, noteForeignPath, pathForms, tryRealPathSync } from "@gram/git";
-import { isAbsolute, resolve, win32 } from "node:path";
+import {
+  isInside,
+  keepPathsHere,
+  noteForeignPath,
+  PendingPaths,
+  pathForms,
+  tryRealPathSync,
+} from "@gram/git";
+import { dirname, isAbsolute, resolve, win32 } from "node:path";
 
 const folded = (path: string): string =>
   process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
 
 const ownFolders = new Set<string>();
 
-const ownPending = new Set<string>();
+const ownPending = new PendingPaths();
+
+const HERE_FORMS_MS = 30_000;
+
+let hereFormsByPath = new Map<string, { forms: ReadonlyArray<string>; until: number }>();
 
 /** Forgets every `keepFoldersHere`, for tests. */
 export const forgetOwnFoldersForTest = (): void => {
   ownFolders.clear();
   ownPending.clear();
+  hereFormsByPath = new Map();
 };
 
 /**
@@ -37,13 +49,24 @@ export const keepFoldersHere = (paths: ReadonlyArray<string>): void => {
  */
 export const keepServerFolders = (dataDir: string): void => keepFoldersHere([dataDir]);
 
-/** `paths` (absolute, this machine's) by every spelling of them on this disk (`pathForms`), folded. */
+/**
+ * `paths` (absolute, this machine's) by every spelling of them on this disk (`pathForms`), folded.
+ * A path's spellings are taken from the disk at most every half minute: the folders above a
+ * checkout are rarely relinked, and every placement asks for all of them.
+ */
 export const hereForms = (paths: Iterable<string>): ReadonlyArray<string> => {
+  const now = Date.now();
+  const known = new Map<string, { forms: ReadonlyArray<string>; until: number }>();
   const forms = new Set<string>();
   for (const path of paths) {
     if (!isAbsolute(path)) continue;
-    for (const form of pathForms(path)) forms.add(folded(form));
+    let entry = known.get(path) ?? hereFormsByPath.get(path);
+    if (entry === undefined || entry.until <= now)
+      entry = { forms: pathForms(path).map(folded), until: now + HERE_FORMS_MS };
+    known.set(path, entry);
+    for (const form of entry.forms) forms.add(form);
   }
+  hereFormsByPath = known;
   return [...forms];
 };
 
@@ -55,16 +78,37 @@ export const hereForms = (paths: Iterable<string>): ReadonlyArray<string> => {
  */
 export const claimableByHost = (path: string, here: ReadonlyArray<string> = []): boolean => {
   if (!isAbsolute(path)) return win32.isAbsolute(path);
-  for (const pending of ownPending) {
-    if (tryRealPathSync(pending) === undefined) continue;
-    ownPending.delete(pending);
+  for (const pending of ownPending.settle())
     for (const form of pathForms(pending)) ownFolders.add(folded(form));
-  }
   const at = folded(resolve(path));
   for (const own of ownFolders) if (isInside(at, own) || isInside(own, at)) return false;
-  for (const local of here)
-    if (at !== local && (isInside(at, local) || isInside(local, at))) return false;
+  const { forms, foldersAbove } = indexOfHere(here);
+  if (foldersAbove.has(at)) return false;
+  for (let up = at; dirname(up) !== up;) {
+    up = dirname(up);
+    if (forms.has(up)) return false;
+  }
   return true;
+};
+
+const hereIndexes = new WeakMap<
+  ReadonlyArray<string>,
+  { forms: ReadonlySet<string>; foldersAbove: ReadonlySet<string> }
+>();
+
+const indexOfHere = (here: ReadonlyArray<string>) => {
+  let index = hereIndexes.get(here);
+  if (index !== undefined) return index;
+  const foldersAbove = new Set<string>();
+  for (const form of here)
+    for (let up = form; dirname(up) !== up;) {
+      up = dirname(up);
+      if (foldersAbove.has(up)) break;
+      foldersAbove.add(up);
+    }
+  index = { forms: new Set(here), foldersAbove };
+  hereIndexes.set(here, index);
+  return index;
 };
 
 const noteForeign = (checkout: Checkout | undefined): void => {

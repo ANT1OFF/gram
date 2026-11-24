@@ -511,6 +511,40 @@ line `the program above ended; this is a new shell` and a fresh shell below. The
 run again. One whose thread closed, or moved off the machine, meanwhile is closed when the machine
 dials in. See [terminals after a restart](AGENTS_AND_FEATURES.md#terminals-after-a-restart).
 
+## When its machine is replaced
+
+A machine can be taken away and brought back on the same disk: a cloud machine reclaimed or
+drained, a VM moved to another host. Gram treats that as a move, not a failure, when it knows the
+machine is moving:
+
+- its host said it was going (`host.stop.going`, a provisioned host sent SIGTERM);
+- this Gram readied it to stop, a forced stop included (see below);
+- or whoever runs it said so with `POST /machines/stop/moving`
+  `{ "id": "<machine>", "cause"?: "reclaimed", "withinMs"?: <ms> }`, which holds until a host of
+  it dials in again. Say it as soon as the loss is known, before or after the host went.
+
+A session whose agent ended as the host went, or whose connection dropped, then waits for the
+machine instead of failing:
+
+- The thread shows a quiet line, `build-box is moving to a new machine · this thread resumes on
+  its own`, and its sidebar row and an orchestrator's worker row say `Moving`. It has no error,
+  no failure card and no failure notification, and isn't counted as failing.
+- While it waits, the machine counts as wanted (`wanted` in `POST /machines/stop/status`), so
+  whoever runs it starts it again if it was stopped rather than replaced at once.
+- When a host of the machine dials in on the same disk, the turn carries on as after a restart,
+  with a note telling the agent the machine was replaced mid-turn and to check the state of what
+  it was doing. The transcript marks it `build-box moved to a new machine · continued the turn`.
+  A turn that waited on the user is continued too: the agent asks again. Queued messages go on,
+  and an idle thread just rests. The cap of 3 continuations an hour still applies.
+- A machine that doesn't come back within the move's time (20 minutes; `withinMs`, or
+  `GRAM_MACHINE_MOVE_MINUTES` on the server, from 1 to 240), or comes back on another disk, ends
+  the turn as a lost machine, saying why (see below).
+
+Any agent whose end its host passes on is held for two seconds, or for 65 seconds while the
+machine is moving, to see whether the host goes too: a host stopped with its whole process group
+can pass on its agent's end, killed by the same signal, before its own connection closes. When the
+host stays, the end is the agent's own and the turn fails as before.
+
 ## Stop a machine and keep its disk
 
 Part of the hosted features (Settings → About → Diagnostics → Hosted features, off by default).
@@ -531,10 +565,11 @@ the local app, as the other `/machines/*` routes are.
   Gram then puts the idle sessions there to rest. The host holds new work off for ten minutes,
   which is the time to stop it in; left running past that, it takes work again and no longer
   counts as stopped. One call keeps up to 512 folders, and says so when there are more.
-- `"force": true` readies a busy machine too. The turns it cuts off go on by themselves once a
-  host is back on the disk, as after a restart (see [When it drops or restarts](#when-it-drops-or-restarts)),
-  if the host is back within fifteen minutes of its connection closing and the stop was asked
-  for no more than twenty-five minutes before.
+- `"force": true` readies a busy machine too. The turns it cuts off wait for the machine as a
+  move does, showing that it is moving, and go on by themselves once a host is back on the disk
+  (see [When its machine is replaced](#when-its-machine-is-replaced)), if it is back within the
+  move's time of the session starting to wait and the stop was asked for no more than
+  twenty-five minutes before.
 - `"remote"` names where the ref is pushed, a git remote's name or an https or ssh URL. The
   default is `origin`. The ref holds every file git doesn't ignore, untracked ones included, and
   whoever can read that remote can read it, so name a private mirror when that matters. A push
@@ -608,6 +643,12 @@ the local app, as the other `/machines/*` routes are.
   [before its machine](THREAD_PROFILES.md#before-its-machine) is on no machine yet, so it shows
   in no machine's `wanted`: its message waits in its queue, with no time limit, until a machine
   is named for it.
+  `wanted` also turns true ahead of work that is coming, so the machine is back when it arrives
+  (`host/pre-wake.ts`): 90 seconds before a thread's scheduled wake is due (registered with the
+  scheduler as `prewake:<wake id>`, so a control plane asleep then is woken for it), and when a
+  person starts typing a draft in one of its threads (at most once a thread in 10 minutes). Each
+  ask lets go once the machine is back, or a minute past the wake (three minutes for a draft), so a
+  machine started early is stopped when idle like any other.
 - `POST /machines/stop/resume` opens again the sessions the stop put to rest, once a host has
   dialled in. It answers four lists:
   - `reopened`: the sessions it opened again.

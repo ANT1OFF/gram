@@ -107,7 +107,20 @@ const GROK_ONLY_BREAKS: ReadonlyArray<readonly [call: string, at: string]> = [
   ["host.sessions.accountScope", 'error(_tag "AgentUnavailable").agent'],
 ];
 
+/** `machineMoving` is the control plane's own word while a session waits for its machine. */
+const MADE_BY_THE_CONTROL_PLANE =
+  "No host sends it: the control plane makes it itself while a session waits for its machine to come back from a move (host/following-sessions.ts), so it never crosses the wire.";
+
 const ACCEPTED = (released: Released): ReadonlyArray<Accepted> => [
+  ...("host.sessions.events" in released.calls
+    ? [
+        {
+          at: "host.sessions.events success.event",
+          what: 'it gained a shape: type "machineMoving"',
+          because: MADE_BY_THE_CONTROL_PLANE,
+        },
+      ]
+    : []),
   ...GROK_ONLY_BREAKS.filter(([call]) => beforeGrok(released) && call in released.calls).map(
     ([call, at]) => ({
       at: `${call} ${at}`,

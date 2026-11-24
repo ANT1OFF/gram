@@ -29,6 +29,8 @@ import { threadHandlers } from "../rpc/handlers/threads.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { ThreadWakes } from "../wakes/thread-wakes.ts";
+import { PRE_WAKE_LEAD_MS, PRE_WAKE_PAST_MS } from "../host/pre-wake.ts";
+import { preWakesOf } from "./test-pre-wake.ts";
 import { orchestrationHandlers } from "./handler.ts";
 import { Orchestration } from "./service.ts";
 import {
@@ -276,6 +278,53 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           expect(resumed.sent.at(-1)?.text).toContain("had its checks settle: passing");
         }),
       ),
+  );
+
+  it.effect(
+    "a wake asks for its thread's machine a lead time early, and a cancelled one never",
+    () =>
+      Effect.gen(function* () {
+        const world = yield* makeWorld;
+        yield* withServer(
+          world,
+          Effect.gen(function* () {
+            const { session } = yield* openOrchestrator(world);
+            const worker = yield* spawn(session, { feature: "pre-wake" });
+            const start = yield* Clock.currentTimeMillis;
+            const set = (yield* worker.session.callTool("schedule_wake", {
+              inMinutes: 10,
+              note: "look at CI",
+            })) as { readonly id: string; readonly at: string };
+            const dropped = (yield* worker.session.callTool("schedule_wake", {
+              inMinutes: 10,
+              note: "never mind",
+            })) as { readonly id: string };
+            yield* worker.session.callTool("cancel_wake", { id: dropped.id });
+            yield* settle;
+            expect(preWakesOf(world)).toEqual([]);
+
+            // Short of the lead, nothing; at it, the machine is asked for, until past the wake.
+            yield* TestClock.adjust(10 * 60_000 - PRE_WAKE_LEAD_MS - 1000);
+            yield* settle;
+            expect(preWakesOf(world)).toEqual([]);
+            yield* TestClock.adjust("1 second");
+            yield* settle;
+            expect(preWakesOf(world)).toEqual([
+              {
+                threadId: worker.thread.id,
+                until: Date.parse(set.at) + PRE_WAKE_PAST_MS,
+                why: "wake",
+                at: start + 10 * 60_000 - PRE_WAKE_LEAD_MS,
+              },
+            ]);
+
+            // It asks once: the wake's own delivery is the restart test's above.
+            yield* TestClock.adjust(PRE_WAKE_LEAD_MS);
+            yield* settle;
+            expect(preWakesOf(world)).toHaveLength(1);
+          }),
+        );
+      }),
   );
 
   it.effect("a declared dependency wakes its PR's thread, orders the merge and flags a drag", () =>

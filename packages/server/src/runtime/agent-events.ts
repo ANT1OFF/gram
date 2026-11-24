@@ -17,9 +17,11 @@ import {
   openLane,
   openReply,
   replyOf,
+  noteEnded,
   BACKGROUND_OUTPUT_CHARS,
   type Turn,
 } from "./runtime-state.ts";
+import { startMachineMove } from "./machine-move.ts";
 import {
   listedRow,
   type AgentEvent,
@@ -915,10 +917,9 @@ export const makeAgentEvents = ({
           return;
         }
         case "ended":
-          rt.endedReason = event.reason;
-          rt.restartedMachine = event.restartedMachine;
-          rt.lostMachine = event.lostMachine;
-          return;
+          return noteEnded(rt, event);
+        case "machineMoving":
+          return yield* startMachineMove(store, publishUpsert, rt.threadId, event);
         case "backgroundTasks":
           yield* setBackground(rt, event.tasks);
           return;
