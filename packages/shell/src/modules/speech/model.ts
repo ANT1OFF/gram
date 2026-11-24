@@ -2,6 +2,7 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import {
+  fieldsOf,
   isSpeechModelId,
   SPEECH_ACCURATE_MODEL,
   SPEECH_MODEL_VERIFIED_FILE,
@@ -54,8 +55,7 @@ const missing = (message: string): SpeechModelResolution => ({
   message,
 });
 
-const field = (value: unknown, key: string): unknown =>
-  typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
+const field = (value: unknown, key: string): unknown => fieldsOf(value).get(key);
 
 interface Verified {
   readonly dir: string;

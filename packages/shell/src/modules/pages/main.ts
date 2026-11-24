@@ -78,7 +78,7 @@ export interface PagesHost {
 
 const keyOf = (input: unknown): string | undefined => {
   const key: unknown =
-    typeof input === "object" && input !== null ? Reflect.get(input, "key") : undefined;
+    typeof input === "object" && input !== null && "key" in input ? input.key : undefined;
   return isPageKey(key) ? key : undefined;
 };
 
@@ -242,7 +242,7 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
   ipc.handle(Channels.pagesOpen, async (input, event) => {
     const key = keyOf(input);
     const url: unknown =
-      typeof input === "object" && input !== null ? Reflect.get(input, "url") : undefined;
+      typeof input === "object" && input !== null && "url" in input ? input.url : undefined;
     const prefix = pagePrefixOf(origin, url);
     if (key === undefined || prefix === undefined || typeof url !== "string") return false;
     if (options.guardPreload === undefined) return false;
@@ -271,7 +271,7 @@ export function installPages(ipc: ShellIpc, options: PagesOptions): PagesHost {
     const page = key === undefined ? undefined : views.get(key);
     const window = BrowserWindow.fromWebContents(event.sender);
     const bounds = parsePreviewBounds(
-      typeof input === "object" && input !== null ? Reflect.get(input, "bounds") : undefined,
+      typeof input === "object" && input !== null && "bounds" in input ? input.bounds : undefined,
     );
     if (page === undefined || window === null || bounds === undefined) return;
     page.watchers.add(event.sender);

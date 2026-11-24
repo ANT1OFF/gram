@@ -115,7 +115,10 @@ export const scrubbed = <T>(value: T, secrets: ReadonlyArray<string>, depth = 0)
     return withoutSignedTokens(text) as T;
   }
   if (typeof value !== "object" || value === null || depth > 16) return value;
-  if (Array.isArray(value)) return value.map((each) => scrubbed(each, secrets, depth + 1)) as T;
+  if (Array.isArray(value)) {
+    const items: ReadonlyArray<unknown> = value;
+    return items.map((each) => scrubbed(each, secrets, depth + 1)) as T;
+  }
   return Object.fromEntries(
     Object.entries(value).map(([key, each]) => [key, scrubbed(each, secrets, depth + 1)]),
   ) as T;

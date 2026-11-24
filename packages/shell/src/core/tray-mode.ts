@@ -14,8 +14,8 @@ export function parseTrayPrefs(text: string | undefined): TrayPrefs {
     const parsed: unknown = JSON.parse(text);
     if (typeof parsed !== "object" || parsed === null) return DEFAULT_PREFS;
     return {
-      keepInTray: Reflect.get(parsed, "keepInTray") === true,
-      noticeShown: Reflect.get(parsed, "noticeShown") === true,
+      keepInTray: ("keepInTray" in parsed ? parsed.keepInTray : undefined) === true,
+      noticeShown: ("noticeShown" in parsed ? parsed.noticeShown : undefined) === true,
     };
   } catch {
     return DEFAULT_PREFS;

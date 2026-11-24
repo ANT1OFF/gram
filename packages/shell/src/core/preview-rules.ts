@@ -5,6 +5,8 @@ import {
   refusedHost,
   type PreviewBounds,
 } from "@gram/contracts/link-trust";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { isThreadIdArg } from "./rules.ts";
 
@@ -421,11 +423,18 @@ export function previewsToClose(
 /** A page's `{ threadId, … }` argument's thread, or `undefined` when it names none. */
 export function previewThreadOf(input: unknown): string | undefined {
   if (typeof input !== "object" || input === null) return undefined;
-  const threadId: unknown = Reflect.get(input, "threadId");
+  const threadId: unknown = "threadId" in input ? input.threadId : undefined;
   return isThreadIdArg(threadId) ? threadId : undefined;
 }
 
 const MAX_SIDE = 32_768;
+const Side = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isBetween({ minimum: -MAX_SIDE, maximum: MAX_SIDE }),
+);
+const decodeBounds = Schema.decodeUnknownOption(
+  Schema.Struct({ x: Side, y: Side, width: Side, height: Side }),
+);
 
 /**
  * A page's `setBounds` argument: a rectangle of finite numbers in range, `null` to hide, or
@@ -433,20 +442,10 @@ const MAX_SIDE = 32_768;
  */
 export function parsePreviewBounds(input: unknown): PreviewBounds | null | undefined {
   if (input === null) return null;
-  if (typeof input !== "object") return undefined;
-  const value = (key: string): number | undefined => {
-    const n: unknown = Reflect.get(input, key);
-    return typeof n === "number" && Number.isFinite(n) && Math.abs(n) <= MAX_SIDE ? n : undefined;
-  };
-  const x = value("x");
-  const y = value("y");
-  const width = value("width");
-  const height = value("height");
-  if (x === undefined || y === undefined || width === undefined || height === undefined) {
-    return undefined;
-  }
-  if (width < 0 || height < 0) return undefined;
-  return { x, y, width, height };
+  const bounds = decodeBounds(input);
+  if (Option.isNone(bounds)) return undefined;
+  const { x, y, width, height } = bounds.value;
+  return width < 0 || height < 0 ? undefined : { x, y, width, height };
 }
 
 /**

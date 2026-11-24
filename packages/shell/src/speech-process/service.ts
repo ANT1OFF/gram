@@ -272,9 +272,11 @@ export function createSpeechService(options: SpeechServiceOptions) {
 
     const handle = (data: unknown): Promise<void> | undefined => {
       const type: unknown =
-        typeof data === "object" && data !== null ? Reflect.get(data, "type") : undefined;
+        typeof data === "object" && data !== null && "type" in data ? data.type : undefined;
       const samples: unknown =
-        type === "audio" ? Reflect.get(data as object, "samples") : undefined;
+        type === "audio" && typeof data === "object" && data !== null && "samples" in data
+          ? data.samples
+          : undefined;
       if (samples instanceof Float32Array && samples.length > 0 && samples.length <= MAX_FRAME) {
         return onAudio(samples);
       }
@@ -301,7 +303,7 @@ export function createSpeechService(options: SpeechServiceOptions) {
     port.on("message", ({ data }) => {
       if (!live) return;
       const type: unknown =
-        typeof data === "object" && data !== null ? Reflect.get(data, "type") : undefined;
+        typeof data === "object" && data !== null && "type" in data ? data.type : undefined;
       if (type === "cancel") return end();
       queue.push(data);
       pump();

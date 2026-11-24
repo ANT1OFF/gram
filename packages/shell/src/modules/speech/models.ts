@@ -1,10 +1,17 @@
 import { join } from "node:path";
 
-import type { SpeechModelAnswer, SpeechModelFailure, SpeechStatus } from "@gram/contracts";
+import {
+  SpeechRefusal,
+  type SpeechModelAnswer,
+  type SpeechModelFailure,
+  type SpeechStatus,
+} from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Logger from "effect/Logger";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
@@ -58,24 +65,20 @@ const lineOf = (message: unknown): { text: string; fields: Record<string, unknow
   return { text: words.join(" "), fields };
 };
 
-const failureOf = (error: unknown): SpeechModelFailure | undefined => {
-  if (typeof error !== "object" || error === null) return undefined;
-  const tag: unknown = Reflect.get(error, "_tag");
-  const message = String(Reflect.get(error, "message"));
-  if (tag === "SpeechRefused") {
-    return {
-      _tag: tag,
-      model: String(Reflect.get(error, "model")),
-      reason: Reflect.get(error, "reason") as Extract<
-        SpeechModelFailure,
-        { _tag: typeof tag }
-      >["reason"],
-      message,
-    };
-  }
-  if (tag === "FsError") return { _tag: tag, path: String(Reflect.get(error, "path")), message };
-  return undefined;
-};
+const decodeFailure = Schema.decodeUnknownOption(
+  Schema.Union([
+    Schema.Struct({
+      _tag: Schema.Literal("SpeechRefused"),
+      model: Schema.String,
+      reason: SpeechRefusal,
+      message: Schema.String,
+    }),
+    Schema.Struct({ _tag: Schema.Literal("FsError"), path: Schema.String, message: Schema.String }),
+  ]),
+);
+
+const failureOf = (error: unknown): SpeechModelFailure | undefined =>
+  Option.getOrUndefined(decodeFailure(error));
 
 const idOf = (model: unknown) => (typeof model === "string" ? model : "");
 
