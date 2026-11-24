@@ -3,12 +3,20 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Readable, Writable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 
+import { fieldsOf } from "@gram/contracts";
 import type { ViewInput } from "@gram/contracts/link-trust";
 
 import { previewNavigation, previewRequest } from "../../core/preview-rules.ts";
 import type { PreviewRequestDetails } from "../preview/main.ts";
+import {
+  cdpEvent,
+  cdpResult,
+  cdpSend,
+  type NavigationHistory,
+  type PausedRequest,
+} from "./cdp-protocol.ts";
 import type { PaneContents, PaneViews } from "./pane.ts";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -55,29 +63,33 @@ export const pipeConnection = (write: Writable, read: Readable): CdpConnection =
       const raw = buffer.slice(0, at);
       buffer = buffer.slice(at + 1);
       at = buffer.indexOf("\0");
-      let message: {
-        id?: number;
-        method?: string;
-        params?: unknown;
-        sessionId?: string;
-        result?: unknown;
-        error?: { message?: string };
-      };
+      let message: ReadonlyMap<string, unknown>;
       try {
-        message = JSON.parse(raw) as typeof message;
+        message = fieldsOf(JSON.parse(raw));
       } catch {
         continue;
       }
-      if (message.id !== undefined) {
-        const waiting = pending.get(message.id);
-        pending.delete(message.id);
+      const id = message.get("id");
+      const method = message.get("method");
+      if (typeof id === "number") {
+        const waiting = pending.get(id);
+        pending.delete(id);
         if (waiting === undefined) continue;
-        if (message.error !== undefined)
-          waiting.reject(new Error(message.error.message ?? "The browser refused the command."));
-        else waiting.resolve(message.result ?? {});
-      } else if (message.method !== undefined) {
+        const error = message.get("error");
+        if (error !== undefined) {
+          const why = fieldsOf(error).get("message");
+          waiting.reject(
+            new Error(typeof why === "string" ? why : "The browser refused the command."),
+          );
+        } else waiting.resolve(message.get("result") ?? {});
+      } else if (typeof method === "string") {
+        const sessionId = message.get("sessionId");
         for (const listener of Array.from(listeners))
-          listener(message.method, message.params, message.sessionId);
+          listener(
+            method,
+            message.get("params"),
+            typeof sessionId === "string" ? sessionId : undefined,
+          );
       }
     }
   });
@@ -171,13 +183,9 @@ export const launchHeadless = (options: {
     headlessArgs(userDataDir, options.sandbox),
     { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"], env: browserEnv(process.env) },
   );
-  const [, , , toBrowser, fromBrowser] = child.stdio as unknown as [
-    null,
-    null,
-    null,
-    Writable,
-    Readable,
-  ];
+  const [, , , toBrowser, fromBrowser] = child.stdio;
+  if (!isWritable(toBrowser) || !isReadable(fromBrowser))
+    throw new Error("The browser's DevTools pipes didn't open.");
   const connection = pipeConnection(toBrowser, fromBrowser);
   const removeProfile = async () => {
     for (let attempt = 0; attempt < 10; attempt++) {
@@ -242,23 +250,6 @@ const originOf = (url: string): string | undefined => {
   }
 };
 
-interface PausedRequest {
-  readonly requestId: string;
-  readonly request: { readonly url: string; readonly method: string };
-  readonly frameId: string;
-  readonly resourceType: string;
-  readonly networkId?: string;
-}
-
-interface FrameEvent {
-  readonly frame: {
-    readonly id: string;
-    readonly parentId?: string;
-    readonly url: string;
-    readonly urlFragment?: string;
-  };
-}
-
 /**
  * One thread's page: a target in a browser context of its own, so threads share no cookies or
  * storage. `gate` is asked about every request before it goes. The returned contents are ready to
@@ -270,12 +261,12 @@ export const openHeadlessPage = async (
   loopbackProxy?: string,
 ): Promise<PaneContents> => {
   const held = await holdNewTargets(connection);
-  const { browserContextId } = (await connection.send("Target.createBrowserContext", {
+  const { browserContextId } = await cdpSend(connection, "Target.createBrowserContext", {
     disposeOnDetach: true,
     ...(loopbackProxy !== undefined && isLoopbackProxy(loopbackProxy)
       ? { proxyServer: loopbackProxy, proxyBypassList: "<-loopback>" }
       : {}),
-  })) as { browserContextId: string };
+  });
   held.contexts.set(browserContextId, undefined);
   const dispose = () => {
     held.contexts.delete(browserContextId);
@@ -302,8 +293,11 @@ const gateWorker = (connection: CdpConnection, sessionId: string) =>
     .then(() => connection.send("Runtime.runIfWaitingForDebugger", {}, sessionId))
     .catch(() => {});
 
+const isWritable = (stream: unknown): stream is Writable => stream instanceof Writable;
+const isReadable = (stream: unknown): stream is Readable => stream instanceof Readable;
+
 const answerWorker = (connection: CdpConnection, sessionId: string, params: unknown) => {
-  const paused = params as PausedRequest;
+  const paused = cdpEvent("Fetch.requestPaused", params);
   void (
     previewRequest(paused.request.url) === "allow"
       ? connection.send("Fetch.continueRequest", { requestId: paused.requestId }, sessionId)
@@ -369,7 +363,10 @@ const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
         void connection
           .send(
             "Fetch.failRequest",
-            { requestId: (params as PausedRequest).requestId, errorReason: "BlockedByClient" },
+            {
+              requestId: cdpEvent("Fetch.requestPaused", params).requestId,
+              errorReason: "BlockedByClient",
+            },
             sessionId,
           )
           .catch(() => {});
@@ -377,17 +374,13 @@ const holdNewTargets = (connection: CdpConnection): Promise<Held> => {
       return;
     }
     if (method === "Target.detachedFromTarget") {
-      const gone = (params as { sessionId?: string }).sessionId ?? "";
+      const gone = cdpEvent(method, params).sessionId ?? "";
       workers.delete(gone);
       doomed.delete(gone);
       return;
     }
     if (method !== "Target.attachedToTarget") return;
-    const attached = params as {
-      sessionId: string;
-      waitingForDebugger?: boolean;
-      targetInfo: { targetId: string; type: string; url?: string; browserContextId?: string };
-    };
+    const attached = cdpEvent(method, params);
     if (attached.waitingForDebugger !== true) return;
     const context = attached.targetInfo.browserContextId ?? "";
     const target = { sessionId: attached.sessionId, targetId: attached.targetInfo.targetId };
@@ -502,15 +495,15 @@ const openIn = async (
   dispose: () => void,
   held: Held,
 ): Promise<PaneContents> => {
-  const { targetId } = (await connection.send("Target.createTarget", {
+  const { targetId } = await cdpSend(connection, "Target.createTarget", {
     url: "about:blank",
     browserContextId,
-  })) as { targetId: string };
+  });
   held.own(browserContextId, targetId);
-  const { sessionId: own } = (await connection.send("Target.attachToTarget", {
+  const { sessionId: own } = await cdpSend(connection, "Target.attachToTarget", {
     targetId,
     flatten: true,
-  })) as { sessionId: string };
+  });
 
   const events = new EventEmitter();
   const debuggerEvents = new EventEmitter();
@@ -519,7 +512,7 @@ const openIn = async (
   let loading = false;
   let destroyed = false;
   let mainFrameId: string | undefined;
-  let history: { currentIndex: number; entries: Array<{ id: number; url?: string }> } = {
+  let history: NavigationHistory = {
     currentIndex: 0,
     entries: [],
   };
@@ -531,8 +524,8 @@ const openIn = async (
 
   const ownSend = (method: string, params?: object) => connection.send(method, params, own);
   const readHistory = () =>
-    ownSend("Page.getNavigationHistory").then((value) => {
-      history = value as typeof history;
+    cdpSend(connection, "Page.getNavigationHistory", undefined, own).then((value) => {
+      history = value;
       return history;
     });
   const refreshHistory = () => {
@@ -552,7 +545,7 @@ const openIn = async (
     connection
       .send("Target.getTargetInfo", { targetId })
       .then((value) => {
-        title = (value as { targetInfo: { title: string } }).targetInfo.title;
+        title = cdpResult("Target.getTargetInfo", value).targetInfo.title;
       })
       .catch(() => {});
 
@@ -585,13 +578,11 @@ const openIn = async (
         }, LOAD_DEADLINE_MS);
       });
       try {
-        const result = (await Promise.race([
-          ownSend("Page.navigate", { url: target }),
+        const result = await Promise.race([
+          cdpSend(connection, "Page.navigate", { url: target }, own),
           late,
           gone,
-        ])) as {
-          errorText?: string;
-        };
+        ]);
         if (result.errorText !== undefined && result.errorText !== "")
           throw new Error(result.errorText);
       } finally {
@@ -609,7 +600,7 @@ const openIn = async (
         attaching = connection
           .send("Target.attachToTarget", { targetId, flatten: true })
           .then((value) => {
-            debuggerSession = (value as { sessionId: string }).sessionId;
+            debuggerSession = cdpResult("Target.attachToTarget", value).sessionId;
             return debuggerSession;
           });
         attaching.catch(() => {
@@ -633,11 +624,15 @@ const openIn = async (
         return result;
       },
       on: (event: string, listener: (...args: never[]) => void) =>
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an EventEmitter listener takes whatever its event emits, which is what each event names
         debuggerEvents.on(event, listener as (...args: unknown[]) => void),
       off: (event: string, listener: (...args: never[]) => void) =>
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the same listener `on` was given
         debuggerEvents.off(event, listener as (...args: unknown[]) => void),
     },
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- WebContents' `on` is overloaded per event; this one emitter serves them all
     on: ((event: string, listener: (...args: never[]) => void) =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an EventEmitter listener takes whatever its event emits, which is what each event names
       events.on(event, listener as (...args: unknown[]) => void)) as PaneContents["on"],
     once: (event, listener) => events.once(event, listener),
     off: (event, listener) => events.off(event, listener),
@@ -772,9 +767,10 @@ const openIn = async (
 
   const unsubscribe = connection.on((method, params, sessionId) => {
     if (method === "Target.detachedFromTarget") {
-      children.delete((params as { sessionId?: string }).sessionId ?? "");
-      if ((params as { sessionId?: string }).sessionId === own) destroy();
-      else if ((params as { sessionId?: string }).sessionId === debuggerSession) {
+      const { sessionId: detached } = cdpEvent(method, params);
+      children.delete(detached ?? "");
+      if (detached === own) destroy();
+      else if (detached === debuggerSession) {
         debuggerSession = undefined;
         attaching = undefined;
         debuggerEvents.emit("detach");
@@ -782,12 +778,12 @@ const openIn = async (
       return;
     }
     if (method === "Target.targetInfoChanged") {
-      const info = (params as { targetInfo?: { targetId?: string; title?: string } }).targetInfo;
+      const info = cdpEvent(method, params).targetInfo;
       if (info?.targetId === targetId && typeof info.title === "string") title = info.title;
       return;
     }
     if (method === "Target.targetDestroyed") {
-      if ((params as { targetId?: string }).targetId === targetId) destroy();
+      if (cdpEvent(method, params).targetId === targetId) destroy();
       return;
     }
     if (sessionId === debuggerSession && debuggerSession !== undefined) {
@@ -801,13 +797,13 @@ const openIn = async (
     if (sessionId !== own) return;
     switch (method) {
       case "Target.attachedToTarget": {
-        const attached = params as { sessionId: string };
+        const attached = cdpEvent(method, params);
         children.add(attached.sessionId);
         void gateWorker(connection, attached.sessionId);
         return;
       }
       case "Fetch.requestPaused": {
-        const paused = params as PausedRequest;
+        const paused = cdpEvent(method, params);
         void decide(paused)
           .catch((): "block" => "block")
           .then((verdict) => {
@@ -828,7 +824,7 @@ const openIn = async (
         return;
       }
       case "Page.frameNavigated": {
-        const { frame } = params as FrameEvent;
+        const { frame } = cdpEvent(method, params);
         if (frame.parentId !== undefined) return;
         mainFrameId = frame.id;
         url = `${frame.url}${frame.urlFragment ?? ""}`;
@@ -837,28 +833,24 @@ const openIn = async (
         return;
       }
       case "Page.navigatedWithinDocument": {
-        const event = params as { frameId: string; url: string };
+        const event = cdpEvent(method, params);
         if (event.frameId !== mainFrameId) return;
         url = event.url;
         refreshHistory();
         return;
       }
       case "Page.frameStartedLoading": {
-        if ((params as { frameId: string }).frameId === mainFrameId) loading = true;
+        if (cdpEvent(method, params).frameId === mainFrameId) loading = true;
         return;
       }
       case "Page.javascriptDialogOpening": {
         void ownSend("Page.handleJavaScriptDialog", {
-          accept: (params as { type?: string }).type === "beforeunload",
+          accept: cdpEvent(method, params).type === "beforeunload",
         }).catch(() => {});
         return;
       }
       case "Page.screencastFrame": {
-        const frame = params as {
-          data: string;
-          sessionId: number;
-          metadata: { deviceWidth: number; deviceHeight: number };
-        };
+        const frame = cdpEvent(method, params);
         onFrame?.({
           jpeg: frame.data,
           width: frame.metadata.deviceWidth,
@@ -873,7 +865,7 @@ const openIn = async (
         return;
       }
       case "Page.frameStoppedLoading": {
-        if ((params as { frameId: string }).frameId !== mainFrameId) return;
+        if (cdpEvent(method, params).frameId !== mainFrameId) return;
         refreshHistory();
         void refreshTitle().then(() => {
           loading = false;
@@ -885,9 +877,7 @@ const openIn = async (
     }
   });
 
-  const { frameTree } = (await ownSend("Page.getFrameTree")) as {
-    frameTree: { frame: { id: string; url: string } };
-  };
+  const { frameTree } = await cdpSend(connection, "Page.getFrameTree", undefined, own);
   mainFrameId = frameTree.frame.id;
   url = frameTree.frame.url;
   await ownSend("Page.enable");

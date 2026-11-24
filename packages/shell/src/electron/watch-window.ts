@@ -3,6 +3,7 @@ import { dialog, type BrowserWindow } from "electron";
 import type { ShellLog } from "../core/log.ts";
 import type { ShellProduct } from "../core/product.ts";
 import { watchRenderer, type RendererEvents } from "../core/renderer-health.ts";
+import { nodeTimers } from "../core/node-timers.ts";
 
 /** Watches `win` until it closes. */
 export function watchWindow(
@@ -23,6 +24,7 @@ export function watchWindow(
   const contents = win.webContents;
   const events: RendererEvents = {
     on: (event: string, listener: (...args: never[]) => void) =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- WebContents overloads `on` per event, which one string-typed call can't name
       contents.on(event as "unresponsive", listener),
   };
   watchRenderer(events, {
@@ -45,8 +47,7 @@ export function watchWindow(
         })
       ).response === 0,
     alive: () => !win.isDestroyed(),
-    setTimeout: (callback, ms) => setTimeout(callback, ms),
-    clearTimeout: (timer) => clearTimeout(timer as NodeJS.Timeout),
+    ...nodeTimers(),
     now: Date.now,
   });
 }

@@ -118,7 +118,29 @@ const verifiedFile = async (
   return { path };
 };
 
-const TRANSDUCER_ROLES = ["encoder", "decoder", "joiner", "tokens"] as const;
+const transducerFiles = async (
+  fs: ModelFs,
+  verified: Verified,
+  modelId: string,
+): Promise<
+  | {
+      readonly encoder: string;
+      readonly decoder: string;
+      readonly joiner: string;
+      readonly tokens: string;
+    }
+  | { readonly problem: string }
+> => {
+  const encoder = await verifiedFile(fs, verified, modelId, "encoder");
+  if ("problem" in encoder) return encoder;
+  const decoder = await verifiedFile(fs, verified, modelId, "decoder");
+  if ("problem" in decoder) return decoder;
+  const joiner = await verifiedFile(fs, verified, modelId, "joiner");
+  if ("problem" in joiner) return joiner;
+  const tokens = await verifiedFile(fs, verified, modelId, "tokens");
+  if ("problem" in tokens) return tokens;
+  return { encoder: encoder.path, decoder: decoder.path, joiner: joiner.path, tokens: tokens.path };
+};
 
 /**
  * Resolves an installed model to the files its recogniser loads, from the server's `verified.json`
@@ -144,13 +166,9 @@ export async function resolveSpeechModel(
     typeof chunk === "number" && Number.isInteger(chunk) && chunk > 0 && chunk <= 10_000
       ? chunk
       : DEFAULT_CHUNK_MS;
-  const paths: Partial<Record<(typeof TRANSDUCER_ROLES)[number], string>> = {};
-  for (const role of TRANSDUCER_ROLES) {
-    const file = await verifiedFile(fs, verified, modelId, role);
-    if ("problem" in file) return missing(file.problem);
-    paths[role] = file.path;
-  }
-  return { ok: true, paths: { ...(paths as Omit<SpeechModelPaths, "chunkMs">), chunkMs } };
+  const paths = await transducerFiles(fs, verified, modelId);
+  if ("problem" in paths) return missing(paths.problem);
+  return { ok: true, paths: { ...paths, chunkMs } };
 }
 
 /**
@@ -166,13 +184,9 @@ export async function resolveAccurateModels(
   if (offline === undefined || detector === undefined) return undefined;
   if (field(offline.recognizer, "kind") !== OFFLINE_KIND) return undefined;
   if (field(detector.recognizer, "kind") !== VAD_KIND) return undefined;
-  const paths: Partial<Record<(typeof TRANSDUCER_ROLES)[number], string>> = {};
-  for (const role of TRANSDUCER_ROLES) {
-    const file = await verifiedFile(fs, offline, SPEECH_ACCURATE_MODEL, role);
-    if ("problem" in file) return undefined;
-    paths[role] = file.path;
-  }
+  const paths = await transducerFiles(fs, offline, SPEECH_ACCURATE_MODEL);
+  if ("problem" in paths) return undefined;
   const vad = await verifiedFile(fs, detector, SPEECH_VAD_MODEL, "model");
   if ("problem" in vad) return undefined;
-  return { ...(paths as Omit<SpeechAccuratePaths, "vad">), vad: vad.path };
+  return { ...paths, vad: vad.path };
 }

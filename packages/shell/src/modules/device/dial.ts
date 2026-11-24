@@ -67,5 +67,6 @@ export const deviceDialHeaders = (key: KeyObject, dial: DeviceDialFor): Record<s
  */
 export const layerWebSocketWithHeaders = Layer.succeed(Socket.WebSocketConstructor)(
   (url, options) =>
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Node's WebSocket takes an options object here; the DOM type only names protocols
     new globalThis.WebSocket(url, options as unknown as string | Array<string> | undefined),
 );

@@ -1,8 +1,9 @@
-import type { UpdateChannel } from "@gram/contracts";
+import { fieldsOf, type UpdateChannel } from "@gram/contracts";
 
 import { macArtifactName } from "./mac-artifacts.ts";
 import { eligibleReleases } from "./releases.ts";
 import { compareVersions, formatVersion, parseVersion } from "./semver.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * What an install updates from: `mac` the signed ZIP, `appimage` the AppImage, which both replace
@@ -144,8 +145,8 @@ export function validateNativeManifest(
     readonly target?: "mac" | "appimage";
   },
 ): NativeManifest {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return fail();
-  const record = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return fail();
+  const record = value;
   const keys = Object.keys(record).toSorted();
   if (
     JSON.stringify(keys) !== JSON.stringify(["files", "path", "releaseDate", "sha512", "version"])
@@ -154,8 +155,8 @@ export function validateNativeManifest(
   const { files, path, releaseDate, sha512, version } = record;
   if (!Array.isArray(files) || files.length !== 1) return fail();
   const file: unknown = files[0];
-  if (typeof file !== "object" || file === null) return fail();
-  const entry = file as Record<string, unknown>;
+  if (!Predicate.isObject(file)) return fail();
+  const entry = file;
   if (JSON.stringify(Object.keys(entry).toSorted()) !== JSON.stringify(["sha512", "size", "url"]))
     return fail();
   if (expected.target !== undefined && expected.target !== "mac" && expected.target !== "appimage")
@@ -200,27 +201,31 @@ export interface NativeRelease {
   readonly publishedAt: string | null;
 }
 
+const stringOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
+const notesOf = (body: unknown): string | null =>
+  typeof body === "string" && body.trim() ? body.trim().slice(0, 8_000) : null;
+
 function asset(raw: unknown, name: string, maxBytes: number): NativeAsset | undefined {
-  const assets = (raw as { assets?: unknown } | null)?.assets;
+  const assets = fieldsOf(raw).get("assets");
   if (!Array.isArray(assets)) return undefined;
-  const matches = assets.filter(
-    (candidate: unknown) => (candidate as { name?: unknown } | null)?.name === name,
-  ) as Record<string, unknown>[];
-  const found = matches[0];
-  if (matches.length !== 1 || !found) return undefined;
+  const matches = assets.filter((candidate: unknown) => fieldsOf(candidate).get("name") === name);
+  const found: unknown = matches[0];
+  if (matches.length !== 1 || !Predicate.isObject(found)) return undefined;
   const { id, size, digest, state } = found;
   if (
+    typeof id !== "number" ||
     !Number.isSafeInteger(id) ||
-    (id as number) < 1 ||
+    id < 1 ||
+    typeof size !== "number" ||
     !Number.isSafeInteger(size) ||
-    (size as number) < 1 ||
-    (size as number) > maxBytes ||
+    size < 1 ||
+    size > maxBytes ||
     typeof digest !== "string" ||
     !/^sha256:[a-f0-9]{64}$/.test(digest) ||
     (state !== undefined && state !== "uploaded")
   )
     return undefined;
-  return { id: id as number, name, size: size as number, digest };
+  return { id, name, size, digest };
 }
 
 /**
@@ -240,13 +245,13 @@ export function pickNativeRelease(
   if (!current) return undefined;
   const byTag = new Map<string, unknown>();
   for (const raw of releases) {
-    const tag = (raw as { tag_name?: unknown } | null)?.tag_name;
+    const tag = fieldsOf(raw).get("tag_name");
     if (typeof tag === "string" && !byTag.has(tag)) byTag.set(tag, raw);
   }
   const eligible = eligibleReleases(
     releases.map((raw) => {
-      const r = raw as { tag_name?: unknown; draft?: unknown } | null;
-      return { tagName: r?.tag_name, isDraft: r?.draft };
+      const r = fieldsOf(raw);
+      return { tagName: r.get("tag_name"), isDraft: r.get("draft") };
     }),
     channel === "prerelease",
   );
@@ -254,8 +259,8 @@ export function pickNativeRelease(
     if (compareVersions(candidate.version, current) <= 0) break;
     const raw = byTag.get(candidate.tag);
     const version = formatVersion(candidate.version);
-    const r = raw as { prerelease?: unknown; body?: unknown; published_at?: unknown } | null;
-    if (r?.prerelease !== candidate.prerelease) continue;
+    const r = fieldsOf(raw);
+    if (r.get("prerelease") !== candidate.prerelease) continue;
     const payload = asset(raw, nativePayloadName(version, target), NATIVE_ZIP_MAX_BYTES);
     const manifest = asset(raw, nativeManifestName(version, target), NATIVE_MANIFEST_MAX_BYTES);
     if (!payload || !manifest) continue;
@@ -264,8 +269,8 @@ export function pickNativeRelease(
       version,
       payload,
       manifest,
-      notes: typeof r.body === "string" && r.body.trim() ? r.body.trim().slice(0, 8_000) : null,
-      publishedAt: typeof r.published_at === "string" ? r.published_at : null,
+      notes: notesOf(r.get("body")),
+      publishedAt: stringOrNull(r.get("published_at")),
     };
   }
   return undefined;

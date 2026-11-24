@@ -209,6 +209,8 @@ export const askPage = (colors: AskColors): string => `<!doctype html>
 </html>`;
 
 export type AskPageAnswer = "allow" | "refuse" | "dismiss";
+const isAskPageAnswer = (answer: string | undefined): answer is AskPageAnswer =>
+  answer === "allow" || answer === "refuse" || answer === "dismiss";
 
 /** Reads an answer from the page's title: which show it answers, and what. */
 export const askAnswerOf = (
@@ -216,5 +218,6 @@ export const askAnswerOf = (
 ): { readonly show: string; readonly answer: AskPageAnswer } | undefined => {
   const match = /^gram-ask:([A-Za-z0-9_-]{8,64}):(allow|refuse|dismiss):[0-9]+$/.exec(title);
   if (match === null) return undefined;
-  return { show: match[1] ?? "", answer: match[2] as AskPageAnswer };
+  const answer = match[2];
+  return isAskPageAnswer(answer) ? { show: match[1] ?? "", answer } : undefined;
 };

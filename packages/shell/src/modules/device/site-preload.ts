@@ -11,6 +11,7 @@ export const installHostedSiteBridge = (
 ): void => {
   const site: HostedSiteBridge = {
     turnGrant: async (threadId) =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- main answers this channel with the grant its handler builds
       (await ipc.invoke(HOSTED_SITE_TURN_GRANT, { threadId })) as Awaited<
         ReturnType<HostedSiteBridge["turnGrant"]>
       >,

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import type { DeviceId } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 export interface StoredSignIn {
   readonly subject: string;
@@ -40,23 +41,29 @@ export const machineMarkFor = (origin: string, subject: string, organization?: s
 
 const MARK = /^[A-Za-z0-9_-]{8,64}$/;
 
+const isStoredSignIn = (value: unknown): value is StoredSignIn => {
+  if (!Predicate.isObject(value)) return false;
+  const { subject, refreshToken, deviceId, deviceRegistered, machineMark } = value;
+  const { machineMarkOrg, formerMarks } = value;
+  return (
+    typeof subject === "string" &&
+    typeof refreshToken === "string" &&
+    typeof deviceId === "string" &&
+    (deviceRegistered === undefined || typeof deviceRegistered === "boolean") &&
+    (machineMark === undefined || (typeof machineMark === "string" && MARK.test(machineMark))) &&
+    (machineMarkOrg === undefined || machineMarkOrg === true) &&
+    (formerMarks === undefined ||
+      (Array.isArray(formerMarks) &&
+        formerMarks.length <= 8 &&
+        formerMarks.every((each: unknown) => typeof each === "string" && MARK.test(each))))
+  );
+};
+
 export const parseSignIn = (text: string | undefined): StoredSignIn | undefined => {
   if (text === undefined) return undefined;
   try {
-    const value = JSON.parse(text) as Partial<StoredSignIn>;
-    return typeof value.subject === "string" &&
-      typeof value.refreshToken === "string" &&
-      typeof value.deviceId === "string" &&
-      (value.deviceRegistered === undefined || typeof value.deviceRegistered === "boolean") &&
-      (value.machineMark === undefined ||
-        (typeof value.machineMark === "string" && MARK.test(value.machineMark))) &&
-      (value.machineMarkOrg === undefined || value.machineMarkOrg === true) &&
-      (value.formerMarks === undefined ||
-        (Array.isArray(value.formerMarks) &&
-          value.formerMarks.length <= 8 &&
-          value.formerMarks.every((each) => typeof each === "string" && MARK.test(each))))
-      ? (value as StoredSignIn)
-      : undefined;
+    const value: unknown = JSON.parse(text);
+    return isStoredSignIn(value) ? value : undefined;
   } catch {
     return undefined;
   }

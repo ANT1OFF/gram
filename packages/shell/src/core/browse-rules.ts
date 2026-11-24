@@ -28,6 +28,9 @@ import {
   type PanePoint,
   type PaneRequest,
 } from "@gram/contracts/link-trust";
+import * as Predicate from "effect/Predicate";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 /** What the shell knows about one thread's page when it decides. */
 export interface BrowseContext {
@@ -188,13 +191,20 @@ const tokenOf = (c: Record<string, unknown>): { confirmToken?: string } => {
 
 const int = (value: unknown, min: number, max: number): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
-const optional = (value: unknown, valid: (value: unknown) => boolean) =>
-  value === undefined || valid(value);
+const optional = <T>(
+  value: unknown,
+  valid: (value: unknown) => value is T,
+): value is T | undefined => value === undefined || valid(value);
 const some = <K extends string, V>(key: K, value: V | undefined) =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a computed key widens to an index signature; `key` is exactly K
   (value === undefined ? {} : { [key]: value }) as { [P in K]?: V };
+const isScale = (n: unknown): n is number =>
+  typeof n === "number" && Number.isFinite(n) && n >= 0.1 && n <= 1;
+const isModifier = (m: unknown): m is PaneKeyModifier =>
+  PANE_KEY_MODIFIERS.some((each) => each === m);
 const pointOf = (raw: unknown): PanePoint | undefined => {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const p = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return undefined;
+  const p = raw;
   if (p["ref"] !== undefined && p["coordinate"] !== undefined) return undefined;
   if (ref(p["ref"])) return { ref: p["ref"] };
   if (point(p["coordinate"])) return { coordinate: p["coordinate"] };
@@ -207,15 +217,13 @@ const optionalPoint = (c: Record<string, unknown>): Partial<PanePoint> | null =>
 const modifiersOf = (raw: unknown): readonly PaneKeyModifier[] | null | undefined => {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw) || raw.length > PANE_KEY_MODIFIERS.length) return null;
-  const known = raw.every((m) => PANE_KEY_MODIFIERS.includes(m as PaneKeyModifier));
-  return known && new Set(raw).size === raw.length ? (raw as PaneKeyModifier[]) : null;
+  return raw.every(isModifier) && new Set(raw).size === raw.length ? raw : null;
 };
 const viewportSize = (value: unknown): value is { width: number; height: number } => {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
   return (
-    int(v["width"], BROWSER_VIEWPORT_MIN, BROWSER_VIEWPORT_MAX) &&
-    int(v["height"], BROWSER_VIEWPORT_MIN, BROWSER_VIEWPORT_MAX)
+    Predicate.isObject(value) &&
+    int(value["width"], BROWSER_VIEWPORT_MIN, BROWSER_VIEWPORT_MAX) &&
+    int(value["height"], BROWSER_VIEWPORT_MIN, BROWSER_VIEWPORT_MAX)
   );
 };
 const labelOf = (c: Record<string, unknown>): { actionSummary?: string } | null => {
@@ -228,6 +236,13 @@ const labelOf = (c: Record<string, unknown>): { actionSummary?: string } | null 
     .trim();
   return summary === "" ? {} : { actionSummary: summary };
 };
+const RegionSide = Schema.Number.check(
+  Schema.isFinite(),
+  Schema.isBetween({ minimum: 0, maximum: 10_000 }),
+);
+const decodeRegion = Schema.decodeUnknownOption(
+  Schema.Struct({ x: RegionSide, y: RegionSide, width: RegionSide, height: RegionSide }),
+);
 const PRESETS = ["pane", "phone", "tablet", "desktop"] as const;
 const presetOf = (value: unknown) => PRESETS.find((preset) => preset === value);
 const readChars = (value: unknown) => int(value, PANE_READ_MIN_CHARS, PANE_READ_MAX_CHARS);
@@ -246,8 +261,8 @@ const LABELLED = new Set([
 
 /** A pane command as the server sent it, or `undefined` for anything malformed, which is refused. */
 export function parsePaneCommand(raw: unknown): PaneCommand | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const c = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return undefined;
+  const c = raw;
   const command = parseUnlabelled(c);
   if (command === undefined || !LABELLED.has(command.op)) return command;
   const label = labelOf(c);
@@ -264,7 +279,7 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
     case "snapshot": {
       const filter = c["filter"];
       if (
-        !optional(filter, (f) => f === "all" || f === "interactive") ||
+        !optional(filter, (f): f is "all" | "interactive" => f === "all" || f === "interactive") ||
         !optional(c["depth"], (d) => int(d, 1, PANE_SNAPSHOT_MAX_DEPTH)) ||
         !optional(c["ref"], ref) ||
         !optional(c["maxChars"], readChars)
@@ -272,51 +287,32 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
         return undefined;
       return {
         op: "snapshot",
-        ...some("filter", filter as "all" | "interactive" | undefined),
-        ...some("depth", c["depth"] as number | undefined),
-        ...some("ref", c["ref"] as string | undefined),
-        ...some("maxChars", c["maxChars"] as number | undefined),
+        ...some("filter", filter),
+        ...some("depth", c["depth"]),
+        ...some("ref", c["ref"]),
+        ...some("maxChars", c["maxChars"]),
       };
     }
     case "text":
       return optional(c["maxChars"], readChars)
-        ? { op: "text", ...some("maxChars", c["maxChars"] as number | undefined) }
+        ? { op: "text", ...some("maxChars", c["maxChars"]) }
         : undefined;
     case "screenshot": {
       if (c["ref"] !== undefined && !ref(c["ref"])) return undefined;
       const scale = c["scale"];
-      if (
-        !optional(scale, (n) => typeof n === "number" && Number.isFinite(n) && n >= 0.1 && n <= 1)
-      )
-        return undefined;
+      if (!optional(scale, isScale)) return undefined;
       if (!optional(c["format"], (f) => f === "png")) return undefined;
       const scaled = {
-        ...some("scale", scale as number | undefined),
+        ...some("scale", scale),
         ...(c["format"] === "png" ? { format: "png" as const } : {}),
       };
       const region = c["region"];
       if (region !== undefined) {
-        if (typeof region !== "object" || region === null || c["ref"] !== undefined)
-          return undefined;
-        const r = region as Record<string, unknown>;
-        if (
-          !["x", "y", "width", "height"].every(
-            (key) =>
-              typeof r[key] === "number" &&
-              Number.isFinite(r[key]) &&
-              r[key] >= 0 &&
-              r[key] <= 10_000,
-          )
-        )
-          return undefined;
+        const r = decodeRegion(region);
+        if (Option.isNone(r) || c["ref"] !== undefined) return undefined;
         return {
           op: "screenshot",
-          region: {
-            x: r["x"] as number,
-            y: r["y"] as number,
-            width: r["width"] as number,
-            height: r["height"] as number,
-          },
+          region: r.value,
           ...scaled,
         };
       }
@@ -324,16 +320,15 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
     }
     case "viewport": {
       const preset = presetOf(c["preset"]);
-      const { size, mobile, colorScheme } = c as {
-        size?: unknown;
-        mobile?: unknown;
-        colorScheme?: unknown;
-      };
+      const { size, mobile, colorScheme } = c;
       if (
         (c["preset"] !== undefined && preset === undefined) ||
         (size !== undefined && (preset !== undefined || !viewportSize(size))) ||
         !optional(mobile, (m) => typeof m === "boolean") ||
-        !optional(colorScheme, (s) => s === "light" || s === "dark" || s === "system") ||
+        !optional(
+          colorScheme,
+          (s): s is "light" | "dark" | "system" => s === "light" || s === "dark" || s === "system",
+        ) ||
         (preset === undefined &&
           size === undefined &&
           mobile === undefined &&
@@ -351,8 +346,8 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
         op: "viewport",
         ...some("preset", preset),
         ...some("size", size),
-        ...some("mobile", mobile as boolean | undefined),
-        ...some("colorScheme", colorScheme as "light" | "dark" | "system" | undefined),
+        ...some("mobile", mobile),
+        ...some("colorScheme", colorScheme),
       };
     }
     case "find":
@@ -398,12 +393,10 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
         return undefined;
       return {
         op: "pressKey",
-        ...some("ref", c["ref"] as string | undefined),
+        ...some("ref", c["ref"]),
         key: c["key"],
         ...(modifiers === undefined || modifiers.length === 0 ? {} : { modifiers }),
-        ...(c["repeat"] === undefined || c["repeat"] === 1
-          ? {}
-          : { repeat: c["repeat"] as number }),
+        ...(c["repeat"] === undefined || c["repeat"] === 1 ? {} : { repeat: c["repeat"] }),
         ...tokenOf(c),
       };
     }
@@ -433,7 +426,7 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
       return {
         op: "scroll",
         direction,
-        ...some("amount", c["amount"] as number | undefined),
+        ...some("amount", c["amount"]),
         ...target,
         ...tokenOf(c),
       };
@@ -450,7 +443,7 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
     case "wait":
       if (
         !int(c["ms"], 0, PANE_WAIT_MAX_MS) ||
-        !optional(c["text"], (t) => str(t, 500) && t !== "") ||
+        !optional(c["text"], (t): t is string => str(t, 500) && t !== "") ||
         !optional(c["ref"], ref) ||
         (c["text"] !== undefined && c["ref"] !== undefined)
       )
@@ -458,8 +451,8 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
       return {
         op: "wait",
         ms: c["ms"],
-        ...some("text", c["text"] as string | undefined),
-        ...some("ref", c["ref"] as string | undefined),
+        ...some("text", c["text"]),
+        ...some("ref", c["ref"]),
       };
     case "console":
       return { op: "console", onlyErrors: flag(c["onlyErrors"]) };
@@ -469,21 +462,21 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
         : undefined;
     case "network":
       if (
-        !optional(c["requestId"], (id) => typeof id === "string" && /^[\w.#-]{1,100}$/.test(id)) ||
+        !optional(
+          c["requestId"],
+          (id): id is string => typeof id === "string" && /^[\w.#-]{1,100}$/.test(id),
+        ) ||
         !optional(c["filter"], (f) => str(f, 500))
       )
         return undefined;
       return {
         op: "network",
-        ...some("requestId", c["requestId"] as string | undefined),
-        ...some("filter", c["filter"] as string | undefined),
+        ...some("requestId", c["requestId"]),
+        ...some("filter", c["filter"]),
       };
     case "recordStart":
-      return optional(
-        c["scale"],
-        (n) => typeof n === "number" && Number.isFinite(n) && n >= 0.1 && n <= 1,
-      )
-        ? { op: "recordStart", ...some("scale", c["scale"] as number | undefined) }
+      return optional(c["scale"], isScale)
+        ? { op: "recordStart", ...some("scale", c["scale"]) }
         : undefined;
     case "recordStop":
       return { op: "recordStop", ...(c["discard"] === true ? { discard: true } : {}) };
@@ -498,14 +491,14 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
 
 /** A whole pane request, or `undefined` when any part of it is malformed. */
 export function parsePaneRequest(raw: unknown): PaneRequest | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const r = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return undefined;
+  const r = raw;
   const limits = r["limits"];
   const command = parsePaneCommand(r["command"]);
   if (!str(r["threadId"], 200) || r["threadId"] === "" || command === undefined) return undefined;
-  if (typeof limits !== "object" || limits === null) return undefined;
-  const loopbackOnly = (limits as Record<string, unknown>)["actOnLoopbackOnly"] !== false;
-  const origins: unknown = (limits as Record<string, unknown>)["appOrigins"];
+  if (!Predicate.isObject(limits)) return undefined;
+  const loopbackOnly = limits["actOnLoopbackOnly"] !== false;
+  const origins: unknown = limits["appOrigins"];
   const appOrigins = Array.isArray(origins)
     ? origins
         .slice(0, 8)

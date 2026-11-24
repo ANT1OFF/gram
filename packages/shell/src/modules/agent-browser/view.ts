@@ -11,6 +11,7 @@ import {
 
 import type { HeadlessPage } from "./headless.ts";
 import type { AgentPanes, PaneContents } from "./pane.ts";
+import { fieldsOf } from "@gram/contracts";
 
 const QUEUE_MAX = 64;
 
@@ -194,11 +195,7 @@ export const createViews = (options: ViewsOptions): Views => {
   return {
     message: (raw) => {
       const message = viewServerMessage(raw);
-      if (message === undefined)
-        return (
-          typeof (raw as { type?: unknown } | null)?.type === "string" &&
-          (raw as { type: string }).type.startsWith("pane.view.")
-        );
+      if (message === undefined) return String(fieldsOf(raw).get("type")).startsWith("pane.view.");
       const { threadId } = message;
       if (message.type === "pane.view.watch") watchThread(threadId, message.fresh === true);
       else if (message.type === "pane.view.input") {

@@ -3,7 +3,9 @@ import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import { keyringBackendOk, NO_KEYRING_MESSAGE } from "@gram/contracts";
+import { errnoCode, keyringBackendOk, NO_KEYRING_MESSAGE } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 
 /**
  * Encryption as Electron's `safeStorage` offers it: the macOS Keychain, Windows DPAPI for the user's
@@ -59,10 +61,9 @@ export type VaultResponse =
     };
 
 const isVaultRequest = (message: unknown): message is VaultRequest => {
-  const m = message as Partial<Record<string, unknown>> | null;
+  const m = message;
   return (
-    typeof m === "object" &&
-    m !== null &&
+    Predicate.isObject(m) &&
     m["type"] === "vault.request" &&
     typeof m["id"] === "string" &&
     (m["op"] === "info" ||
@@ -81,7 +82,7 @@ const renameOver = async (from: string, to: string): Promise<void> => {
     try {
       return await rename(from, to);
     } catch (error) {
-      if (attempt === RENAME_ATTEMPTS || !LOCKED.has((error as { code?: string }).code ?? "")) {
+      if (attempt === RENAME_ATTEMPTS || !LOCKED.has(errnoCode(error) ?? "")) {
         throw error;
       }
       await sleep(25 * attempt);
@@ -111,9 +112,9 @@ export const fileVaultStore = (file: string): VaultStore => {
 const openFileVaultStore = (file: string): VaultStore => ({
   read: async () => {
     try {
-      return JSON.parse(await readFile(file, "utf8")) as Record<string, string>;
+      return decodeEntries(await readFile(file, "utf8"));
     } catch (error) {
-      if ((error as { code?: string }).code === "ENOENT") return {};
+      if (errnoCode(error) === "ENOENT") return {};
       throw error;
     }
   },
@@ -161,13 +162,14 @@ const weakEntries = (entries: Record<string, unknown>): string[] =>
     .map(([ref]) => ref);
 
 const without = (
-  entries: Record<string, unknown>,
+  entries: Readonly<Record<string, string>>,
   refs: readonly string[],
 ): Record<string, string> =>
-  Object.fromEntries(Object.entries(entries).filter(([ref]) => !refs.includes(ref))) as Record<
-    string,
-    string
-  >;
+  Object.fromEntries(Object.entries(entries).filter(([ref]) => !refs.includes(ref)));
+
+const decodeEntries = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
+);
 
 /**
  * Answers the server's key requests (sent over the utilityProcess port), or `undefined` for any

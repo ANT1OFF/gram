@@ -81,7 +81,8 @@ const bodyOf = async (request: IncomingMessage, most: number): Promise<Buffer | 
   let length = 0;
   try {
     for await (const part of request) {
-      const bytes = part as Buffer;
+      if (!Buffer.isBuffer(part)) return undefined;
+      const bytes = part;
       length += bytes.length;
       if (length > most) return undefined;
       parts.push(bytes);
@@ -191,6 +192,7 @@ export const startHostedModelRoute = async (
       response.end();
       return;
     }
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- fetch's ReadableStream and node:stream/web's are one class under two type declarations
     const stream = Readable.fromWeb(answer.body as WebStream);
     stream.on("error", () => response.destroy());
     stream.pipe(response);

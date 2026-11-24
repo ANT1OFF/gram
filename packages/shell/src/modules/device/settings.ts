@@ -4,6 +4,7 @@ import * as fs from "node:fs/promises";
 import { dirname, join } from "node:path";
 import * as Schema from "effect/Schema";
 import type { DeviceLogHead } from "./log.ts";
+import { errnoCode } from "@gram/contracts";
 
 const LentFolderSetting = Schema.Struct({
   id: Schema.String.check(Schema.isPattern(/^f-[a-f0-9]{16}$/)),
@@ -79,11 +80,11 @@ export const readDeviceSettings = async (
       await handle.close();
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+    if (errnoCode(error) === "ENOENT")
       return { ok: true, settings: EMPTY_DEVICE_SETTINGS, fresh: true };
     return {
       ok: false,
-      why: (error as NodeJS.ErrnoException).code === "ELOOP" ? "edited" : "unreadable",
+      why: errnoCode(error) === "ELOOP" ? "edited" : "unreadable",
     };
   }
   let parsed: unknown;

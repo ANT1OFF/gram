@@ -21,7 +21,9 @@ export function preloadIpc(ipcRenderer: IpcRenderer): PreloadIpc {
     send: (channel, arg) =>
       arg === undefined ? ipcRenderer.send(channel) : ipcRenderer.send(channel, arg),
     subscribe: (channel, callback) => {
-      const listener = (_event: IpcRendererEvent, value: unknown) => callback(value as never);
+      const listener = (_event: IpcRendererEvent, value: unknown) =>
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- main sends each channel the payload Channels types for it
+        callback(value as never);
       ipcRenderer.on(channel, listener);
       return () => {
         ipcRenderer.removeListener(channel, listener);
@@ -29,6 +31,7 @@ export function preloadIpc(ipcRenderer: IpcRenderer): PreloadIpc {
     },
     subscribeWithPorts: (channel, callback) => {
       const listener = (event: IpcRendererEvent, value: unknown) =>
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- main sends each channel the payload Channels types for it
         callback(value as never, event.ports);
       ipcRenderer.on(channel, listener);
       return () => {
@@ -59,6 +62,7 @@ export function composeBridge<const Parts extends readonly object[]>(
       bridge[key] = value;
     }
   }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- every part's members were copied in, and none twice, so it is all of them
   return bridge as Merged<Parts>;
 }
 

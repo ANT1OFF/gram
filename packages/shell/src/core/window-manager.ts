@@ -2,6 +2,7 @@ import * as nodeFs from "node:fs";
 
 import type { DesktopWindowInfo, GridLayout } from "@gram/contracts";
 import * as Schema from "effect/Schema";
+import { parseGridLayout } from "./rules.ts";
 
 export interface Rect {
   readonly x: number;
@@ -103,13 +104,13 @@ export function parseWindowRecords(input: unknown): WindowRecord[] {
     seen.add(id);
     const displayId: unknown = "displayId" in item ? item.displayId : undefined;
     const maximized: unknown = "maximized" in item ? item.maximized : undefined;
-    const layout: unknown = "layout" in item ? item.layout : undefined;
+    const parsedLayout = parseGridLayout("layout" in item ? item.layout : undefined);
     records.push({
       id,
       bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
       ...(typeof displayId === "number" ? { displayId } : {}),
       ...(maximized === true ? { maximized } : {}),
-      ...(typeof layout === "object" && layout !== null ? { layout: layout as GridLayout } : {}),
+      ...(parsedLayout === null ? {} : { layout: parsedLayout }),
     });
   }
   return records.toSorted(byId);

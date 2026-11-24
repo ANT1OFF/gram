@@ -10,7 +10,7 @@ import {
 
 import type { CandidateSnapshot } from "./native-snapshot.ts";
 import { UpdateTeardownRefused } from "./shutdown.ts";
-import { nodeTimers } from "../node-timers.ts";
+import { nodeTimers } from "@gram/shell/core";
 import * as Predicate from "effect/Predicate";
 
 /** The first automatic check waits for launch to settle. */

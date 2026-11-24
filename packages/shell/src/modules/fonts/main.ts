@@ -3,6 +3,7 @@ import { win32 } from "node:path";
 import { Channels } from "../../channels.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { boundedRun, type RunCommand } from "../run.ts";
+import { fieldsOf } from "@gram/contracts";
 
 const runCommand = boundedRun({ timeoutMs: 20_000, maxOutputBytes: 64 * 1024 * 1024 });
 
@@ -16,13 +17,15 @@ const uniqueSorted = (names: readonly unknown[]): string[] =>
     ),
   ].toSorted((a, b) => a.localeCompare(b));
 
+const listOf = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : []);
+
 /** Family names from `system_profiler SPFontsDataType -json`. */
 export function parseMacFonts(json: string): string[] {
-  const data = JSON.parse(json) as {
-    SPFontsDataType?: ReadonlyArray<{ typefaces?: ReadonlyArray<{ family?: unknown }> }>;
-  };
+  const fonts = fieldsOf(JSON.parse(json)).get("SPFontsDataType");
   return uniqueSorted(
-    (data.SPFontsDataType ?? []).flatMap((font) => (font.typefaces ?? []).map((t) => t.family)),
+    listOf(fonts).flatMap((font) =>
+      listOf(fieldsOf(font).get("typefaces")).map((typeface) => fieldsOf(typeface).get("family")),
+    ),
   );
 }
 
