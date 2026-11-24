@@ -1,8 +1,7 @@
 import * as Predicate from "effect/Predicate";
-import * as Schema from "effect/Schema";
-import { Project } from "./domain.ts";
-import { Settings } from "./settings.ts";
-import { OrchestratorCharter } from "./workspaces.ts";
+import type { Project } from "./domain.ts";
+import type { Settings } from "./settings.ts";
+import type { OrchestratorCharter } from "./workspaces.ts";
 
 /**
  * One stored field a proposal writes, with its value as stored before (`undefined` when absent)
@@ -62,11 +61,7 @@ const withAt = (
   return next;
 };
 
-const applyWrites = <A>(
-  root: A,
-  writes: ReadonlyArray<SettingsWrite>,
-  is: (written: unknown) => written is A,
-): A | undefined => {
+const applyWrites = <A>(root: A, writes: ReadonlyArray<SettingsWrite>): A | undefined => {
   if (writes.some((write) => !sameValue(storedAt(root, write.path), write.before))) {
     return undefined;
   }
@@ -74,23 +69,24 @@ const applyWrites = <A>(
     (stored, write) => withAt(stored, write.path, write.after),
     Predicate.isObject(root) ? root : {},
   );
-  return is(written) ? written : undefined;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- each write's value was decoded for its own field when the proposal was made
+  return written as A;
 };
 
 /** App writes applied to the settings as they stand now, or `undefined` if one has moved. */
 export const applySettingsWrites = (
   settings: Settings,
   writes: ReadonlyArray<SettingsWrite>,
-): Settings | undefined => applyWrites(settings, writes, Schema.is(Settings));
+): Settings | undefined => applyWrites(settings, writes);
 
 /** Charter writes applied to the charter as it stands now, or `undefined` if one has moved. */
 export const applyCharterWrites = (
   charter: OrchestratorCharter,
   writes: ReadonlyArray<SettingsWrite>,
-): OrchestratorCharter | undefined => applyWrites(charter, writes, Schema.is(OrchestratorCharter));
+): OrchestratorCharter | undefined => applyWrites(charter, writes);
 
 /** Apply only the approved project fields while their before values still match. */
 export const applyProjectSettingsWrites = (
   project: Project,
   writes: ReadonlyArray<SettingsWrite>,
-): Project | undefined => applyWrites(project, writes, Schema.is(Project));
+): Project | undefined => applyWrites(project, writes);

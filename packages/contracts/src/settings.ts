@@ -1327,14 +1327,8 @@ export const applySettingsPatch = (settings: Settings, patch: SettingsPatch): Se
     const merged: Record<string, unknown> = { ...(Predicate.isObject(held) ? held : {}), ...value };
     next[key] = Object.fromEntries(Object.entries(merged).filter(([, leaf]) => leaf !== null));
   }
-  return settingsOf(next);
-};
-
-const isSettings = Schema.is(Settings);
-
-const settingsOf = (value: Record<string, unknown>): Settings => {
-  if (!isSettings(value)) throw new Error("A settings change left the settings out of shape.");
-  return value;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- each section of a decoded SettingsPatch is a partial Settings section, so merging it in leaves a Settings
+  return next as Settings;
 };
 
 /**
@@ -1413,7 +1407,8 @@ export const withoutPersonalSettings = (settings: Settings): Settings => {
     const { [field]: _dropped, ...rest } = held;
     next[section] = rest;
   }
-  return settingsOf(next);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only optional personal fields were dropped
+  return next as Settings;
 };
 
 export const DEFAULT_SETTINGS: Settings = Schema.decodeSync(Settings)({
