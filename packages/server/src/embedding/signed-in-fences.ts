@@ -74,7 +74,7 @@ export const fencedCalls = (port: WorkerMachinePortShape): WorkerMachinePortShap
       const name = body["name"];
       if (typeof name !== "string") return port.call(origin, call, body, options);
       const key = keyOf(origin, name, options?.account);
-      const fenced = call === "stop" || call === "release";
+      const fenced = call === "stop" || call === "release" || call === "move";
       const pinned = fenced ? options?.run : undefined;
       if (pinned !== undefined && !sameRun(runs.get(key), pinned))
         return Effect.succeed(SUPERSEDED_HERE);
@@ -101,11 +101,12 @@ export const fencedCalls = (port: WorkerMachinePortShape): WorkerMachinePortShap
           const refused = fenceRefusalOf(answered);
           if (refused === "superseded" && run !== undefined && sameRun(runs.get(key), run))
             runs.delete(key);
+          const said = answered.body as { stopped?: unknown; moved?: unknown } | null;
           const stopped =
-            call === "stop" &&
             answered.status < 300 &&
             refused === undefined &&
-            (answered.body as { stopped?: unknown } | null)?.stopped === true;
+            ((call === "stop" && said?.stopped === true) ||
+              (call === "move" && said?.moved === true));
           if (stopped && sameRun(runs.get(key), run)) runs.delete(key);
           return fenced && refused === "expired"
             ? Effect.logWarning(

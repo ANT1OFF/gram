@@ -149,7 +149,14 @@ import type { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
 import { startWipKeeper } from "../host/wip-keeper.ts";
-import { readyOnGoing, resumeOwedMachines } from "../host/stop-resume.ts";
+import {
+  cancelStop,
+  prepareStop,
+  readyOnGoing,
+  resumeOwedMachines,
+} from "../host/stop-resume.ts";
+import { SignedInWorkers } from "../embedding/signed-in-workers.ts";
+import { startMovingAsked } from "../embedding/signed-in-moves.ts";
 import { makeMachineJobs } from "../host/machine-jobs.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
@@ -325,6 +332,15 @@ export const AuthMiddleware = HttpRouter.middleware(
       yield* Effect.addFinalizer(() => Effect.sync(off));
     }
     if (stopDeps !== undefined) yield* resumeOwedMachines(stopDeps);
+    const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
+    if (stopDeps !== undefined && signedIn?.port.available === true)
+      yield* startMovingAsked({
+        port: signedIn.port,
+        machines: () => stopDeps.hosts.list(),
+        prepare: (id) => prepareStop(stopDeps, id, { force: true }),
+        readied: (id) => stopDeps.hosts.stops.holding(id),
+        takeBack: (id) => cancelStop(stopDeps, id),
+      });
     const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const devices = Option.getOrUndefined(yield* Effect.serviceOption(LentDevices));
     const securityHeaders = {
