@@ -1,4 +1,11 @@
-import { answerMessage, answerQuestion, QUESTIONS_FILE, questionDate } from "@gram/contracts";
+import {
+  answerMessage,
+  answerQuestion,
+  memoryUpdateModeOf,
+  memoryUpdateRuleOf,
+  QUESTIONS_FILE,
+  questionDate,
+} from "@gram/contracts";
 
 import type { createMockDreams } from "../mock-dreams";
 import { MockInvalidState } from "../mock-fs";
@@ -20,14 +27,17 @@ export function createDreamsMock(
   return {
     automaticDreamStatus: async (workspaceId) => {
       const state = orchestration.peek().find((s) => s.workspace.id === workspaceId);
-      const threshold = state?.charter.automaticDreamThreshold;
+      const rule = state === undefined ? undefined : memoryUpdateRuleOf(state.charter);
+      if (rule === undefined)
+        return { completed: 0, detail: "Automatic memory updates are off: they run when you ask." };
       return {
-        ...(threshold === undefined ? {} : { threshold }),
+        threshold: rule.minItems,
         completed: 0,
+        everyHours: rule.everyHours,
         detail:
-          threshold === undefined
-            ? "Automatic memory updates are off."
-            : "Automatic runs await review. Counting distinct completed threads since the last start or setting edit.",
+          memoryUpdateModeOf(state?.charter) === "auto"
+            ? "Each update applies itself."
+            : "Each update waits for your review.",
       };
     },
     listMemory: (workspaceId) => dreams.list(workspaceId),

@@ -108,9 +108,9 @@ export const ProfileRole = Schema.Union([
     workspace: Schema.Struct({
       name: Schema.String.check(Schema.isMaxLength(PROFILE_WORKSPACE_NAME_MAX)),
       /**
-       * Starts a memory update of the workspace each time this many of its workers have completed
-       * (`OrchestratorCharter.automaticDreamThreshold`), for a person to review. Absent: none
-       * starts by itself.
+       * Turns on automatic memory updates of the workspace, each once this many new items have
+       * happened and 24 hours have passed since the last (`OrchestratorCharter.automaticDreamThreshold`,
+       * `memoryUpdateRuleOf`), for a person to review. Absent: none starts by itself.
        */
       memoryUpdatesAfter: Schema.optionalKey(AutomaticDreamThreshold),
     }),

@@ -449,10 +449,19 @@ export const SessionTranscript = Schema.Struct({
 });
 export type SessionTranscript = typeof SessionTranscript.Type;
 
-/** Automatic launch progress, separate from a run's adoption mode. */
+/**
+ * Where a workspace's next automatic memory update stands on both of its conditions
+ * (`memoryUpdateRuleOf`). Absent `threshold`: automatic updates are off.
+ */
 export const AutomaticDreamStatus = Schema.Struct({
+  /** New items the next update waits for. */
   threshold: Schema.optionalKey(Schema.Int),
+  /** New items since the last update's cursor, counted the same way. */
   completed: Schema.Int,
+  /** Hours the next update waits after the last began. */
+  everyHours: Schema.optionalKey(Schema.Int),
+  /** When those hours are up (epoch ms); absent with no update yet, so the time is already met. */
+  dueAt: Schema.optionalKey(Schema.Number),
   detail: Schema.String,
 });
 export type AutomaticDreamStatus = typeof AutomaticDreamStatus.Type;

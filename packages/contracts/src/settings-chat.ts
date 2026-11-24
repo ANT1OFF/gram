@@ -37,8 +37,9 @@ import {
   usageHistoryEnabled,
   type Settings,
 } from "./settings.ts";
+import { MEMORY_UPDATE_KEYS, setMemoryUpdateCondition } from "./settings-chat-memory.ts";
 import {
-  AutomaticDreamThreshold,
+  memoryUpdateRuleOf,
   IdleCompactKind,
   idleCompactOf,
   autonomyOf,
@@ -245,11 +246,8 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   ws("workspace.mergeReviewPolicy", "Merge review policy", (w) =>
     charterOf(w) === undefined ? undefined : (charterOf(w)?.mergeReviewPolicy ?? "bot"),
   ),
-  ws(
-    "workspace.automaticDreamThreshold",
-    "Automatic memory update after completions",
-    (w) => charterOf(w)?.automaticDreamThreshold,
-    "off",
+  ...Object.entries(MEMORY_UPDATE_KEYS).map(([key, { label, rule }]) =>
+    ws(key, label, (w) => memoryUpdateRuleOf(charterOf(w) ?? {})?.[rule], "off"),
   ),
   ws("workspace.idleAutoCompact", "Compact idle threads", (w) =>
     charterOf(w) === undefined ? undefined : idleCompactOf(charterOf(w)).enabled,
@@ -972,23 +970,20 @@ export const planSettingsChanges = (
         } else into[field] = [...new Set(decoded.success)];
         break;
       }
-      case "workspace.pauseAtLimitPct":
-      case "workspace.automaticDreamThreshold": {
+      case "workspace.automaticDreamThreshold":
+      case "workspace.memoryUpdateEveryHours": {
+        const error = setMemoryUpdateCondition(into, key, value);
+        if (error !== undefined) errors.push(`${key}: ${error}`);
+        break;
+      }
+      case "workspace.pauseAtLimitPct": {
         if (value === null) {
           delete into[field];
           break;
         }
-        const schema =
-          key === "workspace.pauseAtLimitPct" ? PauseAtLimitPct : AutomaticDreamThreshold;
-        const decoded = decodeWith(schema, value);
+        const decoded = decodeWith(PauseAtLimitPct, value);
         if (Result.isFailure(decoded)) {
-          errors.push(
-            `${key}: ${
-              key === "workspace.pauseAtLimitPct"
-                ? "expected a whole percent from 1 to 100, or null for never"
-                : "expected a whole number from 1 to 1000, or null for off"
-            }.`,
-          );
+          errors.push(`${key}: expected a whole percent from 1 to 100, or null for never.`);
         } else into[field] = decoded.success;
         break;
       }

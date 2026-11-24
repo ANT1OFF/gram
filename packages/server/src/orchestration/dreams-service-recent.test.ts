@@ -288,7 +288,7 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
     ),
   );
 
-  it.effect("runs on its schedule when something is new, and a waiting draft holds it", () =>
+  it.effect("runs once its hours are up and enough is new, and a waiting draft holds it", () =>
     inDreams((world) =>
       Effect.gen(function* () {
         const store = yield* ThreadStore;
@@ -298,13 +298,15 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
           ...DEFAULT_CHARTER,
           ...(yield* store.getWorkspace(workspaceId)).charter,
           memoryUpdateEveryHours: 3,
+          automaticDreamThreshold: 2,
         });
-        // Nothing new: the schedule starts nothing.
+        // Too little new: the schedule starts nothing, however long it has been.
+        yield* reportSomething(workspaceId, "Shipped the cart.", { learned: "Carts batch." });
         yield* TestClock.adjust("4 hours");
         yield* settle;
         expect(yield* store.listDreams(workspaceId)).toEqual([]);
 
-        yield* reportSomething(workspaceId, "Shipped the cart.");
+        yield* reportSomething(workspaceId, "Shipped tax.", { learned: "Tax rounds late." });
         yield* TestClock.adjust("10 minutes");
         const first = yield* waitReal(
           "scheduled run",
@@ -316,7 +318,8 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
         yield* finishDream(first, session, "completed");
 
         // In Review, a draft that waits holds the next run, so drafts don't pile up.
-        yield* reportSomething(workspaceId, "Shipped search.");
+        yield* reportSomething(workspaceId, "Shipped search.", { learned: "Search is fuzzy." });
+        yield* reportSomething(workspaceId, "Shipped sort.", { learned: "Sort is stable." });
         yield* TestClock.adjust("4 hours");
         yield* settle;
         expect(yield* store.listDreams(workspaceId)).toHaveLength(1);

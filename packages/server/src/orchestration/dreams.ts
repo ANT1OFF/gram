@@ -41,6 +41,7 @@ import {
   type WorkspaceId,
   type WorkspaceState,
   memoryUpdateModeOf,
+  memoryUpdateRuleOf,
 } from "@gram/contracts";
 import { Worktrees } from "@gram/git";
 import * as Cause from "effect/Cause";
@@ -843,38 +844,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
 
       const onHub = (event: ServerEvent) =>
         Effect.gen(function* () {
-          if (event.type === "thread.upsert") {
-            if (
-              (yield* store.listWorkspaces).some(
-                (w) => w.charter.automaticDreamThreshold !== undefined,
-              )
-            ) {
-              yield* startLock.withPermits(1)(automaticDream.onCompletion(event.thread));
-            }
-            return;
-          }
-          if (event.type === "dreams.changed") {
-            if ((yield* store.getAutomaticDreamState(event.workspaceId)) !== undefined) {
-              yield* startLock.withPermits(1)(
-                automaticDream.onDreamChanged(event.workspaceId, true),
-              );
-            }
-            return;
-          }
           if (event.type === "workspaces.changed") yield* onModeChanges;
-          if (
-            event.type === "workspaces.changed" ||
-            event.type === "orchestration.changed" ||
-            event.type === "profiles.changed"
-          ) {
-            if (
-              (yield* store.listWorkspaces).some(
-                (w) => w.charter.automaticDreamThreshold !== undefined,
-              )
-            ) {
-              yield* startLock.withPermits(1)(automaticDream.onConfiguration);
-            }
-          }
           if (event.type === "thread.removed") {
             const dreamId = running.get(event.threadId);
             if (dreamId !== undefined) yield* fail(dreamId, "canceled", "its thread was closed");
@@ -983,8 +953,6 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
 
       const startUnlocked = (
         input: StartDreamInput,
-        automaticThreshold?: number,
-        automaticClaim?: string,
         scheduled = false,
       ): ReturnType<DreamsShape["start"]> =>
         Effect.gen(function* () {
@@ -1002,11 +970,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             );
           }
           const model = input.model ?? (yield* memoryUpdateModel(settings, hosts));
-          const dreamHost = yield* dreamMachine(
-            workspace,
-            model,
-            automaticThreshold !== undefined || scheduled,
-          );
+          const dreamHost = yield* dreamMachine(workspace, model, scheduled);
           const home = (yield* store.listProjects).find((p) => p.id === workspace.homeProjectId);
           if (home === undefined) {
             return yield* new NotFound({ entity: "project", id: workspace.homeProjectId });
@@ -1022,7 +986,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           );
           if (recent !== undefined && recentCount(recent) === 0) {
             return yield* refuseOrDefer(
-              automaticThreshold !== undefined || scheduled,
+              scheduled,
               "Nothing new since the last memory update: no worker report, merge, answered question or finished thread.",
             );
           }
@@ -1081,14 +1045,12 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             .whileWorkspaceStays(
               workspace.id,
               Effect.gen(function* () {
-                if (automaticThreshold !== undefined) {
+                if (scheduled) {
                   const available = yield* automaticDream.modelAvailable(model);
                   const standing = yield* store.getWorkspace(workspace.id);
                   const blocked = yield* automaticDream.gate(standing);
-                  const schedule = yield* store.getAutomaticDreamState(workspace.id);
                   if (
-                    schedule?.lastAttemptId !== automaticClaim ||
-                    standing.charter.automaticDreamThreshold !== automaticThreshold ||
+                    memoryUpdateRuleOf(standing.charter) === undefined ||
                     !available ||
                     blocked !== undefined ||
                     JSON.stringify(yield* memoryUpdateModel(yield* store.getSettings, hosts)) !==
@@ -1150,21 +1112,12 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               sessions: sessions.length,
             }),
           );
-          yield* automaticDream.consume(state, undefined, dream.id);
           yield* dreamsChanged(workspace.id);
           return dream;
         });
 
       const start: DreamsShape["start"] = (input) => startLock.withPermits(1)(startUnlocked(input));
-      const automaticDream = makeAutomaticDream({
-        store,
-        hosts,
-        archive,
-        asOwner: asWorkspaceOwner,
-        changed: dreamsChanged,
-        start: (workspaceId, model, threshold, claim) =>
-          startUnlocked({ workspaceId, kind: "dream", model }, threshold, claim),
-      });
+      const automaticDream = makeAutomaticDream({ store, hosts });
 
       const verifiedRow = (dream: Dream): Effect.Effect<Dream> =>
         dream.status !== "completed" || dream.adoptedVersion !== undefined
@@ -1729,22 +1682,23 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           }),
         );
 
-      const { onModeChanges, scheduledPass, seeModes } = makeMemoryUpdateSchedule({
+      const schedule = makeMemoryUpdateSchedule({
         store,
         discard,
         gate: automaticDream.gate,
         start: (state) =>
           startLock
-            .withPermits(1)(
-              startUnlocked(
-                { workspaceId: state.workspace.id, kind: "dream" },
-                undefined,
-                undefined,
-                true,
-              ),
-            )
+            .withPermits(1)(startUnlocked({ workspaceId: state.workspace.id, kind: "dream" }, true))
             .pipe(asWorkspaceOwner(state)),
       });
+      const { onModeChanges, scheduledPass, seeModes } = schedule;
+      const checkSchedule = scheduledPass.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("scheduled memory updates not checked").pipe(
+            Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+          ),
+        ),
+      );
 
       const threads = new Set((yield* store.listThreads).map((thread) => thread.id));
       for (const dream of yield* store.listRunningDreams) {
@@ -1778,15 +1732,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
         }
       }
 
-      yield* automaticDream.recover;
-
       yield* seeModes;
-      yield* scheduledPass.pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("scheduled memory updates not checked").pipe(
-            Effect.annotateLogs({ cause: Cause.pretty(cause) }),
-          ),
-        ),
+      yield* checkSchedule.pipe(
         Effect.repeat(Schedule.spaced(SCHEDULE_CHECK_EVERY)),
         Effect.forkScoped,
       );
@@ -1833,9 +1780,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
       });
 
       return Dreams.of({
-        automaticStatus: (workspaceId) =>
-          startLock.withPermits(1)(automaticDream.status(workspaceId)),
-        automaticConfigurationChanged: startLock.withPermits(1)(automaticDream.onConfiguration),
+        automaticStatus: schedule.status,
+        automaticConfigurationChanged: checkSchedule,
         preview,
         start,
         list,

@@ -446,6 +446,24 @@ describe("settings by chat: applying", () => {
   ]);
   if (!limit.ok) throw new Error("expected a plan");
 
+  it("turns automatic memory updates off by clearing both of their conditions", () => {
+    const on: SettingsWorld = {
+      ...world,
+      workspace: {
+        ...workspace,
+        charter: { ...workspace.charter, memoryUpdateEveryHours: 24, automaticDreamThreshold: 50 },
+      },
+    };
+    for (const key of ["workspace.memoryUpdateEveryHours", "workspace.automaticDreamThreshold"]) {
+      const after = charterAfter(plan([{ op: "set", key, value: null }], on), on);
+      expect(after, key).not.toHaveProperty("memoryUpdateEveryHours");
+      expect(after, key).not.toHaveProperty("automaticDreamThreshold");
+    }
+    expect(
+      errorsOf([{ op: "set", key: "workspace.memoryUpdateEveryHours", value: 169 }]),
+    ).toContain("1 to 168");
+  });
+
   it("writes only the fields named, onto the charter as it stands now", () => {
     // Review P1: the user lowered autonomy while the card waited; the approved write keeps it.
     const now = {
