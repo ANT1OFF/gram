@@ -64,7 +64,7 @@
     "check": "node tools/check/run.mjs",
     "check:affected": "node tools/check/run.mjs --affected",
     "check:cancel": "node tools/check/run.mjs --cancel",
-    "check:static": "bun run lint && bun run fmt:check && bun run typecheck",
+    "check:static": "bun run lint && bun run fmt:check && bun run typecheck && bun run --filter @gram/web check:kit-lite",
     "check:ci": "bun run check && bun run build:bundles",
     "lint": "node tools/check-dependency-pins.mjs && node tools/feature-map/check.mjs && node tools/design-tokens/check.mjs && node tools/oxlint/comments-base.mjs && oxlint --type-aware --deny-warnings",
     "fmt": "bun fmt --no-script",

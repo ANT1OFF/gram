@@ -187,7 +187,7 @@ These synthetic runs qualify browser UI paths only.
 | `bun run lint`                 | Exact dependency pins, the design-token drift check and warning-free, type-aware lint (tsrs)         |
 | `bun run typecheck`            | All TypeScript project references, with `bun check -b`; writes nothing                               |
 | `bun run build:packages`       | `tsc -b`: the same check, and writes each package's `dist` for `packages:pack`                       |
-| `bun run check:static`         | Pins/lint/format/types without Vitest                                                                |
+| `bun run check:static`         | Pins/lint/format/types and the light kit's budget, without Vitest                                    |
 | `bun run test <affected-file>` | Focused Vitest using the pinned Node runner                                                          |
 | `bun run check:affected`       | Static stages, then only the Vitest projects the branch can affect against `origin/main`             |
 | `bun run check`                | Install, scaffold, docs, release metadata, pins/lint/format/types, then all Vitest, timed by stage   |
