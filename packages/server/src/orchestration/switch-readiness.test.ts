@@ -223,6 +223,7 @@ it.live(
                 ? options.code
                 : undefined;
             if (code !== "CLAUDE_SDK_CAN_USE_TOOL_SHADOWED")
+              // oxlint-disable-next-line anti-slop/no-reflect-apply -- forwards to the overloaded original
               Reflect.apply(emitWarning, process, [warning, ...rest]);
           });
         yield* Effect.addFinalizer(() => Effect.sync(() => warned.mockRestore()));

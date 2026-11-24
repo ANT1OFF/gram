@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   AWAITED_HOST_ID,
   type AwaitingMachine,
   decodeThreadProfile,
@@ -793,7 +794,7 @@ const personOfRecord = (record: object): string | undefined =>
   stringField(record, "owner") === undefined ? undefined : stringField(record, "person");
 
 const stringField = (record: object, field: string): string | undefined => {
-  const value: unknown = Reflect.get(record, field);
+  const value = fieldsOf(record).get(field);
   return typeof value === "string" ? value : undefined;
 };
 

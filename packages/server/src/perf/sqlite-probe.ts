@@ -32,6 +32,7 @@ export const sqliteProbe = () => {
   StatementSync.prototype.all = function (...bindings) {
     const start = performance.now();
     try {
+      // oxlint-disable-next-line anti-slop/no-reflect-apply, typescript/no-unsafe-return -- forwards to the overloaded StatementSync.all, which TypeScript cannot type as one call
       return Reflect.apply(original, this, bindings);
     } finally {
       calls?.push({

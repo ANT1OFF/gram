@@ -327,6 +327,7 @@
         "packages/agents/**",
         "packages/contracts/**",
         "packages/git/**",
+        "packages/server/**",
         "packages/shell/**",
         "packages/themes/**",
         "apps/desktop/**"
@@ -341,6 +342,7 @@
         "packages/agents/src/**",
         "packages/contracts/src/**",
         "packages/git/src/**",
+        "packages/server/src/**",
         "packages/shell/src/**",
         "packages/themes/src/**",
         "apps/desktop/src/**"

@@ -111,10 +111,10 @@ const NO_ANSWER = "The desktop app didn't answer.";
 const isResponse = (message: unknown): message is WorkerMachineResponseMessage =>
   typeof message === "object" &&
   message !== null &&
-  Reflect.get(message, "type") === "machines.response" &&
-  typeof Reflect.get(message, "id") === "string" &&
-  typeof Reflect.get(message, "result") === "object" &&
-  Reflect.get(message, "result") !== null;
+  ("type" in message ? message.type : undefined) === "machines.response" &&
+  typeof ("id" in message ? message.id : undefined) === "string" &&
+  typeof ("result" in message ? message.result : undefined) === "object" &&
+  ("result" in message ? message.result : undefined) !== null;
 
 const CONN = /^[A-Za-z0-9_-]{8,64}$/;
 const MARK = /^[A-Za-z0-9_-]{8,64}$/;
@@ -126,9 +126,9 @@ const marksOf = (value: unknown): ReadonlyArray<WorkerMachineMarks> => {
   if (!Array.isArray(value)) return [];
   return value.slice(0, MARKS_MOST).flatMap((each: unknown): WorkerMachineMarks[] => {
     if (typeof each !== "object" || each === null) return [];
-    const origin = Reflect.get(each, "origin");
-    const account = Reflect.get(each, "account");
-    const former = Reflect.get(each, "formerAccounts");
+    const origin = "origin" in each ? each.origin : undefined;
+    const account = "account" in each ? each.account : undefined;
+    const former = "formerAccounts" in each ? each.formerAccounts : undefined;
     return typeof origin === "string" &&
       origin.length <= 512 &&
       isMark(account) &&
@@ -143,20 +143,20 @@ const HEADER = /^x-gram-host-[a-z]{2,16}$/;
 
 const relayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined => {
   if (typeof message !== "object" || message === null) return undefined;
-  const type = Reflect.get(message, "type");
-  const conn = Reflect.get(message, "conn");
+  const type = "type" in message ? message.type : undefined;
+  const conn = "conn" in message ? message.conn : undefined;
   if (typeof conn !== "string" || !CONN.test(conn)) return undefined;
   if (type === "machines.relay.frame") {
-    const data = Reflect.get(message, "data");
+    const data = "data" in message ? message.data : undefined;
     return typeof data === "string" || data instanceof Uint8Array
       ? { type, conn, data }
       : undefined;
   }
   if (type === "machines.relay.end") return { type, conn };
   if (type !== "machines.relay.dial") return undefined;
-  const origin = Reflect.get(message, "origin");
-  const name = Reflect.get(message, "name");
-  const headers = Reflect.get(message, "headers");
+  const origin = "origin" in message ? message.origin : undefined;
+  const name = "name" in message ? message.name : undefined;
+  const headers = "headers" in message ? message.headers : undefined;
   if (
     typeof origin !== "string" ||
     origin.length > 512 ||
@@ -254,7 +254,7 @@ export const bridgeWorkerMachines = (
     if (
       typeof data === "object" &&
       data !== null &&
-      Reflect.get(data, "type") === "machines.signins"
+      ("type" in data ? data.type : undefined) === "machines.signins"
     ) {
       signIns?.();
       return;

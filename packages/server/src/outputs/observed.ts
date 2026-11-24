@@ -55,7 +55,7 @@ export function chunkOutput(
     if (part === undefined || toolName(part) !== "Write") return undefined;
     const input = part["input"];
     if (typeof input !== "object" || input === null) return undefined;
-    const path: unknown = Reflect.get(input, "file_path");
+    const path: unknown = "file_path" in input ? input.file_path : undefined;
     if (typeof path !== "string" || path === "") return undefined;
     return outputKindOf(path, "written") === "other" ? undefined : { path, source: "written" };
   }

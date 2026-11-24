@@ -145,7 +145,9 @@ export const WakeConditionsLive = Layer.effect(
   WakeConditions,
   Effect.gen(function* () {
     const sources = yield* WakeConditionSources;
-    const byKind = new Map<string, AnyWakeConditionSource>(sources.map((s) => [s.kind, s]));
+    const byKind = new Map<WakeConditionKind, AnyWakeConditionSource>(
+      sources.map((s) => [s.kind, s]),
+    );
     const hosts: Array<WakeConditionHost> = [];
     const nudges = new Map<string, Queue.Queue<void>>();
     const sweeping = makeKeyedLock<string>();
@@ -153,8 +155,8 @@ export const WakeConditionsLive = Layer.effect(
     const debounces = yield* FiberMap.make<string>();
     const idle = new Set<string>();
 
-    for (const source of sources) {
-      nudges.set(source.kind, yield* Queue.sliding<void>(1));
+    for (const kind of byKind.keys()) {
+      nudges.set(kind, yield* Queue.sliding<void>(1));
     }
 
     const nudge: WakeConditionsShape["nudge"] = (kind) =>
@@ -179,22 +181,26 @@ export const WakeConditionsLive = Layer.effect(
         const debounce = Duration.toMillis(source.debounce);
         const since = metSince.get(wake.id)?.at;
         if (debounce > 0 && (since === undefined || now - since < debounce)) {
-          if (since === undefined) metSince.set(wake.id, { kind: source.kind, at: now });
+          if (since === undefined) metSince.set(wake.id, { kind: wake.spec.kind, at: now });
           const wait = debounce - (now - (since ?? now));
           yield* FiberMap.run(
             debounces,
             wake.id,
-            Effect.sleep(Duration.millis(wait)).pipe(Effect.andThen(nudge(source.kind))),
+            Effect.sleep(Duration.millis(wait)).pipe(Effect.andThen(nudge(wake.spec.kind))),
             { onlyIfMissing: true },
           );
           return;
         }
         metSince.delete(wake.id);
-        yield* host.fire(wake.id, { kind: source.kind, at: now, facts: { ...look.facts } });
+        yield* host.fire(wake.id, { kind: wake.spec.kind, at: now, facts: { ...look.facts } });
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("condition wake look failed").pipe(
-            Effect.annotateLogs({ kind: source.kind, wakeId: wake.id, cause: Cause.pretty(cause) }),
+            Effect.annotateLogs({
+              kind: wake.spec.kind,
+              wakeId: wake.id,
+              cause: Cause.pretty(cause),
+            }),
           ),
         ),
       );
@@ -232,19 +238,19 @@ export const WakeConditionsLive = Layer.effect(
         ),
       );
 
-    for (const source of sources) {
-      const queue = nudges.get(source.kind)!;
+    for (const [kind, source] of byKind) {
+      const queue = nudges.get(kind)!;
       yield* Effect.suspend(() =>
-        idle.has(source.kind)
+        idle.has(kind)
           ? Queue.take(queue)
           : Queue.take(queue).pipe(Effect.timeoutOption(source.pollEvery)),
-      ).pipe(Effect.andThen(sweep(source.kind)), Effect.forever, Effect.forkScoped);
+      ).pipe(Effect.andThen(sweep(kind)), Effect.forever, Effect.forkScoped);
       if (source.changes !== undefined) {
         yield* source.changes.pipe(
-          Stream.runForEach(() => nudge(source.kind)),
+          Stream.runForEach(() => nudge(kind)),
           Effect.catchCause((cause) =>
             Effect.logWarning("condition wake events stopped").pipe(
-              Effect.annotateLogs({ kind: source.kind, cause: Cause.pretty(cause) }),
+              Effect.annotateLogs({ kind, cause: Cause.pretty(cause) }),
             ),
           ),
           Effect.forkScoped,

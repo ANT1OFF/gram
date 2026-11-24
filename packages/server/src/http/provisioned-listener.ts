@@ -140,6 +140,7 @@ export const withProvisionedListener = <E>(
                 });
               }),
               Effect.tap((hosts): Effect.Effect<void, never, Scope.Scope> =>
+                // oxlint-disable-next-line typescript/no-unsafe-return -- HttpServer.serve's overloads, read through `Served`, leave the app's context `any`
                 middleware === undefined ? hosts.serve(marked) : hosts.serve(marked, middleware),
               ),
               Effect.tap(() => Effect.addFinalizer(() => Effect.sync(() => end?.()))),

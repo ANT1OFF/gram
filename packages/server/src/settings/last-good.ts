@@ -108,8 +108,8 @@ const parseKept = (text: string): { savedAt: string; text: string } | undefined 
   try {
     const value: unknown = JSON.parse(text);
     if (typeof value !== "object" || value === null) return undefined;
-    const savedAt = Reflect.get(value, "savedAt");
-    const kept = Reflect.get(value, "text");
+    const savedAt = "savedAt" in value ? value.savedAt : undefined;
+    const kept = "text" in value ? value.text : undefined;
     return typeof savedAt === "string" && typeof kept === "string"
       ? { savedAt, text: kept }
       : undefined;

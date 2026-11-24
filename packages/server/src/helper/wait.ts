@@ -220,7 +220,7 @@ const textOf = (message: GramUIMessage | undefined): string =>
 const toolNames = (message: GramUIMessage): ReadonlyArray<string> =>
   message.parts.flatMap((part) => {
     if (part.type === "dynamic-tool") {
-      const name: unknown = Reflect.get(part, "toolName");
+      const name: unknown = "toolName" in part ? part.toolName : undefined;
       return typeof name === "string" ? [name] : [];
     }
     return part.type.startsWith("tool-") ? [part.type.slice("tool-".length)] : [];

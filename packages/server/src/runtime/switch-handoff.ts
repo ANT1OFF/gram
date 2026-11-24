@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   HANDOFF_FACTS_MAX_CHARS,
   HANDOFF_NOTE_MAX_CHARS,
   redactText,
@@ -266,8 +267,9 @@ export const toolTarget = (input: string | undefined): string | undefined => {
   }
   if (typeof parsed === "string") return line(parsed);
   if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    const fields = fieldsOf(parsed);
     for (const key of TARGET_KEYS) {
-      const value = Reflect.get(parsed, key);
+      const value = fields.get(key);
       if (typeof value === "string" && value.trim() !== "") return line(value);
       if (Array.isArray(value) && value.every((part) => typeof part === "string"))
         return line(value.join(" "));

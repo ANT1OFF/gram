@@ -228,7 +228,7 @@ const copyBundle = async (source: string, entryName: string, dest: string): Prom
       throw new Refusal(`The page's ${PAGE_MANIFEST} isn't JSON`);
     }
     const reads: unknown =
-      typeof parsed === "object" && parsed !== null ? Reflect.get(parsed, "reads") : undefined;
+      typeof parsed === "object" && parsed !== null && "reads" in parsed ? parsed.reads : undefined;
     if (Array.isArray(reads) && reads.length > 0) {
       throw new Refusal(`Pages can't read data yet, so its ${PAGE_MANIFEST} must declare no reads`);
     }
