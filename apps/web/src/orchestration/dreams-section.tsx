@@ -1161,6 +1161,14 @@ export function DreamsSection({
         reviewing !== undefined && "[--thread-max-width:var(--settings-column-wide)]",
       )}
     >
+      {dreams.data !== undefined && (
+        <MemoryUpdatesPanel
+          state={state}
+          dreams={dreams.data}
+          busy={running}
+          onSeeChanges={(dream) => review(dream)}
+        />
+      )}
       {ready.length > 0 && (
         <RunList
           testId="dream-ready"
@@ -1171,14 +1179,6 @@ export function DreamsSection({
           reviewing={reviewing}
           onReview={review}
           review={reviewOf}
-        />
-      )}
-      {dreams.data !== undefined && (
-        <MemoryUpdatesPanel
-          state={state}
-          dreams={dreams.data}
-          busy={running}
-          onSeeChanges={(dream) => review(dream)}
         />
       )}
       <div data-testid="dream-form" className="flex flex-col gap-2">

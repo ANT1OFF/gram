@@ -440,7 +440,8 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await openMemoryWithDreamHarness(page);
   const dreams = page.getByTestId("dreams");
   const rows = dreams.getByTestId("dream-row");
-  await expect(rows).toHaveCount(3);
+  // The seeded runs: an import running, a draft, a failed one and one that applied itself.
+  await expect(rows).toHaveCount(4);
   // One dream runs per workspace at a time: the one that runs links to its thread and can be stopped.
   const running = dreams.locator('[data-testid="dream-row"][data-status="running"]');
   await expect(running).toContainText("From past sessions");
@@ -649,7 +650,9 @@ test("a dream is adopted only once its conflict has a side, and a moved memory m
   const made = await openMemory(page);
   await memoryTab(page, "Memory updates");
   // Its own thread says where it ended, and Review there lands on the review here.
-  const completed = page.locator('[data-testid="dream-row"][data-status="completed"]');
+  const completed = page.locator(
+    '[data-testid="dream-row"][data-status="completed"][data-mode="review"]',
+  );
   await expect(completed.getByTestId("dream-status")).toHaveText("Ready to review");
   // On the subscription, a dream's dollars stay out.
   await expect(completed.getByTestId("dream-cost")).toHaveCount(0);
@@ -825,7 +828,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
   }, made.workspaceId);
   await memoryTab(page, "Memory updates");
   await page
-    .locator('[data-testid="dream-row"][data-status="completed"]')
+    .locator('[data-testid="dream-row"][data-status="completed"][data-mode="review"]')
     .first()
     .getByTestId("dream-review-open")
     .click();
@@ -1084,7 +1087,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
     };
   });
   await page
-    .locator('[data-testid="dream-row"][data-status="completed"]')
+    .locator('[data-testid="dream-row"][data-status="completed"][data-mode="review"]')
     .first()
     .getByTestId("dream-review-open")
     .click();
@@ -1113,7 +1116,7 @@ test("a failed dream says why in words and can only be discarded", async ({ page
   await openMemory(page);
   await memoryTab(page, "Memory updates");
   const rows = page.getByTestId("dream-row");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   const failed = page.locator('[data-testid="dream-row"][data-status="failed"]');
   await expect(failed.getByTestId("dream-failure")).toHaveText(
     "An input file changed while the update was drafted, so its output can't be trusted.",
@@ -1125,14 +1128,14 @@ test("a failed dream says why in words and can only be discarded", async ({ page
   // What the server does, said before it is done: the dream's thread goes with its folder.
   await expect(confirm).toContainText("Its thread is closed too");
   await confirm.getByRole("button", { name: "Cancel" }).click();
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
   await failed.getByTestId("dream-row-discard").click();
   await failed.getByRole("button", { name: "Discard update" }).click();
-  await expect(rows).toHaveCount(2, { timeout: 10_000 * slowdown });
+  await expect(rows).toHaveCount(3, { timeout: 10_000 * slowdown });
 
   // A finished one is discarded from its review, with the same question first.
   await page
-    .locator('[data-testid="dream-row"][data-status="completed"]')
+    .locator('[data-testid="dream-row"][data-status="completed"][data-mode="review"]')
     .getByTestId("dream-review-open")
     .click();
   const review = page.getByTestId("dream-review");
@@ -1140,7 +1143,7 @@ test("a failed dream says why in words and can only be discarded", async ({ page
   await expect(review.getByTestId("inline-confirm")).toContainText("Its thread is closed too");
   await review.getByRole("button", { name: "Discard update" }).click();
   await expect(review).toHaveCount(0, { timeout: 10_000 * slowdown });
-  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveCount(2);
   await memoryTab(page, "History");
   await expect(page.getByTestId("memory-version")).toHaveCount(2);
 });
@@ -1151,7 +1154,7 @@ test("a conflict's two sides are merged by a model, reviewed, and adopted as the
   const made = await openMemory(page);
   await memoryTab(page, "Memory updates");
   await page
-    .locator('[data-testid="dream-row"][data-status="completed"]')
+    .locator('[data-testid="dream-row"][data-status="completed"][data-mode="review"]')
     .getByTestId("dream-review-open")
     .click();
   const review = page.getByTestId("dream-review");
