@@ -9,6 +9,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import * as Effect from "effect/Effect";
@@ -25,6 +26,8 @@ import type { AgentSession } from "../host.ts";
 import { GatewayKeyProvider } from "../gateway.ts";
 import { CodexHost, CodexHostLayer } from "./session.ts";
 import { CodexServers, CodexServersLive, type CodexServer } from "./servers.ts";
+import type { CodexRpc } from "./rpc.ts";
+import { makeThreadOwnership } from "./thread-ownership.ts";
 
 const fixture = () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "gram-thread-owner-")));
@@ -617,17 +620,20 @@ describe.skipIf(process.platform === "win32")("Codex provider thread ownership",
   );
 
   it.live(
-    "a new open with unknown identity refuses further opens on its home until owner exit",
+    "a new open with unknown identity retires its app-server and fences only resumes until it exits",
     () =>
       withHost(() =>
         Effect.gen(function* () {
           const host = yield* CodexHost;
-          const { sibling, old, servers } = yield* heldPair;
+          const { first, sibling, old } = yield* heldPair;
           yield* control(old, "hold-open");
-          const error = yield* host.open(options).pipe(Effect.flip);
+          const error = yield* host.open(options).pipe(Effect.scoped, Effect.flip);
           expect(error.message).toContain("provider open gave no answer");
-          yield* servers.retire(undefined);
-          yield* refused(host.open(options), "unknown identity");
+          expect(yield* old.configCurrent).toBe(false);
+          // The provider names every new thread afresh, so the unnamed one can't be a new open's.
+          expect(yield* identity(yield* host.open(options))).not.toBe("");
+          // It could be the one being resumed, so a resume still waits for its app-server.
+          yield* refused(host.open({ ...options, resumeId: first.id }), "unknown identity");
           yield* sibling.session.send({ text: "held sibling still works" });
           const exited = yield* Deferred.make<void>();
           yield* old.subscribe("exit-observer", {
@@ -636,9 +642,79 @@ describe.skipIf(process.platform === "win32")("Codex provider thread ownership",
               Deferred.doneUnsafe(exited, Effect.void);
             },
           });
-          yield* control(old, "exit").pipe(Effect.ignore);
-          yield* Deferred.await(exited);
-          expect(yield* identity(yield* host.open(options))).not.toBe("");
+          yield* closeScope(first.scope);
+          yield* closeScope(sibling.scope);
+          // Retired, it stops once its last session closes, and that exit lifts the fence.
+          yield* Deferred.await(exited).pipe(Effect.timeout("5 seconds"));
+          expect(yield* identity(yield* host.open({ ...options, resumeId: first.id }))).toBe(
+            first.id,
+          );
+        }),
+      ),
+  );
+
+  it.live(
+    "a worker's own app-server stops when its open fails or its session closes, blocking no other",
+    () =>
+      withHost((f) =>
+        Effect.gen(function* () {
+          const host = yield* CodexHost;
+          const servers = yield* CodexServers;
+          const worker = (name: string) => ({
+            ...options,
+            threadId: ThreadId.make(`invented-worker-${name}`),
+            audience: "worker" as const,
+          });
+          const exitOf = (server: CodexServer) =>
+            Effect.gen(function* () {
+              const exited = yield* Deferred.make<void>();
+              yield* server.subscribe("exit-observer", {
+                message: () => {},
+                exit: () => {
+                  Deferred.doneUnsafe(exited, Effect.void);
+                },
+              });
+              return Deferred.await(exited).pipe(Effect.timeout("5 seconds"));
+            });
+
+          const doneScope = yield* sessionScope;
+          const done = yield* host
+            .open(worker("done"))
+            .pipe(Effect.provideService(Scope.Scope, doneScope));
+          yield* identity(done);
+          const doneServer = yield* servers.acquire(
+            undefined,
+            "user",
+            ThreadId.make("invented-worker-done"),
+          );
+          const doneExit = yield* exitOf(doneServer);
+
+          const failing = yield* servers.acquire(
+            undefined,
+            "user",
+            ThreadId.make("invented-worker-failing"),
+          );
+          const failingExit = yield* exitOf(failing);
+          yield* control(failing, "hold-open");
+          const error = yield* host.open(worker("failing")).pipe(Effect.scoped, Effect.flip);
+          expect(error.message).toContain("provider open gave no answer");
+          yield* failingExit;
+
+          // Two new workers open side by side after it, each on its own app-server.
+          const [one, two] = yield* Effect.all(
+            [
+              host.open(worker("one")).pipe(Effect.flatMap(identity)),
+              host.open(worker("two")).pipe(Effect.flatMap(identity)),
+            ],
+            { concurrency: "unbounded" },
+          );
+          expect(one).not.toBe(two);
+          const starts = f.log().filter((row) => row.msg.opened !== undefined);
+          expect(new Set(starts.map((row) => row.pid)).size).toBe(starts.length);
+
+          // A finished worker's session closing (as archiving it does) stops its app-server.
+          yield* closeScope(doneScope);
+          yield* doneExit;
         }),
       ),
   );
@@ -664,5 +740,30 @@ describe.skipIf(process.platform === "win32")("Codex provider thread ownership",
         expect(f.log().filter((row) => row.msg.method === "thread/resume")).toHaveLength(0);
       }),
     ),
+  );
+});
+
+describe.skipIf(process.platform === "win32")("Codex thread ownership with a vanished owner", () => {
+  const quietRpc = { request: () => Effect.never } as unknown as CodexRpc;
+  it.effect("takes over a thread whose owning app-server process is gone", () =>
+    Effect.gen(function* () {
+      const ownership = makeThreadOwnership(150, 2000, (effect) => {
+        Effect.runFork(effect);
+      });
+      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+        stdio: "ignore",
+      });
+      const stale = ownership.owner("/invented/home", quietRpc, () => {}, child.pid);
+      const opened = (id: string) => Effect.succeed({ thread: { id } });
+      yield* stale.open("invented-thread", opened("invented-thread"));
+      // The process ends, but nothing reports its exit to the registry, which still holds the thread.
+      yield* Effect.callback<void>((resume) => {
+        child.once("exit", () => resume(Effect.void));
+        child.kill("SIGKILL");
+      });
+      const next = ownership.owner("/invented/home", quietRpc, () => {}, process.pid);
+      const started = yield* next.open("invented-thread", opened("invented-thread"));
+      expect(started.thread.id).toBe("invented-thread");
+    }).pipe(Effect.scoped),
   );
 });
