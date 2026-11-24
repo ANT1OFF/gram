@@ -30,16 +30,15 @@ const decodeAsarHeader = Schema.decodeUnknownOption(
 
 const decodeBuildInfo = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown));
 
-/** One entry of `BUNDLE-INVENTORY.json`; `target` and `bytes` are compared with what is on disk. */
-const InventoryEntry = Schema.Struct({
+const BundleInventoryEntry = Schema.Struct({
   path: Schema.String,
   type: Schema.Literals(["file", "directory", "symlink"]),
   mode: Schema.String.check(Schema.isPattern(/^0o[0-7]{3}$/)),
   target: Schema.optional(Schema.Unknown),
   bytes: Schema.optional(Schema.Unknown),
 });
-type InventoryEntry = typeof InventoryEntry.Type;
-const decodeInventoryEntry = Schema.decodeUnknownOption(InventoryEntry);
+type BundleInventoryEntry = typeof BundleInventoryEntry.Type;
+const decodeBundleInventoryEntry = Schema.decodeUnknownOption(BundleInventoryEntry);
 
 export const MAC_MANIFESTS = [
   "BUILD-INFO.json",
@@ -246,10 +245,10 @@ export async function verifyMacBundleForMethod(
   if (!Array.isArray(inventory) || inventory.length > MAX_ENTRIES)
     throw new Error("Invalid bundle inventory");
   const items: ReadonlyArray<unknown> = inventory;
-  const records = new Map<string, InventoryEntry>();
+  const records = new Map<string, BundleInventoryEntry>();
   const folded = new Set<string>();
   for (const item of items) {
-    const entry = decodeInventoryEntry(item);
+    const entry = decodeBundleInventoryEntry(item);
     if (
       Option.isNone(entry) ||
       !safeRelative(entry.value.path) ||

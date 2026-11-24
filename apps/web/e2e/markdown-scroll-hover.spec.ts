@@ -2,6 +2,12 @@ import { expect, test } from "@playwright/test";
 
 import { openPanelTab } from "./panel-tab";
 
+declare global {
+  interface Window {
+    shownActions: number[];
+  }
+}
+
 // A code block's and a table's buttons show on hover. Scrolling a long Markdown file with the
 // pointer resting on it slides block after block under the pointer: their buttons must not fade in
 // and out as they pass (the preview's scroll flicker). Moving the pointer still shows them.
@@ -26,7 +32,7 @@ test("scrolling a Markdown preview under a resting pointer doesn't flash its blo
   await page.evaluate((actions) => {
     const preview = document.querySelector('[data-testid="markdown-preview"]')!;
     const seen: number[] = [];
-    Reflect.set(window, "shownActions", seen);
+    window.shownActions = seen;
     const tick = () => {
       seen.push(
         [...preview.querySelectorAll(actions)].filter(
@@ -49,7 +55,7 @@ test("scrolling a Markdown preview under a resting pointer doesn't flash its blo
   for (let step = 0; step < 30; step += 1) {
     await page.mouse.wheel(0, 120);
   }
-  const shown = (await page.evaluate(() => Reflect.get(window, "shownActions"))) as number[];
+  const shown = await page.evaluate(() => window.shownActions);
   expect(shown.length).toBeGreaterThan(10);
   expect(Math.max(...shown)).toBe(0);
 
