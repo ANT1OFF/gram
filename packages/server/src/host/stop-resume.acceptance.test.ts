@@ -42,7 +42,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentAdapter, FakeAgentControl, type FakeSession } from "../runtime/fake-agent.ts";
-import { machineRestartText } from "../runtime/machine-restart.ts";
+import { machineMovedText } from "../runtime/machine-restart.ts";
 import { TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { makeAdmission } from "./admission.ts";
@@ -625,6 +625,13 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
           "export const feature = 1;\n",
         );
         yield* hostA.end;
+        // The cut turn waits for the machine as a move, saying so, rather than failing.
+        yield* eventually(
+          "the move's notice",
+          Effect.flatMap(ThreadStore, (store) => store.getThread(thread.id)).pipe(
+            Effect.map((t) => t.machineMove?.machine === NAME && t.lastError === undefined),
+          ),
+        );
 
         const hostB = yield* startHost(volume);
         const second = yield* nthSession(thread.id, 2);
@@ -634,7 +641,7 @@ describe.skipIf(!hasGit)("stopping a machine and resuming on a new host", () => 
           "the continuation",
           Effect.sync(() => second.sent.length === 1),
         );
-        expect(second.sent[0]).toMatchObject({ text: machineRestartText(NAME) });
+        expect(second.sent[0]).toMatchObject({ text: machineMovedText(NAME) });
         yield* second.completeTurn("finished after the stop");
         yield* statusIs(thread.id, "idle");
         const store = yield* ThreadStore;
