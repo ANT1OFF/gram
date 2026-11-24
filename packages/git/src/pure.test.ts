@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as nodePath from "node:path";
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 import { porcelainChanges, porcelainPath } from "./exec.ts";
 import { classifyUpstream, fetchRedundant, notARepoState } from "./git-state.ts";
 import { fetchDue } from "./git-state-runtime.ts";
@@ -15,6 +15,7 @@ import {
   isInside,
   isPhysicallyInside,
   isStrictlyInside,
+  keepPathsHere,
   noteForeignPath,
   physicalPathAsync,
   realPathOrOwned,
@@ -288,6 +289,45 @@ describe("paths", () => {
         noteForeignPath("relative/dir");
         expect(isForeignPath("relative/dir")).toBe(false);
       } finally {
+        forgetForeignPathsForTest();
+        fs.rmSync(base, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "keeps a local checkout that wasn't there by its real path once it is, without a look per mark",
+    () => {
+      const base = tempFolder();
+      let now = 0;
+      const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+      const native = fs.realpathSync.native;
+      let looks = 0;
+      fs.realpathSync.native = ((...args: Parameters<typeof native>) => {
+        looks += 1;
+        return native(...args);
+      }) as typeof native;
+      try {
+        const link = nodePath.join(base, "checkout");
+        const real = nodePath.join(base, "disk", "checkout");
+        keepPathsHere([link]);
+        fs.mkdirSync(real, { recursive: true });
+        fs.symlinkSync(real, link);
+        // Marks made while it waits to be looked at again ask the disk nothing.
+        looks = 0;
+        for (let i = 0; i < 1_000; i += 1) noteForeignPath(`/srv/elsewhere/${i % 10}`);
+        expect(looks).toBe(0);
+        noteForeignPath(real);
+        expect(isForeignPath(real)).toBe(true);
+        // Once its wait is up, its real path is this machine's and the mark on it goes.
+        now += 1_000;
+        noteForeignPath("/srv/elsewhere/0");
+        expect(isForeignPath(real)).toBe(false);
+        expect(isForeignPath(nodePath.join(real, "src"))).toBe(false);
+        expect(isForeignPath("/srv/elsewhere/0")).toBe(true);
+      } finally {
+        fs.realpathSync.native = native;
+        clock.mockRestore();
         forgetForeignPathsForTest();
         fs.rmSync(base, { recursive: true, force: true });
       }

@@ -57,28 +57,64 @@ const foreignRoots = new Set<string>();
 
 const keptRoots = new Set<string>();
 
+const keptAbove = new Set<string>();
+
 const folded = (path: string): string =>
   process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
 
-const keptPending = new Set<string>();
+const MISSING_KEPT_FIRST_LOOK_MS = 1_000;
+const MISSING_KEPT_LONGEST_WAIT_MS = 60_000;
+
+const keptPending = new Map<string, { due: number; wait: number }>();
+
+const keptWatched = new Set<string>();
+
+let pendingDue = Number.POSITIVE_INFINITY;
+
+function* selfAndFoldersAbove(at: string): Generator<string> {
+  for (let path = at; ;) {
+    yield path;
+    const parent = nodePath.dirname(path);
+    if (parent === path) return;
+    path = parent;
+  }
+}
+
+const diskPathRemembered = (path: string, known: Map<string, string>): string => {
+  const resolved = nodePath.resolve(path);
+  const seen = known.get(resolved);
+  if (seen !== undefined) return seen;
+  const parent = nodePath.dirname(resolved);
+  const real =
+    tryRealPathSync(resolved) ??
+    (parent === resolved
+      ? resolved
+      : nodePath.join(diskPathRemembered(parent, known), nodePath.basename(resolved)));
+  known.set(resolved, real);
+  return real;
+};
 
 /**
  * Every spelling of `path` on this disk: as resolved, as the disk names it (`diskPath`, the real
  * path of its deepest part that exists), and that real path as each linked folder above `path`
  * spells it. On macOS `/var` is a link to `/private/var`, so a folder kept through a link in
  * `/var/folders/x` is matched as `/private/var/folders/x/...` and as `/var/folders/x/...` alike.
- * Only `path`'s own folders are asked of the disk: a path compared with these never is.
+ * Only `path`'s own folders are asked of the disk: a path compared with these never is. Pass one
+ * `known` to several calls to ask the disk once for the folders they share.
  */
-export const pathForms = (path: string): ReadonlyArray<string> => {
+export const pathForms = (
+  path: string,
+  known: Map<string, string> = new Map(),
+): ReadonlyArray<string> => {
   const resolved = nodePath.resolve(path);
-  const real = diskPath(resolved);
+  const real = diskPathRemembered(resolved, known);
   const forms = new Set([resolved, real]);
   for (
     let at = nodePath.dirname(resolved);
     nodePath.dirname(at) !== at;
     at = nodePath.dirname(at)
   ) {
-    const atReal = diskPath(at);
+    const atReal = diskPathRemembered(at, known);
     if (atReal === at) continue;
     const rest = relativeInside(atReal, real);
     if (rest !== undefined) forms.add(rest === "" ? at : nodePath.join(at, rest));
@@ -89,27 +125,50 @@ export const pathForms = (path: string): ReadonlyArray<string> => {
 const keepForms = (resolved: string): boolean => {
   let added = false;
   for (const form of pathForms(resolved)) {
-    if (keptRoots.has(folded(form))) continue;
-    keptRoots.add(folded(form));
+    const at = folded(form);
+    if (keptRoots.has(at)) continue;
+    keptRoots.add(at);
     added = true;
+    for (const above of selfAndFoldersAbove(nodePath.dirname(at))) {
+      if (above === at || keptAbove.has(above)) break;
+      keptAbove.add(above);
+    }
   }
   return added;
 };
 
-const settleKept = (): boolean => {
+const keepKeptNowThere = (): void => {
   let added = false;
-  for (const resolved of keptPending) {
+  for (const resolved of keptWatched) {
     if (tryRealPathSync(resolved) === undefined) continue;
-    keptPending.delete(resolved);
+    keptWatched.delete(resolved);
     if (keepForms(resolved)) added = true;
   }
-  return added;
+  if (keptPending.size > 0) {
+    const now = performance.now();
+    if (now >= pendingDue) {
+      pendingDue = Number.POSITIVE_INFINITY;
+      for (const [resolved, look] of keptPending) {
+        if (look.due <= now) {
+          if (tryRealPathSync(resolved) !== undefined) {
+            keptPending.delete(resolved);
+            if (keepForms(resolved)) added = true;
+            continue;
+          }
+          look.due = now + look.wait;
+          look.wait = Math.min(look.wait * 2, MISSING_KEPT_LONGEST_WAIT_MS);
+        }
+        pendingDue = Math.min(pendingDue, look.due);
+      }
+    }
+  }
+  if (added) dropCrossingMarks();
 };
 
 const crossesKept = (path: string): boolean => {
-  if (settleKept()) dropCrossingMarks();
   const at = folded(path);
-  for (const kept of keptRoots) if (isInside(at, kept) || isInside(kept, at)) return true;
+  if (keptAbove.has(at)) return true;
+  for (const above of selfAndFoldersAbove(at)) if (keptRoots.has(above)) return true;
   return false;
 };
 
@@ -118,40 +177,51 @@ const crossesKept = (path: string): boolean => {
  * `samePath` compare it as written and never touch the filesystem for it. A folder that was another
  * machine's stays so for a key already handed out, unless it turns out to cross one of this
  * machine's (`keepPathsHere`): that one is never another's. Relative paths are ignored: a host's
- * paths are always absolute.
+ * paths are always absolute. Marking a path again costs no look at the disk.
  */
 export const noteForeignPath = (path: string): void => {
   if (!nodePath.isAbsolute(path)) return;
+  keepKeptNowThere();
   const at = nodePath.resolve(path);
-  if (!crossesKept(at)) foreignRoots.add(at);
+  if (!foreignRoots.has(at) && !crossesKept(at)) foreignRoots.add(at);
 };
 
 /**
  * Keeps `paths` this machine's, whatever another machine says: no `noteForeignPath` takes one of
  * them, a folder above one or a folder below one, and a mark that did already goes. Each is kept by
  * every spelling of it on this disk (`pathForms`): as resolved (a relative one against the working
- * directory), by its real path, and through the links above it.
+ * directory), by its real path, and through the links above it. One that isn't there yet is kept
+ * by its real path too once it is: `watch` (this server's own folders) looks for it on every
+ * `noteForeignPath`, otherwise it is looked for again less and less often. Keeping a path again
+ * costs no look at the disk.
  */
-export const keepPathsHere = (paths: Iterable<string>): void => {
+export const keepPathsHere = (paths: Iterable<string>, options?: { readonly watch?: boolean }) => {
   let added = false;
   for (const path of paths) {
     const resolved = nodePath.resolve(path);
-    if (keptRoots.has(folded(resolved)) && !keptPending.has(resolved)) continue;
-    if (tryRealPathSync(resolved) === undefined) keptPending.add(resolved);
+    if (keptWatched.has(resolved)) continue;
+    if (keptPending.has(resolved)) {
+      if (options?.watch !== true) continue;
+      keptPending.delete(resolved);
+      keptWatched.add(resolved);
+      continue;
+    }
+    if (keptRoots.has(folded(resolved))) continue;
+    if (tryRealPathSync(resolved) === undefined) {
+      if (options?.watch === true) keptWatched.add(resolved);
+      else {
+        const due = performance.now() + MISSING_KEPT_FIRST_LOOK_MS;
+        keptPending.set(resolved, { due, wait: MISSING_KEPT_FIRST_LOOK_MS * 2 });
+        pendingDue = Math.min(pendingDue, due);
+      }
+    }
     if (keepForms(resolved)) added = true;
   }
   if (added) dropCrossingMarks();
 };
 
 const dropCrossingMarks = (): void => {
-  for (const root of foreignRoots) {
-    const at = folded(root);
-    for (const kept of keptRoots)
-      if (isInside(at, kept) || isInside(kept, at)) {
-        foreignRoots.delete(root);
-        break;
-      }
-  }
+  for (const root of foreignRoots) if (crossesKept(root)) foreignRoots.delete(root);
 };
 
 /** Whether `path` is at or below a folder `noteForeignPath` marked, by its lexical form. */
@@ -169,7 +239,10 @@ export const isForeignPath = (path: string): boolean => {
 export const forgetForeignPathsForTest = (): void => {
   foreignRoots.clear();
   keptRoots.clear();
+  keptAbove.clear();
   keptPending.clear();
+  keptWatched.clear();
+  pendingDue = Number.POSITIVE_INFINITY;
 };
 
 /**

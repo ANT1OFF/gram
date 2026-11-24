@@ -1,6 +1,6 @@
 import { type Checkout, isLocalHost, type Thread } from "@gram/contracts";
 import { isInside, keepPathsHere, noteForeignPath, pathForms, tryRealPathSync } from "@gram/git";
-import { isAbsolute, resolve, win32 } from "node:path";
+import { dirname, isAbsolute, resolve, win32 } from "node:path";
 
 const folded = (path: string): string =>
   process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
@@ -22,7 +22,7 @@ export const forgetOwnFoldersForTest = (): void => {
  * too once it is.
  */
 export const keepFoldersHere = (paths: ReadonlyArray<string>): void => {
-  keepPathsHere(paths);
+  keepPathsHere(paths, { watch: true });
   for (const path of paths) {
     const resolved = resolve(path);
     for (const form of pathForms(resolved)) ownFolders.add(folded(form));
@@ -37,14 +37,35 @@ export const keepFoldersHere = (paths: ReadonlyArray<string>): void => {
  */
 export const keepServerFolders = (dataDir: string): void => keepFoldersHere([dataDir]);
 
-/** `paths` (absolute, this machine's) by every spelling of them on this disk (`pathForms`), folded. */
-export const hereForms = (paths: Iterable<string>): ReadonlyArray<string> => {
+/** This machine's checkouts by every spelling of them, as `hereForms` gives them. */
+export interface HereForms {
+  /** Each checkout's forms, folded. */
+  readonly forms: ReadonlySet<string>;
+  /** Every folder above one of `forms`, folded. */
+  readonly above: ReadonlySet<string>;
+}
+
+const NOWHERE: HereForms = { forms: new Set(), above: new Set() };
+
+/**
+ * `paths` (absolute, this machine's) by every spelling of them on this disk (`pathForms`), folded,
+ * with the folders above them, so `claimableByHost` compares a path with all of them by its own
+ * folders alone. The folders the paths share are asked of the disk once.
+ */
+export const hereForms = (paths: Iterable<string>): HereForms => {
   const forms = new Set<string>();
+  const above = new Set<string>();
+  const known = new Map<string, string>();
   for (const path of paths) {
     if (!isAbsolute(path)) continue;
-    for (const form of pathForms(path)) forms.add(folded(form));
+    for (const form of pathForms(path, known)) forms.add(folded(form));
   }
-  return [...forms];
+  for (const form of forms)
+    for (let at = form; dirname(at) !== at && !above.has(dirname(at));) {
+      at = dirname(at);
+      above.add(at);
+    }
+  return { forms, above };
 };
 
 /**
@@ -53,7 +74,7 @@ export const hereForms = (paths: Iterable<string>): ReadonlyArray<string> => {
  * under one of `here` (this machine's checkouts, as `hereForms` gives them). The very path of one
  * of `here` may: two machines can hold the same path, which then names both.
  */
-export const claimableByHost = (path: string, here: ReadonlyArray<string> = []): boolean => {
+export const claimableByHost = (path: string, here: HereForms = NOWHERE): boolean => {
   if (!isAbsolute(path)) return win32.isAbsolute(path);
   for (const pending of ownPending) {
     if (tryRealPathSync(pending) === undefined) continue;
@@ -62,8 +83,11 @@ export const claimableByHost = (path: string, here: ReadonlyArray<string> = []):
   }
   const at = folded(resolve(path));
   for (const own of ownFolders) if (isInside(at, own) || isInside(own, at)) return false;
-  for (const local of here)
-    if (at !== local && (isInside(at, local) || isInside(local, at))) return false;
+  if (here.above.has(at)) return false;
+  for (let above = at; dirname(above) !== above;) {
+    above = dirname(above);
+    if (here.forms.has(above)) return false;
+  }
   return true;
 };
 
