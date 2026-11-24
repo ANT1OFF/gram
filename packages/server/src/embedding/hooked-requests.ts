@@ -1,4 +1,4 @@
-import { outwardActions, type OpenSessionOptions } from "@gram/agents";
+import { isForcePush, outwardActions, type OpenSessionOptions } from "@gram/agents";
 import type { ApprovalRequest, DecisionAction, RequestId, ThreadId } from "@gram/contracts";
 import type { DecisionQuestion } from "./decision-hook.ts";
 
@@ -11,7 +11,11 @@ const APP_TOOLS_SERVER = "gram";
 
 /**
  * What the hook is asked about `request`: each outward thing its command line does, or the
- * connector call it is. Empty for anything else, which stays an ordinary card.
+ * connector call it is. Empty for anything else, which stays an ordinary card. A push that
+ * rewrites or deletes what the remote holds carries `force: true`, so a force-push rule applies.
+ * Only the command line is read (`isForcePush`): a push that a remote's `push` refspec or `mirror`,
+ * set beforehand, makes a rewrite goes as an ordinary push. The remote's own check of the update is
+ * what holds that; Gram's Push button always names its destination, so config can't force it.
  */
 export const requestActions = (
   request: Pick<ApprovalRequest, "toolName" | "input">,
@@ -32,7 +36,11 @@ export const requestActions = (
   const command = request.input["command"];
   if (!SHELL_TOOL.test(request.toolName) || typeof command !== "string") return [];
   const actions: ReadonlyArray<DecisionAction> = outwardActions(command) ?? ["outward"];
-  return actions.map((action) => ({ action, detail: { command } }));
+  const force = actions.includes("push") && isForcePush(command);
+  return actions.map((action) => ({
+    action,
+    detail: action === "push" && force ? { command, force: true } : { command },
+  }));
 };
 
 /** What a session opens with while the hook is on, over what its thread's policy gave it. */

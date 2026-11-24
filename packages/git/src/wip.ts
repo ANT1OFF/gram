@@ -215,7 +215,7 @@ export const pushWip = (
             "--no-signed",
             "--recurse-submodules=no",
             `--force-with-lease=${snapshot.ref}:${lease ?? ""}`,
-            "--",
+            "--end-of-options",
             remote,
             `${snapshot.commit}:${snapshot.ref}`,
           ],
@@ -258,7 +258,7 @@ const networkGit = <A>(out: Effect.Effect<A, ProcError, Proc>) =>
 const remoteRef = (top: string, remote: string, ref: string, protocols: string) =>
   Effect.gen(function* () {
     const out = yield* networkGit(
-      remoteGit(top, ["ls-remote", "--", remote, ref], network(protocols)),
+      remoteGit(top, ["ls-remote", "--end-of-options", remote, ref], network(protocols)),
     );
     if (out.status !== 0) return yield* fail(gitFailMsg(out, "git ls-remote failed"));
     for (const line of out.stdout.split("\n")) {
@@ -314,7 +314,7 @@ export const fetchWip = (
           "--no-tags",
           "--recurse-submodules=no",
           "--no-write-fetch-head",
-          "--",
+          "--end-of-options",
           remote,
           `+${ref}:${ref}`,
         ],
@@ -391,7 +391,7 @@ export const fetchBranchTip = (
           "--no-tags",
           "--recurse-submodules=no",
           "--no-write-fetch-head",
-          "--",
+          "--end-of-options",
           remote,
           ref,
         ],
@@ -756,7 +756,7 @@ export const dropWip = (
               "--no-signed",
               "--recurse-submodules=no",
               `--force-with-lease=${ref}:${theirs}`,
-              "--",
+              "--end-of-options",
               remote,
               `:${ref}`,
             ],

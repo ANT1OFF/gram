@@ -30,6 +30,7 @@ import { Dreams, makeDreamsLive } from "./dreams.ts";
 import { OrchestrationMemory } from "./memory.ts";
 import { makeWorld, openOrchestrator, serverLayer, waitReal } from "./test-harness.ts";
 import { TranscriptReadAppToolsLive } from "./transcript-read-tool.ts";
+import { reportSomething } from "./dreams-service-kit.ts";
 
 // Production Codex transport + runtime + bounded registry over invented local child stdio.
 // Its account/configuration live only in makeWorld's temporary directory; no provider calls.
@@ -123,6 +124,7 @@ describe.skipIf(!hasGit || process.platform === "win32")(
           const service = yield* Dreams;
           const memory = yield* OrchestrationMemory;
           const original = yield* memory.read(workspaceId, "MEMORY.md");
+          yield* reportSomething(workspaceId);
           const dream = yield* service.start({
             workspaceId,
             kind: "dream",

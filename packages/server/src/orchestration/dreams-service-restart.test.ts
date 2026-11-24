@@ -30,6 +30,7 @@ import {
   startDream,
   finishDream,
   filesUnder,
+  reportSomething,
 } from "./dreams-service-kit.ts";
 
 describe.skipIf(!hasGit)("dreams", () => {
@@ -79,6 +80,7 @@ describe.skipIf(!hasGit)("dreams", () => {
             world,
             Effect.gen(function* () {
               const { workspaceId } = yield* openOrchestrator(world);
+              yield* reportSomething(workspaceId);
               const dream = yield* (yield* Dreams).start({
                 workspaceId,
                 kind: "dream",

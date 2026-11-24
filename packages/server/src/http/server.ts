@@ -92,6 +92,7 @@ import { LaunchChecksCache } from "../launch-checks/handler.ts";
 import { ReviewRequestsLive } from "../github/review-requests.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
+import { MachinePreWake } from "../host/pre-wake.ts";
 import { BranchHeadsLive } from "../wakes/branch-heads.ts";
 import { CiJobsLive } from "../wakes/ci-stuck.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
@@ -147,8 +148,7 @@ import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import type { TurnHooks } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HOST_STOP_PATHS, hostStopRoute } from "./host-stop-routes.ts";
-import { startWipKeeper } from "../host/wip-keeper.ts";
-import { readyOnGoing, resumeOwedMachines } from "../host/stop-resume.ts";
+import { startMachineUpkeep } from "./machine-upkeep.ts";
 import { makeMachineJobs } from "../host/machine-jobs.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
 import { WorkspaceOutputs } from "../outputs/workspace-outputs.ts";
@@ -318,12 +318,7 @@ export const AuthMiddleware = HttpRouter.middleware(
             jobs: machineJobs,
             ...(sharedFolders === undefined ? {} : { sharedFlush: sharedFolders.flush }),
           };
-    if (stopDeps !== undefined) yield* startWipKeeper(stopDeps);
-    if (stopDeps !== undefined) {
-      const off = stopDeps.hosts.onGoing(readyOnGoing(stopDeps));
-      yield* Effect.addFinalizer(() => Effect.sync(off));
-    }
-    if (stopDeps !== undefined) yield* resumeOwedMachines(stopDeps);
+    if (stopDeps !== undefined) yield* startMachineUpkeep(stopDeps);
     const fronted = Option.getOrUndefined(yield* Effect.serviceOption(FrontedSignIn));
     const devices = Option.getOrUndefined(yield* Effect.serviceOption(LentDevices));
     const securityHeaders = {
@@ -930,7 +925,9 @@ export const ServerCore = Layer.unwrap(
           ),
         ),
         Layer.provideMerge(ReviewRequestsLive),
-        Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
+        Layer.provideMerge(
+          Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer, MachinePreWake.layer),
+        ),
         Layer.provideMerge(ThreadVisibility.layer),
         Layer.provideMerge(ThreadPorts.layer),
         Layer.provideMerge(

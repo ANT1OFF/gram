@@ -1,3 +1,4 @@
+import { MOVE_WITHIN_MS } from "./following-sessions.ts";
 import { createServer } from "node:http";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
@@ -872,6 +873,7 @@ describe("a machine about to be taken away", () => {
       );
       const connection = yield* online(hosts, hostId);
       expect(connection.stop.going).toBeDefined();
+      expect(hosts.moves.of(hostId)).toBeUndefined();
       // Its listener is on before anything is said.
       yield* Effect.sleep("100 millis");
       let gone = false;
@@ -880,6 +882,8 @@ describe("a machine about to be taken away", () => {
       );
       yield* waitUntil("the machine to be heard", () => heard.length === 1);
       expect(heard).toEqual([{ id: hostId, withinMs: 10_000 }]);
+      // A session of it whose agent ends as it goes now waits for it to be back (`moves`).
+      expect(hosts.moves.of(hostId)).toBe(MOVE_WITHIN_MS);
       // Held while the control plane is still readying it.
       yield* waitUntil("the stop to be readied", () => stop.stopping());
       yield* Effect.sleep("100 millis");

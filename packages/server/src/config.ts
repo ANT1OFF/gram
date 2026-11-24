@@ -105,6 +105,11 @@ export interface ServerConfigShape {
   /** Overrides the `agents.idleEvictMinutes` setting when set. */
   readonly idleEvictAfter: Duration.Duration | undefined;
   readonly interruptWatchdog: Duration.Duration;
+  /**
+   * How long a session waits for a joined machine being replaced to come back
+   * (`GRAM_MACHINE_MOVE_MINUTES`, 1 to 240); 20 minutes when absent.
+   */
+  readonly machineMoveWithin?: Duration.Duration;
   /** How long an agent may retry one turn before it is stopped; 10 minutes when absent. */
   readonly retryDeadline?: Duration.Duration | undefined;
   /** The app version: Electron's `app.getVersion()` in the desktop shell. */
@@ -219,6 +224,7 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
     const appVersion = env["GRAM_APP_VERSION"] || env["npm_package_version"];
     const appBuild = env["GRAM_APP_BUILD"];
     const debounceMs = Number(env["GRAM_ORCHESTRATION_DEBOUNCE_MS"]);
+    const moveMinutes = Number(env["GRAM_MACHINE_MOVE_MINUTES"]);
     const listenHost = listenHostFrom(env);
     const embed = embedFromEnv(env);
     if (env === process.env) scrubEmbedSecrets(env);
@@ -264,6 +270,9 @@ export class ServerConfig extends Context.Service<ServerConfig, ServerConfigShap
       ...(env["GRAM_FAKE_AGENT"] === "1" ? { fakeAgent: true } : {}),
       ...(Number.isFinite(debounceMs) && debounceMs > 0
         ? { orchestrationDebounce: Duration.millis(debounceMs) }
+        : {}),
+      ...(Number.isFinite(moveMinutes) && moveMinutes >= 1 && moveMinutes <= 240
+        ? { machineMoveWithin: Duration.minutes(moveMinutes) }
         : {}),
       ...(env["GRAM_HEADLESS"] === "1" ? { headless: true } : {}),
       ...(env["GRAM_EMBEDDING"] === "1"

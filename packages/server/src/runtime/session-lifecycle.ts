@@ -26,7 +26,9 @@ import {
   MACHINE_RESTART_KEY,
   machineRestartText,
   machineRestartToolText,
+  restartMarkerOf,
 } from "./machine-restart.ts";
+import { endMachineMove } from "./machine-move.ts";
 import { commandDuring, machineLostToolText } from "./machine-lost.ts";
 import { missingThreadFolder } from "../fs/folders.ts";
 import {
@@ -41,45 +43,8 @@ import {
 } from "@gram/contracts";
 import { UNKNOWN_FAILURE } from "./thread-error.ts";
 import { accountOf, machineAccountScope } from "./limit-wait.ts";
-import {
-  HANDOFF_TURNS_TOKENS,
-  renderLostSession,
-  renderMovedSession,
-  renderRecentTurns,
-} from "./switch-handoff.ts";
-import { fromStoredMessages } from "../orchestration/transcripts.ts";
-
-/** How many of a thread's last messages a session that lost its conversation is given from. */
-export const LOST_SESSION_MESSAGES = 200;
-
-/**
- * A thread's recent turns as a session that doesn't have its conversation reads them, or
- * `undefined` when there are none. Input not yet sent to an agent (the queue, a launch, an input on
- * its way) is left out: it follows as itself. Reads the last `LOST_SESSION_MESSAGES` messages and
- * the first, never all.
- */
-export const recentTurnsOf = (
-  store: Pick<ThreadStoreShape, "listQueue" | "lastMessages" | "firstMessages">,
-  rt: Pick<Runtime, "threadId" | "launch" | "inFlight">,
-) =>
-  Effect.gen(function* () {
-    const unsent = new Set<string>(
-      (yield* store.listQueue(rt.threadId)).map((item) => item.id as string),
-    );
-    for (const item of [rt.launch, rt.inFlight]) if (item !== undefined) unsent.add(item.id);
-    const last = yield* store.lastMessages(rt.threadId, LOST_SESSION_MESSAGES);
-    const first = yield* store.firstMessages(rt.threadId, 1);
-    const messages = [
-      ...first.filter((message) => !last.some((each) => each.id === message.id)),
-      ...last,
-    ].filter((message) => !unsent.has(message.id));
-    const turns = renderRecentTurns(
-      fromStoredMessages(messages.map((message, seq) => ({ seq, message }))),
-      HANDOFF_TURNS_TOKENS,
-      "this thread",
-    );
-    return turns.kept === 0 ? undefined : turns.text;
-  });
+import { renderLostSession, renderMovedSession } from "./switch-handoff.ts";
+import { recentTurnsOf } from "./recent-turns.ts";
 
 const agentName = (agent: AgentKind): string => (agent === "codex" ? "Codex" : "Claude");
 import { dreamSupportFor, sequenceEvents, type AppToolRegistryPort } from "@gram/agents";
@@ -237,7 +202,9 @@ export const makeSessionLifecycle = ({
   ): Effect.Effect<AfterMachineRestart | undefined> =>
     Effect.gen(function* () {
       const machine = rt.restartedMachine;
+      const moved = rt.machineMoved === true;
       rt.restartedMachine = undefined;
+      rt.machineMoved = undefined;
       if (
         machine === undefined ||
         stopping !== undefined ||
@@ -253,6 +220,7 @@ export const makeSessionLifecycle = ({
         (yield* store.listRequests(rt.threadId)).length > 0;
       const { next, recent } = afterMachineRestart({
         machine,
+        moved,
         turnCut,
         turnOpen: turn !== undefined,
         stopAsked:
@@ -264,7 +232,7 @@ export const makeSessionLifecycle = ({
       });
       machineContinuations.set(rt.threadId, recent);
       yield* Effect.logInfo("a joined machine restarted under a session").pipe(
-        Effect.annotateLogs({ threadId: rt.threadId, outcome: next.kind }),
+        Effect.annotateLogs({ threadId: rt.threadId, outcome: next.kind, moved }),
       );
       return next;
     });
@@ -403,7 +371,7 @@ export const makeSessionLifecycle = ({
                   : inFlight.accumulator.unfinishedTools();
               const errorText =
                 restart !== undefined
-                  ? machineRestartToolText(restart.machine)
+                  ? machineRestartToolText(restart.machine, restart.moved)
                   : lostMachine !== undefined
                     ? machineLostToolText(lostMachine)
                     : "";
@@ -420,6 +388,7 @@ export const makeSessionLifecycle = ({
           }),
         );
         yield* setLapsedConnectors(rt, []);
+        yield* endMachineMove(store, publishUpsert, rt.threadId);
         yield* setRetrying(rt, false);
         const turnId = rt.turn?.id;
         const endedMidTurn = stopping === undefined && turnId !== undefined;
@@ -493,13 +462,16 @@ export const makeSessionLifecycle = ({
                 const id = makeQueueItemId();
                 rt.queue.unshift({
                   id,
-                  input: { text: machineRestartText(restart.machine), author: "server" },
+                  input: {
+                    text: machineRestartText(restart.machine, restart.moved),
+                    author: "server",
+                  },
                 });
                 rt.noticeKeys.set(id, MACHINE_RESTART_KEY);
                 rt.actors.set(id, "server");
                 yield* syncQueue(rt);
               }
-              rt.machineRestart = { machine: restart.machine, continued: restart.continued };
+              rt.machineRestart = restartMarkerOf(restart);
               yield* setStatus(rt, "starting");
               const ended = FiberMap.getUnsafe(sessions, rt.threadId);
               yield* FiberMap.run(recoveries, rt.threadId, resumeAfterRestart(rt, ended));

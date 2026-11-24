@@ -35,7 +35,7 @@ export const discardWarning = () =>
   );
 
 /**
- * One memory update in the Draft memory update tab: its state, what it ran on, why it failed and
+ * One memory update in the Memory updates tab: its state, what it ran on, why it failed and
  * the next step, and its actions; `children` is its review while open.
  */
 export function DreamRow({
@@ -95,6 +95,7 @@ export function DreamRow({
       data-testid="dream-row"
       data-dream={dream.id}
       data-status={dream.status}
+      data-mode={dream.mode}
       className="flex flex-col gap-2.5 rounded-(--radius-md) border border-edge bg-card px-4 py-3 shadow-raised"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

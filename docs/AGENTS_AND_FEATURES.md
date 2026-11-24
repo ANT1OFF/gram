@@ -1385,8 +1385,10 @@ Source: [helper settings/model policy](../packages/contracts/src/helper.ts),
 
 ## Memory updates and selected-harness support
 
-A memory update prepares a candidate. Review is the default; per-run Auto adopts only validated,
-bounded memory output and preserves native permissions. It is a separate
+A memory update prepares a candidate. Each workspace chooses how it lands (Memory → Memory
+updates, `memoryUpdateMode` in the charter): **Review**, the default, drafts it for the user to
+adopt or discard; **Auto** applies each valid run at once as a new memory version. Auto keeps
+native permissions and adopts only validated, bounded output. It is a separate
 transport and permission decision from helper generation and ordinary coding.
 Claude Code supports bounded file-tool memory updates on macOS/Linux with
 `/usr/bin/python3`: snapshot inputs read-only, candidate/notes writable, native
@@ -1400,6 +1402,71 @@ tools can access other permitted files. Gram validates candidates before Review/
 strict file-only policy refuses this route. Newer installed Codex versions are accepted
 for memory updates with a compatibility warning. Older or unknown versions remain unavailable
 for memory updates while ordinary sessions stay available.
+
+### What a memory update reads
+
+A memory update reads what happened since the last adopted one, never a whole transcript. Gram
+writes one file, `input/sessions/001-since-the-last-memory-update.md`, oldest first, each entry
+dated and naming its source: workers' reports (summary, what each says it `learned`, its PR),
+merges Gram recorded, worker questions the user or the orchestrator answered with their answers,
+each thread that finished (a merged pull request included) with its last `wrap_up` recap, open or
+closed (no model call is made for it), and the memory notes written since. What others wrote is
+quoted line by line, so a report can't pass for an entry of its own. Memory itself, `standing-decisions.md` and `questions.md` included, is in `input/memory/`.
+`search_transcripts` and `read_transcript` are refused to such a run. What it costs follows what
+happened since the last update, not how long the conversations were: one run reads at most
+160,000 characters (about 40k tokens), and the next reads on from where it stopped. An update with
+nothing new to read doesn't start.
+
+Each workspace keeps a cursor (`dream_cursors`): the last worker report and orchestration event
+read, and a time. Adoption moves it on; a discarded draft leaves it, so the next update reads the
+same again. Upgrading to this release starts every workspace's cursor at the upgrade: the
+transcript backlog earlier updates kept is dropped, not caught up. Existing memory and its
+versions are untouched. A run given threads or agent sessions to read (`threadIds`,
+`agentSessions`) and an import still read transcripts, as described below.
+
+Unless a model is picked, a memory update runs on the recommendation's Scoped tier on the
+harness of the saved default (Claude Sonnet 5.5 on Claude Code, the Sol models on Codex): the work
+is filing short records, not reading long conversations. A default on a gateway profile is kept as
+it is.
+
+### Auto
+
+In Auto a run that passes validation is adopted without review, as a new version whose
+`.adopted` note names the run, its mode and its one-line summary (History shows them). Its
+guard rails:
+
+- `standing-decisions.md` (whatever its case) is never the run's: memory's text is carried as it
+  is, so the user's rulings change only by their word.
+- Its output is held to memory's path rules and caps; anything past them fails the run and
+  nothing is applied.
+- Every file is scrubbed on the way in, as any memory write is.
+- A note the orchestrator or a worker wrote while the run went keeps that write; the run's other
+  changes land. Memory adopted or restored to another version meanwhile stops the run, which stays
+  on the Memory page to look at.
+- A run that changes nothing makes no version, and what it read is spent. The last three such
+  runs and the last ten applied ones are kept to look at.
+
+The user is told in one line (`Memory updated (0008): …`), never with a review card, and the run's
+thread is closed. **Revert** on the Memory page (`dream.revert`), while memory is still at the
+version the run made, adopts a new version that puts back each note the run changed as it was
+before the run, and keeps every note written since: a note the run changed and someone wrote again
+keeps that write, and `standing-decisions.md` is never touched. All three versions stay in
+History, which keeps twenty. What the reverted run read stays read, so the next update doesn't
+apply it again. Switching a workspace to Auto discards the drafts of earlier updates of this kind
+waiting for review, after asking; what they read is read by the next update. Drafts of picked
+threads and imports stay.
+
+### When it runs
+
+**Update now** on the Memory page runs one at once. `memoryUpdateEveryHours` (1 to 168; the page
+offers 1, 3, 6, 12 and 24) starts one that many hours after the last began, when something
+happened since and nothing holds it (a pause, a parked orchestrator, a worker the user is talking
+to, a run under way). In Review a draft waiting for review holds the schedule, so drafts don't pile
+up. The after-N-completed-threads trigger below still works and follows the workspace's mode.
+Source: [what it reads](../packages/server/src/orchestration/dream-recent.ts),
+[memory update service](../packages/server/src/orchestration/dreams.ts).
+
+### Reading transcripts
 
 A memory update is given a goal and tools rather than a procedure. Gram lays out what is new
 since the last update, with `input/INDEX.md` listing each session newest first (what it is, when it
@@ -1444,7 +1511,7 @@ closed or archived history is retained. A restart preserves recorded progress bu
 not count missed completions or replay a launch. Pauses, workers the user is talking to, running memory updates and
 unavailable selected models defer launch. Relevant external activity or settings changes
 recheck a deferred launch; no UI timer runs it. Progress and deferral appear beside the
-setting. Automatic launches always use Review; they grant no global adoption authority.
+setting. Automatic launches take the workspace's memory update mode.
 Scheduling uses the memory update service's one start lock, with a durable claim before launch;
 exclusive coordination across independent server processes is not established.
 Source: [scheduler](../packages/server/src/orchestration/automatic-dream.ts).

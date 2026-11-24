@@ -3,6 +3,7 @@ import {
   orchestratorConnectors,
   orchestratorPeerMessaging,
   effectiveCheckout,
+  hostOf,
   isLocalHost,
   VERIFY_FILE,
   type PermissionMode,
@@ -30,7 +31,8 @@ const hasVerifyRecipe = (thread: Thread): boolean => {
 };
 /** The session policy each thread opens with. */
 export const makeSessionPolicy = (kit: OrchestrationKit) => {
-  const { store, findWorkspace, findThread, openedInAuto, workerMachinesOffered } = kit;
+  const { store, findWorkspace, findThread, openedInAuto, workerMachinesOffered, joinedMachines } =
+    kit;
 
   const policyFor = (thread: Thread): Effect.Effect<SessionPolicy> =>
     Effect.gen(function* () {
@@ -114,6 +116,12 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
             agent: thread.model.agent,
             gated: outwardGate !== undefined,
             ...(hasVerifyRecipe(thread) ? { verifyRecipe: true } : {}),
+            ...(joinedMachines().some(
+              (machine) =>
+                machine.onDemand === "worker" && machine.id === hostOf(effectiveCheckout(thread)),
+            )
+              ? { ownMachine: true }
+              : {}),
             ...(extras.length === 0
               ? {}
               : { alsoIn: worktreesOf(yield* store.listProjects, extras) }),

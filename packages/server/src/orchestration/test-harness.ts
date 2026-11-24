@@ -74,6 +74,7 @@ import { type DiskSpace } from "../wakes/machine.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
 import { type UpstreamRelease } from "../wakes/upstream-releases.ts";
 import { setTimeout as sleep } from "node:timers/promises";
+import { recordingPreWake } from "./test-pre-wake.ts";
 import {
   fakeAutoMerges,
   fakeBranchHeads,
@@ -561,7 +562,7 @@ export const serverLayer = (
       Layer.provideMerge(ComposerPresence.layer),
       Layer.provideMerge(localChecksOf(world)),
       Layer.provideMerge(ThreadWakesLive),
-      Layer.provideMerge(conditionsOf(world)),
+      Layer.provideMerge(Layer.mergeAll(conditionsOf(world), recordingPreWake(world))),
       Layer.provideMerge(OrchestrationMemory.layerAt(nodePath.join(world.dir, "memory"))),
       Layer.provideMerge(fakePublisher(world)),
       Layer.provideMerge(
@@ -916,19 +917,7 @@ export const stallGit = (world: World, worker: Thread) =>
     }).pipe(Effect.asVoid);
   });
 
-export const prBadge = (overrides: Partial<PrStatus> = {}): PrStatus => ({
-  number: 12,
-  state: "OPEN",
-  url: "https://github.com/acme/shop/pull/12",
-  title: "t",
-  isDraft: false,
-  checks: "pending",
-  headMatches: true,
-  aheadOfPr: false,
-  headRefOid: "a".repeat(40),
-  mergeState: "BLOCKED",
-  ...overrides,
-});
+export { prBadge } from "./test-badges.ts";
 
 export const outboxOf = (workspaceId: WorkspaceId) =>
   Effect.gen(function* () {

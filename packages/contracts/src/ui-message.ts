@@ -222,7 +222,12 @@ export const SessionRestartDataSchema = Schema.Struct({
    * continued (`turn`) or only what was queued went on (`queue`).
    */
   machineRestart: Schema.optionalKey(
-    Schema.Struct({ machine: Schema.String, continued: Schema.Literals(["turn", "queue"]) }),
+    Schema.Struct({
+      machine: Schema.String,
+      continued: Schema.Literals(["turn", "queue"]),
+      /** The machine was replaced, on the same disk, rather than only restarted. */
+      moved: Schema.optionalKey(Schema.Literal(true)),
+    }),
   ),
 });
 export type SessionRestartData = typeof SessionRestartDataSchema.Type;

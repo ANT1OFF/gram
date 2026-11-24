@@ -27,6 +27,12 @@ export const parseMachineStatus = (
   readonly cause?: MachineStopCause;
   /** Since when it has been in its phase, epoch ms: the server's `since`, ms or ISO 8601. */
   readonly since?: number;
+  /**
+   * Since when the machine provider asks to move the running machine to new compute, epoch ms
+   * (`moveRequested`, ms or ISO 8601): this Gram readies it and asks for the move
+   * (`signed-in-moves.ts`).
+   */
+  readonly moveRequested?: number;
 } => {
   if (typeof value !== "object" || value === null) return {};
   const body = value as Record<string, unknown>;
@@ -41,15 +47,22 @@ export const parseMachineStatus = (
   const publicKey = line("publicKey", 64);
   const platform = line("platform", 16);
   const cause = line("cause", 16);
-  const since =
-    typeof body["since"] === "number"
-      ? body["since"]
-      : typeof body["since"] === "string" && body["since"].length <= 40
-        ? Date.parse(body["since"])
-        : undefined;
+  const timeOf = (field: string) => {
+    const each = body[field];
+    const at =
+      typeof each === "number"
+        ? each
+        : typeof each === "string" && each.length <= 40
+          ? Date.parse(each)
+          : undefined;
+    return at !== undefined && Number.isSafeInteger(at) && at > 0 ? at : undefined;
+  };
+  const since = timeOf("since");
+  const moveRequested = timeOf("moveRequested");
   return {
     ...(cause !== undefined && isStopCause(cause) ? { cause } : {}),
-    ...(since !== undefined && Number.isSafeInteger(since) && since > 0 ? { since } : {}),
+    ...(since === undefined ? {} : { since }),
+    ...(moveRequested === undefined ? {} : { moveRequested }),
     ...(phase === undefined ? {} : { phase }),
     ...(message === undefined ? {} : { message }),
     ...(publicKey !== undefined && PUBLIC_KEY.test(publicKey) ? { publicKey } : {}),

@@ -1,6 +1,4 @@
 import {
-  DREAM_BUDGET_TOKENS_MAX,
-  DREAM_BUDGET_TOKENS_MIN,
   DREAM_INSTRUCTIONS_MAX,
   type Dream,
   type DreamFileDiff,
@@ -10,6 +8,7 @@ import {
   type DreamMode,
   type ProjectId,
   type WorkspaceState,
+  memoryUpdateModeOf,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -40,9 +39,6 @@ import { diffStat, lineDiff } from "@/thread/orchestration-model";
 import { ADMITTED_AGENTS } from "./admitted";
 import {
   adoptState,
-  backlogSuggestion,
-  budgetOf,
-  BUDGET_K_DEFAULT,
   conflictsToMerge,
   diffSides,
   withAskedMerges,
@@ -68,6 +64,7 @@ import {
 } from "./memory-model";
 import { DreamRow, discardWarning } from "./dream-row";
 import { InlineConfirm } from "./inline-confirm";
+import { MemoryUpdatesPanel } from "./memory-updates-panel";
 import { useDefaultModel } from "@/settings/model-slots";
 
 const SECTION = "flex flex-col gap-2 rounded-(--radius-md) border border-edge bg-card/40 p-3";
@@ -88,7 +85,9 @@ function StartFlow({
   kind: DreamKind;
   onClose: () => void;
 }) {
-  const [mode, setMode] = useState<DreamMode>("review");
+  const [mode, setMode] = useState<DreamMode>(
+    kind === "dream" ? memoryUpdateModeOf(state.charter) : "review",
+  );
   const modeLabel = useId();
   const api = useApi();
   const navigate = useNavigate();
@@ -99,7 +98,6 @@ function StartFlow({
     queryFn: () => api.listProjects(),
   });
   const [perRepoText, setPerRepoText] = useState(String(PER_REPO_DEFAULT));
-  const [budgetText, setBudgetText] = useState(String(BUDGET_K_DEFAULT));
   const [includeMemory, setIncludeMemory] = useState(false);
   const [projectIds, setProjectIds] = useState<readonly ProjectId[]>(state.workspace.projectIds);
   const [ownModel, setOwnModel] = useState(false);
@@ -116,15 +114,11 @@ function StartFlow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const perRepoId = useId();
-  const budgetId = useId();
   const instructionsId = useId();
   const perRepo = perRepoOf(perRepoText);
-  const budget = budgetOf(budgetText);
   const importing = kind === "import";
   const scope: DreamPreviewInput | undefined = !importing
-    ? budget === undefined
-      ? undefined
-      : { kind: "dream", budgetTokens: budget }
+    ? { kind: "dream" }
     : perRepo === undefined || projectIds.length === 0
       ? undefined
       : { projectIds, perRepo, ...(includeMemory ? { includeMemory } : {}) };
@@ -187,12 +181,12 @@ function StartFlow({
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <h3 className="text-reading font-medium">
-            {importing ? "Draft from past sessions" : "Draft memory update"}
+            {importing ? "Draft from past sessions" : "Update memory with options"}
           </h3>
           <p className="text-muted-foreground">
             {importing
               ? "Drafts memory from your past sessions in this workspace's repos. It runs as a thread you can watch and stop."
-              : "Reads what this workspace's threads said since memory was last updated and drafts tidier memory, with a source for each change."}
+              : "Reads what happened since the last update (workers' reports, merges, answered questions and finished threads' recaps) and files what lasts, with a source for each change. Pick the model, steer it, or choose how this run lands."}
           </p>
           <p data-testid="dream-runs-rule" className="text-muted-foreground">
             One run at a time, in the agent's sandbox; it asks before anything it would normally ask
@@ -262,27 +256,6 @@ function StartFlow({
         </div>
       )}
 
-      {!importing && (
-        <div className="flex flex-col gap-1">
-          <label htmlFor={budgetId} className="font-medium">
-            Budget, thousands of tokens
-          </label>
-          <input
-            id={budgetId}
-            data-testid="dream-budget"
-            inputMode="numeric"
-            className={cn(INPUT, "h-7 w-24 text-meta tabular-nums")}
-            value={budgetText}
-            aria-invalid={budget === undefined}
-            onChange={(event) => setBudgetText(event.target.value)}
-          />
-          <span className={budget === undefined ? "text-destructive" : "text-muted-foreground"}>
-            {DREAM_BUDGET_TOKENS_MIN / 1000} to {DREAM_BUDGET_TOKENS_MAX / 1000}. What doesn't fit
-            waits for the next memory update; nothing is skipped.
-          </span>
-        </div>
-      )}
-
       <div data-testid="dream-preview" className="flex flex-col gap-2">
         {query.error ? (
           <p role="alert" className="text-destructive">
@@ -293,7 +266,7 @@ function StartFlow({
             <p className="text-muted-foreground">
               {importing
                 ? "Tick a repo and give a limit to count what is there."
-                : "Give a budget to count what this update would read."}
+                : "Counting what this update would read."}
             </p>
           ) : preflight.blocked || selectedModel === undefined ? (
             <p className="text-muted-foreground">
@@ -322,9 +295,11 @@ function StartFlow({
               {plan !== undefined && (
                 <div data-testid="dream-plan" className="flex flex-col gap-0.5">
                   <p data-testid="dream-plan-reads">{plan.reads}</p>
-                  <p data-testid="dream-plan-backlog" className="text-muted-foreground">
-                    {plan.backlog}
-                  </p>
+                  {plan.more !== undefined && (
+                    <p data-testid="dream-plan-more" className="text-muted-foreground">
+                      {plan.more}
+                    </p>
+                  )}
                 </div>
               )}
               {importing &&
@@ -1165,7 +1140,6 @@ export function DreamsSection({
   const running = (dreams.data ?? []).some(
     (dream) => dream.status === "running" || dream.status === "pending",
   );
-  const suggestion = backlogSuggestion(dreams.data ?? []);
 
   const { ready, rest } = orderDreams(dreams.data ?? []);
   const reviewOf = (dream: DreamId) => (
@@ -1187,6 +1161,14 @@ export function DreamsSection({
         reviewing !== undefined && "[--thread-max-width:var(--settings-column-wide)]",
       )}
     >
+      {dreams.data !== undefined && (
+        <MemoryUpdatesPanel
+          state={state}
+          dreams={dreams.data}
+          busy={running}
+          onSeeChanges={(dream) => review(dream)}
+        />
+      )}
       {ready.length > 0 && (
         <RunList
           testId="dream-ready"
@@ -1200,21 +1182,17 @@ export function DreamsSection({
         />
       )}
       <div data-testid="dream-form" className="flex flex-col gap-2">
-        <p className="max-w-(--description-measure) text-body text-pretty text-description">
-          Rereads finished threads and drafts changes, each with its source. Memory changes only
-          when you adopt one.
-        </p>
         <div data-testid="dream-actions" className="flex flex-wrap gap-2">
           <Button
             size="sm"
-            variant={ready.length > 0 ? "outline" : "default"}
+            variant="outline"
             data-testid="dream-now"
             disabled={running}
             title={running ? "One run per workspace at a time" : undefined}
             aria-expanded={starting === "dream"}
             onClick={() => onStartingChange(starting === "dream" ? undefined : "dream")}
           >
-            Draft memory update
+            Update with options…
           </Button>
           <Button
             size="sm"
@@ -1234,22 +1212,6 @@ export function DreamsSection({
           </p>
         )}
       </div>
-      {suggestion !== undefined && starting === undefined && (
-        <p
-          data-testid="dream-backlog"
-          className="flex flex-wrap items-center gap-2 rounded-(--radius-sm) border border-border px-3 py-2 text-body"
-        >
-          <span className="min-w-0 flex-1">{suggestion}</span>
-          <Button
-            size="xs"
-            variant="outline"
-            data-testid="dream-again"
-            onClick={() => onStartingChange("dream")}
-          >
-            Draft again
-          </Button>
-        </p>
-      )}
       <ExpandPresence open={starting !== undefined}>
         {starting !== undefined && (
           <StartFlow
@@ -1266,8 +1228,7 @@ export function DreamsSection({
         <PanelMessage loading>Loading memory updates…</PanelMessage>
       ) : dreams.data.length === 0 ? (
         <p className="text-body text-description">
-          No memory updates yet. Draft memory update rereads finished threads and drafts changes for
-          you to review.
+          No memory updates yet. Update now files what happened since memory was last changed.
         </p>
       ) : (
         rest.length > 0 && (

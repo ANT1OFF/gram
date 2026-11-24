@@ -72,13 +72,15 @@ signed in before the server offered it is told to sign in again; nothing is aske
 
 The calls, each `POST` with a DPoP-bound `machines:workers` token, the person taken from it:
 
-| Call        | Body                                   | Answer                                                                                                 |
-| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `…/choices` | `{}`                                   | The provider's choices, as `/hosts/choices` answers them (size, architecture, isolation, environment). |
-| `…/start`   | `{name, title, orchestrator, choices}` | 202 `{name}`; 409 over the person's total (the body `/hosts/start` gives); 403/404 off.                |
-| `…/status`  | `{name}`                               | `{phase, message?, publicKey?, platform?}`: the host's public key once it has made one.                |
-| `…/release` | `{name, released, reason}`             | As `/hosts/release`.                                                                                   |
-| `…/stop`    | `{name}`                               | The machine is stopped and reclaimed; used when it never joins.                                        |
+| Call        | Body                                      | Answer                                                                                                  |
+| ----------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `…/choices` | `{}`                                      | The provider's choices, as `/hosts/choices` answers them (size, architecture, isolation, environment).  |
+| `…/start`   | `{name, title, orchestrator, choices}`    | 202 `{name}`; 409 over the person's total (the body `/hosts/start` gives); 403/404 off.                 |
+| `…/status`  | `{name}`                                  | `{phase, message?, publicKey?, platform?, moveRequested?}`: the host's public key once it has made one. |
+| `…/release` | `{name, released, reason}`                | As `/hosts/release`.                                                                                    |
+| `…/stop`    | `{name}`                                  | The machine is stopped and reclaimed; used when it never joins.                                         |
+| `…/move`    | `{name, sandboxId, generation, notAfter}` | `{moved: true}`, or `{moved: false, code}`: `superseded`, `expired` or `not_movable`.                   |
+| `…/resize`  | `{name, size, holdMinutes?, reason?}`     | As `/hosts/resize` (`docs/EMBEDDING.md`): hold a larger size for a while, or `size: null` to go back.   |
 
 Which of the person's workspaces there the machine is started under, and so whose limits and
 choices apply, is the server's to decide from the sign-in; `…/choices` says which (`workspace:
@@ -415,6 +417,25 @@ subscription token reaches a machine, with its own consent.
   worker machine with no worker left at work is told released (`…/release`), and told again,
   `released: false`, if one is at work there again. The server pauses and reclaims it as it does
   its own.
+- **The machine provider asks to move the machine** to new compute, as before its compute is taken
+  away (`moveRequested` in `…/status`, a time). Once a minute, this Gram asks each running worker
+  machine's status (`signed-in-moves.ts`). For one asked to move, it readies the machine to stop,
+  forced, as any stop is (each thread's work kept at its remote, its idle sessions put to rest),
+  and then asks `…/move`, fenced to the run the status named, as a stop is. The provider stops that
+  run and starts the next on the same disk elsewhere. The turns the stop cuts off wait for the
+  machine, showing that it is moving, and carry on once it is back (see
+  [When its machine is replaced](../MACHINES.md#when-its-machine-is-replaced)), and this Gram
+  resumes the machine as it does any relayed one owed a resume. A move refused (`moved: false`,
+  `superseded`, `expired`, a provider's `not_found`, or another 4xx) takes the stop back, so the
+  machine works on where it is, and that run is settled. A move the provider can't do now (a 503,
+  a 429, a 404 that isn't its own answer) takes the stop back too and is asked again at the next
+  look. One with no answer keeps the stop, since it may have gone through; the app reports other
+  5xx answers and a 401 as no answer, so they do the same. Neither is tried past three looks a run
+  (counted in memory, so a restart of the app starts the count again): the stop is then taken back
+  for good, so a request that can't be met never holds the machine's threads off work for long.
+  Work a forced stop couldn't keep at its remote is
+  logged, and the move goes on: the disk comes back with it. Up to four machines are readied at
+  once. The app fences a move as a stop: a start of the name waits for it.
 - **The app quits or the desktop sleeps.** The relay closes; the machine shows offline, as a joined
   machine whose network went. The host dials the server again by itself (`dialForever`), and the
   app dials the relay again for every relayed machine still registered when it starts or wakes, so

@@ -973,6 +973,16 @@ describe.skipIf(!hasGit)("a headless control plane", () => {
         }).pipe(Effect.flip);
         expect(codex.message).toContain("in Claude Code only");
 
+        // Something to file: a memory update reads what happened since the last one.
+        yield* Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          yield* store.addWorkerReport(orchestrator.workspaceId!, {
+            threadId: orchestrator.id,
+            state: "done",
+            summary: "Releases go out on Tuesdays.",
+            at: 1,
+          });
+        }).pipe(Effect.provideContext(server));
         // The memory update starts as on the desktop, and its session opens on the
         // orchestrator's machine: no native tools, an empty folder of the machine's own.
         const dream = yield* app["dream.start"]({

@@ -4,6 +4,11 @@
 // push that skipped the guard would follow the rewrite. This finds the arguments of such a git
 // spelled out as an array, anywhere but in a call to `remoteGit` or to a `remote…` wrapper that
 // runs it. Tests are left out; `.oxlintrc.json` scopes it to product sources.
+//
+// It also holds every such array to put its remote, refspecs, URL or folder after a literal
+// `--end-of-options`, with only literal options before it: a remote's or ref's name read from a
+// repository can be spelled as an option (`--upload-pack=…`), and git would run what it names.
+// `remoteGit` refuses the same at run time (`positionalProblem`).
 
 import { relative } from "node:path";
 import { REPO } from "./ast.mjs";
@@ -31,9 +36,8 @@ const literal = (node) =>
       ? (node.quasis[0]?.value.cooked ?? "")
       : undefined;
 
-/** Whether an array spells git arguments that reach a remote: its subcommand after git's options. */
-const spellsRemote = (array) => {
-  const items = array.elements;
+/** Where an array's git subcommand stands, after git's own options. */
+const verbIndex = (items) => {
   let i = 0;
   for (; i < items.length; i++) {
     const item = items[i];
@@ -42,6 +46,42 @@ const spellsRemote = (array) => {
     if (value === undefined || !value.startsWith("-")) break;
     if (WITH_VALUE.has(value)) i++;
   }
+  return i;
+};
+
+/** Verbs whose remote, refspecs, URL or folder must follow `--end-of-options`. */
+const POSITIONAL_AFTER_END = new Set(["fetch", "push", "pull", "ls-remote", "clone"]);
+
+/** An option spelled out in the source: a literal, or a template whose literal start is `-…`. */
+const literalOption = (node) => {
+  if (node?.type === "Literal") return typeof node.value === "string" && node.value.startsWith("-");
+  if (node?.type === "TemplateLiteral") {
+    const head = node.quasis[0]?.value.cooked ?? "";
+    return /^--?[A-Za-z]/.test(head) && (node.expressions.length === 0 || head.includes("="));
+  }
+  return false;
+};
+
+/**
+ * The first element of a remote git's arguments that stands where git still reads options but isn't
+ * an option spelled out literally, or `undefined` when everything positional follows a literal
+ * `--end-of-options`.
+ */
+const beforeEndOfOptions = (array) => {
+  const items = array.elements;
+  const at = verbIndex(items);
+  if (!POSITIONAL_AFTER_END.has(literal(items[at]))) return undefined;
+  for (const item of items.slice(at + 1)) {
+    if (literal(item) === "--end-of-options") return undefined;
+    if (!literalOption(item)) return item ?? array;
+  }
+  return undefined;
+};
+
+/** Whether an array spells git arguments that reach a remote: its subcommand after git's options. */
+const spellsRemote = (array) => {
+  const items = array.elements;
+  const i = verbIndex(items);
   const verb = literal(items[i]);
   const sub = verb === undefined ? undefined : VERBS[verb];
   if (sub === undefined || !Object.hasOwn(VERBS, verb)) return false;
@@ -98,7 +138,17 @@ export const remoteGitOnly = {
         // A lone word kept as a value (`["push"]`, an action's name) is no command line.
         if (call === undefined && node.elements.length < 2) return;
         const name = call === undefined ? undefined : calleeName(call.callee);
-        if (checked(name) || NOT_GIT.has(name)) return;
+        if (NOT_GIT.has(name)) return;
+        if (checked(name)) {
+          const loose = beforeEndOfOptions(node);
+          if (loose !== undefined)
+            context.report({
+              node: loose,
+              message:
+                'A remote, ref, URL or folder here stands where git still reads options: one read from a repository can be spelled as an option (`--upload-pack=…`) and git would run what it names. Put a literal "--end-of-options" after the options, spell each option as a literal (`--name=value`), and pass the remote, refspecs and paths after it.',
+            });
+          return;
+        }
         context.report({
           node,
           message:

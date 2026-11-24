@@ -5,6 +5,7 @@ import type { ProcError } from "./errors.ts";
 import { dirtyContentHash, git, porcelainChanges, stableHash } from "./exec.ts";
 import type { Proc } from "./proc.ts";
 import { rebaseDone } from "./pr.ts";
+import { isBranchName } from "./ref-format.ts";
 import { localBaseRef, originTips } from "./refs.ts";
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -40,7 +41,7 @@ export const localGitState = (cwd: string): Effect.Effect<GitState, ProcError, P
     ]);
     const [topLine, gitDirLine, oidLine, branchLine] = info.stdout
       .split("\n")
-      .map((line) => line.trim());
+      .map((line) => line.replace(/\r$/, ""));
     if (!topLine) return notARepoState;
     const top = topLine;
     const born = oidLine !== undefined && /^[0-9a-f]{40,64}$/.test(oidLine);
@@ -54,9 +55,7 @@ export const localGitState = (cwd: string): Effect.Effect<GitState, ProcError, P
       ? (yield* git(top, ["diff", "--cached", "--raw", "--no-abbrev", "--no-renames"])).stdout
       : "";
     const branch =
-      !born || branchLine === undefined || branchLine === "" || branchLine === "HEAD"
-        ? undefined
-        : branchLine;
+      !born || branchLine === undefined || !isBranchName(branchLine) ? undefined : branchLine;
     return {
       repo: true,
       ...(branch === undefined ? {} : { branch }),

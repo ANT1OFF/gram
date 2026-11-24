@@ -5,15 +5,31 @@ export const MACHINE_RESTART_KEY = "machine-restart";
 export const MACHINE_RESTART_CONTINUATIONS = 3;
 export const MACHINE_RESTART_WINDOW_MS = 60 * 60_000;
 
-/** The note the continued turn starts with, in Gram's words. */
-export const machineRestartText = (machine: string): string =>
-  `Note: ${machine}, the machine this session runs on, restarted and cut your last turn short. ` +
-  "This is the same conversation, resumed there. Anything that was running with it (shells, " +
-  "background tasks, subagents) stopped. Continue where you left off.";
+/** The note the continued turn starts with, in Gram's words: a move's when `moved`. */
+export const machineRestartText = (machine: string, moved?: true): string =>
+  moved === true
+    ? machineMovedText(machine)
+    : `Note: ${machine}, the machine this session runs on, restarted and cut your last turn short. ` +
+      "This is the same conversation, resumed there. Anything that was running with it (shells, " +
+      "background tasks, subagents) stopped. Continue where you left off.";
 
-/** What a tool call the restart cut off ends with: it was stopped, how it ended is unknown. */
-export const machineRestartToolText = (machine: string): string =>
-  `Interrupted: ${machine} restarted while this ran, so it stopped before it finished. Its result is unknown.`;
+/** The note a turn a machine move cut short continues with, in Gram's words. */
+export const machineMovedText = (machine: string): string =>
+  `Note: ${machine}, the machine this session runs on, was replaced mid-turn and came back with ` +
+  "the same disk. This is the same conversation, resumed there. Tool calls that were running may " +
+  "not have completed, and anything running with it (shells, background tasks, subagents) " +
+  "stopped, so check the state of what you were doing before you carry on, then continue where " +
+  "you left off.";
+
+/** What a tool call the move cut off ends with: it was stopped, how it ended is unknown. */
+export const machineMovedToolText = (machine: string): string =>
+  `Interrupted: ${machine} was replaced while this ran, so it stopped before it finished. Its result is unknown.`;
+
+/** What a tool call the restart (or the move, when `moved`) cut off ends with. */
+export const machineRestartToolText = (machine: string, moved?: true): string =>
+  moved === true
+    ? machineMovedToolText(machine)
+    : `Interrupted: ${machine} restarted while this ran, so it stopped before it finished. Its result is unknown.`;
 
 /**
  * What a session's end on a restarted machine leaves the thread to do:
@@ -22,14 +38,33 @@ export const machineRestartToolText = (machine: string): string =>
  * - `fail`: the turn waited on the user, or the machine restarted too often, so it fails as any
  *   session that ended under a turn does, saying why.
  */
-export type AfterMachineRestart =
-  | { readonly kind: "continue"; readonly machine: string; readonly continued: "turn" | "queue" }
-  | { readonly kind: "rest"; readonly machine: string }
-  | { readonly kind: "fail"; readonly machine: string; readonly reason: string };
+export type AfterMachineRestart = (
+  | { readonly kind: "continue"; readonly continued: "turn" | "queue" }
+  | { readonly kind: "rest" }
+  | { readonly kind: "fail"; readonly reason: string }
+) & {
+  readonly machine: string;
+  /** The machine was replaced, not only restarted (`RestartFacts.moved`). */
+  readonly moved?: true;
+};
+
+/** The transcript's marker of a continuation (`SessionRestartData.machineRestart`). */
+export const restartMarkerOf = (
+  restart: Extract<AfterMachineRestart, { readonly kind: "continue" }>,
+): { readonly machine: string; readonly continued: "turn" | "queue"; readonly moved?: true } => ({
+  machine: restart.machine,
+  continued: restart.continued,
+  ...(restart.moved === true ? { moved: true as const } : {}),
+});
 
 /** What the thread was doing as its session ended. */
 export interface RestartFacts {
   readonly machine: string;
+  /**
+   * The machine was replaced (a move), not only restarted. A turn waiting on the user is continued
+   * then too: the agent asks again in the resumed session, and the move isn't the user's to fix.
+   */
+  readonly moved?: boolean;
   /** A turn was open and the agent had its input: the restart cut it short. */
   readonly turnCut: boolean;
   /** A turn was open at all, its input taken or not. */
@@ -49,16 +84,20 @@ export interface RestartFacts {
 export const afterMachineRestart = (
   facts: RestartFacts,
 ): { readonly next: AfterMachineRestart; readonly recent: ReadonlyArray<number> } => {
-  const { machine, now } = facts;
+  const { now } = facts;
+  const machine = {
+    machine: facts.machine,
+    ...(facts.moved === true ? { moved: true as const } : {}),
+  };
   const recent = facts.recent.filter((at) => now - at < MACHINE_RESTART_WINDOW_MS);
-  if (facts.turnOpen && facts.stopAsked) return { next: { kind: "rest", machine }, recent };
-  if (!facts.turnOpen && !facts.queued) return { next: { kind: "rest", machine }, recent };
-  if (facts.waitingOnUser)
+  if (facts.turnOpen && facts.stopAsked) return { next: { kind: "rest", ...machine }, recent };
+  if (!facts.turnOpen && !facts.queued) return { next: { kind: "rest", ...machine }, recent };
+  if (facts.waitingOnUser && facts.moved !== true)
     return {
       next: {
         kind: "fail",
-        machine,
-        reason: `${machine} restarted while this turn waited on you, so Gram didn't continue it. Send a message to carry on.`,
+        ...machine,
+        reason: `${facts.machine} restarted while this turn waited on you, so Gram didn't continue it. Send a message to carry on.`,
       },
       recent,
     };
@@ -66,13 +105,17 @@ export const afterMachineRestart = (
     return {
       next: {
         kind: "fail",
-        machine,
-        reason: `${machine} restarted again, and Gram already continued this thread ${MACHINE_RESTART_CONTINUATIONS} times in the last hour, so it waits for you this time.`,
+        ...machine,
+        reason: `${facts.machine} ${facts.moved === true ? "was replaced" : "restarted"} again, and Gram already continued this thread ${MACHINE_RESTART_CONTINUATIONS} times in the last hour, so it waits for you this time.`,
       },
       recent,
     };
   return {
-    next: { kind: "continue", machine, continued: facts.turnCut ? "turn" : "queue" },
+    next: {
+      kind: "continue",
+      ...machine,
+      continued: facts.turnCut ? "turn" : "queue",
+    },
     recent: [...recent, now],
   };
 };

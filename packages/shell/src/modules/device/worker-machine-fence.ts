@@ -45,7 +45,8 @@ export const makeWorkerMachineFence = (
   return {
     /**
      * A call as the app receives it. A status or a release passes untouched; a start and a stop
-     * are fenced against each other, by name.
+     * are fenced against each other, by name. A move ends the run it names as a stop does (the
+     * server starts the next one itself), so it is fenced as one.
      */
     enter: (
       origin: string,
@@ -53,7 +54,8 @@ export const makeWorkerMachineFence = (
       name: unknown,
       sendBy: number | undefined,
     ): FencedCall | undefined => {
-      if (typeof name !== "string" || (call !== "start" && call !== "stop")) return undefined;
+      if (typeof name !== "string" || (call !== "start" && call !== "stop" && call !== "move"))
+        return undefined;
       const state = stateOf(origin, name);
       if (call === "start") {
         state.starts += 1;

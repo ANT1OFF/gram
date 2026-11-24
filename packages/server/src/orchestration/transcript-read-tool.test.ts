@@ -2,7 +2,9 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { hasGit } from "../git/test-repo.ts";
-import { openOrchestrator } from "./test-harness.ts";
+import type { ThreadId } from "@gram/contracts";
+import { Dreams } from "./dreams.ts";
+import { openOrchestrator, waitSent } from "./test-harness.ts";
 import { finishDream, inDreams, startDream, writeOutput } from "./dreams-service-kit.ts";
 import { pageOf, TRANSCRIPT_READ_MAX_CHARS } from "./transcript-read-tool.ts";
 import type { TranscriptBlock } from "./transcripts.ts";
@@ -46,7 +48,24 @@ describe.skipIf(!hasGit)("read_transcript", () => {
     inDreams((world) =>
       Effect.gen(function* () {
         const { thread, session: orchestrator, workspaceId } = yield* openOrchestrator(world);
-        const { dream, session } = yield* startDream(workspaceId);
+        // One that reads what happened since the last update is given no transcript.
+        const recent = yield* startDream(workspaceId);
+        expect(
+          yield* Effect.flip(recent.session.callTool("read_transcript", { threadId: thread.id })),
+        ).toMatchObject({ _tag: "AppToolError" });
+        expect(
+          yield* Effect.flip(recent.session.callTool("search_transcripts", { query: "shop" })),
+        ).toMatchObject({ _tag: "AppToolError" });
+        yield* (yield* Dreams).cancel(recent.dream.id);
+        yield* (yield* Dreams).discard(recent.dream.id);
+
+        // One given threads to read may follow a lead into others.
+        const dream = yield* (yield* Dreams).start({
+          workspaceId,
+          kind: "dream",
+          threadIds: [thread.id],
+        });
+        const session = yield* waitSent(dream.threadId as ThreadId, 1);
 
         const read = (yield* session.callTool("read_transcript", {
           threadId: thread.id,

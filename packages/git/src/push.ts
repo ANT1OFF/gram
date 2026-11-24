@@ -2,6 +2,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { git, gitFailMsg } from "./exec.ts";
+import { isBranchName } from "./ref-format.ts";
 import { remoteGit } from "./remote-git.ts";
 import type { Proc } from "./proc.ts";
 
@@ -41,12 +42,14 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
     const head = yield* git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).pipe(
       Effect.mapError(toPushFailed),
     );
-    const branch = head.status === 0 ? head.stdout.trim() : "";
+    const branch = head.status === 0 ? head.stdout.replace(/\r?\n$/, "") : "";
     if (branch === "" || branch === "HEAD") {
       return yield* new PushFailed({
         message: "HEAD isn't on a branch, so there's nothing to push",
       });
     }
+    if (!isBranchName(branch))
+      return yield* new PushFailed({ message: "The current branch's name isn't one git allows" });
     const origin = yield* git(cwd, ["remote", "get-url", "origin"]).pipe(Effect.option);
     if (Option.isNone(origin) || origin.value.status !== 0) {
       return yield* new PushFailed({ message: "This repository has no origin remote to push to" });
@@ -61,7 +64,7 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
     const hasUpstream =
       Option.isSome(upstream) &&
       upstream.value.status === 0 &&
-      upstream.value.stdout.trim() === `origin/${branch}`;
+      upstream.value.stdout.replace(/\r?\n$/, "") === `origin/${branch}`;
     if (hasUpstream) {
       const out = yield* git(cwd, [
         "rev-list",
@@ -95,6 +98,7 @@ export const pushCurrentBranch = (cwd: string): Effect.Effect<Pushed, PushFailed
         "credential.interactive=false",
         "push",
         "--quiet",
+        "--end-of-options",
         "origin",
         `${commit}:refs/heads/${branch}`,
       ],

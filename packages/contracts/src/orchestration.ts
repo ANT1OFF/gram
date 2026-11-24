@@ -495,6 +495,11 @@ export const WorkerLedgerEntry = Schema.Struct({
   activity: Schema.optionalKey(Schema.String),
   /** It is compacting its context: busy, however little it streams meanwhile. */
   compacting: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * Its machine is being replaced and its session waits to carry on there (`Thread.machineMove`):
+   * not failed, and nothing to do about it.
+   */
+  moving: Schema.optionalKey(Schema.Literal(true)),
   /** A derived attention condition, independent of the worker's PR state. */
   quiet: Schema.optionalKey(WorkerQuiet),
   /** At rest with an armed monitor or wake, including before a PR badge has arrived. */

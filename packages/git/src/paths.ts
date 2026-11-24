@@ -55,30 +55,100 @@ export const relativeInside = (
 
 const foreignRoots = new Set<string>();
 
+const crossingRoots = new Set<string>();
+
 const keptRoots = new Set<string>();
 
 const folded = (path: string): string =>
   process.platform === "darwin" || process.platform === "win32" ? path.toLowerCase() : path;
 
-const keptPending = new Set<string>();
+const FIRST_RETRY_MS = 250;
+const LAST_RETRY_MS = 30_000;
+
+/**
+ * Paths that aren't on this disk yet, asked of it again until they are: the first time at the
+ * next `settle`, then after a wait that doubles up to half a minute, so a folder that never comes
+ * (a deleted worktree) costs a realpath per half minute, not one per path compared.
+ */
+export class PendingPaths {
+  private readonly due = new Map<string, { at: number; wait: number }>();
+  private next = Number.POSITIVE_INFINITY;
+
+  get size(): number {
+    return this.due.size;
+  }
+
+  has(path: string): boolean {
+    return this.due.has(path);
+  }
+
+  add(path: string): void {
+    if (this.due.has(path)) return;
+    const now = Date.now();
+    this.due.set(path, { at: now, wait: FIRST_RETRY_MS });
+    if (now < this.next) this.next = now;
+  }
+
+  /** The pending paths that are there now, which stop being pending; the rest wait on. */
+  settle(): ReadonlyArray<string> {
+    const now = Date.now();
+    if (now < this.next) return [];
+    const there: Array<string> = [];
+    let next = Number.POSITIVE_INFINITY;
+    for (const [path, entry] of this.due) {
+      if (entry.at > now) {
+        if (entry.at < next) next = entry.at;
+        continue;
+      }
+      if (tryRealPathSync(path) !== undefined) {
+        this.due.delete(path);
+        there.push(path);
+        continue;
+      }
+      entry.at = now + entry.wait;
+      entry.wait = Math.min(entry.wait * 2, LAST_RETRY_MS);
+      if (entry.at < next) next = entry.at;
+    }
+    this.next = next;
+    return there;
+  }
+
+  clear(): void {
+    this.due.clear();
+    this.next = Number.POSITIVE_INFINITY;
+  }
+}
+
+const keptPending = new PendingPaths();
 
 /**
  * Every spelling of `path` on this disk: as resolved, as the disk names it (`diskPath`, the real
  * path of its deepest part that exists), and that real path as each linked folder above `path`
  * spells it. On macOS `/var` is a link to `/private/var`, so a folder kept through a link in
  * `/var/folders/x` is matched as `/private/var/folders/x/...` and as `/var/folders/x/...` alike.
- * Only `path`'s own folders are asked of the disk: a path compared with these never is.
+ * Only `path`'s own folders are asked of the disk, each once: a path compared with these never is.
  */
 export const pathForms = (path: string): ReadonlyArray<string> => {
   const resolved = nodePath.resolve(path);
-  const real = diskPath(resolved);
+  const asked = new Map<string, string>();
+  const onDisk = (at: string): string => {
+    const known = asked.get(at);
+    if (known !== undefined) return known;
+    const real = tryRealPathSync(at);
+    const parent = nodePath.dirname(at);
+    const named =
+      real ?? (parent === at ? at : nodePath.join(onDisk(parent), nodePath.basename(at)));
+    asked.set(at, named);
+    return named;
+  };
+  const real = onDisk(resolved);
   const forms = new Set([resolved, real]);
   for (
     let at = nodePath.dirname(resolved);
     nodePath.dirname(at) !== at;
     at = nodePath.dirname(at)
   ) {
-    const atReal = diskPath(at);
+    const atReal = onDisk(at);
     if (atReal === at) continue;
     const rest = relativeInside(atReal, real);
     if (rest !== undefined) forms.add(rest === "" ? at : nodePath.join(at, rest));
@@ -86,28 +156,22 @@ export const pathForms = (path: string): ReadonlyArray<string> => {
   return [...forms];
 };
 
-const keepForms = (resolved: string): boolean => {
-  let added = false;
+const keepForms = (resolved: string): void => {
+  const added: Array<string> = [];
   for (const form of pathForms(resolved)) {
-    if (keptRoots.has(folded(form))) continue;
-    keptRoots.add(folded(form));
-    added = true;
+    const at = folded(form);
+    if (keptRoots.has(at)) continue;
+    keptRoots.add(at);
+    added.push(at);
   }
-  return added;
+  if (added.length > 0) dropCrossingMarks(added);
 };
 
-const settleKept = (): boolean => {
-  let added = false;
-  for (const resolved of keptPending) {
-    if (tryRealPathSync(resolved) === undefined) continue;
-    keptPending.delete(resolved);
-    if (keepForms(resolved)) added = true;
-  }
-  return added;
+const settleKept = (): void => {
+  for (const resolved of keptPending.settle()) keepForms(resolved);
 };
 
 const crossesKept = (path: string): boolean => {
-  if (settleKept()) dropCrossingMarks();
   const at = folded(path);
   for (const kept of keptRoots) if (isInside(at, kept) || isInside(kept, at)) return true;
   return false;
@@ -118,39 +182,40 @@ const crossesKept = (path: string): boolean => {
  * `samePath` compare it as written and never touch the filesystem for it. A folder that was another
  * machine's stays so for a key already handed out, unless it turns out to cross one of this
  * machine's (`keepPathsHere`): that one is never another's. Relative paths are ignored: a host's
- * paths are always absolute.
+ * paths are always absolute. A path noted before is settled at once, without asking the disk.
  */
 export const noteForeignPath = (path: string): void => {
   if (!nodePath.isAbsolute(path)) return;
+  settleKept();
   const at = nodePath.resolve(path);
-  if (!crossesKept(at)) foreignRoots.add(at);
+  if (foreignRoots.has(at) || crossingRoots.has(at)) return;
+  if (crossesKept(at)) crossingRoots.add(at);
+  else foreignRoots.add(at);
 };
 
 /**
  * Keeps `paths` this machine's, whatever another machine says: no `noteForeignPath` takes one of
  * them, a folder above one or a folder below one, and a mark that did already goes. Each is kept by
  * every spelling of it on this disk (`pathForms`): as resolved (a relative one against the working
- * directory), by its real path, and through the links above it.
+ * directory), by its real path, and through the links above it. One that isn't there yet is kept
+ * by its real path too once it is (`PendingPaths`).
  */
 export const keepPathsHere = (paths: Iterable<string>): void => {
-  let added = false;
   for (const path of paths) {
     const resolved = nodePath.resolve(path);
-    if (keptRoots.has(folded(resolved)) && !keptPending.has(resolved)) continue;
+    if (keptRoots.has(folded(resolved)) || keptPending.has(resolved)) continue;
     if (tryRealPathSync(resolved) === undefined) keptPending.add(resolved);
-    if (keepForms(resolved)) added = true;
+    keepForms(resolved);
   }
-  if (added) dropCrossingMarks();
 };
 
-const dropCrossingMarks = (): void => {
+const dropCrossingMarks = (kept: ReadonlyArray<string>): void => {
   for (const root of foreignRoots) {
     const at = folded(root);
-    for (const kept of keptRoots)
-      if (isInside(at, kept) || isInside(kept, at)) {
-        foreignRoots.delete(root);
-        break;
-      }
+    if (kept.some((form) => isInside(at, form) || isInside(form, at))) {
+      foreignRoots.delete(root);
+      crossingRoots.add(root);
+    }
   }
 };
 
@@ -168,6 +233,7 @@ export const isForeignPath = (path: string): boolean => {
 /** Forgets every `noteForeignPath` and `keepPathsHere`, for tests. */
 export const forgetForeignPathsForTest = (): void => {
   foreignRoots.clear();
+  crossingRoots.clear();
   keptRoots.clear();
   keptPending.clear();
 };

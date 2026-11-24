@@ -78,8 +78,6 @@ import {
   conflictsToMerge,
   withAskedMerges,
   diffSides,
-  backlogSuggestion,
-  budgetOf,
   dreamActions,
   dreamFailureText,
   dreamKindLabel,
@@ -94,7 +92,8 @@ import {
   openQuestions,
   parseQuestions,
   perRepoOf,
-  planLines,
+  lastRun,
+  revertable,
   previewTotals,
   resolutionsToSend,
   reviewFiles,
@@ -2017,50 +2016,26 @@ describe("dreams", () => {
     ]);
   });
 
-  it("says what a dream would read, what waits, and when to dream again", () => {
-    expect(["200", "20", "2000", "19", "2001", "1.5", "", "lots"].map(budgetOf)).toEqual([
-      200_000,
-      20_000,
-      2_000_000,
-      undefined,
-      undefined,
-      // 1,500 tokens: below the smallest budget.
-      undefined,
-      undefined,
-      undefined,
-    ]);
-    const plan = {
-      memoryVersion: "0007",
-      fromStart: false,
-      threads: 3,
-      messages: 1,
-      estimatedTokens: 41_000,
-      budgetTokens: 200_000,
-      backlog: { threads: 2, messages: 40, estimatedTokens: 80_000 },
-    };
-    expect(planLines(plan)).toEqual({
-      reads:
-        "Since the update you last adopted (memory 0007): 3 threads, 1 new message, ~41k tokens.",
-      backlog:
-        "Backlog: 2 threads (~80k tokens) past the budget of ~200k tokens, left for the next update.",
+  it("offers Revert only while memory is at the version the last update made", () => {
+    const applied = pastDream({
+      adoptedVersion: "0008",
+      inputs: { memoryVersion: "0007", threadIds: [], agentSessions: [] },
     });
+    expect(revertable(applied, "0008")).toBe(true);
+    // Memory moved on, or it was reverted already: History's Restore is the way back.
+    expect(revertable(applied, "0009")).toBe(false);
+    expect(revertable({ ...applied, revertedAt: 1 }, "0008")).toBe(false);
+    // The first version has none before it; a draft made none.
     expect(
-      planLines({ ...plan, threads: 0, backlog: { threads: 0, messages: 0, estimatedTokens: 0 } }),
-    ).toEqual({
-      reads:
-        "Since the update you last adopted (memory 0007): there is nothing new to read; the update tidies memory alone.",
-      backlog: "Backlog: nothing; everything new fits the budget of ~200k tokens.",
-    });
-    const adopted = pastDream({ adoptedVersion: "0007", backlog: plan.backlog });
-    expect(backlogSuggestion([adopted])).toBe(
-      "2 threads (~80k tokens) were past the last update's budget and wait for the next one.",
-    );
-    expect(backlogSuggestion([pastDream({ status: "running" }), adopted])).toBeUndefined();
-    expect(
-      backlogSuggestion([adopted, pastDream({ adoptedVersion: "0006", backlog: plan.backlog })]),
-    ).toBeDefined();
-    expect(backlogSuggestion([pastDream({ adoptedVersion: "0008" }), adopted])).toBeUndefined();
-    expect(backlogSuggestion([pastDream({ backlog: plan.backlog })])).toBeUndefined();
+      revertable(
+        { ...applied, inputs: { memoryVersion: "", threadIds: [], agentSessions: [] } },
+        "0008",
+      ),
+    ).toBe(false);
+    expect(revertable(pastDream({}), "0008")).toBe(false);
+    const running = pastDream({ status: "running" });
+    const imported = pastDream({ kind: "import" });
+    expect(lastRun([running, imported, applied])).toBe(applied);
   });
 
   it("starts only the scope whose preview is on screen", () => {

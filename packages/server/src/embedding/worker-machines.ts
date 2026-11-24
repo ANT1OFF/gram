@@ -311,6 +311,122 @@ export const startWorkerMachine = (hosts: OnDemandHosts, ask: WorkerMachineAsk) 
     false,
   );
 
+/**
+ * What a worker's own machine is asked to hold for a while (`request_resources`): a size, by the
+ * provider's id for it, or `null` to go back to the size it started at.
+ */
+export interface WorkerMachineResizeAsk {
+  readonly name: string;
+  readonly size: string | null;
+  readonly holdMinutes?: number | undefined;
+  readonly reason?: string | undefined;
+}
+
+/** How a resize came out, as the provider said. */
+export type WorkerMachineResize =
+  | {
+      readonly kind: "resized";
+      /**
+       * - `grown`: in force now; `waiting`: asked, and its node applies it once it has room;
+       * - `releasing`, `released`: going back, or back, to the size it started at;
+       * - `infeasible`: its node can never hold it, and it kept the size it had.
+       */
+      readonly state: "grown" | "waiting" | "releasing" | "released" | "infeasible";
+      readonly size?: string;
+      /** The size it started at, which it goes back to. */
+      readonly start?: string;
+      /** Epoch ms the hold ends at. */
+      readonly until?: number;
+      readonly message?: string;
+    }
+  | { readonly kind: "refused"; readonly message: string };
+
+const RESIZE_STATES = new Set(["grown", "waiting", "releasing", "released", "infeasible"]);
+
+/** A provider's answer to a resize, read field by field. */
+export const parseResizeAnswer = (status: number, body: unknown): WorkerMachineResize => {
+  const fields = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+  const message = text(fields["message"], 300);
+  const state = fields["state"];
+  if (status >= 200 && status < 300 && typeof state === "string" && RESIZE_STATES.has(state)) {
+    const size = fields["size"];
+    const start = fields["start"];
+    const until = typeof fields["until"] === "string" ? Date.parse(fields["until"]) : Number.NaN;
+    return {
+      kind: "resized",
+      state: state as Extract<WorkerMachineResize, { kind: "resized" }>["state"],
+      ...(typeof size === "string" && SHORT.test(size) ? { size } : {}),
+      ...(typeof start === "string" && SHORT.test(start) ? { start } : {}),
+      ...(Number.isFinite(until) ? { until } : {}),
+      ...(message === undefined ? {} : { message }),
+    };
+  }
+  if (status === 404 && fields["code"] === undefined)
+    return { kind: "refused", message: "Machines aren't resized there." };
+  return {
+    kind: "refused",
+    message:
+      message ??
+      (status === 501
+        ? "Machines aren't resized there."
+        : `The machine couldn't be resized: the server answered ${status}.`),
+  };
+};
+
+const resizeIsWellFormed = (ask: WorkerMachineResizeAsk) =>
+  NAME.test(ask.name) && (ask.size === null || SHORT.test(ask.size));
+
+/** The body a resize is asked with, from either provider. */
+export const resizeBody = (ask: WorkerMachineResizeAsk): Record<string, unknown> => ({
+  name: ask.name,
+  size: ask.size,
+  ...(ask.holdMinutes === undefined ? {} : { holdMinutes: ask.holdMinutes }),
+  ...(ask.reason === undefined ? {} : { reason: ask.reason.slice(0, 200) }),
+});
+
+/** Asks a provider for a resize (`send`), or refuses one that isn't well formed. */
+export const askResize = <R>(
+  ask: WorkerMachineResizeAsk,
+  send: Effect.Effect<StartAnswer, never, R>,
+): Effect.Effect<WorkerMachineResize, never, R> =>
+  resizeIsWellFormed(ask)
+    ? Effect.map(send, (answered) =>
+        "failed" in answered
+          ? {
+              kind: "refused" as const,
+              message: `The machine couldn't be resized: ${answered.failed}`,
+            }
+          : parseResizeAnswer(answered.status, answered.body),
+      )
+    : Effect.succeed({ kind: "refused" as const, message: "That size isn't one there is." });
+
+/** Asks the embedder's provider to resize a worker's own machine (`POST /hosts/resize`). */
+export const resizeWorkerMachine = (
+  hosts: OnDemandHosts,
+  owner: string,
+  ask: WorkerMachineResizeAsk,
+) =>
+  askResize(
+    ask,
+    callOutside("host provider", hosts.provider, {
+      method: "POST",
+      path: "/hosts/resize",
+      json: { kind: "worker", owner, ...resizeBody(ask) },
+      accept: [400, 403, 404, 409, 429, 501, 503],
+      timeoutMs: 30_000,
+    }).pipe(
+      Effect.flatMap((response) =>
+        Effect.promise(() =>
+          response
+            .json()
+            .catch(() => undefined)
+            .then((body: unknown) => ({ status: response.status, body })),
+        ),
+      ),
+      Effect.catch((failure) => Effect.succeed({ failed: failure.message })),
+    ),
+  );
+
 /** A joined machine as waiting for a worker's own reads it. */
 export interface JoiningMachine {
   readonly id: string;
@@ -465,6 +581,11 @@ export interface WorkerMachineSource {
   /** The id of the machine registered here under `name`, when there is one. */
   readonly idOf: (name: string) => string | undefined;
   /**
+   * Asks the provider to have a machine of its own hold a larger size for a while, or go back
+   * (`request_resources`). Absent: this provider resizes nothing.
+   */
+  readonly resize?: (ask: WorkerMachineResizeAsk) => Effect.Effect<WorkerMachineResize>;
+  /**
    * Gives back a machine started for a spawn that was then refused: stopped there and forgotten
    * here, where this provider does so. `unsettled`: its start's outcome isn't known, so the server
    * not knowing it yet ends nothing.
@@ -590,6 +711,7 @@ export const embeddedSource = (
   choices: choicesFor(hosts, owner),
   models: Effect.succeed(undefined),
   start: (ask) => startWorkerMachine(hosts, { ...ask, owner }),
+  resize: (ask) => resizeWorkerMachine(hosts, owner, ask),
   theirs: (machine) => machine.onDemand === "worker" && machine.owner === owner,
   arrive: (name) =>
     awaitWorkerMachine(machines, { name, owner }).pipe(

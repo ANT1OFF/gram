@@ -117,10 +117,8 @@ export interface SetStageInput {
 
 /** What an import or a dream would read; the same fields `startDream` takes, so a preview is what runs. */
 export interface DreamPreviewInput {
-  /** `dream` counts what is past the watermarks instead of the agents' histories. */
+  /** `dream` counts what happened since the last update instead of the agents' histories. */
   readonly kind?: DreamKind | undefined;
-  /** What a `dream` reads, in tokens; the server's default is `DREAM_BUDGET_TOKENS_DEFAULT`. */
-  readonly budgetTokens?: number | undefined;
   readonly projectIds?: readonly ProjectId[] | undefined;
   /** The newest sessions read per repo; the server's default is 30. */
   readonly perRepo?: number | undefined;

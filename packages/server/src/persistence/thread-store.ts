@@ -1,6 +1,12 @@
 import type { StoredActor } from "../host/ownership.ts";
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
 import {
+  advanceDreamCursor,
+  type DreamCursor,
+  eventsAfter,
+  readDreamCursor,
+} from "./dream-cursor.ts";
+import {
   type PrWakeFired,
   type PrWatchSeen,
   type WakeConditionFired,
@@ -93,7 +99,7 @@ import {
   rememberPrivateIn,
 } from "./private-readers.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
-import { resolvedWait, type WaitResolution } from "./wait-resolution.ts";
+import { resolvedWait, waitRowsOf, type WaitResolution, type WaitRows } from "./wait-resolution.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
 import { captureReadWorker, layer as readWorkerLayer, withReadWorker } from "./read-worker.ts";
@@ -804,10 +810,7 @@ export interface ThreadStoreShape {
    * kept too, or with `deleted` only those deleted (`WaitItem.deletedAt`), which neither of the
    * others answers. A row that doesn't decode is left out.
    */
-  listWaits(
-    threadId: ThreadId,
-    which?: "open" | "all" | "deleted",
-  ): Effect.Effect<ReadonlyArray<WaitItem>>;
+  listWaits(threadId: ThreadId, which?: WaitRows): Effect.Effect<ReadonlyArray<WaitItem>>;
   /** The thread's items resolved at or after `since` (epoch ms), oldest first, deleted ones aside. */
   listResolvedWaits(threadId: ThreadId, since: number): Effect.Effect<ReadonlyArray<WaitItem>>;
   getWait(threadId: ThreadId, id: WaitId): Effect.Effect<WaitItem, NotFound>;
@@ -1091,6 +1094,17 @@ export interface ThreadStoreShape {
     readonly cards: ReadonlyArray<FeatureCard>;
     readonly outbox: string | undefined;
   }): Effect.Effect<ReadonlyArray<Thread>, NotFound>;
+
+  /** The workspace's orchestration events past `afterSeq` of the `kinds` given, oldest first. */
+  listOrchestrationEventsAfter(
+    workspaceId: WorkspaceId,
+    afterSeq: number,
+    kinds: ReadonlyArray<string>,
+  ): Effect.Effect<ReadonlyArray<OrchestrationEventRecord>>;
+  /** Where the workspace's next memory update reads on from; absent: from its start. */
+  getDreamCursor(workspaceId: WorkspaceId): Effect.Effect<DreamCursor | undefined>;
+  /** Moves the cursor on to `cursor`, field by field; it never moves back. */
+  advanceDreamCursor(workspaceId: WorkspaceId, cursor: DreamCursor): Effect.Effect<void>;
 
   getAutomaticDreamState(workspaceId: WorkspaceId): Effect.Effect<AutomaticDreamState | undefined>;
   updateAutomaticDreamState(
@@ -3337,9 +3351,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   (r) => decodeStored(WaitItem, r.item),
                 ),
               ),
-              Effect.map((items) =>
-                items.filter((item) => (item.deletedAt !== undefined) === (which === "deleted")),
-              ),
+              Effect.map(waitRowsOf(which)),
             ),
           ),
         listResolvedWaits: (threadId, since) =>
@@ -3356,7 +3368,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   (r) => decodeStored(WaitItem, r.item),
                 ),
               ),
-              Effect.map((items) => items.filter((item) => item.deletedAt === undefined)),
+              Effect.map(waitRowsOf("all")),
             ),
           ),
         getWait: (threadId, id) => run(readWait(threadId, id)),
@@ -3532,6 +3544,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 "dreams",
                 "automatic_dream",
                 "dream_watermarks",
+                "dream_cursors",
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE workspace_id = ${id}`;
               }
@@ -3772,6 +3785,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             ),
           ),
 
+        listOrchestrationEventsAfter: (workspaceId, afterSeq, kinds) =>
+          run(eventsAfter(sql, workspaceId, afterSeq, kinds)),
+        getDreamCursor: (id) => run(readDreamCursor(sql, id)),
+        advanceDreamCursor: (id, cursor) => tx(advanceDreamCursor(sql, id, cursor)),
         getAutomaticDreamState: (id) => run(readAutomaticDreamState(id)),
         updateAutomaticDreamState: (id, f) =>
           tx(

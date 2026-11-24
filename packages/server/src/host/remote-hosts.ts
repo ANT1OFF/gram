@@ -39,8 +39,10 @@ import {
 } from "./protocol.ts";
 import { makeMachineUpdates, RETRY_MS, type UpdateRequest } from "./machine-updates.ts";
 import * as Schedule from "effect/Schedule";
+import * as Duration from "effect/Duration";
 import * as FiberSet from "effect/FiberSet";
 import { watchedSocket } from "./socket-end.ts";
+import { MOVE_WITHIN_MS } from "./following-sessions.ts";
 import {
   type MachineMarksByHost,
   makeStopMarks,
@@ -180,6 +182,12 @@ export interface RemoteHostsShape {
    */
   readonly stops: StopMarks;
   /**
+   * The machines being replaced and expected back on the same disk (a cloud machine reclaimed, a VM
+   * moved): a session of one whose agent or connection goes waits for it to come back and carries
+   * on there (`followingSessions`' `moving`), showing a notice meanwhile rather than failing.
+   */
+  readonly moves: MachineMoves;
+  /**
    * Closes every provisioned host's connection and any of their dials still saying hello, for
    * when provisioned hosts are turned off. They stay registered.
    */
@@ -190,6 +198,21 @@ export interface RemoteHostsShape {
    * and provisioned hosts, which dial their own listener, aren't touched.
    */
   readonly keepOrigin: (origin: string | undefined) => void;
+}
+
+/** What `RemoteHosts.moves` keeps. In memory only: a session doesn't outlive this process. */
+export interface MachineMoves {
+  /**
+   * The machine is being replaced and is expected back: its host said it was going, or whoever
+   * runs it said so (`POST /machines/stop/moving`). Its sessions wait `withinMs` for it, the
+   * default when left out, from when each starts waiting. Held until a host of it dials in again.
+   */
+  readonly said: (id: HostId, withinMs?: number) => void;
+  /**
+   * How long a session of the machine waits for it now, or undefined when it isn't moving: said
+   * so within that time and not back since, or readied to stop by this Gram recently.
+   */
+  readonly of: (id: HostId) => number | undefined;
 }
 
 /** The other machines joined to this Gram, and the connections of those dialled in. */
@@ -214,6 +237,8 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
       readonly pingEveryMs?: number;
       /** Where the stop marks and disks are kept across a restart; in memory when left out. */
       readonly marks?: MarksStore;
+      /** How long a session waits for a machine being replaced; `MOVE_WITHIN_MS` when left out. */
+      readonly moveWithinMs?: number;
     } = {},
   ) =>
     Effect.gen(function* () {
@@ -298,6 +323,18 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             },
       );
       stops.onReady(() => changed());
+      const moveWithin = options.moveWithinMs ?? MOVE_WITHIN_MS;
+      const moving = new Map<HostId, { readonly at: number; readonly withinMs: number }>();
+      const moves: MachineMoves = {
+        said: (id, withinMs) => {
+          moving.set(id, { at: now(), withinMs: withinMs ?? moveWithin });
+        },
+        of: (id) => {
+          const said = moving.get(id);
+          if (said !== undefined && now() - said.at < said.withinMs) return said.withinMs;
+          return stops.recently(id) ? moveWithin : undefined;
+        },
+      };
       let automaticMemory: boolean | undefined;
       const automaticStore: AutomaticStore = options.automatic ?? {
         read: () => automaticMemory,
@@ -490,6 +527,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
             entry = live;
             online.set(machine.id, live);
             providerWords.delete(machine.id);
+            moving.delete(machine.id);
             machines.note(machine.id, undefined);
             changed();
             yield* Effect.logInfo("machines: a joined machine is online").pipe(
@@ -506,6 +544,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               runFork(
                 Stream.runForEachWhile(going, ({ withinMs }) =>
                   Effect.logInfo("machines: a machine says it is about to be taken away").pipe(
+                    Effect.tap(() => Effect.sync(() => moves.said(machine.id))),
                     Effect.annotateLogs({ hostId: machine.id, withinMs }),
                     Effect.andThen(
                       Effect.forEach([...goingReady], (ready) => ready(machine.id, withinMs), {
@@ -668,6 +707,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
         automaticUpdates: automaticOn,
         setAutomaticUpdates: (on) => automaticStore.write(on),
         stops,
+        moves,
         remove: (id) => {
           bump(id);
           updates.forget(id);
@@ -718,6 +758,9 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
           release: releaseOfConfig(config),
           automatic: fileAutomaticStore(dataDir),
           provisionedOrigin: config.provisionedHosts?.origin,
+          ...(config.machineMoveWithin === undefined
+            ? {}
+            : { moveWithinMs: Duration.toMillis(config.machineMoveWithin) }),
           marks: lazyFileStore(dataDir, "machine-marks.json", fileMarksStore, () => ({
             machines: {},
             dropped: [],

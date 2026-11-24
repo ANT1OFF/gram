@@ -86,6 +86,31 @@ export const DreamRead = Schema.Struct({
 });
 export type DreamRead = typeof DreamRead.Type;
 
+/**
+ * What a memory update read of what happened since the last one, without any transcript: worker
+ * reports, merges, answered questions and finished threads' recaps. Adoption moves the
+ * workspace's cursor to `through*`, so the next update reads on from there.
+ */
+export const DreamRecentRead = Schema.Struct({
+  /** The last worker report read (`worker_reports.seq`). */
+  throughReportSeq: Schema.Int,
+  /** The last orchestration event read. */
+  throughEventSeq: Schema.Int,
+  /** Epoch ms: what happened at or before this was read. */
+  throughAt: Schema.Number,
+  /** Epoch ms the read started after; 0 from the workspace's start. */
+  sinceAt: Schema.Number,
+  reports: Schema.Int,
+  merges: Schema.Int,
+  questions: Schema.Int,
+  threads: Schema.Int,
+  /** Characters over four of what was written for it. */
+  estimatedTokens: Schema.Int,
+  /** More was waiting than one update reads; the next one reads on from `through*`. */
+  more: Schema.optionalKey(Schema.Boolean),
+});
+export type DreamRecentRead = typeof DreamRecentRead.Type;
+
 /** What a dream read: the memory version it started from and the transcripts beside it. */
 export const DreamInputs = Schema.Struct({
   /** The adopted version the review diffs against, e.g. `0007`; `""` for an import into no memory. */
@@ -96,6 +121,8 @@ export const DreamInputs = Schema.Struct({
   agentSessions: Schema.Array(DreamAgentSession),
   /** How far each Gram thread was read; absent reads none. */
   reads: Schema.optionalKey(Schema.Array(DreamRead)),
+  /** A memory update's read of what happened since the last one; absent on an import or a pick of threads. */
+  recent: Schema.optionalKey(DreamRecentRead),
 });
 export type DreamInputs = typeof DreamInputs.Type;
 
@@ -129,20 +156,20 @@ export const DreamBacklog = Schema.Struct({
 });
 export type DreamBacklog = typeof DreamBacklog.Type;
 
-/** What a `dream` would read now, counted before anything runs. */
+/** What a `dream` would read now, counted before anything runs: what happened since the last one. */
 export const DreamPlan = Schema.Struct({
-  /** The adopted version it starts from, whose watermarks it reads past; `""` with no memory. */
+  /** The adopted version it starts from; `""` with no memory. */
   memoryVersion: Schema.String,
-  /** Whether no thread has a watermark yet, so it reads every thread from its start. */
-  fromStart: Schema.Boolean,
-  /** Threads it reads, open or archived. */
+  /** Epoch ms of the last adopted update it reads on from; 0 from the workspace's start. */
+  sinceAt: Schema.Number,
+  reports: Schema.Int,
+  merges: Schema.Int,
+  questions: Schema.Int,
   threads: Schema.Int,
-  /** New messages it reads. */
-  messages: Schema.Int,
   /** Characters over four of what it reads. */
   estimatedTokens: Schema.Int,
-  budgetTokens: Schema.Int,
-  backlog: DreamBacklog,
+  /** More is waiting than one update reads; the next one reads on. */
+  more: Schema.optionalKey(Schema.Boolean),
 });
 export type DreamPlan = typeof DreamPlan.Type;
 
@@ -176,10 +203,23 @@ export const Dream = Schema.Struct({
   adoptedVersion: Schema.optionalKey(Schema.String),
   /** What the dream was started without, as sentences to show: sessions past the cap, agents that can't be read. */
   notes: Schema.optionalKey(Schema.Array(Schema.String)),
-  /** The tokens it was given to read; absent on an import. */
+  /** Kept on runs made before memory updates read only what happened since: never written now. */
   budgetTokens: Schema.optionalKey(Schema.Int),
-  /** What was past its budget when it started, left for the next dream. */
+  /** Kept on runs made before memory updates read only what happened since: never written now. */
   backlog: Schema.optionalKey(DreamBacklog),
+  /**
+   * The notes an adopted update changed, each with the SHA-256 of the text it left (absent for one
+   * it removed): what `dream.revert` puts back while nobody has written the note since.
+   */
+  changed: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ path: Schema.String, sha256: Schema.optionalKey(Schema.String) })),
+  ),
+  /** An automatic run that changed nothing: settled, with no version to make. */
+  unchanged: Schema.optionalKey(Schema.Boolean),
+  /** Epoch ms the user reverted the version it made (`dream.revert`). */
+  revertedAt: Schema.optionalKey(Schema.Number),
+  /** One line on what a completed run changed, for its notice, the Memory page and History. */
+  summary: Schema.optionalKey(Schema.String),
 });
 export type Dream = typeof Dream.Type;
 
@@ -220,6 +260,14 @@ export const MemoryVersionInfo = Schema.Struct({
   files: Schema.Int,
   /** Whether it is the adopted one. */
   current: Schema.Boolean,
+  /** The memory update it came from; absent for versions made otherwise or before this was kept. */
+  dreamId: Schema.optionalKey(DreamId),
+  /** How that update was adopted: by the user's review, or automatically. */
+  mode: Schema.optionalKey(DreamMode),
+  /** That update's one line on what it changed. */
+  summary: Schema.optionalKey(Schema.String),
+  /** The version it was made from. */
+  basedOn: Schema.optionalKey(Schema.String),
 });
 export type MemoryVersionInfo = typeof MemoryVersionInfo.Type;
 

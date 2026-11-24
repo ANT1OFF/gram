@@ -237,6 +237,23 @@ export const EndedEvent = Schema.Struct({
    * turn it ran was cut off there, and its work in progress is what was last kept of it.
    */
   lostMachine: Schema.optionalKey(Schema.String),
+  /**
+   * With `restartedMachine`: the machine was being replaced (its host said it was going, or whoever
+   * runs it said it was moving) and came back on the same disk, rather than only restarting.
+   */
+  moved: Schema.optionalKey(Schema.Literal(true)),
+});
+
+/**
+ * The joined machine the session runs on is being replaced under it (`Thread.machineMove`): its host
+ * went, and the session waits for the machine to come back, until `until` (epoch ms). The session's
+ * `ended` follows once it is back, or once it isn't by then.
+ */
+export const MachineMovingEvent = Schema.Struct({
+  type: Schema.Literal("machineMoving"),
+  /** The machine's name; filled in by the side that knows it. */
+  machine: Schema.optionalKey(Schema.String),
+  until: Schema.Number,
 });
 
 /** The permission mode changed: by the user, a plan approval, or the agent. */
@@ -343,6 +360,7 @@ export const AgentEvent = Schema.Union([
   BackgroundOutputEvent,
   TurnEndEvent,
   EndedEvent,
+  MachineMovingEvent,
   ModeEvent,
   ModelEvent,
   SpeedEvent,

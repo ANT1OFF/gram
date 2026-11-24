@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import { ProcSpawnError, type ProcError } from "./errors.ts";
 import { git, type GitOptions } from "./exec.ts";
 import type { Proc, ProcOutput } from "./proc.ts";
+import { isOptionShaped } from "./ref-format.ts";
 import { leadingOptions } from "./repo-config-guard.ts";
 
 /** A guard refused a folder's origin: `message` says why, in words a person can act on. */
@@ -45,6 +46,32 @@ const ALWAYS_REMOTE: Readonly<Record<string, ReadonlySet<string> | true>> = {
 
 const NAMED_REMOTE = new Set(["fetch", "push", "pull", "ls-remote"]);
 
+const optionsEnd = (rest: ReadonlyArray<string>): number =>
+  rest.findIndex((arg) => arg === "--end-of-options" || arg === "--");
+
+const POSITIONAL_AFTER_END = new Set([...NAMED_REMOTE, "clone"]);
+
+/**
+ * Why `args` can't go to git as they are, or `undefined`: a fetch, push, pull, ls-remote or clone
+ * whose remote, refspec, URL or folder stands before `--end-of-options` (or `--`), where git
+ * would read an option, or one after it that is option-shaped all the same. A remote's or ref's
+ * name read from a repository could be spelled as an option (`--upload-pack=…`), and git would
+ * run what it names; options go before the end of options, spelled `--name=value`.
+ */
+export const positionalProblem = (args: ReadonlyArray<string>): string | undefined => {
+  const at = leadingOptions(args);
+  const verb = args[at];
+  if (verb === undefined || !POSITIONAL_AFTER_END.has(verb)) return undefined;
+  const rest = args.slice(at + 1);
+  const end = optionsEnd(rest);
+  const options = end < 0 ? rest : rest.slice(0, end);
+  if (options.some((arg) => !isOptionShaped(arg)))
+    return `Gram gives git ${verb} its remote, refs and paths only after --end-of-options.`;
+  if (end >= 0 && rest.slice(end + 1).some(isOptionShaped))
+    return `Gram refused a git ${verb} argument that git could read as an option.`;
+  return undefined;
+};
+
 /** Whether `args`, the arguments git is given, reach a remote: what `remoteGit` exists for. */
 export const reachesRemote = (args: ReadonlyArray<string>): boolean => {
   const at = leadingOptions(args);
@@ -71,7 +98,7 @@ export const reachesOrigin = (args: ReadonlyArray<string>): boolean => {
   if (!NAMED_REMOTE.has(verb)) return true;
   const rest = args.slice(at + 1);
   if (rest.includes("--all") || rest.includes("--multiple")) return true;
-  const end = rest.indexOf("--");
+  const end = optionsEnd(rest);
   const positional =
     end >= 0 ? rest[end + 1] : rest.find((arg) => !arg.startsWith("-") && arg !== "");
   return positional === undefined || positional === "origin";
@@ -103,7 +130,7 @@ export const pinnedArgs = (
   if (verb !== "fetch" && verb !== "push" && verb !== "ls-remote") return undefined;
   const rest = args.slice(at + 1);
   if (rest.includes("--all") || rest.includes("--multiple")) return undefined;
-  const end = rest.indexOf("--");
+  const end = optionsEnd(rest);
   const index = end >= 0 ? end + 1 : rest.findIndex((arg) => !arg.startsWith("-") && arg !== "");
   if (index < 0 || index >= rest.length || rest[index] !== "origin") return undefined;
   const url = verb === "push" ? urls.push : urls.fetch;
@@ -135,6 +162,8 @@ export const remoteGit = (
   options: GitOptions = {},
 ): Effect.Effect<ProcOutput, ProcError, Proc> =>
   Effect.gen(function* () {
+    const problem = positionalProblem(args);
+    if (problem !== undefined) return yield* new ProcSpawnError({ bin: "git", message: problem });
     const ask = guard;
     if (ask === undefined || !reachesOrigin(args)) return yield* git(cwd, args, options);
     const urls = yield* ask(cwd).pipe(

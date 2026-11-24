@@ -7,6 +7,7 @@ import {
 } from "@gram/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { awaited } from "@/sidebar/asking-test-fixtures";
 import { useAttentionStore } from "@/sidebar/attention";
 import { needsYou, sectionOf } from "@/sidebar/grouping";
 import { useThreadsStore } from "@/stores/threads";
@@ -20,7 +21,7 @@ import { needsYouCount, resetDerivedAsks, useDerivedAsks } from "./needs-you-sto
 
 const summary = (id: string, status: ThreadStatus, parked = false): ThreadSummary => ({
   status,
-  pendingRequests: [],
+  pendingRequests: awaited(status),
   queue: [],
   thread: {
     id: id as ThreadId,

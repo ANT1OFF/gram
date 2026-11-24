@@ -66,5 +66,6 @@ export function createDreamsMock(
     adoptDream: (dreamId, input) => dreams.adopt(dreamId, input),
     mergeDreamConflict: (dreamId, path) => dreams.merge(dreamId, path),
     discardDream: (dreamId) => dreams.discard(dreamId),
+    revertDream: (dreamId) => dreams.revert(dreamId),
   };
 }

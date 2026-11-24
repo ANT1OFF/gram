@@ -4,6 +4,7 @@ import {
   sidebarGroup,
   type SidebarGroup,
   type ThreadId,
+  type ThreadStatus,
   type ThreadSummary,
 } from "@gram/contracts";
 
@@ -12,6 +13,11 @@ import { unseenAttention } from "./attention";
 const SECTIONS = ["pinned", "needsYou", "working", "idle", "settled", "parked"] as const;
 export type SidebarSection = (typeof SECTIONS)[number];
 
+const ASKING: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
+
+const groupedStatus = (s: Pick<ThreadSummary, "status" | "pendingRequests">): ThreadStatus =>
+  ASKING.has(s.status) && s.pendingRequests.length === 0 ? "running" : s.status;
+
 const groupOf = (
   s: ThreadSummary,
   acknowledged?: Readonly<Record<string, string>> | undefined,
@@ -19,7 +25,7 @@ const groupOf = (
   if (s.thread.awaitingMachine !== undefined)
     return s.thread.awaitingMachine.failed === undefined ? "working" : "needsYou";
   const status = sidebarGroup({
-    status: s.status,
+    status: groupedStatus(s),
     completedAt: s.thread.completedAt,
     babysit: s.thread.babysit,
   });

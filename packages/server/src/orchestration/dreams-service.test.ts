@@ -37,6 +37,7 @@ import {
   finishDream,
   titles,
   filesUnder,
+  reportSomething,
 } from "./dreams-service-kit.ts";
 
 /** A kind outside the contract, for the guards that must refuse one. */
@@ -165,6 +166,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             ...settings,
             agents: { ...settings.agents, defaultModel: { agent: "codex", model: "default" } },
           }));
+          yield* reportSomething(workspaceId);
           const dream = yield* dreams.start({ workspaceId, kind: "dream" });
           const session = yield* waitSent(dream.threadId as ThreadId, 1);
           expect(session.options).toMatchObject({
@@ -244,6 +246,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         Effect.gen(function* () {
           const { workspaceId } = yield* openOrchestrator(world);
           const dreams = yield* Dreams;
+          yield* reportSomething(workspaceId);
           const dream = yield* dreams.start({
             workspaceId,
             kind: "dream",
@@ -259,6 +262,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           expect(yield* Effect.flip(dreams.adopt(dream.id))).toMatchObject({
             _tag: "InvalidState",
           });
+          yield* reportSomething(workspaceId);
           const retry = yield* dreams.start({
             workspaceId,
             kind: "dream",
@@ -498,7 +502,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         const store = yield* ThreadStore;
         const dreams = yield* Dreams;
         const events = yield* collectEvents(["dreams.changed"]);
-        const { workspaceId, project, thread } = yield* openOrchestrator(world);
+        const { workspaceId, project } = yield* openOrchestrator(world);
 
         const { dream, session } = yield* startDream(workspaceId, "Focus on deploys.");
         expect(dream).toMatchObject({
@@ -507,7 +511,12 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           status: "running",
           instructions: "Focus on deploys.",
           model: { agent: "claude" },
-          inputs: { memoryVersion: "0001", threadIds: [thread.id], agentSessions: [] },
+          inputs: {
+            memoryVersion: "0001",
+            threadIds: [],
+            agentSessions: [],
+            recent: { reports: 1, merges: 0, questions: 0, threads: 0 },
+          },
         });
         expect(dream.outputDir).toBe(
           nodePath.join(memoryRoot(world), workspaceId, "dreams", dream.id),
@@ -516,7 +525,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
           "input/INDEX.md",
           "input/INSTRUCTIONS.md",
           "input/memory/MEMORY.md",
-          "input/sessions/001-orchestrator-shop.md",
+          "input/sessions/001-since-the-last-memory-update.md",
           "output/MEMORY.md",
         ]);
 
@@ -657,6 +666,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             const memory = yield* OrchestrationMemory;
             const events = yield* collectEvents(["notify"]);
             const { workspaceId } = yield* openOrchestrator(world);
+            yield* reportSomething(workspaceId);
             const dream = yield* dreams.start({
               workspaceId,
               kind: "dream",
@@ -684,19 +694,23 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
               "0001",
               "0002",
             ]);
-            expect((yield* store.listDreamWatermarks(workspaceId, "0002")).length).toBeGreaterThan(
-              0,
-            );
-            yield* completeTurn(session, "duplicate done");
+            // What it read is spent: the next update reads on past it.
+            expect((yield* store.getDreamCursor(workspaceId))?.reportSeq).toBeGreaterThan(0);
             yield* settle;
+            // A run that applied itself needs nothing more from anyone: its thread is closed.
+            expect(
+              (yield* store.listClosed).some((entry) => entry.thread.id === dream.threadId),
+            ).toBe(true);
             expect((yield* memory.versions(workspaceId)).length).toBe(2);
             expect((yield* Effect.flip(dreams.adopt(dream.id))).message).toContain(
               "already adopted",
             );
-            expect(titles(events)).toContain("Memory update automatically adopted");
+            expect(titles(events)).toContainEqual(
+              expect.stringMatching(/^Memory updated \(0002\): /),
+            );
             expect(titles(events)).not.toContain("Memory update finished — review it");
-            const report = (yield* store.listMessages(dream.threadId!)).flatMap((m) =>
-              m.parts.filter((p) => p.type === "data-dream-report"),
+            const report = (yield* store.listMessagesFrom(dream.threadId!, 0, true)).flatMap((m) =>
+              m.message.parts.filter((p) => p.type === "data-dream-report"),
             );
             expect(report).toMatchObject([
               { data: { mode: "auto", adoptedVersion: "0002", status: "completed" } },

@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.41.0](https://github.com/ANT1OFF/gram/compare/v1.40.0...v1.41.0) (2026-11-24)
+
+
+### Features
+
+* move a hosted worker machine when its provider asks ([#1018](https://github.com/ANT1OFF/gram/issues/1018)) ([59ac944](https://github.com/ANT1OFF/gram/commit/59ac9448b6373123224dab097022692859fa86f3))
+* **orchestration:** request_resources, so a worker's own machine grows for heavy work and shrinks back ([#1017](https://github.com/ANT1OFF/gram/issues/1017)) ([7d969d4](https://github.com/ANT1OFF/gram/commit/7d969d491c127d57302034c0b3a17cc9a4d372a0))
+
+
+### Bug Fixes
+
+* a Codex open that gets no answer no longer blocks every later Codex thread ([#1016](https://github.com/ANT1OFF/gram/issues/1016)) ([822dc9b](https://github.com/ANT1OFF/gram/commit/822dc9bdd036ab131a19404d4f548de8a28b1dff))
+* harden git argument handling for repository-supplied names ([#1012](https://github.com/ANT1OFF/gram/issues/1012)) ([a032a92](https://github.com/ANT1OFF/gram/commit/a032a926097e2a7c2cba4a4cd3e1b10b3bffe85d))
+
+## [1.40.0](https://github.com/ANT1OFF/gram/compare/v1.39.0...v1.40.0) (2026-11-24)
+
+
+### Features
+
+* a thread whose machine is replaced waits for it and carries on ([#1014](https://github.com/ANT1OFF/gram/issues/1014)) ([d08e6ee](https://github.com/ANT1OFF/gram/commit/d08e6ee367dd44a5d6b4885cd0f0a419872b8ea7))
+* **server:** ask for a stopped machine ahead of a due wake or a draft being typed ([#1013](https://github.com/ANT1OFF/gram/issues/1013)) ([09f77b8](https://github.com/ANT1OFF/gram/commit/09f77b8488d3b40f43adda62f1da5ffa0b6e3814))
+* Waiting on you items end as done, dismissed or withdrawn ([#1007](https://github.com/ANT1OFF/gram/issues/1007)) ([9ae6dcb](https://github.com/ANT1OFF/gram/commit/9ae6dcb01a092b06b2f4328615dec3268cfc44af))
+
+
+### Performance Improvements
+
+* **shared:** a newly joined machine's first session no longer waits for the whole shared folder ([#1010](https://github.com/ANT1OFF/gram/issues/1010)) ([9b7465f](https://github.com/ANT1OFF/gram/commit/9b7465f7e9b1ae9c3a567cbade5b9cf160e6e41e))
+* stop the server realpathing every kept folder for every thread path ([#1015](https://github.com/ANT1OFF/gram/issues/1015)) ([ffe0f88](https://github.com/ANT1OFF/gram/commit/ffe0f8896a60e48f3098d36d2ae13f4b59bdadc5))
+
 ## [1.39.0](https://github.com/ANT1OFF/gram/compare/v1.38.0...v1.39.0) (2026-11-22)
 
 

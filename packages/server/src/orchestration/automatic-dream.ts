@@ -9,6 +9,8 @@ import {
   type WorkspaceId,
   type WorkspaceState,
   defaultSlotOf,
+  isTierAgent,
+  memoryUpdateModeOf,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -51,6 +53,25 @@ export const defaultDreamModel = (
       if (models.length > 0) return { agent, model: "default" };
     }
     return { agent: "claude", model: "default" };
+  });
+
+/**
+ * The model a memory update runs on when nobody picked one: the recommendation's Scoped tier
+ * (`claude-sonnet-5-5` on Claude Code, `gpt-6.2-sol` on Codex) on the harness of the saved default,
+ * since the update reads short, distilled records rather than transcripts and files what lasts.
+ * A default on a gateway profile is kept as it is: that choice of where the text goes is the user's.
+ */
+export const memoryUpdateModel = (
+  settings: Settings,
+  hosts: AgentHosts["Service"],
+): Effect.Effect<ModelRef> =>
+  Effect.gen(function* () {
+    const fallback = yield* defaultDreamModel(settings, hosts);
+    if (fallback.profileId !== undefined || !isTierAgent(fallback.agent)) return fallback;
+    const scoped = yield* resolveSlot(hosts, { tier: "scoped", agent: fallback.agent });
+    return scoped !== undefined && scoped.agent === fallback.agent && scoped.profileId === undefined
+      ? scoped
+      : fallback;
   });
 
 /** Runs only under Dreams' startLock; SQLite stores the claim before any provider launch.
@@ -169,7 +190,11 @@ export const makeAutomaticDream = (deps: {
         detail:
           deferred ??
           state.lastFailure ??
-          "Automatic runs await review. Counting distinct completed threads since the last start or setting edit.",
+          `${
+            memoryUpdateModeOf(workspace.charter) === "auto"
+              ? "Automatic runs apply their changes at once."
+              : "Automatic runs await review."
+          } Counting distinct completed threads since the last start or setting edit.`,
       };
     });
   const modelAvailable = (model: ModelRef) =>
@@ -198,7 +223,7 @@ export const makeAutomaticDream = (deps: {
         (yield* gate(workspace)) !== undefined
       )
         return;
-      const model = yield* defaultDreamModel(yield* store.getSettings, hosts);
+      const model = yield* memoryUpdateModel(yield* store.getSettings, hosts);
       if (!(yield* modelAvailable(model))) {
         let refused = false;
         yield* store.updateAutomaticDreamState(id, (s) => {
@@ -216,7 +241,7 @@ export const makeAutomaticDream = (deps: {
       const standing = yield* store.getWorkspace(id);
       if (
         (yield* gate(standing)) !== undefined ||
-        JSON.stringify(yield* defaultDreamModel(yield* store.getSettings, hosts)) !==
+        JSON.stringify(yield* memoryUpdateModel(yield* store.getSettings, hosts)) !==
           JSON.stringify(model)
       )
         return;
