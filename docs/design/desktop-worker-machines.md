@@ -328,9 +328,11 @@ subscription token reaches a machine, with its own consent.
   came gives the machine back only if no open thread is placed on it: not its own worker made
   before the failure, and not another worker sharing it. A name a later start takes, or one registered here since, is that start's: no stop owed for
   an earlier one ever ends its machine.
-- **Release across a restart.** The release pass keeps what it told in memory only, so after a
-  restart it tells each machine at work that it is working, once, in case the server still holds
-  a release from before; a machine just back online is told so at once, and only a verdict that
+- **Release across a restart.** The release pass keeps the releases it told, and each one not told
+  yet with when it is sent again, in `worker-machine-releases.json` beside the machines, so a
+  restart neither sends every release again in a burst nor forgets one owed. It keeps no
+  take-back, so after a restart it tells each machine at work that it is working, once, in case
+  the server still holds a release from before; a machine just back online is told so at once, and only a verdict that
   its work is over waits for it to settle. A release counts as told only once the server applied
   it (not a 404, nor a 2xx saying it knows no such machine), so one that wasn't is told again. A
   release answered 404 forgets nothing: a `404 not_found` is told again next pass, any other 404
@@ -416,7 +418,12 @@ subscription token reaches a machine, with its own consent.
 - **Release** is `worker-machine-release.ts`'s pass, run against whichever provider there is: a
   worker machine with no worker left at work is told released (`…/release`), and told again,
   `released: false`, if one is at work there again. The server pauses and reclaims it as it does
-  its own.
+  its own. An archived worker is no longer at work once nothing goes on in its session and no
+  run is watched for it. A pass sends its releases one at a time, a second apart, take-backs
+  first. A release not told (no answer, a 404, `applied: false`) is sent again after two minutes,
+  twice that after each miss more, to an hour. A `429` ends the pass, and no release goes out for
+  two minutes, twice that after each `429` more, to half an hour. The server offers no list of a
+  person's machines, so only the machines registered here are released.
 - **The machine provider asks to move the machine** to new compute, as before its compute is taken
   away (`moveRequested` in `…/status`, a time). Once a minute, this Gram asks each running worker
   machine's status (`signed-in-moves.ts`). For one asked to move, it readies the machine to stop,
