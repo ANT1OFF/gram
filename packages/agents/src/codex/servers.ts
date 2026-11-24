@@ -715,17 +715,12 @@ export const CodexServersLive = (
             ),
             Effect.provideService(Scope.Scope, layerScope),
           );
-          threadOwner = ownership.owner(
-            homeIdentity(env),
-            rpc,
-            () => {
-              retired = true;
-              if (self !== undefined && servers.get(key) === self) servers.delete(key);
-              if (users === 0) run(stopIfUnused);
-            },
-            child.pid,
-            sessionPartitionId !== undefined,
-          );
+          const owning = { pid: child.pid, dedicated: sessionPartitionId !== undefined };
+          threadOwner = ownership.owner(homeIdentity(env), rpc, owning, () => {
+            retired = true;
+            if (self !== undefined && servers.get(key) === self) servers.delete(key);
+            if (users === 0) run(stopIfUnused);
+          });
           if (!children.has(child)) threadOwner.exit();
           const ownedThreads = threadOwner;
           yield* Effect.forkIn(

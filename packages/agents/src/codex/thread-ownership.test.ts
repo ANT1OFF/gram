@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FiberSet from "effect/FiberSet";
 import * as Deferred from "effect/Deferred";
 import * as Redacted from "effect/Redacted";
 import * as Exit from "effect/Exit";
@@ -164,6 +165,23 @@ const heldPair = Effect.gen(function* () {
   const old = yield* servers.acquire(undefined, "user");
   return { first, sibling, old, servers };
 });
+const worker = (name: string) => ({
+  ...options,
+  threadId: ThreadId.make(`invented-worker-${name}`),
+  audience: "worker" as const,
+});
+/** Subscribes now, so the returned wait sees the server's exit even if it comes first. */
+const exitOf = (server: CodexServer) =>
+  Effect.gen(function* () {
+    const exited = yield* Deferred.make<void>();
+    yield* server.subscribe("exit-observer", {
+      message: () => {},
+      exit: () => {
+        Deferred.doneUnsafe(exited, Effect.void);
+      },
+    });
+    return Deferred.await(exited).pipe(Effect.timeout("5 seconds"));
+  });
 const refused = (effect: Effect.Effect<unknown, AgentUnavailable, Scope.Scope>, detail?: string) =>
   effect.pipe(
     Effect.scoped,
@@ -660,22 +678,6 @@ describe.skipIf(process.platform === "win32")("Codex provider thread ownership",
         Effect.gen(function* () {
           const host = yield* CodexHost;
           const servers = yield* CodexServers;
-          const worker = (name: string) => ({
-            ...options,
-            threadId: ThreadId.make(`invented-worker-${name}`),
-            audience: "worker" as const,
-          });
-          const exitOf = (server: CodexServer) =>
-            Effect.gen(function* () {
-              const exited = yield* Deferred.make<void>();
-              yield* server.subscribe("exit-observer", {
-                message: () => {},
-                exit: () => {
-                  Deferred.doneUnsafe(exited, Effect.void);
-                },
-              });
-              return Deferred.await(exited).pipe(Effect.timeout("5 seconds"));
-            });
 
           const doneScope = yield* sessionScope;
           const done = yield* host
@@ -743,27 +745,83 @@ describe.skipIf(process.platform === "win32")("Codex provider thread ownership",
   );
 });
 
-describe.skipIf(process.platform === "win32")("Codex thread ownership with a vanished owner", () => {
-  const quietRpc = { request: () => Effect.never } as unknown as CodexRpc;
-  it.effect("takes over a thread whose owning app-server process is gone", () =>
-    Effect.gen(function* () {
-      const ownership = makeThreadOwnership(150, 2000, (effect) => {
-        Effect.runFork(effect);
-      });
-      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-        stdio: "ignore",
-      });
-      const stale = ownership.owner("/invented/home", quietRpc, () => {}, child.pid);
-      const opened = (id: string) => Effect.succeed({ thread: { id } });
-      yield* stale.open("invented-thread", opened("invented-thread"));
-      // The process ends, but nothing reports its exit to the registry, which still holds the thread.
-      yield* Effect.callback<void>((resume) => {
-        child.once("exit", () => resume(Effect.void));
-        child.kill("SIGKILL");
-      });
-      const next = ownership.owner("/invented/home", quietRpc, () => {}, process.pid);
-      const started = yield* next.open("invented-thread", opened("invented-thread"));
-      expect(started.thread.id).toBe("invented-thread");
-    }).pipe(Effect.scoped),
-  );
-});
+const opened = (id: string) => Effect.succeed({ thread: { id } });
+const standInChild = () =>
+  spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+// The process ends, but nothing reports its exit to the registry, which still holds its fences.
+const endUnnoticed = (child: ReturnType<typeof spawn>) =>
+  Effect.callback<void>((resume) => {
+    child.once("exit", () => resume(Effect.void));
+    child.kill("SIGKILL");
+  });
+describe.skipIf(process.platform === "win32")(
+  "Codex thread ownership with a vanished owner",
+  () => {
+    const quietRpc = { request: () => Effect.never } as unknown as CodexRpc;
+    it.effect("takes over a thread whose owning app-server process is gone", () =>
+      Effect.gen(function* () {
+        const run = yield* FiberSet.makeRuntime();
+        const ownership = makeThreadOwnership(150, 2000, (effect) => {
+          run(effect);
+        });
+        const child = standInChild();
+        const stale = ownership.owner(
+          "/invented/home",
+          quietRpc,
+          { pid: child.pid, dedicated: false },
+          () => {},
+        );
+        yield* stale.open("invented-thread", opened("invented-thread"));
+        yield* endUnnoticed(child);
+        const next = ownership.owner(
+          "/invented/home",
+          quietRpc,
+          { pid: process.pid, dedicated: false },
+          () => {},
+        );
+        const started = yield* next.open("invented-thread", opened("invented-thread"));
+        expect(started.thread.id).toBe("invented-thread");
+      }).pipe(Effect.scoped),
+    );
+
+    it.live("drops an unknown-identity fence whose owning process ended unnoticed", () =>
+      Effect.gen(function* () {
+        const run = yield* FiberSet.makeRuntime();
+        const ownership = makeThreadOwnership(150, 100, (effect) => {
+          run(effect);
+        });
+        const child = standInChild();
+        const stale = ownership.owner(
+          "/invented/home",
+          quietRpc,
+          { pid: child.pid, dedicated: false },
+          () => {},
+        );
+        const unanswered = yield* stale
+          .open(undefined, Effect.never as Effect.Effect<{ thread: { id: string } }>)
+          .pipe(Effect.scoped, Effect.flip);
+        expect(unanswered.message).toContain("provider open gave no answer");
+        const next = ownership.owner(
+          "/invented/home",
+          quietRpc,
+          { pid: process.pid, dedicated: false },
+          () => {},
+        );
+        const fresh = yield* next.open(undefined, opened("invented-new")).pipe(Effect.scoped);
+        expect(fresh.thread.id).toBe("invented-new");
+        const fenced = yield* next
+          .open("invented-old", opened("invented-old"))
+          .pipe(Effect.scoped, Effect.flip);
+        expect(fenced.message).toContain("unknown identity");
+        yield* endUnnoticed(child);
+        const resumed = yield* next
+          .open("invented-old", opened("invented-old"))
+          .pipe(Effect.scoped);
+        expect(resumed.thread.id).toBe("invented-old");
+        expect(yield* next.open(undefined, opened("invented-newer")).pipe(Effect.scoped)).toEqual({
+          thread: { id: "invented-newer" },
+        });
+      }),
+    );
+  },
+);

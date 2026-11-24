@@ -8,9 +8,7 @@ import type { CodexRpc } from "./rpc.ts";
 interface Owner {
   readonly home: string;
   readonly rpc: CodexRpc;
-  /** The owning app-server's process id, named in refusals and checked when its exit is awaited. */
   readonly pid: number | undefined;
-  /** Retires the owning app-server: it stops once no Gram session holds it. */
   readonly onClosing: () => void;
   readonly gone: Deferred.Deferred<void>;
   exited: boolean;
@@ -32,13 +30,11 @@ const unavailable = (threadId: string, detail: string) =>
     message: `Codex thread ${threadId} is still owned by another session or awaiting provider closure (${detail}). Resume was refused. Close its remaining Gram sessions or try again after the owning app-server exits.`,
   });
 const pidOf = (owner: Owner) => (owner.pid === undefined ? "unknown pid" : `pid ${owner.pid}`);
-/** Refuses an open, logging which thread's fence refused it and which app-server holds that fence. */
-const refuse = (threadId: string, detail: string, blockers: ReadonlyArray<Owner>) =>
+const refuseLogged = (threadId: string, detail: string, blockers: ReadonlyArray<Owner>) =>
   Effect.logWarning(
     `codex open refused: thread ${threadId}, ${detail}; held by app-server ${blockers.map(pidOf).join(", ") || "none"}`,
   ).pipe(Effect.andThen(Effect.fail(unavailable(threadId, detail))));
-/** False only once the process is known to be gone; a pid that can't be checked counts as alive. */
-const processAlive = (pid: number | undefined) => {
+const processKnownAlive = (pid: number | undefined) => {
   if (pid === undefined) return true;
   try {
     process.kill(pid, 0);
@@ -101,12 +97,8 @@ export const makeThreadOwnership = (
     for (const lease of threads.values()) if (lease.owner === gone) release(lease);
     Deferred.doneUnsafe(gone.gone, Effect.void);
   };
-  /**
-   * Clears owners whose app-server process is gone though its exit was never observed, so a fence
-   * can't outlive the process that held it. A live process keeps its fence, however quiet it is.
-   */
-  const sweep = () => {
-    for (const owner of [...owners]) if (!processAlive(owner.pid)) exit(owner);
+  const clearVanishedOwners = () => {
+    for (const owner of owners) if (!processKnownAlive(owner.pid)) exit(owner);
   };
   const close = (lease: ThreadLease) =>
     Effect.sync(() => {
@@ -147,13 +139,15 @@ export const makeThreadOwnership = (
     });
 
   return {
-    /** `dedicated`: the app-server serves one Gram thread only (a worker's or orchestrator's own). */
+    /**
+     * `pid` is the app-server's process; `dedicated` when it serves one Gram thread only (a
+     * worker's or orchestrator's own).
+     */
     owner: (
       home: string,
       rpc: CodexRpc,
+      { pid, dedicated }: { readonly pid: number | undefined; readonly dedicated: boolean },
       onClosing: () => void,
-      pid?: number,
-      dedicated = false,
     ) => {
       const owner: Owner = {
         home,
@@ -165,15 +159,14 @@ export const makeThreadOwnership = (
         unknownOpen: false,
       };
       owners.add(owner);
-      /** Owners on this home holding an open of unknown identity, after clearing any whose pid is gone. */
       const unknownOwners = () => {
-        sweep();
+        clearVanishedOwners();
         return [...owners].filter((other) => other.home === home && other.unknownOpen);
       };
       const available = (threadId: string, resuming: boolean) =>
         Effect.suspend(() => {
-          sweep();
-          if (owner.exited) return refuse(threadId, "owning app-server exited", [owner]);
+          clearVanishedOwners();
+          if (owner.exited) return refuseLogged(threadId, "owning app-server exited", [owner]);
           if (!resuming) return Effect.void;
           const blockers = unknownOwners();
           if (blockers.length === 0) return Effect.void;
@@ -186,7 +179,7 @@ export const makeThreadOwnership = (
                 const still = unknownOwners();
                 return still.length === 0
                   ? Effect.void
-                  : refuse(
+                  : refuseLogged(
                       threadId,
                       "a provider open has unknown identity; awaiting owning app-server exit",
                       still,
@@ -195,21 +188,25 @@ export const makeThreadOwnership = (
             }),
             Effect.andThen(
               Effect.suspend(() =>
-                owner.exited ? refuse(threadId, "owning app-server exited", [owner]) : Effect.void,
+                owner.exited
+                  ? refuseLogged(threadId, "owning app-server exited", [owner])
+                  : Effect.void,
               ),
             ),
           );
         });
-      /** Retires this app-server after an open it can't account for, so it stops once unused. */
-      const unknown = () => {
+      const retireUnaccounted = () => {
         owner.unknownOpen = true;
         owner.onClosing();
       };
       const holdsNothing = () => ![...threads.values()].some((lease) => lease.owner === owner);
+      const retireIfFailedAlone = () => {
+        if (dedicated && holdsNothing()) owner.onClosing();
+      };
       return {
         waitForExit: (threadId: string, onWait: Effect.Effect<void>) =>
           Effect.suspend(() => {
-            sweep();
+            clearVanishedOwners();
             const lease = threads.get(keyFor(home, threadId));
             return lease === undefined
               ? Effect.void
@@ -237,7 +234,7 @@ export const makeThreadOwnership = (
                 Effect.timeoutOrElse({
                   duration: timeoutMs,
                   orElse: () =>
-                    refuse(
+                    refuseLogged(
                       closing.threadId,
                       state.closed
                         ? `${state.detail}; thread/closed does not prove writer release`
@@ -250,13 +247,13 @@ export const makeThreadOwnership = (
             }
             yield* available(resumeId ?? "new", resumeId !== undefined);
             if (lease?.uncertainOpen)
-              return yield* refuse(
+              return yield* refuseLogged(
                 lease.threadId,
                 "provider open gave no answer; awaiting owning app-server exit",
                 [lease.owner],
               );
             if (lease !== undefined && lease.owner !== owner) {
-              return yield* refuse(
+              return yield* refuseLogged(
                 lease.threadId,
                 `${lease.state.phase === "open" ? lease.state.users : 0} Gram scope(s) still open`,
                 [lease.owner],
@@ -279,9 +276,9 @@ export const makeThreadOwnership = (
               Effect.timeoutOrElse({
                 duration: openTimeoutMs,
                 orElse: () => {
-                  if (reserved === undefined) unknown();
+                  if (reserved === undefined) retireUnaccounted();
                   else reserved.uncertainOpen = true;
-                  return refuse(
+                  return refuseLogged(
                     resumeId ?? "new",
                     "provider open gave no answer; awaiting owning app-server exit",
                     [owner],
@@ -291,15 +288,17 @@ export const makeThreadOwnership = (
               Effect.onError(() => (reserved === undefined ? Effect.void : close(reserved))),
             );
             if (owner.exited)
-              return yield* refuse(started.thread.id, "owning app-server exited during open", [
-                owner,
-              ]);
+              return yield* refuseLogged(
+                started.thread.id,
+                "owning app-server exited during open",
+                [owner],
+              );
             if (lease === undefined) {
               const returnedKey = keyFor(home, started.thread.id);
               const known = threads.get(returnedKey);
               if (known !== undefined) {
-                unknown();
-                return yield* refuse(
+                retireUnaccounted();
+                return yield* refuseLogged(
                   started.thread.id,
                   "provider returned an already-owned new identity; awaiting owning app-server exit",
                   [owner, known.owner],
@@ -310,20 +309,14 @@ export const makeThreadOwnership = (
             } else if (lease.threadId !== started.thread.id) {
               owner.unknownOpen = true;
               yield* close(lease);
-              return yield* refuse(
+              return yield* refuseLogged(
                 started.thread.id,
                 "provider returned a different resume identity",
                 [owner],
               );
             }
             return { started, lease };
-          }).pipe(
-            // A thread's own app-server that failed to open and holds nothing is retired, so it
-            // doesn't outlive the session that failed on it.
-            Effect.onError(() =>
-              Effect.sync(() => (dedicated && holdsNothing() ? owner.onClosing() : undefined)),
-            ),
-          );
+          }).pipe(Effect.onError(() => Effect.sync(retireIfFailedAlone)));
           return Effect.acquireRelease(
             resumeId === undefined ? acquire : serialized(keyFor(home, resumeId), acquire),
             ({ lease }) => close(lease),

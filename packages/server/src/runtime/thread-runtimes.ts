@@ -1184,8 +1184,7 @@ const make = Effect.gen(function* () {
       if (unarchived) {
         yield* locked(rt, drainQueue(rt));
       } else if (thread.parked && !before.parked) {
-        // A thread resting on a failed turn is at rest too, and its idle timer never evicts it.
-        const idle = yield* locked(
+        const atRest = yield* locked(
           rt,
           Effect.sync(
             () =>
@@ -1194,7 +1193,7 @@ const make = Effect.gen(function* () {
               rt.background.length === 0,
           ),
         );
-        if (idle) yield* stopSession(rt, "evict");
+        if (atRest) yield* stopSession(rt, "evict");
       } else if (thread.pinned !== before.pinned) {
         if (thread.pinned) {
           yield* cancelIdleTimer(rt);
