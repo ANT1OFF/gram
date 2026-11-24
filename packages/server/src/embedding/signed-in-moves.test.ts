@@ -1,7 +1,15 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { HostId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { MOVE_ACTS_WITHIN_MS, moveAskedMachines, type MoveDeps } from "./signed-in-moves.ts";
+import {
+  makeMoveMemory,
+  MOVE_ACTS_WITHIN_MS,
+  MOVE_TRIES,
+  moveAskedMachines,
+  type MoveDeps,
+} from "./signed-in-moves.ts";
+import { fencedCalls } from "./signed-in-fences.ts";
+import type { WorkerMachinePortShape } from "./signed-in-port.ts";
 import type { ProvidedMachine } from "./worker-machines.ts";
 
 const ORIGIN = "https://provider.test";
@@ -57,7 +65,11 @@ const provider = (options: {
       worker(),
       worker({ id: "m-away", name: "worker-89abcdef", onlineSince: undefined }),
     ],
-    prepare: (id) => Effect.sync(() => void prepared.push(id)),
+    prepare: (id) =>
+      Effect.sync(() => {
+        prepared.push(id);
+        return { kept: [{ pushed: true }] };
+      }),
     readied: () => options.readied ?? true,
     takeBack: (id) => Effect.sync(() => void takenBack.push(id)),
   };
@@ -68,7 +80,7 @@ describe("a hosted worker machine its provider asks to move", () => {
   it.effect("is readied, forced, and then moved, once for its run", () =>
     Effect.gen(function* () {
       const { deps, calls, prepared } = provider({});
-      const done = new Set<string>();
+      const done = makeMoveMemory();
       expect(yield* moveAskedMachines(deps, done, () => NOW)).toEqual(["moved"]);
       expect(prepared).toEqual(["m-worker"]);
       // Asked about only the machine that is there, and moved fenced to the run its status named.
@@ -88,7 +100,7 @@ describe("a hosted worker machine its provider asks to move", () => {
   it.effect("isn't touched while nobody asks", () =>
     Effect.gen(function* () {
       const { deps, calls, prepared } = provider({ asking: false });
-      expect(yield* moveAskedMachines(deps, new Set(), () => NOW)).toEqual(["not-asked"]);
+      expect(yield* moveAskedMachines(deps, makeMoveMemory(), () => NOW)).toEqual(["not-asked"]);
       expect(prepared).toEqual([]);
       expect(calls.map((each) => each.call)).toEqual(["status"]);
     }),
@@ -99,7 +111,7 @@ describe("a hosted worker machine its provider asks to move", () => {
       const { deps, prepared, takenBack } = provider({
         moved: { status: 200, body: { moved: false, code: "not_movable" } },
       });
-      const done = new Set<string>();
+      const done = makeMoveMemory();
       expect(yield* moveAskedMachines(deps, done, () => NOW)).toEqual(["refused"]);
       expect(takenBack).toEqual(["m-worker"]);
       expect(yield* moveAskedMachines(deps, done, () => NOW)).toEqual(["already-done"]);
@@ -110,20 +122,72 @@ describe("a hosted worker machine its provider asks to move", () => {
   it.effect("isn't moved when it couldn't be readied, as its work wasn't kept", () =>
     Effect.gen(function* () {
       const { deps, calls } = provider({ readied: false });
-      expect(yield* moveAskedMachines(deps, new Set(), () => NOW)).toEqual(["not-readied"]);
+      expect(yield* moveAskedMachines(deps, makeMoveMemory(), () => NOW)).toEqual(["not-readied"]);
       expect(calls.map((each) => each.call)).toEqual(["status"]);
     }),
   );
 
-  it.effect("is asked again at the next look when the move's answer was lost", () =>
+  it.effect(
+    `keeps its stop while the move's answer is lost, and lets it go after ${MOVE_TRIES} looks`,
+    () =>
+      Effect.gen(function* () {
+        const { deps, prepared, takenBack } = provider({ moved: "unanswered" });
+        const memory = makeMoveMemory();
+        const looks = [];
+        for (let look = 0; look <= MOVE_TRIES; look++)
+          looks.push(...(yield* moveAskedMachines(deps, memory, () => NOW)));
+        expect(looks).toEqual(["unanswered", "unanswered", "unanswered", "given-up"]);
+        // Before this change it was readied again at every look, its hold never running out.
+        expect(prepared).toHaveLength(MOVE_TRIES);
+        expect(takenBack).toEqual(["m-worker"]);
+        expect(yield* moveAskedMachines(deps, memory, () => NOW)).toEqual(["already-done"]);
+      }),
+  );
+
+  it.effect("works on where it is while the provider can't move it now, and is asked again", () =>
     Effect.gen(function* () {
-      const { deps, prepared, takenBack } = provider({ moved: "unanswered" });
-      const done = new Set<string>();
-      expect(yield* moveAskedMachines(deps, done, () => NOW)).toEqual(["unanswered"]);
-      expect(yield* moveAskedMachines(deps, done, () => NOW)).toEqual(["unanswered"]);
-      expect(prepared).toHaveLength(2);
-      // The stop stays: the move may have gone through, and the host is about to go.
-      expect(takenBack).toEqual([]);
+      for (const answer of [
+        { status: 503, body: { code: "no_capacity" } },
+        { status: 429, body: {} },
+        { status: 404, body: {} },
+      ]) {
+        const { deps, prepared, takenBack } = provider({ moved: answer });
+        const memory = makeMoveMemory();
+        expect(yield* moveAskedMachines(deps, memory, () => NOW)).toEqual(["busy"]);
+        expect(takenBack).toEqual(["m-worker"]);
+        expect(yield* moveAskedMachines(deps, memory, () => NOW)).toEqual(["busy"]);
+        expect(prepared).toHaveLength(2);
+      }
+      // The provider's own "no such machine" is final.
+      const gone = provider({ moved: { status: 404, body: { code: "not_found" } } });
+      expect(yield* moveAskedMachines(gone.deps, makeMoveMemory(), () => NOW)).toEqual(["refused"]);
+    }),
+  );
+
+  it.effect("carries the run its status named on the wire, through the fenced calls", () =>
+    Effect.gen(function* () {
+      const wire: Array<{ call: string; body: unknown }> = [];
+      const { deps } = provider({});
+      const app: WorkerMachinePortShape = {
+        available: true,
+        server: () => Effect.die("unused"),
+        marks: () => Effect.succeed([]),
+        onSignIns: () => undefined,
+        call: (origin, call, body, callOptions) =>
+          Effect.tap(deps.port.call(origin, call, body, callOptions), () =>
+            Effect.sync(() => void wire.push({ call, body })),
+          ),
+        relay: () => undefined,
+        unrelay: () => undefined,
+        relays: () => undefined,
+        onDial: () => undefined,
+      };
+      const fenced = { ...deps, port: fencedCalls(app) };
+      expect(yield* moveAskedMachines(fenced, makeMoveMemory(), () => NOW)).toEqual(["moved"]);
+      expect(wire.at(-1)).toEqual({
+        call: "move",
+        body: { name: "worker-0123abcd", notAfter: NOW + MOVE_ACTS_WITHIN_MS, ...RUN },
+      });
     }),
   );
 });

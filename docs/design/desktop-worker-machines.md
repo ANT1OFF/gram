@@ -425,9 +425,14 @@ subscription token reaches a machine, with its own consent.
   machine, showing that it is moving, and carry on once it is back (see
   [When its machine is replaced](../MACHINES.md#when-its-machine-is-replaced)), and this Gram
   resumes the machine as it does any relayed one owed a resume. A move refused (`moved: false`,
-  `superseded` or `expired`, or a 4xx) takes the stop back, so the machine works on where it is;
-  each run is moved, or refused, once. A move with no answer leaves the stop in place and is asked
-  again at the next look. The app fences a move as a stop: a start of the name waits for it.
+  `superseded`, `expired`, a provider's `not_found`, or another 4xx) takes the stop back, so the
+  machine works on where it is, and that run is settled. A move the provider can't do now (a 5xx,
+  a 429, a 404 that isn't its own answer) takes the stop back too and is asked again at the next
+  look. One with no answer keeps the stop, since it may have gone through. Neither is tried past
+  three looks a run: the stop is then taken back for good, so a request that can't be met never
+  holds the machine's threads off work for long. Work a forced stop couldn't keep at its remote is
+  logged, and the move goes on: the disk comes back with it. Up to four machines are readied at
+  once. The app fences a move as a stop: a start of the name waits for it.
 - **The app quits or the desktop sleeps.** The relay closes; the machine shows offline, as a joined
   machine whose network went. The host dials the server again by itself (`dialForever`), and the
   app dials the relay again for every relayed machine still registered when it starts or wakes, so
