@@ -940,7 +940,10 @@ export const makeClaudeHost = (
           }
           const child = spawn(command, args, {
             cwd,
-            env: spawnEnvFor(spawnEnv),
+            env:
+              o.tmpDir === undefined
+                ? spawnEnvFor(spawnEnv)
+                : { ...spawnEnvFor(spawnEnv), TMPDIR: o.tmpDir },
             signal,
             stdio: ["pipe", "pipe", "pipe"],
             windowsHide: true,

@@ -193,7 +193,15 @@ describe("a worker's machine brought up for a spawn", () => {
         orchestration: {} as never,
         store: {
           getThread: () => Effect.succeed({ checkout: { kind: "main", path: "/repo" } }),
-          listThreads: Effect.succeed([]),
+          // One of this orchestrator's workers is on it: the machine is its own to share.
+          listThreads: Effect.succeed([
+            {
+              id: "t-first",
+              title: "First",
+              checkout: { kind: "worktree", path: "/w/first", hostId: machine.id },
+              spawnedBy: { threadId: CALLER, feature: "heavy-build" },
+            },
+          ]),
         } as never,
         // What the provider offers Grace was asked a moment ago and is kept: nothing, so it keeps
         // no seats either, and a share asks it nothing.

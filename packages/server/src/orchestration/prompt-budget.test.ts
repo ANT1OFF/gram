@@ -99,14 +99,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * Both raised on 2026-11-24, on purpose and at the user's word, for packing workers onto hosted
  * machines (the orchestrator and the workers themselves decide how tightly): `spawn_worker`'s
  * `sandbox` gains `shared` and `exclusive`, `list_workers` says who shares a machine, and
- * `worker_machines` and `place_worker` are bound for both, since a worker sees and may leave the
- * machine it shares. Both descriptions were cut to three sentences first, and `place_worker`'s
- * `to` is `sandbox`'s own shape rather than a second one to learn; measured then at 67,768 and
- * 43,993.
+ * `worker_machines` is bound for both, since a worker sees who it shares its machine with. Its
+ * description was cut to two sentences first. The prompts are measured as a hosted session gets
+ * them from here on (`workerMachines`, `ownMachine`, `sharedMachine`), which they weren't before:
+ * the lines on machines are the longest variant; measured then at 67,962 and 43,560.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 67_790,
-  worker: 44_010,
+  orchestrator: 67_980,
+  worker: 43_580,
   plain: 23_650,
 };
 
@@ -126,6 +126,7 @@ const promptOf = (role: Role, autonomy: Autonomy, agent: AgentKind): string => {
         autonomy,
         agent,
         gated: true,
+        workerMachines: "Example hosted server",
       });
     case "worker":
       return workerPrompt({
@@ -137,6 +138,8 @@ const promptOf = (role: Role, autonomy: Autonomy, agent: AgentKind): string => {
         autonomy,
         agent,
         gated: true,
+        ownMachine: true,
+        sharedMachine: true,
       });
     case "plain":
       return plainPrompt({ agent }) ?? "";

@@ -56,6 +56,12 @@ export interface BrowserScope {
 export interface OpenSessionOptions {
   readonly threadId: ThreadId;
   readonly cwd: string;
+  /**
+   * A temp folder of the thread's own, which the agent's process and what it runs get as
+   * `TMPDIR`: threads on one machine then never meet in a temp file of the same name. Claude Code
+   * takes it; an agent that serves its sessions from one shared process doesn't.
+   */
+  readonly tmpDir?: string;
   /** Switch target startup only: cancellation/cleanup must never force its child to stop. */
   readonly switchStartup?: string;
   /** The agent's own session id to resume. */

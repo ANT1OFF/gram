@@ -444,9 +444,13 @@ a minute, and a reviewer placed beside its author can read the author's worktree
   machine its `workers`. `worker_machines` gives each machine's cap, room, size and who is on it,
   to an orchestrator for all of its machines and to a worker for its own.
 
-**What workers on one machine share.** Everything but their worktrees. They run as one user in
-one container: one home folder, one temp folder, one process table, one set of ports, one disk
-and the machine's memory and CPU. A worker can read and change another's files, read what
+**What workers on one machine share.** Everything but their worktrees and temp folders. They
+run as one user in one container: one home folder, one process table, one set of ports, one disk
+and the machine's memory and CPU. Each thread on a joined machine gets a temp folder of its own
+as `TMPDIR` (`host/sessions.ts`, `threadTmpDir`; Claude Code takes it, an agent that serves its
+sessions from one shared process doesn't), so two workers never meet in a temp file of the same
+name. The home folder stays shared: it holds the agent's sign-in and settings, git's and the
+toolchain's, which an empty home per worker would lose. A worker can read and change another's files, read what
 another's tools stored or exported, and signal its processes. Each has its own worktree in the
 machine's clone, and the prompt tells a worker on a shared machine to bind ports of its own, to
 install nothing globally and to leave other workers' folders alone, which guards against
@@ -454,8 +458,8 @@ accidents and nothing more. Nothing here limits one worker's memory or CPU: a bu
 outgrows the machine is the provider's to kill, and a worker asks for room first
 (`request_resources`, which on a shared machine is that worker's own hold). So work that reads
 what outsiders wrote (web pages, other people's issues or pull requests), or that holds a secret
-of its own, gets `{own: true, exclusive: true}`. Separating workers on one machine (a home and a
-temp folder each, confinement to their own folders) is not built.
+of its own, gets `{own: true, exclusive: true}`. Separating workers on one machine (a home
+each, confinement to their own folders) is not built.
 
 **What the provider keeps.** A provider may keep who is on each machine, and then holds a machine
 to rules this Gram alone could get wrong. It says so in its choices answer:

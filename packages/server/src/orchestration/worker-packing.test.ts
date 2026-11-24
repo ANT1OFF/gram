@@ -15,8 +15,10 @@ import {
   packingOn,
   picksMismatch,
   picksOn,
+  reservedSeats,
   workersOnMachine,
 } from "./worker-packing.ts";
+import { withReserved } from "../embedding/worker-seat-upkeep.ts";
 import type { WorkerSandbox } from "./tool-inputs.ts";
 
 const SERVER = { origin: "https://hosted.example.test", server: "Example hosted" };
@@ -249,7 +251,7 @@ const setup = (
     const startsOf = () => calls.filter((each) => each.call === "start");
     const attachesOf = () =>
       calls.filter((each) => each.call === "workers" && each.body["attach"] !== undefined);
-    return { spawn, calls, startsOf, attachesOf, online, seated };
+    return { spawn, plan, calls, startsOf, attachesOf, online, seated };
   });
 
 const prepare = (planned: { readonly prepare: Effect.Effect<unknown, unknown, Scope.Scope> }) =>
@@ -364,7 +366,7 @@ describe("a worker packed onto a hosted machine", () => {
             { shareWith: name },
             4,
           ),
-        ).toMatch(/another orchestrator's worker/);
+        ).toMatch(/no worker of yours/);
         expect(
           yield* refusal(
             [on({ machine: name, packing: "own", picks: { environment: "data" } })],
@@ -460,6 +462,72 @@ describe("a worker packed onto a hosted machine", () => {
       const names = new Set([planned?.name]);
       for (let each = 0; each < 4; each += 1) names.add((yield* spawn({ shared: true }))?.name);
       expect(names.size).toBe(2);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("a machine named for a worker, with no way round its checks", () => {
+  const name = "worker-00000000aa";
+  const input = { title: "Named", feature: "f", project: "shop", machine: name };
+
+  it.effect("holds `machine` naming a workers' machine to what `shareWith` is held to", () =>
+    Effect.gen(function* () {
+      const refusal = (threads: Thread[]) =>
+        Effect.gen(function* () {
+          const { plan, online } = yield* setup({ threads: () => threads });
+          online.set(name, { id: `m-${name}`, name });
+          const exit = yield* Effect.exit(plan(CALLER, input, undefined));
+          return Exit.isFailure(exit) ? String(exit.cause) : exit.value;
+        });
+      // Another orchestrator's machine, with no worker of the caller's on it.
+      expect(
+        yield* refusal([
+          worker("b", `m-${name}`, { machine: name, packing: "exclusive" }, {
+            spawnedBy: { threadId: "t-other", feature: "f" },
+          } as never),
+        ]),
+      ).toMatch(/no worker of yours/);
+      // The caller's own exclusive machine: never shared, by this door either.
+      expect(
+        yield* refusal([worker("a", `m-${name}`, { machine: name, packing: "exclusive" })]),
+      ).toMatch(/never shared/);
+      // Its own machine with room: placed as a named share, with a seat.
+      expect(
+        yield* refusal([worker("a", `m-${name}`, { machine: name, packing: "own" })]),
+      ).toMatchObject({ name, placement: { packing: "named" } });
+      // A machine that isn't a workers' machine is not the planner's: placed as before.
+      const { plan } = yield* setup();
+      expect(yield* plan(CALLER, { ...input, machine: "build-box" }, undefined)).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("checks the cap again as the spawn goes ahead, after any approval", () =>
+    Effect.gen(function* () {
+      const placement = { machine: name, packing: "shared" as const };
+      let threads = [worker("a", `m-${name}`, placement)];
+      const { spawn, online } = yield* setup({ cap: 2, threads: () => threads });
+      online.set(name, { id: `m-${name}`, name });
+      const planned = yield* spawn({ shareWith: name });
+      // While its approval card is open, another worker lands on the machine.
+      threads = [...threads, worker("b", `m-${name}`, placement)];
+      const { ready, close } = yield* prepare(planned!);
+      expect(Exit.isFailure(ready) && String(ready.cause)).toMatch(/is for 2 workers and has 2/);
+      yield* close;
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a spawn's seat known to the release pass until its try is over", () =>
+    Effect.gen(function* () {
+      const { spawn } = yield* setup();
+      const planned = yield* spawn({ own: true });
+      const seat = planned!.placement.seat!;
+      // No thread is on the machine yet: only this says a worker is on its way there.
+      expect(reservedSeats(planned!.name)).toContain(seat);
+      expect([...withReserved({ live: new Set(), any: false }, [seat]).live]).toEqual([seat]);
+      const { close } = yield* prepare(planned!);
+      expect(reservedSeats(planned!.name)).toContain(seat);
+      yield* close;
+      expect(reservedSeats(planned!.name)).not.toContain(seat);
     }).pipe(Effect.scoped),
   );
 });

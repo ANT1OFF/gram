@@ -178,6 +178,7 @@ export const makeWorkerSandbox = ({
     const seatHolds = makeSeatHolds();
     const coming = new Map<string, string>();
     const capsSaid = new Map<string, number>();
+    const askedForBy = new Map<string, ThreadId>();
     const workerSandbox = (
       caller: ThreadId,
       input: {
@@ -344,6 +345,8 @@ export const makeWorkerSandbox = ({
               };
         const bringUpPlan = (name: string, sharing: MachineSharing) =>
           Effect.gen(function* () {
+            askedForBy.set(name, caller);
+            if (askedForBy.size > 512) askedForBy.delete(askedForBy.keys().next().value!);
             const seen = joined().find((each) => each.name === name && theirs(each));
             if (
               seen?.onlineSince !== undefined &&
@@ -504,20 +507,22 @@ export const makeWorkerSandbox = ({
             );
             const prepared = plan.prepare === undefined ? {} : yield* plan.prepare;
             seatHolds.hold(name, seat);
-            const now = yield* Effect.all({
-              charter: charterOf(store, caller, tool),
-              facts: placedThreads({ store, orchestration }, caller, tool),
-            });
-            const there = joined().find((each) => each.name === name);
-            const room = roomOn(
-              now,
-              { name, ...(there === undefined ? {} : { id: there.id }) },
-              size,
-            );
-            if (room.free < 0) {
-              seatHolds.release(name, seat);
-              yield* prepared.abandon ?? Effect.void;
-              return yield* fail(fullWords(name, room.cap, room.on, room.held - 1));
+            if (packing === "named" || packing === "shared") {
+              const now = yield* Effect.all({
+                charter: charterOf(store, caller, tool),
+                facts: placedThreads({ store, orchestration }, caller, tool),
+              });
+              const there = joined().find((each) => each.name === name);
+              const room = roomOn(
+                now,
+                { name, ...(there === undefined ? {} : { id: there.id }) },
+                size,
+              );
+              if (room.free < 0) {
+                seatHolds.release(name, seat);
+                yield* prepared.abandon ?? Effect.void;
+                return yield* fail(fullWords(name, room.cap, room.on, room.held - 1));
+              }
             }
             if (offer !== undefined) {
               let answered = yield* source.seats(take);
@@ -587,6 +592,7 @@ export const makeWorkerSandbox = ({
               hostOf(effectiveCheckout(thread)) === machineId,
           );
           if (
+            askedForBy.get(machine.name) !== caller &&
             !facts.threads.some(
               (thread) =>
                 thread.spawnedBy?.threadId === caller &&
