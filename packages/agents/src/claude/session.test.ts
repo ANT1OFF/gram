@@ -2353,10 +2353,9 @@ describe("AgentSession", () => {
         Stream.runForEach(session.events, (event) => Effect.sync(() => void events.push(event))),
       );
       const messages = fixtureMessages("p14-background-shells");
-      const index = (subtype: string, taskId: string) =>
+      const index = (subtype: "task_started" | "task_notification", taskId: string) =>
         messages.findIndex(
-          (m) =>
-            m.type === "system" && m.subtype === subtype && Reflect.get(m, "task_id") === taskId,
+          (m) => m.type === "system" && m.subtype === subtype && m.task_id === taskId,
         );
       const reads = (taskId: string) =>
         q.calls.filter((c) => c === `getTaskOutput:${taskId}`).length;

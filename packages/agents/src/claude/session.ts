@@ -46,6 +46,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { GatewayKeyProvider } from "../gateway.ts";
@@ -101,7 +102,8 @@ import {
 } from "./gateway-env.ts";
 import { AsyncPushQueue } from "./input-queue.ts";
 import { advertisedRate } from "./cost-estimate.ts";
-import { identityFromInitialization, makeMapper, type TaskOutputRead } from "./mapper.ts";
+import { identityFromInitialization, makeMapper } from "./mapper.ts";
+import { TaskOutputRead } from "./task-output.ts";
 import { addTokens } from "./usage.ts";
 import { toAgentModel, userModelSwitch } from "./models.ts";
 import { outwardBashKind, resolveRequest, toPendingRequest } from "./permissions.ts";
@@ -171,6 +173,12 @@ export const widenedEntries = (
 
 const ALL_SETTING_SOURCES: ReadonlyArray<SettingSource> = ["user", "project", "local"];
 
+const decodeAllowedMcpServers = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({ allowedMcpServers: Schema.optionalKey(Schema.Array(Schema.Unknown)) }),
+  ),
+);
+
 const otherAllowlists = async (
   cwd: string,
   userDir: string | undefined,
@@ -188,10 +196,8 @@ const otherAllowlists = async (
     if (sources !== undefined && !sources.includes(source)) continue;
     const text = await readFile(path, "utf8").catch(() => undefined);
     if (text === undefined) continue;
-    try {
-      const listed = (JSON.parse(text) as { allowedMcpServers?: unknown }).allowedMcpServers;
-      if (Array.isArray(listed)) found.push(...listed);
-    } catch (_claudeCodeDropsASettingsFileItCantParse) {}
+    const listed = decodeAllowedMcpServers(text);
+    if (Option.isSome(listed)) found.push(...(listed.value.allowedMcpServers ?? []));
   }
   return found;
 };
@@ -516,18 +522,12 @@ type ShellRead =
   | { readonly kind: "refused" };
 
 const taskOutputReader = (q: object): ((taskId: string) => Promise<unknown>) | undefined => {
-  const method: unknown = Reflect.get(q, "getTaskOutput");
-  return typeof method === "function"
-    ? (taskId) => Promise.resolve(method.call(q, taskId) as unknown)
-    : undefined;
+  if (!("getTaskOutput" in q) || typeof q.getTaskOutput !== "function") return undefined;
+  const method = q.getTaskOutput;
+  return (taskId) => Promise.resolve<unknown>(method.call(q, taskId));
 };
 
-const isTaskOutputRead = (u: unknown): u is TaskOutputRead =>
-  typeof u === "object" &&
-  u !== null &&
-  typeof Reflect.get(u, "output") === "string" &&
-  typeof Reflect.get(u, "total_bytes") === "number" &&
-  typeof Reflect.get(u, "truncated") === "boolean";
+const isTaskOutputRead = Schema.is(TaskOutputRead);
 
 /** A prompt that never sends, so a query only runs the CLI's init handshake. */
 /** How long the account's model listing stands before `listModels` asks Claude Code again. */

@@ -1149,7 +1149,7 @@ export const planSettingsChanges = (
     writes = Object.entries(decoded.success as Record<string, unknown>).flatMap(
       ([group, value]): Array<SettingsWrite> =>
         typeof value === "object" && value !== null && !Array.isArray(value)
-          ? Object.entries(value).map(([field, leaf]) => ({
+          ? Object.entries(value).map(([field, leaf]: [string, unknown]) => ({
               key: `${group}.${field}`,
               path: [group, field],
               before: storedAt(world.settings, [group, field]),

@@ -248,8 +248,10 @@ export function openPortSession<Code extends string>(
       if (
         typeof data !== "object" ||
         data === null ||
-        Reflect.get(data, "type") !== SPEECH_PORT_MESSAGE ||
-        Reflect.get(data, "sessionId") !== sessionId ||
+        !("type" in data) ||
+        data.type !== SPEECH_PORT_MESSAGE ||
+        !("sessionId" in data) ||
+        data.sessionId !== sessionId ||
         port === undefined
       ) {
         return;

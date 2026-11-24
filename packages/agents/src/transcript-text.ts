@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+
 /** Cap on each side of a tool call in a transcript read back; a dream needs the gist, not the bytes. */
 export const TRANSCRIPT_TOOL_MAX_CHARS = 4096;
 
@@ -25,3 +27,21 @@ export const toolSideText = (value: unknown): string | undefined => {
     return undefined;
   }
 };
+
+const TextBlock = Schema.Struct({ type: Schema.Literal("text"), text: Schema.String });
+
+/** A content block's text when it is a `{ type: "text" }` block; undefined for any other block. */
+export const blockText = (block: unknown): string | undefined =>
+  Schema.is(TextBlock)(block) ? block.text : undefined;
+
+/** A content block as one line of a tool's result: a text block's text, else `[its type]`. */
+export const blockLine = (block: unknown): string => {
+  if (typeof block !== "object" || block === null) return String(block);
+  return blockText(block) ?? `[${String("type" in block ? block.type : undefined)}]`;
+};
+
+/** The `content` an SDK transcript message carries, read off a message of unknown shape. */
+export const contentOf = (message: unknown): unknown =>
+  typeof message === "object" && message !== null && "content" in message
+    ? message.content
+    : undefined;

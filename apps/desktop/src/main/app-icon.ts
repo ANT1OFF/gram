@@ -1,7 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { APP_ICONS, isAppIconId, type AppIconId } from "@gram/contracts";
+import { APP_ICONS, type AppIconId } from "@gram/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { app, nativeImage, type NativeImage } from "electron";
 import { appWindows } from "@gram/shell/electron";
 
@@ -10,13 +12,15 @@ const DEFAULT_APP_ICON: AppIconId = APP_ICONS[0];
 /** The icon saved in `app-icon.json`, or the default for a missing, unreadable or unknown one. */
 export function parseStoredAppIcon(text: string | undefined): AppIconId {
   if (text === undefined) return DEFAULT_APP_ICON;
-  try {
-    const icon: unknown = Reflect.get(Object(JSON.parse(text)), "icon");
-    return isAppIconId(icon) ? icon : DEFAULT_APP_ICON;
-  } catch {
-    return DEFAULT_APP_ICON;
-  }
+  return Option.match(decodeStoredAppIcon(text), {
+    onNone: () => DEFAULT_APP_ICON,
+    onSome: ({ icon }) => icon,
+  });
 }
+
+const decodeStoredAppIcon = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ icon: Schema.Literals(APP_ICONS) })),
+);
 
 /**
  * Where the PNGs generate-icon.mjs writes to apps/web/public/app-icons are: packaged, in the web

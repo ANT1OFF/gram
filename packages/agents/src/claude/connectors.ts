@@ -216,10 +216,9 @@ const signInFailed = (name: string) => (error: unknown) =>
   });
 
 const authenticatorOf = (q: object): McpAuthenticator | undefined => {
-  const method = (q as Partial<Record<keyof McpAuthenticator, unknown>>).mcpAuthenticate;
-  return typeof method === "function"
-    ? { mcpAuthenticate: (name) => Reflect.apply(method, q, [name]) as Promise<unknown> }
-    : undefined;
+  if (!("mcpAuthenticate" in q) || typeof q.mcpAuthenticate !== "function") return undefined;
+  const method = q.mcpAuthenticate;
+  return { mcpAuthenticate: (name) => Promise.resolve<unknown>(method.call(q, name)) };
 };
 
 /** How the session was opened, as far as its connectors care. */

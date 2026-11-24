@@ -21,6 +21,8 @@ import type {
 } from "@gram/contracts";
 import { claudeFailure } from "../failure.ts";
 import { offered, toSlashCommand, type ReportedCommand } from "./commands.ts";
+import type { TaskOutputRead } from "./task-output.ts";
+export type { TaskOutputRead };
 import { makeUsageLedger } from "./usage.ts";
 
 export interface MapperOptions {
@@ -92,16 +94,6 @@ interface RunningShell {
   readonly taskId: string;
   readonly toolCallId: string;
   readonly background?: boolean;
-}
-
-/**
- * What `getTaskOutput` answers: SDK 0.3.296's `SDKControlGetTaskOutputResponse` (`sdk.d.ts`), the
- * last 8 KiB the command wrote, stdout and stderr together.
- */
-export interface TaskOutputRead {
-  readonly output: string;
-  readonly total_bytes: number;
-  readonly truncated: boolean;
 }
 
 const readText = (read: TaskOutputRead): string => {

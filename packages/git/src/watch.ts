@@ -7,6 +7,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { tryRepoRoots, type RepoRoots } from "./exec.ts";
 import { localGitState } from "./git-state.ts";
+import { errnoCode } from "./errors.ts";
 import { tryRealPathSync } from "./paths.ts";
 import type { Proc } from "./proc.ts";
 
@@ -107,11 +108,11 @@ export const isIgnored = (relative: string, ignore: RootIgnore): boolean => {
  */
 export const isWatchLimitError = (error: unknown): boolean => {
   for (let e: unknown = error, depth = 0; e !== undefined && e !== null && depth < 4; depth++) {
-    const code: unknown = typeof e === "object" ? Reflect.get(e, "code") : undefined;
+    const code = errnoCode(e);
     if (code === "ENOSPC" || code === "EMFILE") return true;
     const message = e instanceof Error ? e.message : typeof e === "string" ? e : "";
     if (/ENOSPC|EMFILE|No space left on device|Too many open files/i.test(message)) return true;
-    e = typeof e === "object" ? Reflect.get(e, "cause") : undefined;
+    e = typeof e === "object" && "cause" in e ? e.cause : undefined;
   }
   return false;
 };

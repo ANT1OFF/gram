@@ -14,10 +14,8 @@ export const PAGES_ORIGIN_MESSAGE = "pages.origin";
 
 /** The origin a `PAGES_ORIGIN_MESSAGE` names, unchecked; `undefined` for any other message. */
 export function pagesOriginFromMessage(message: unknown): unknown {
-  if (typeof message !== "object" || message === null) return undefined;
-  return Reflect.get(message, "type") === PAGES_ORIGIN_MESSAGE
-    ? Reflect.get(message, "origin")
-    : undefined;
+  if (typeof message !== "object" || message === null || !("type" in message)) return undefined;
+  return message.type === PAGES_ORIGIN_MESSAGE && "origin" in message ? message.origin : undefined;
 }
 
 /** The partition of the session pinned pages run in: in memory, no `persist:` prefix. */
