@@ -555,7 +555,7 @@ test("an import is previewed before it starts, runs as a thread, and is offered 
   await expect(page.getByTestId("dream-start")).toHaveAttribute("data-kind", "import");
 });
 
-test("a dream says what it would read and what waits for the next, within a budget", async ({
+test("an update with options says what happened since the last one and starts in the workspace's mode", async ({
   page,
 }) => {
   await openMemoryWithDreamHarness(page);
@@ -563,29 +563,19 @@ test("a dream says what it would read and what waits for the next, within a budg
   // The seeded import runs; one dream runs per workspace at a time.
   const running = dreams.locator('[data-testid="dream-row"][data-status="running"]');
   await running.getByTestId("dream-cancel").click();
+  const panel = dreams.getByTestId("memory-updates");
+  await expect(panel).toHaveAttribute("data-mode", "review");
+  await expect(panel.getByTestId("memory-update-last")).toContainText("waits for your review");
+  await shot(page, { path: test.info().outputPath("memory-updates-review.png") });
   await expect(dreams.getByTestId("dream-now")).toBeEnabled();
   await dreams.getByTestId("dream-now").click();
   const flow = dreams.getByTestId("dream-start");
   await expect(flow).toHaveAttribute("data-kind", "dream");
-  await expect(flow.getByTestId("dream-budget")).toHaveValue("200");
-  // Nothing adopted yet, so it reads every thread from its start, up to the budget.
-  await expect(flow.getByTestId("dream-plan-reads")).toContainText("5 threads, 172 new messages");
-  await expect(flow.getByTestId("dream-plan-reads")).toContainText("~196k");
-  await expect(flow.getByTestId("dream-plan-backlog")).toContainText("1 thread (~40k tokens)");
-  await expect(flow.getByTestId("dream-plan-backlog")).toContainText("~200k");
-  await expect(flow.getByTestId("dream-preview-notes")).toContainText(
-    "1 thread left for the next memory update",
+  // It reads what happened since the last update, counted; never a budget of transcripts.
+  await expect(flow.getByTestId("dream-plan-reads")).toContainText(
+    "7 worker reports, 3 merges, 2 answered questions, 5 finished threads",
   );
-
-  // Out of range counts nothing and starts nothing; a bigger budget takes the backlog in.
-  await flow.getByTestId("dream-budget").fill("5");
-  await expect(flow.getByTestId("dream-budget")).toHaveAttribute("aria-invalid", "true");
-  await expect(flow.getByTestId("dream-start-run")).toBeDisabled();
-  await flow.getByTestId("dream-budget").fill("300");
-  await expect(flow.getByTestId("dream-plan-reads")).toContainText("6 threads, 192 new messages");
-  await expect(flow.getByTestId("dream-plan-reads")).toContainText("~236k");
-  await expect(flow.getByTestId("dream-plan-backlog")).not.toContainText("thread");
-  await expect(flow.getByTestId("dream-plan-backlog")).toContainText("~300k");
+  await expect(flow.getByTestId("dream-budget")).toHaveCount(0);
   await expect(flow.getByTestId("dream-start-run")).toBeEnabled();
   const started = page.evaluate(
     () =>
@@ -601,11 +591,56 @@ test("a dream says what it would read and what waits for the next, within a budg
   await flow.getByTestId("dream-start-run").click();
   expect(await started).toMatchObject({
     kind: "dream",
-    budgetTokens: 300_000,
+    mode: "review",
     model: { agent: "claude", model: "opus" },
   });
   await expectDreamHarnessObservation(page);
   await expect(page).toHaveURL(/\/t\//);
+});
+
+test("Auto discards the waiting drafts once confirmed, runs on a schedule, and Revert undoes the last update", async ({
+  page,
+}) => {
+  await openMemoryWithDreamHarness(page);
+  const dreams = page.getByTestId("dreams");
+  const panel = dreams.getByTestId("memory-updates");
+  await expect(panel).toHaveAttribute("data-mode", "review");
+  const modes = panel.getByTestId("memory-update-mode");
+
+  // A draft waits, so Auto asks first; cancelling keeps Review.
+  await modes.getByText("Auto", { exact: true }).click();
+  await panel.getByRole("button", { name: "Cancel" }).click();
+  await expect(panel).toHaveAttribute("data-mode", "review");
+  await modes.getByText("Auto", { exact: true }).click();
+  await panel.getByRole("button", { name: "Switch to Auto" }).click();
+  await expect(panel).toHaveAttribute("data-mode", "auto");
+  await expect(dreams.getByTestId("dream-ready")).toHaveCount(0);
+
+  await panel.getByTestId("memory-update-schedule").selectOption("6");
+  await expect(panel.getByTestId("memory-update-mode-note")).toContainText("every 6 hours");
+
+  // The last update applied itself; Revert takes memory back to the version before it.
+  const last = panel.getByTestId("memory-update-last");
+  await expect(last).toContainText("Auto");
+  await expect(panel.getByTestId("memory-update-summary")).toContainText(
+    "Filed the api-before-web merge order",
+  );
+  await shot(page, { path: test.info().outputPath("memory-updates-auto.png") });
+  await panel.getByTestId("memory-update-revert").click();
+  await expect(panel.getByTestId("memory-update-reverted")).toContainText("back at version 0001");
+  await expect(panel.getByTestId("memory-update-revert")).toHaveCount(0);
+
+  await memoryTab(page, "History");
+  const versions = page.getByTestId("memory-versions");
+  await expect(
+    versions.locator('[data-testid="memory-version"][data-version="0001"]').getByTestId(
+      "memory-version-current",
+    ),
+  ).toBeVisible();
+  const made = versions.locator('[data-testid="memory-version"][data-version="0002"]');
+  await expect(made.getByTestId("memory-version-source")).toContainText("memory update");
+  await expect(made.getByTestId("memory-version-summary")).toContainText("merge order");
+  await shot(page, { path: test.info().outputPath("memory-history.png") });
 });
 
 test("a dream is adopted only once its conflict has a side, and a moved memory means reviewing again", async ({

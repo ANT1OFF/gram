@@ -201,6 +201,7 @@ export function createMockDreams(host: MockDreamsHost) {
   const outputs = new Map<DreamId, MockOutput>();
   const recent = new Map<WorkspaceId, MockRecent>();
   const lastAdopted = new Map<WorkspaceId, number>();
+  const modes = new Map<WorkspaceId, "review" | "auto">();
   const merges = new Map<DreamId, Map<string, { sides: string; state: DreamMerge }>>();
 
   const requireWorkspace = (workspaceId: WorkspaceId): WorkspaceState => {
@@ -473,7 +474,25 @@ export function createMockDreams(host: MockDreamsHost) {
     },
 
     async listDreams(workspaceId: WorkspaceId): Promise<readonly Dream[]> {
-      requireWorkspace(workspaceId);
+      const state = requireWorkspace(workspaceId);
+      // As the server does: switching to Auto discards the drafts waiting for review.
+      const mode = memoryUpdateModeOf(state.charter);
+      const was = modes.get(workspaceId);
+      modes.set(workspaceId, mode);
+      if (was !== undefined && was !== mode && mode === "auto") {
+        const waiting = dreams.filter(
+          (dream) =>
+            dream.workspaceId === workspaceId &&
+            dream.status === "completed" &&
+            dream.mode === "review" &&
+            dream.adoptedVersion === undefined,
+        );
+        for (const dream of waiting) {
+          if (dream.threadId !== undefined) await host.closeThread(dream.threadId);
+          outputs.delete(dream.id);
+        }
+        dreams = dreams.filter((dream) => !waiting.includes(dream));
+      }
       return dreams
         .filter((dream) => dream.workspaceId === workspaceId)
         .toSorted((a, b) => b.createdAt - a.createdAt);
