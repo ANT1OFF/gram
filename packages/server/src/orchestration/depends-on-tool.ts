@@ -1,4 +1,4 @@
-import { AppToolError, MAX_PR_DEPENDENCIES, type ThreadId } from "@gram/contracts";
+import { AppToolError, MAX_PR_DEPENDENCIES, ThreadId } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -41,7 +41,7 @@ export const makeDependsOn = Effect.gen(function* () {
         return yield* dependencies.declare(caller, {
           ...rest,
           pr: ref,
-          ...(threadId === undefined ? {} : { threadId: threadId as ThreadId }),
+          ...(threadId === undefined ? {} : { threadId: ThreadId.make(threadId) }),
         });
       }),
   });

@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { HELD_RETRY_MS, heldWords } from "./limit-pause.ts";
+import { defined } from "../defined.ts";
 import type { OutboxState, StoredHeldBrief, StoredSpawnBreaker } from "./outbox.ts";
 import {
   admittedForRole,
@@ -301,11 +302,7 @@ export const makeSpawnBreaker = (deps: Dependencies) =>
             id: `held-${randomUUID().slice(0, 8)}`,
             callerId,
             projectName,
-            input: Object.fromEntries(
-              Object.entries({ ...rest, model: picked.name }).filter(
-                ([, value]) => value !== undefined,
-              ),
-            ) as StoredHeldBrief["input"],
+            input: defined({ ...rest, model: picked.name }),
             agent: picked.model.agent,
             window: "spawn_breaker",
             usedPct: 0,

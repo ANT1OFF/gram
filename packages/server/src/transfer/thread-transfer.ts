@@ -52,6 +52,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Semaphore from "effect/Semaphore";
 import { existsSync } from "node:fs";
 import * as nodePath from "node:path";
@@ -71,7 +72,8 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { fileOrigin } from "../thread-profiles/repositories.ts";
 import { recordedCloneOf, recordedOriginAt, recordedOriginUrl } from "./recorded-remote.ts";
 import { makeSettle } from "./settle.ts";
-import { cut, portableThread, scrubbed, shareableRemote } from "./workspace-transfer.ts";
+import { scrubbed } from "./scrubbed.ts";
+import { cut, portableThread, shareableRemote } from "./workspace-transfer.ts";
 
 /** Why nothing here runs while the hosted features setting is off. */
 export const THREAD_TRANSFER_OFF =
@@ -221,7 +223,7 @@ const make = (options: ThreadTransferOptions) =>
               error instanceof InvalidState
                 ? error
                 : refuse(
-                    `${what}: ${cut(String((error as { message?: unknown }).message ?? error), 400)}`,
+                    `${what}: ${cut(String((Predicate.isObject(error) ? error["message"] : undefined) ?? error), 400)}`,
                   ),
             ),
           );

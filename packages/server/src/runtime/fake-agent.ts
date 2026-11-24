@@ -7,22 +7,22 @@ import {
   type OpenSessionOptions,
 } from "@gram/agents";
 import {
-  AgentUnavailable,
-  AnswerUndelivered,
-  AppToolError,
-  InterruptHung,
-  ModeRefused,
   type AgentCapabilities,
   type AgentEvent,
   type AgentKind,
   type AgentModel,
+  AgentUnavailable,
+  AnswerUndelivered,
+  AppToolError,
   type ConfiguredServer,
-  type MessageId,
+  type GramUIMessageChunk,
+  InterruptHung,
+  MessageId,
   type ModelRef,
+  ModeRefused,
   type PermissionMode,
   type RequestAnswer,
-  type RequestId,
-  type GramUIMessageChunk,
+  RequestId,
   type ThreadId,
   type UserInput,
 } from "@gram/contracts";
@@ -268,7 +268,7 @@ const replyChunks = (
   text: string,
   said?: { readonly agent: AgentKind; readonly model: string },
 ): ReadonlyArray<AgentEvent> => {
-  const messageId = `reply-${randomUUID()}` as MessageId;
+  const messageId = MessageId.make(`reply-${randomUUID()}`);
   const half = Math.ceil(text.length / 2);
   return [
     {
@@ -335,7 +335,7 @@ const streamDeltas = (words: number): ReadonlyArray<string> => {
 };
 
 const toolTurnSteps = (cwd: string, reply: string): ReadonlyArray<ReadonlyArray<AgentEvent>> => {
-  const messageId = `tools-${randomUUID()}` as MessageId;
+  const messageId = MessageId.make(`tools-${randomUUID()}`);
   const chunk = (value: GramUIMessageChunk): AgentEvent => ({
     type: "chunk",
     messageId,
@@ -543,7 +543,7 @@ export const makeFakeAgentAdapter = (
             end: (...events) => emit(...events).pipe(Effect.andThen(Queue.end(queue))),
             callTool,
             completeTurn: (text = "done") => {
-              const messageId = `reply-${++replies}-${randomUUID().slice(0, 8)}` as MessageId;
+              const messageId = MessageId.make(`reply-${++replies}-${randomUUID().slice(0, 8)}`);
               return emit(
                 {
                   type: "chunk",
@@ -647,7 +647,7 @@ export const makeFakeAgentAdapter = (
               }
               const stream = STREAM.exec(input.text)?.[1];
               if (stream !== undefined) {
-                const messageId = `reply-${randomUUID()}` as MessageId;
+                const messageId = MessageId.make(`reply-${randomUUID()}`);
                 const deltas = streamDeltas(Number(stream));
                 const text = deltas.join("");
                 return emit(
@@ -692,7 +692,7 @@ export const makeFakeAgentAdapter = (
                 );
               }
               if (!input.text.includes("/approve")) return emit(...replyChunks(reply, said()));
-              const requestId = randomUUID() as RequestId;
+              const requestId = RequestId.make(randomUUID());
               awaiting.set(requestId, (allowed) =>
                 emit(...replyChunks(allowed ? reply : "echo: denied", said())),
               );

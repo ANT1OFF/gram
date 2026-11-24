@@ -1,4 +1,4 @@
-import { AppToolError, type ThreadId } from "@gram/contracts";
+import { AppToolError, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -79,7 +79,7 @@ export const TranscriptSearchAppToolsLive = Layer.effectDiscard(
           const result = yield* searchWorkspaceTranscripts({
             query: input.query,
             workspaceId: scope,
-            threadId: input.threadId as ThreadId | undefined,
+            threadId: input.threadId === undefined ? undefined : ThreadId.make(input.threadId),
             workersOnly: input.workersOnly === true,
             withText: input.withText === true,
             limit,

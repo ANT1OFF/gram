@@ -431,8 +431,9 @@ const plainHeader = (text: string): boolean => {
   return contents.items.every(
     (pair) =>
       plainScalar(pair.key) &&
-      typeof (pair.key as { value: unknown }).value === "string" &&
-      (pair.key as { value: string }).value !== "<<" &&
+      isScalar(pair.key) &&
+      typeof pair.key.value === "string" &&
+      pair.key.value !== "<<" &&
       (pair.value === null || plainScalar(pair.value)),
   );
 };

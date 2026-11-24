@@ -4,6 +4,7 @@ import type { ThreadId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Predicate from "effect/Predicate";
 import { LocalHostProcess } from "../host/local-process.ts";
 import type { HostSessionsConnection } from "../host/protocol.ts";
 import type { KeepHooks, KeptSession } from "./host-agent-sessions.ts";
@@ -39,22 +40,19 @@ interface Record {
   readonly sessions: ReadonlyArray<KeptSession>;
 }
 
-const isKept = (value: unknown): value is KeptSession => {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as { [key: string]: unknown };
-  return (
-    typeof v["threadId"] === "string" &&
-    typeof v["handle"] === "string" &&
-    typeof v["confirmed"] === "number" &&
-    typeof v["opened"] === "object" &&
-    v["opened"] !== null
-  );
-};
+const isKept = (v: unknown): v is KeptSession =>
+  Predicate.isObject(v) &&
+  typeof v["threadId"] === "string" &&
+  typeof v["handle"] === "string" &&
+  typeof v["confirmed"] === "number" &&
+  typeof v["opened"] === "object" &&
+  v["opened"] !== null;
 
 /** The record in `file`, or none when it is missing or unreadable. */
 export const readRecord = (file: string): Record | undefined => {
   try {
-    const value = JSON.parse(readFileSync(file, "utf8")) as { [key: string]: unknown };
+    const value: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!Predicate.isObject(value)) return undefined;
     const sessions = value["sessions"];
     if (typeof value["hostPid"] !== "number" || !Array.isArray(sessions)) return undefined;
     return { hostPid: value["hostPid"], sessions: sessions.filter(isKept) };

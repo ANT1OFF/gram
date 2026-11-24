@@ -22,15 +22,16 @@ import type { EventHubShape } from "../events/event-hub.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { locked, type Runtime } from "./runtime-state.ts";
 import type { TurnLifecycle } from "./turn-lifecycle.ts";
+import * as Predicate from "effect/Predicate";
 
 const canonical = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(canonical)
-    : typeof value === "object" && value !== null
+    : Predicate.isObject(value)
       ? Object.fromEntries(
           Object.keys(value)
             .toSorted()
-            .map((key) => [key, canonical((value as Record<string, unknown>)[key])]),
+            .map((key) => [key, canonical(value[key])]),
         )
       : value;
 

@@ -5,8 +5,7 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Semaphore from "effect/Semaphore";
-import { usageHistoryEnabled } from "@gram/contracts";
-import { type ThreadId } from "@gram/contracts";
+import { ThreadId, usageHistoryEnabled } from "@gram/contracts";
 import { readableOnly, readableWorkspacesOnly } from "../embedding/readable-by.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import type { Handlers } from "../rpc/handlers/common.ts";
@@ -55,9 +54,8 @@ export const usageHandlers = Effect.gen(function* () {
             ? Effect.succeed(overview)
             : Effect.gen(function* () {
                 const breakdown = overview.breakdown!;
-                const threads = yield* readableOnly(
-                  breakdown.threads,
-                  (row) => row.threadId as ThreadId,
+                const threads = yield* readableOnly(breakdown.threads, (row) =>
+                  ThreadId.make(row.threadId),
                 );
                 const workspaces = yield* readableWorkspacesOnly(breakdown.workspaces, (row) => ({
                   id: row.workspaceId,

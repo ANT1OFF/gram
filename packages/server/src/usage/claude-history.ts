@@ -7,6 +7,8 @@ import {
   type HistoryRecord,
   type HistoryReducer,
 } from "./history-types.ts";
+const isCount = (n: unknown): n is number =>
+  typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
 export function makeClaudeHistory(initialFrom = -Infinity, initialTo = Infinity): HistoryReducer {
   const records = new Map<string, HistoryRecord>(),
     rejected = new Set<string>();
@@ -50,28 +52,24 @@ export function makeClaudeHistory(initialFrom = -Infinity, initialTo = Infinity)
         return;
       }
       if (timestamp < from || timestamp >= to) return;
-      const fields = [
-        "input_tokens",
-        "output_tokens",
-        "cache_read_input_tokens",
-        "cache_creation_input_tokens",
-      ];
-      const counts = fields.map((key) => usage[key]);
+      const inputTokens = usage.input_tokens,
+        outputTokens = usage.output_tokens,
+        cacheReadTokens = usage.cache_read_input_tokens,
+        cacheWriteTokens = usage.cache_creation_input_tokens;
       if (
-        counts.some(
-          (n, index) =>
-            !(n === undefined && index > 1) &&
-            (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0),
-        )
+        !isCount(inputTokens) ||
+        !isCount(outputTokens) ||
+        !(cacheReadTokens === undefined || isCount(cacheReadTokens)) ||
+        !(cacheWriteTokens === undefined || isCount(cacheWriteTokens))
       ) {
         reducer.invalid++;
         return;
       }
       const tokens: TokenUsage = {
-        inputTokens: counts[0] as number,
-        outputTokens: counts[1] as number,
-        ...(counts[2] === undefined ? {} : { cacheReadTokens: counts[2] as number }),
-        ...(counts[3] === undefined ? {} : { cacheWriteTokens: counts[3] as number }),
+        inputTokens,
+        outputTokens,
+        ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+        ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
       };
       if (
         !Number.isSafeInteger(
@@ -91,8 +89,8 @@ export function makeClaudeHistory(initialFrom = -Infinity, initialTo = Infinity)
         uuid = identity(raw.uuid);
       if (previous !== undefined) {
         if (uuid === undefined) previous.complete = false;
-        const compatible = ["inputTokens", "cacheReadTokens", "cacheWriteTokens"].every(
-          (key) => previous.tokens[key as keyof TokenUsage] === tokens[key as keyof TokenUsage],
+        const compatible = (["inputTokens", "cacheReadTokens", "cacheWriteTokens"] as const).every(
+          (key) => previous.tokens[key] === tokens[key],
         );
         if (!compatible || previous.model !== currentModel) {
           previous.trusted = false;

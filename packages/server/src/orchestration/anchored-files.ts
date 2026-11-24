@@ -2,6 +2,7 @@ import { InvalidState, NotFound } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { spawn } from "node:child_process";
@@ -26,7 +27,8 @@ export interface AnchoredRequest {
   readonly mode?: number;
   readonly maxBytes?: number;
 }
-export type FileBoundary = "anchored" | "opened" | "chunk" | "staged" | "committing";
+const FileBoundaries = ["anchored", "opened", "chunk", "staged", "committing"] as const;
+export type FileBoundary = (typeof FileBoundaries)[number];
 export interface AnchoredOptions {
   /** Trusted caller coordination, never part of a model's tool arguments. */
   readonly boundary?: (phase: FileBoundary) => Effect.Effect<void, { readonly message: string }>;
@@ -232,6 +234,17 @@ while True:
             "message": str(e)[:300]})
 `;
 
+const decodeResponse = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      phase: Schema.optionalKey(Schema.Literals(FileBoundaries)),
+      error: Schema.optionalKey(Schema.String),
+      message: Schema.optionalKey(Schema.String),
+      result: Schema.optionalKey(Schema.Unknown),
+    }),
+  ),
+);
+
 interface Session {
   readonly run: <A>(
     root: string,
@@ -301,16 +314,11 @@ const launch = Effect.gen(function* () {
                 ? "Memory updates' anchored file helper requires /usr/bin/python3 with POSIX directory-handle support"
                 : "Anchored file helper ended without a result",
             });
-          const response = yield* Effect.try({
-            try: () =>
-              JSON.parse(next.value) as {
-                phase?: FileBoundary;
-                error?: string;
-                message?: string;
-                result?: A;
-              },
-            catch: () => new InvalidState({ message: "Invalid anchored file helper response" }),
-          });
+          const response = yield* decodeResponse(next.value).pipe(
+            Effect.mapError(
+              () => new InvalidState({ message: "Invalid anchored file helper response" }),
+            ),
+          );
           if (response.phase) {
             if (options.boundary)
               yield* options
@@ -334,6 +342,7 @@ const launch = Effect.gen(function* () {
             return yield* new InvalidState({
               message: `Confined file operation refused: ${response.message ?? "unavailable"}`,
             });
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the caller names the result shape its op gets from ANCHORED_FILE_PROGRAM above
           return response.result as A;
         });
       child.stdin.write(raw);

@@ -1,5 +1,5 @@
 import { dreamSupportFor, type AgentHost, type AgentSession, type OutwardGate } from "@gram/agents";
-import type { ModelRef, PendingRequest, RequestAnswer, ThreadId } from "@gram/contracts";
+import { type ModelRef, type PendingRequest, type RequestAnswer, ThreadId } from "@gram/contracts";
 import * as Data from "effect/Data";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -207,7 +207,7 @@ export const mergeConflict = (
     Effect.gen(function* () {
       const session = yield* host
         .open({
-          threadId: `merge-${randomUUID()}` as ThreadId,
+          threadId: ThreadId.make(`merge-${randomUUID()}`),
           cwd,
           model,
           permissionMode: "acceptEdits",

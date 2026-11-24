@@ -4,6 +4,7 @@ import * as Option from "effect/Option";
 import { EventHub } from "../events/event-hub.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
+import * as Predicate from "effect/Predicate";
 
 /** The `noticeKeys` key of the note a resume after a lost machine starts with. */
 export const MACHINE_LOST_KEY = "machine-lost";
@@ -24,8 +25,8 @@ export const machineLostToolText = (machine: string): string =>
 /** The command of the first cut-off tool call that ran one, as the machine-lost card shows it. */
 export const commandDuring = (inputs: ReadonlyArray<unknown>): string | undefined => {
   for (const input of inputs) {
-    if (typeof input !== "object" || input === null) continue;
-    const command = (input as Record<string, unknown>)["command"];
+    if (!Predicate.isObject(input)) continue;
+    const command = input["command"];
     if (typeof command !== "string") continue;
     const line = command.replace(/\s+/g, " ").trim();
     if (line === "") continue;

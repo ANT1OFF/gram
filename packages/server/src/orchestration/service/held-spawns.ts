@@ -73,6 +73,7 @@ import { claimedHeld, heldAgain, withoutHeld } from "./held-outbox.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Digests } from "./digests.ts";
 import type { Projects } from "./projects.ts";
+import { defined } from "../../defined.ts";
 
 const heldSpawnOf = (stored: StoredHeldBrief): HeldSpawn => ({
   held: true,
@@ -461,9 +462,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
       const stored: StoredHeldBrief = {
         id: `held-${randomUUID().slice(0, 8)}`,
         callerId: caller.id,
-        input: Object.fromEntries(
-          Object.entries(rest).filter(([, value]) => value !== undefined),
-        ) as StoredHeldBrief["input"],
+        input: defined(rest),
         projectName: project.name,
         agent: limit.agent,
         window: limit.window,

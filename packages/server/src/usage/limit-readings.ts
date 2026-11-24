@@ -207,7 +207,7 @@ export class UsageLimitReadings extends Context.Service<
               Effect.gen(function* () {
                 selected.set(agent, accountScope);
                 const captured = new Map(beforeQuery.map((before) => [keyOf(before), before]));
-                const windows = new Set(reports.map((report) => report.window));
+                const windows = new Set<string>(reports.map((report) => report.window));
                 for (const [key, before] of records) {
                   if (
                     before.agent !== agent ||
@@ -216,7 +216,7 @@ export class UsageLimitReadings extends Context.Service<
                     captured.get(key) !== before
                   )
                     continue;
-                  if (!windows.has(before.window as SubscriptionLimitReport["window"])) {
+                  if (!windows.has(before.window)) {
                     records.delete(key);
                     written.delete(key);
                     yield* run(sql`DELETE FROM usage_limits WHERE key = ${key}`);

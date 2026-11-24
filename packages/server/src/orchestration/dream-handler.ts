@@ -15,7 +15,6 @@ import {
   type QuestionEdit,
   type UserInput,
   type WorkspaceId,
-  type DreamId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -301,7 +300,7 @@ export const dreamHandlers = Effect.gen(function* () {
             ...(source === undefined
               ? {}
               : {
-                  dreamId: source.dreamId as DreamId,
+                  dreamId: source.dreamId,
                   mode: source.mode,
                   ...(source.summary === undefined ? {} : { summary: source.summary }),
                 }),

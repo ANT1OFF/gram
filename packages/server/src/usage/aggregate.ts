@@ -35,10 +35,14 @@ export const emptyTotals = (): UsageTotals => ({
   unclassifiedInputTokens: 0,
   outputTokens: 0,
 });
-export const addTotals = (a: UsageTotals, b: UsageTotals): UsageTotals =>
-  Object.fromEntries(
-    Object.keys(a).map((key) => [key, a[key as keyof UsageTotals] + b[key as keyof UsageTotals]]),
-  ) as unknown as UsageTotals;
+export const addTotals = (a: UsageTotals, b: UsageTotals): UsageTotals => ({
+  totalTokens: a.totalTokens + b.totalTokens,
+  uncachedInputTokens: a.uncachedInputTokens + b.uncachedInputTokens,
+  cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+  cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+  unclassifiedInputTokens: a.unclassifiedInputTokens + b.unclassifiedInputTokens,
+  outputTokens: a.outputTokens + b.outputTokens,
+});
 
 export const validUsageTokens = (provider: string | null, u: TokenUsage): boolean =>
   Object.values(u).every((n) => Number.isSafeInteger(n) && n >= 0) &&

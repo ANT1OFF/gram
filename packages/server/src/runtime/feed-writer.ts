@@ -16,15 +16,15 @@ import {
 } from "./runtime-state.ts";
 import type { LiveFeedEvent, ThreadFeedItem, EventHubShape } from "../events/event-hub.ts";
 import {
-  InvalidState,
+  FEED_WINDOW_TURNS,
   type GramUIMessage,
+  type GramUIMessageChunk,
+  InvalidState,
+  MessageId,
+  type ThreadId,
   type TurnEnd,
   type TurnId,
   type UsageSummary,
-  FEED_WINDOW_TURNS,
-  type GramUIMessageChunk,
-  type MessageId,
-  type ThreadId,
 } from "@gram/contracts";
 import { chunkOutput } from "../outputs/observed.ts";
 import { MessageAccumulator } from "./message-accumulator.ts";
@@ -383,7 +383,7 @@ export const makeFeedWriter = ({
         yield* appendChunk(rt, reply.messageId, chunk);
         return reply.messageId;
       }
-      const messageId = `${DATA_MESSAGE_PREFIX}${randomUUID()}` as MessageId;
+      const messageId = MessageId.make(`${DATA_MESSAGE_PREFIX}${randomUUID()}`);
       const accumulator = new MessageAccumulator(messageId);
       const createdAt = yield* Clock.currentTimeMillis;
       accumulator.apply({ type: "start", messageId, messageMetadata: { createdAt } });
@@ -535,7 +535,7 @@ export const makeFeedMethods = ({
       yield* locked(
         rt,
         Effect.gen(function* () {
-          const open = rt.open.get(messageId as MessageId);
+          const open = rt.open.get(MessageId.make(messageId));
           if (open !== undefined) return yield* appendChunk(rt, open.messageId, chunk);
           const message = yield* store.getMessage(threadId, messageId);
           if (message !== undefined) yield* publishMessage(rt, withDataPart(message, chunk));
@@ -562,7 +562,7 @@ export const makeFeedMethods = ({
               : undefined;
           const messages = since ?? recent!.messages;
           return {
-            messages: messages.filter((m) => !rt.open.has(m.id as MessageId)),
+            messages: messages.filter((m) => !rt.open.has(MessageId.make(m.id))),
             ...(since === undefined ? {} : { resumed: true }),
             ...(recent?.earlier === true ? { earlier: true } : {}),
             inFlight: [...rt.open.values()]
