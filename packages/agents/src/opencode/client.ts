@@ -238,11 +238,10 @@ export const makeOpenCodeClient = (options: OpenCodeClientOptions): OpenCodeClie
       });
       if (!response.ok || response.body === null)
         throw new OpenCodeRequestError(response.status, "OpenCode's event stream didn't open");
-      const decoder = new TextDecoder();
       let buffer = "";
       try {
-        for await (const bytes of response.body) {
-          buffer += decoder.decode(bytes, { stream: true });
+        for await (const text of response.body.pipeThrough(new TextDecoderStream())) {
+          buffer += text;
           let end = buffer.indexOf("\n\n");
           while (end !== -1) {
             const block = buffer.slice(0, end);

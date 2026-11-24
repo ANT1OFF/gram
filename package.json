@@ -20,6 +20,7 @@
       "ghostty-web": "0.4.0",
       "@types/node": "26.6.6",
       "oxlint": "1.94.0",
+      "@oxlint/plugins": "1.94.0",
       "tsrs": "7.1.0-beta.tsrs4",
       "typescript": "7.0.2",
       "vitest": "5.1.1",
@@ -88,6 +89,7 @@
     "e2e:smoke": "bun run --filter @gram/web e2e subscription-agents.spec.ts launch-checks.spec.ts gateways.spec.ts new-thread-folder.spec.ts --workers=1"
   },
   "devDependencies": {
+    "@oxlint/plugins": "catalog:",
     "@types/node": "catalog:",
     "node-gyp": "13.1.0",
     "oxlint": "catalog:",

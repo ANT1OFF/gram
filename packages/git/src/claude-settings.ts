@@ -133,7 +133,7 @@ export const unionInto = (base: unknown, incoming: Buckets): JsonObject => {
     const add = incoming[key].filter((rule) => !isExcluded(rule));
     if (add.length === 0 && !(key in permissions)) continue;
     const existing = permissions[key];
-    const list: Array<unknown> = Array.isArray(existing) ? [...existing] : [];
+    const list: Array<unknown> = Array.isArray(existing) ? existing.slice() : [];
     const seen = new Set(list.filter((v): v is string => typeof v === "string"));
     for (const rule of add) {
       if (!seen.has(rule)) {

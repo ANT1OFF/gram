@@ -441,8 +441,10 @@ export function createServerHost(options: ServerHostOptions): ServerHost {
           shutdown.requested &&
           typeof message === "object" &&
           message !== null &&
-          Reflect.get(message, "type") === "shutdownComplete" &&
-          Reflect.get(message, "success") === true
+          "type" in message &&
+          message.type === "shutdownComplete" &&
+          "success" in message &&
+          message.success === true
         )
           shutdown.complete = true;
         const report = shutdown.requested ? essentialsFromMessage(message) : null;

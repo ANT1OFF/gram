@@ -2284,9 +2284,9 @@ describe("running shell output", () => {
   it("follows the recorded background shells until each one's task ends", () => {
     const mapper = newMapper();
     const messages = fixture("p14-background-shells").map((entry) => entry.msg);
-    const upTo = (subtype: string, taskId: string) =>
+    const upTo = (subtype: "task_started" | "task_notification", taskId: string) =>
       messages.findIndex(
-        (m) => m.type === "system" && m.subtype === subtype && Reflect.get(m, "task_id") === taskId,
+        (m) => m.type === "system" && m.subtype === subtype && m.task_id === taskId,
       );
     const shortStart = upTo("task_started", "fixture-shell-short");
     const longEnd = upTo("task_notification", "fixture-shell-long");

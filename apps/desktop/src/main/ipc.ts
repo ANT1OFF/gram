@@ -67,9 +67,8 @@ export interface IpcOptions {
 }
 
 const threadIdOf = (input: unknown): string | undefined => {
-  if (typeof input !== "object" || input === null) return undefined;
-  const threadId: unknown = Reflect.get(input, "threadId");
-  return isThreadIdArg(threadId) ? threadId : undefined;
+  if (typeof input !== "object" || input === null || !("threadId" in input)) return undefined;
+  return isThreadIdArg(input.threadId) ? input.threadId : undefined;
 };
 
 /** Wires the preload bridge to the shell. Every message is dropped unless it comes from a trusted page. */
@@ -220,7 +219,9 @@ export function registerIpc({
   });
   handle(Channels.windowFocus, (input) => {
     const windowId: unknown =
-      typeof input === "object" && input !== null ? Reflect.get(input, "windowId") : undefined;
+      typeof input === "object" && input !== null && "windowId" in input
+        ? input.windowId
+        : undefined;
     return isWindowId(windowId) ? windows.focus(windowId, threadIdOf(input)) : false;
   });
   handle(Channels.windowLayoutGet, (_arg, event) => windows.layoutFor(event.sender) ?? null);

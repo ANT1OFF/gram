@@ -92,7 +92,7 @@ export const originTips = (
   cwd: string,
   names: ReadonlyArray<string>,
 ): Effect.Effect<Map<string, string>, ProcError, Proc> => {
-  if (names.length === 0) return Effect.succeed(new Map());
+  if (names.length === 0) return Effect.succeed(new Map<string, string>());
   return cachedOriginTips(cwd, names, readOriginTips(cwd, names));
 };
 

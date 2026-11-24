@@ -1,18 +1,14 @@
 import type { SessionTranscriptMessage, SessionTranscriptTool } from "@gram/contracts";
-import { cutToolText, toolSideText } from "../transcript-text.ts";
+import { blockLine, cutToolText, toolSideText } from "../transcript-text.ts";
 import { toolOf } from "./mapper.ts";
 import type { ThreadItem } from "./protocol/v2/ThreadItem.ts";
 import type { Turn } from "./protocol/v2/Turn.ts";
 
-const mcpText = (content: ReadonlyArray<unknown>): string | undefined => {
-  const parts = content.map((block) => {
-    if (typeof block !== "object" || block === null) return String(block);
-    const type = Reflect.get(block, "type");
-    const text = Reflect.get(block, "text");
-    return type === "text" && typeof text === "string" ? text : `[${String(type)}]`;
-  });
-  return parts.length === 0 ? undefined : cutToolText(parts.join("\n"));
-};
+const mcpText = (content: ReadonlyArray<unknown>): string | undefined =>
+  content.length === 0 ? undefined : cutToolText(content.map(blockLine).join("\n"));
+
+const commandOf = (input: unknown): unknown =>
+  typeof input === "object" && input !== null && "command" in input ? input.command : undefined;
 
 const outputOf = (item: ThreadItem): string | undefined => {
   switch (item.type) {
@@ -46,7 +42,7 @@ const toolEntry = (item: ThreadItem): SessionTranscriptTool | undefined => {
   if (tool === undefined) return undefined;
   const input =
     item.type === "commandExecution"
-      ? toolSideText(Reflect.get(tool.input as object, "command"))
+      ? toolSideText(commandOf(tool.input))
       : toolSideText(tool.input);
   const output = outputOf(item);
   return {

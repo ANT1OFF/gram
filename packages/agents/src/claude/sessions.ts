@@ -12,7 +12,7 @@ import type {
 } from "@gram/contracts";
 
 import { previewOf } from "../session-preview.ts";
-import { cutToolText } from "../transcript-text.ts";
+import { blockLine, blockText, contentOf, cutToolText } from "../transcript-text.ts";
 
 /** An SDK session listing entry in contract shape, with the most specific title available. */
 export const toSessionSummary = (info: SDKSessionInfo): AgentSessionSummary => {
@@ -31,17 +31,10 @@ export const toSessionSummary = (info: SDKSessionInfo): AgentSessionSummary => {
 
 /** A transcript entry's visible text: string content, or its text blocks joined; tool results have none. */
 export const transcriptText = (message: unknown): string | undefined => {
-  const content =
-    typeof message === "object" && message !== null ? Reflect.get(message, "content") : undefined;
+  const content = contentOf(message);
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return undefined;
-  const texts = content.flatMap((block: unknown) => {
-    if (typeof block !== "object" || block === null || Reflect.get(block, "type") !== "text") {
-      return [];
-    }
-    const text = Reflect.get(block, "text");
-    return typeof text === "string" ? [text] : [];
-  });
+  const texts = content.flatMap((block: unknown) => blockText(block) ?? []);
   return texts.length > 0 ? texts.join(" ") : undefined;
 };
 
@@ -60,13 +53,9 @@ const toolText = (value: unknown): string | undefined => {
   if (value === undefined || value === null) return undefined;
   if (typeof value === "string") return value === "" ? undefined : cutToolText(value);
   if (Array.isArray(value)) {
-    const parts = value.map((block: unknown) => {
-      if (typeof block !== "object" || block === null) return String(block);
-      const type = Reflect.get(block, "type");
-      const text = Reflect.get(block, "text");
-      return type === "text" && typeof text === "string" ? text : `[${String(type)}]`;
-    });
-    return parts.length === 0 ? undefined : cutToolText(parts.join("\n"));
+    return value.length === 0
+      ? undefined
+      : cutToolText(value.map((block: unknown) => blockLine(block)).join("\n"));
   }
   try {
     return cutToolText(JSON.stringify(value));
@@ -76,8 +65,7 @@ const toolText = (value: unknown): string | undefined => {
 };
 
 const blocksOf = (message: unknown): ReadonlyArray<Record<string, unknown>> => {
-  const content =
-    typeof message === "object" && message !== null ? Reflect.get(message, "content") : undefined;
+  const content = contentOf(message);
   if (!Array.isArray(content)) return [];
   return content.filter(
     (block: unknown): block is Record<string, unknown> =>

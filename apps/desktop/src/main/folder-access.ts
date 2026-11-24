@@ -29,7 +29,9 @@ export async function chooseFolder(
   input: unknown,
 ): Promise<string | null> {
   const defaultPath: unknown =
-    typeof input === "object" && input !== null ? Reflect.get(input, "defaultPath") : undefined;
+    typeof input === "object" && input !== null && "defaultPath" in input
+      ? input.defaultPath
+      : undefined;
   const result = await showOpenDialog({
     properties: ["openDirectory", "createDirectory"],
     ...(typeof defaultPath === "string" && isAbsolute(defaultPath) ? { defaultPath } : {}),

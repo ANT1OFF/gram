@@ -165,6 +165,15 @@ const text = (value: unknown): string | undefined =>
 const count = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 
+const shotIn = (shots: object, theme: "dark" | "light"): unknown =>
+  theme === "dark"
+    ? "dark" in shots
+      ? shots.dark
+      : undefined
+    : "light" in shots
+      ? shots.light
+      : undefined;
+
 /** `mock.json`'s fields, forgiving of what an agent or a person left out; `undefined` if not JSON. */
 export const parseMockRecord = (content: string): MockRecord | undefined => {
   let raw: unknown;
@@ -178,28 +187,26 @@ export const parseMockRecord = (content: string): MockRecord | undefined => {
   const versions = (Array.isArray(record["versions"]) ? record["versions"] : []).flatMap(
     (version: unknown) => {
       if (typeof version !== "object" || version === null) return [];
-      const n = count(Reflect.get(version, "n"));
-      const file = text(Reflect.get(version, "file"));
+      const n = count("n" in version ? version.n : undefined);
+      const file = text("file" in version ? version.file : undefined);
       return n === undefined || file === undefined || !isMockPagePath(file) ? [] : [{ n, file }];
     },
   );
   const directions = Array.isArray(record["directions"])
     ? record["directions"].flatMap((direction: unknown) => {
         if (typeof direction !== "object" || direction === null) return [];
-        const name = text(Reflect.get(direction, "name"));
+        const name = text("name" in direction ? direction.name : undefined);
         if (name === undefined) return [];
-        const shots: unknown = Reflect.get(direction, "shots");
+        const shots: unknown = "shots" in direction ? direction.shots : undefined;
         const shot = (theme: "dark" | "light") => {
           const path =
-            typeof shots === "object" && shots !== null
-              ? text(Reflect.get(shots, theme))
-              : undefined;
+            typeof shots === "object" && shots !== null ? text(shotIn(shots, theme)) : undefined;
           return path !== undefined && isMockImagePath(path) ? { [theme]: path } : {};
         };
         return [
           {
             name,
-            board: text(Reflect.get(direction, "board")),
+            board: text("board" in direction ? direction.board : undefined),
             shots: { ...shot("dark"), ...shot("light") },
           },
         ];

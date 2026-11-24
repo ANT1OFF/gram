@@ -6,6 +6,7 @@ export default defineProject({
     environment: "node",
     include: [
       "oxlint/*.test.mjs",
+      "oxlint/anti-slop/**/*.test.ts",
       "design-tokens/*.test.mjs",
       "release-rc/*.test.mjs",
       "release-stable/*.test.mjs",
