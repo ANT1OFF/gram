@@ -32,6 +32,7 @@ import { CompactingLine } from "./compaction-marker";
 import { StartingProgress } from "./starting-progress";
 import { StopReceiptLine, useStopReceipt } from "./stop-receipt";
 import { LimitWaitLine } from "./limit-wait-line";
+import { MachineMoveLine } from "./machine-move-line";
 import { startingSteps } from "./starting-progress-model";
 import { EmptyThread } from "./empty-thread";
 import { HOLD_UNDER_POINTER } from "./hold-under-pointer";
@@ -274,6 +275,7 @@ export function Transcript({
   const limitWait = useThreadsStore((s) => s.byId[threadId]?.thread.limitWait);
   const limitCleared = useThreadsStore((s) => s.byId[threadId]?.thread.limitCleared);
   const limitLine = limitWait !== undefined || limitCleared !== undefined;
+  const machineMove = useThreadsStore((s) => s.byId[threadId]?.thread.machineMove);
   const conversationOnly = useConversationOnly((s) => s.on);
   const working = useThreadsStore(
     (s) => conversationOnly && WORKING.has(s.byId[threadId]?.status ?? ""),
@@ -288,6 +290,7 @@ export function Transcript({
     compactingLine !== undefined ||
     startLine !== undefined ||
     stopLine !== undefined ||
+    machineMove !== undefined ||
     limitLine ||
     workingSince !== undefined;
   const endRoom = FADE_PX + (tailLine ? compactingRow : 0);
@@ -999,6 +1002,8 @@ export function Transcript({
                         <StartingProgress threadId={threadId} steps={startLine} />
                       ) : stopLine !== undefined ? (
                         <StopReceiptLine threadId={threadId} receipt={stopLine} />
+                      ) : machineMove !== undefined ? (
+                        <MachineMoveLine move={machineMove} />
                       ) : workingSince !== undefined && !limitLine ? (
                         <WorkingLine since={workingSince} />
                       ) : (

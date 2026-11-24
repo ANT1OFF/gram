@@ -190,6 +190,7 @@ const quietOfWorker = (facts: WorkerFacts, state: WorkerState): WorkerQuiet | un
   if (
     facts.thread.parked ||
     facts.compacting === true ||
+    facts.thread.machineMove !== undefined ||
     facts.memo?.userIntervened ||
     facts.pendingRequests.length > 0 ||
     (facts.status !== "running" && waitingOnAutomation(facts.thread, facts.wakes)) ||
@@ -563,6 +564,7 @@ const entryOf = (
       ? { waitingOnAutomation: true as const }
       : {}),
     ...(facts.compacting === true ? { compacting: true as const } : {}),
+    ...(thread.machineMove === undefined ? {} : { moving: true as const }),
     ...(quiet === undefined ? {} : { quiet }),
     ...(lastError === undefined ? {} : { lastError }),
     ...(thread.limitWait === undefined || thread.limitWait.cancelled === true
@@ -856,6 +858,7 @@ export type CompactWorkerRow = Pick<WorkerLedgerEntry, "threadId" | "title" | "s
       | "plan"
       | "quiet"
       | "compacting"
+      | "moving"
       | "waitingOnAutomation"
       | "machine"
     >
@@ -880,6 +883,7 @@ export const compactWorkerRow = (worker: WorkerLedgerEntry): CompactWorkerRow =>
     state: worker.state,
     status: worker.status,
     ...(worker.compacting === true ? { compacting: true as const } : {}),
+    ...(worker.moving === true ? { moving: true as const } : {}),
     ...(worker.quiet === undefined ? {} : { quiet: worker.quiet }),
     ...(worker.waitingOnAutomation === true ? { waitingOnAutomation: true as const } : {}),
     project: worker.project,

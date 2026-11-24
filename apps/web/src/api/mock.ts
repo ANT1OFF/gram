@@ -1735,6 +1735,18 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     return simulateLimitWait(this.#scenes, threadId, wait, text);
   }
 
+  /**
+   * Dev and e2e hook: `threadId`'s machine is being replaced mid-turn and its session waits for it
+   * (`Thread.machineMove`), as the server marks it; `until` absent clears it, as the resume does.
+   */
+  simulateMachineMove(threadId: ThreadId, machine: string, until?: number) {
+    const runtime = this.#runtime(threadId);
+    const { machineMove: _, ...thread } = runtime.summary.thread;
+    this.#replaceThread(
+      until === undefined ? thread : { ...thread, machineMove: { machine, at: Date.now(), until } },
+    );
+  }
+
   /** `simulateLimitCleared` (`mock-thread-sims.ts`). */
   async simulateLimitCleared(threadId: ThreadId, resumeAt?: number) {
     return simulateLimitCleared(this.#scenes, threadId, resumeAt);

@@ -238,7 +238,7 @@ export const nowLineOf = (
     | "userIntervened"
     | "compacting"
   > &
-    Partial<Pick<WorkerLedgerEntry, "lastError">>,
+    Partial<Pick<WorkerLedgerEntry, "lastError" | "moving">>,
   activity?: string | undefined,
 ): string => {
   const line = (() => {
@@ -255,6 +255,7 @@ export const nowLineOf = (
       case "archived":
         return "archived";
     }
+    if (worker.moving === true && worker.status !== "error") return "moving";
     if (worker.status === "running" || worker.status === "starting") {
       if (worker.compacting === true) return "compacting";
       const counted = report === undefined ? undefined : reportGist(report.summary);
