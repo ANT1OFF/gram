@@ -35,7 +35,34 @@
     "gram/no-sleep": "error",
     "gram/no-raw-effect": "error",
     "gram/max-lines": "error",
-    "gram/no-cross-package-path": "error"
+    "gram/no-cross-package-path": "error",
+    "typescript/ban-ts-comment": "error",
+    // Type-aware rules (`--type-aware`, run by tsrs) that the categories above turn on. Each is
+    // off until the change that clears its existing hits turns it back on.
+    "typescript/await-thenable": "off",
+    "typescript/no-base-to-string": "off",
+    "typescript/no-duplicate-type-constituents": "off",
+    "typescript/no-floating-promises": "off",
+    "typescript/no-implied-eval": "off",
+    "typescript/no-meaningless-void-operator": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/no-redundant-type-constituents": "off",
+    "typescript/no-unnecessary-boolean-literal-compare": "off",
+    "typescript/no-unnecessary-template-expression": "off",
+    "typescript/no-unnecessary-type-arguments": "off",
+    "typescript/no-unnecessary-type-assertion": "off",
+    "typescript/no-unnecessary-type-conversion": "off",
+    "typescript/no-unnecessary-type-parameters": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/no-useless-default-assignment": "off",
+    "typescript/require-array-sort-compare": "off",
+    "typescript/restrict-template-expressions": "off",
+    // A function that ends in an exhaustive `switch` needs no trailing return; its declared
+    // return type already makes the compiler check every path.
+    "typescript/consistent-return": "off",
+    // Gram's stores, bridges and services are closures typed with method signatures, so passing
+    // `connection.get` or destructuring `getState()` never drops a `this` they would read.
+    "typescript/unbound-method": "off"
   },
   "overrides": [
     {
