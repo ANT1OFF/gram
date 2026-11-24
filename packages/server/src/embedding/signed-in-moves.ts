@@ -75,8 +75,7 @@ export const makeMoveMemory = (): MoveMemory => ({
   said: new Map(),
 });
 
-/** Logs `message` for `key` only when what is said of it changed since the last look. */
-const sayOnce = (
+const sayOnceChanged = (
   memory: MoveMemory,
   key: string,
   level: "info" | "warn",
@@ -108,16 +107,17 @@ const PASS_KEY = "\0pass";
  * keeps the stop, since the move may have gone through; the app reports other 5xx answers and a
  * 401 as lost. Neither is tried past `MOVE_TRIES` looks:
  * the stop is then taken back for good, so a machine is never held off work for longer.
+ *
+ * The machines are read at each look, never once for all: a server starts before its hosted
+ * machines dial in, and a look over the list it started with would never see one of them.
  */
 export const moveAskedMachines = (deps: MoveDeps, memory: MoveMemory, now = Date.now) =>
-  // The machines are read at each look, never once for all: a server starts before its hosted
-  // machines dial in, and a look over the list it started with would never see one of them.
   Effect.suspend(() => {
     const hosted = deps
       .machines()
       .filter((machine) => machine.via !== undefined && machine.onDemand === "worker");
     const online = hosted.filter((machine) => machine.onlineSince !== undefined);
-    return sayOnce(
+    return sayOnceChanged(
       memory,
       PASS_KEY,
       "info",
@@ -130,7 +130,7 @@ export const moveAskedMachines = (deps: MoveDeps, memory: MoveMemory, now = Date
           (machine) =>
             moveOne(deps, machine, memory, now).pipe(
               Effect.catchCause((cause) =>
-                sayOnce(
+                sayOnceChanged(
                   memory,
                   machine.name,
                   "warn",
@@ -169,7 +169,7 @@ const moveOne = (
     const account = machine.viaAccount;
     const asked = yield* deps.port.call(via, "status", { name: machine.name }, { account });
     const skip = (level: "info" | "warn", message: string, why: Record<string, unknown> = {}) =>
-      sayOnce(memory, machine.name, level, message, { machine: machine.name, ...why }).pipe(
+      sayOnceChanged(memory, machine.name, level, message, { machine: machine.name, ...why }).pipe(
         Effect.as<MoveOutcome>("not-asked"),
       );
     if (!asked.ok)
@@ -280,7 +280,7 @@ export const startMovingAsked = (deps: MoveDeps) => {
       }),
     ),
     Effect.catchCause((cause) =>
-      sayOnce(memory, PASS_KEY, "warn", "the worker machine move pass failed", {
+      sayOnceChanged(memory, PASS_KEY, "warn", "the worker machine move pass failed", {
         reason: Cause.pretty(cause).slice(0, 300),
       }),
     ),
