@@ -208,7 +208,7 @@ export const rowStatus = (
       working: false,
     };
   }
-  if (thread.machineMove !== undefined && status !== "error") {
+  if (thread.machineMove !== undefined && (status === "running" || status === "starting")) {
     return {
       icon: Spinner,
       tone: "text-status-working",

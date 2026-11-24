@@ -286,9 +286,9 @@ export const hostStopRoute = (
           return refuse("bad request", 400);
         deps.hosts.moves.said(hostId, withinMs as number | undefined);
         tellProviderCause("starting");
-        yield* Effect.logInfo("machines: a machine is being replaced, its sessions wait for it").pipe(
-          Effect.annotateLogs({ hostId, ...(cause === undefined ? {} : { cause }) }),
-        );
+        yield* Effect.logInfo(
+          "machines: a machine is being replaced, its sessions wait for it",
+        ).pipe(Effect.annotateLogs({ hostId, ...(cause === undefined ? {} : { cause }) }));
         return json({ ok: true });
       }
       case MACHINES_STOP_RESUME_PATH: {

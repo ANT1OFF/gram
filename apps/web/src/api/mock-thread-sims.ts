@@ -292,3 +292,39 @@ export function simulateShowPanel(
     ...(driven === true ? { driven } : {}),
   });
 }
+
+/**
+ * Dev and e2e hook: `threadId`'s machine is being replaced mid-turn and its session waits for it
+ * (`Thread.machineMove`), as the server marks it; `until` absent clears it, as the resume does.
+ */
+export function simulateMachineMove(
+  core: MockCoreScenes,
+  threadId: ThreadId,
+  machine: string,
+  until?: number,
+) {
+  const { machineMove: _, ...thread } = core.runtime(threadId).summary.thread;
+  core.replaceThread(
+    until === undefined ? thread : { ...thread, machineMove: { machine, at: Date.now(), until } },
+  );
+}
+
+/** `resumeLimitWait`, as the server answers it: the wait ends and the thread is told to go on. */
+export async function resumeLimitWait(core: MockCoreScenes, threadId: ThreadId) {
+  const runtime = core.runtime(threadId);
+  if (runtime.summary.thread.limitWait === undefined) return;
+  const { limitWait: _, ...thread } = runtime.summary.thread;
+  core.replaceThread(thread);
+  await core.mock.send(threadId, {
+    text: "The usage limit has reset. Continue where you left off.",
+  });
+}
+
+/** `resumeAfterMachineLost`, as the server answers it: the thread is told what was cut off. */
+export async function resumeAfterMachineLost(core: MockCoreScenes, threadId: ThreadId) {
+  const lost = core.runtime(threadId).summary.thread.lastError?.machineLost;
+  if (lost === undefined) return;
+  await core.mock.send(threadId, {
+    text: `Note: ${lost.machine}, the machine this session runs on, was lost. Continue where you left off.`,
+  });
+}

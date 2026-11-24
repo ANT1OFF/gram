@@ -17,9 +17,11 @@ import {
   openLane,
   openReply,
   replyOf,
+  noteEnded,
   BACKGROUND_OUTPUT_CHARS,
   type Turn,
 } from "./runtime-state.ts";
+import { startMachineMove } from "./machine-move.ts";
 import {
   listedRow,
   type AgentEvent,
@@ -915,27 +917,9 @@ export const makeAgentEvents = ({
           return;
         }
         case "ended":
-          rt.endedReason = event.reason;
-          rt.restartedMachine = event.restartedMachine;
-          rt.machineMoved = event.moved === true;
-          rt.lostMachine = event.lostMachine;
-          return;
-        case "machineMoving": {
-          const machine = event.machine;
-          if (machine === undefined) return;
-          const at = yield* Clock.currentTimeMillis;
-          yield* Effect.logInfo("a thread's machine is being replaced; its session waits for it").pipe(
-            Effect.annotateLogs({ threadId: rt.threadId, until: event.until }),
-          );
-          const thread = yield* store
-            .updateThread(rt.threadId, (t) => ({
-              ...t,
-              machineMove: { machine, at, until: event.until },
-            }))
-            .pipe(Effect.orDie);
-          yield* publishUpsert(thread);
-          return;
-        }
+          return noteEnded(rt, event);
+        case "machineMoving":
+          return yield* startMachineMove(store, publishUpsert, rt.threadId, event);
         case "backgroundTasks":
           yield* setBackground(rt, event.tasks);
           return;

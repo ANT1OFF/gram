@@ -155,8 +155,7 @@ export const followingSessions = (
     moved: (handle) => moves.get(handle),
     events: (handle, afterSeq) => {
       let seen = afterSeq;
-      /** An agent end was held once already: one the same host gives again is passed on. */
-      let held = false;
+      let endHeldOnce = false;
       type Next = { readonly lost: false; readonly next: SequencedEvent } | { readonly lost: true };
       const follow = (
         connection: Effect.Effect<HostConnection, HostUnavailable>,
@@ -172,7 +171,7 @@ export const followingSessions = (
               Stream.flatMap((item) => {
                 if (item.lost) return lost();
                 const { next } = item;
-                if (next.event.type === "ended" && !held) return holdEnded(live, next);
+                if (next.event.type === "ended" && !endHeldOnce) return holdEnded(live, next);
                 return Stream.sync(() => {
                   seen = next.seq;
                   return next;
@@ -188,15 +187,11 @@ export const followingSessions = (
             return waitBack(yield* Clock.currentTimeMillis);
           }),
         );
-      // The agent ended as its host went (killed with it, or by it as it shut down): the machine
-      // restarted or is being replaced, not the agent failed, so the session waits for the machine
-      // as if only its connection had dropped. Passed on as it came when the host stays.
       const holdEnded = (live: HostConnection, next: SequencedEvent) =>
         Stream.unwrap(
           Effect.gen(function* () {
-            held = true;
-            const within =
-              timing.moving?.() === undefined ? ENDED_SETTLE_MS : MOVE_GONE_WITHIN_MS;
+            endHeldOnce = true;
+            const within = timing.moving?.() === undefined ? ENDED_SETTLE_MS : MOVE_GONE_WITHIN_MS;
             const since = yield* Clock.currentTimeMillis;
             while (!live.gone() && (yield* Clock.currentTimeMillis) - since < within)
               yield* Effect.sleep(GONE_LOOK);
@@ -234,8 +229,7 @@ export const followingSessions = (
                 );
               }
               const now = yield* Clock.currentTimeMillis;
-              if (now - since >= (moving ?? reattachOf()))
-                return Stream.fail(back.failure);
+              if (now - since >= (moving ?? reattachOf())) return Stream.fail(back.failure);
               yield* Effect.sleep(LOOK_EVERY);
             }
           }),

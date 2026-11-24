@@ -1,5 +1,6 @@
 import type { StoredActor } from "../host/ownership.ts";
 import {
+  type EndedEvent,
   type AgentUnavailable,
   type MessageId,
   type ModelRef,
@@ -224,7 +225,7 @@ export interface Runtime {
   /** The joined machine the session's `ended` said restarted under it (`EndedEvent.restartedMachine`). */
   restartedMachine: string | undefined;
   /** With `restartedMachine`: the machine was replaced rather than restarted (`EndedEvent.moved`). */
-  machineMoved: boolean;
+  machineMoved?: true | undefined;
   /** The joined machine the session's `ended` said was lost under it (`EndedEvent.lostMachine`). */
   lostMachine: string | undefined;
   /**
@@ -491,6 +492,14 @@ export const statusEvent = (
 });
 
 /** The top-level reply turn `turnId` streamed, finished or not; read before `finishTurn` drops it. */
+/** What a session's `ended` says, kept for its exit to read (`handleSessionExit`). */
+export const noteEnded = (rt: Runtime, event: typeof EndedEvent.Type): void => {
+  rt.endedReason = event.reason;
+  rt.restartedMachine = event.restartedMachine;
+  rt.machineMoved = event.moved;
+  rt.lostMachine = event.lostMachine;
+};
+
 export const replyOf = (rt: Runtime, turnId: TurnId | undefined) =>
   turnId === undefined
     ? undefined

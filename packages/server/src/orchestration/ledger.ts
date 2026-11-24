@@ -35,7 +35,6 @@ import {
   type ThreadStatus,
   type TurnId,
   type UsageSummary,
-  type WorkerError,
   type WorkerLedgerEntry,
   type WorkerPendingRequest,
   type WorkerPr,
@@ -52,6 +51,9 @@ import { redactText } from "../logging/redact.ts";
 import type { ThreadPlanRecord } from "../persistence/thread-store.ts";
 import type { CostBucket, WorkerMemo } from "./outbox.ts";
 import { localDayOf } from "../zone-time.ts";
+import { workerErrorOf } from "./worker-error.ts";
+
+export { workerErrorOf };
 import {
   featureState,
   groupOf,
@@ -501,18 +503,6 @@ const stateOf = (facts: WorkerFacts): WorkerState => workerState(stateInputOf(fa
 
 const OVERLAP_FILES_KEPT = 10;
 
-/** A thread's `lastError` as the ledger and the `workerError` wake carry it. */
-export const workerErrorOf = (thread: Thread): WorkerError | undefined => {
-  const error = thread.lastError;
-  if (error === undefined) return undefined;
-  return {
-    kind: error.kind,
-    ...(error.httpStatus === undefined ? {} : { httpStatus: error.httpStatus }),
-    text: error.text,
-    ...(error.machineLost === undefined ? {} : { lostMachine: true as const }),
-  };
-};
-
 const entryOf = (
   facts: WorkerFacts,
   state: WorkerState,
@@ -564,7 +554,9 @@ const entryOf = (
       ? { waitingOnAutomation: true as const }
       : {}),
     ...(facts.compacting === true ? { compacting: true as const } : {}),
-    ...(thread.machineMove === undefined ? {} : { moving: true as const }),
+    ...(thread.machineMove !== undefined && facts.status === "running"
+      ? { moving: true as const }
+      : {}),
     ...(quiet === undefined ? {} : { quiet }),
     ...(lastError === undefined ? {} : { lastError }),
     ...(thread.limitWait === undefined || thread.limitWait.cancelled === true
