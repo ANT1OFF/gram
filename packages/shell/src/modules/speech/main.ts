@@ -11,6 +11,7 @@ import {
   type MediaAccess,
 } from "./microphone.ts";
 import type { SpeechModelStore } from "./models.ts";
+import { fieldsOf } from "@gram/contracts";
 
 export * from "./host.ts";
 export * from "./microphone.ts";
@@ -20,6 +21,7 @@ export { electronFetch, type ElectronNet } from "./net.ts";
 
 const speechSender = (contents: WebContents): SpeechSender => ({
   postPort: (payload, port) =>
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host hands back a port its own MessageChannelMain made
     contents.postMessage(Channels.speechPort, payload, [port as Electron.MessagePortMain]),
   crashed: (payload) => contents.send(Channels.speechCrashed, payload),
   isDestroyed: () => contents.isDestroyed(),
@@ -130,8 +132,8 @@ export function installSpeech(
   installModels(ipc, options.models);
   ipc.handle(Channels.speechOpen, (input, event) => host.open(input, speechSender(event.sender)));
   ipc.handle(Channels.speechPrewarm, (input) => {
-    const { modelId, performance, mode } = (input ?? {}) as Record<string, unknown>;
-    return host.prewarm(modelId, performance, mode);
+    const fields = fieldsOf(input);
+    return host.prewarm(fields.get("modelId"), fields.get("performance"), fields.get("mode"));
   });
   ipc.handle(Channels.speechShutdown, () => host.shutdown());
   ipc.handle(Channels.microphoneAccess, () => microphoneAccess(media, platform));

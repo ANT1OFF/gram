@@ -16,6 +16,7 @@ const service = createSpeechService({
 });
 
 process.parentPort.on("message", (event) => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- main is Gram's own process, and posts only protocol.ts's messages
   const message = event.data as SpeechHostMessage;
   service.receive(message, event.ports);
 });

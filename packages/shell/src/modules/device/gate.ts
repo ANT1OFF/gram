@@ -25,6 +25,7 @@ import {
 } from "./folders.ts";
 import { approvalHash, sameHash } from "./keys.ts";
 import { type CommandResult, runCommand } from "./runner.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * The device's gate: every request a hosted server makes of a lent machine passes here, in this
@@ -137,11 +138,9 @@ const refusal = (why: DeviceRefusalReason): Refusal => ({ kind: "refused", why }
 
 const fingerprint = (kind: string, payload: unknown): string =>
   JSON.stringify([kind, payload], (_key, value: unknown) =>
-    value !== null && typeof value === "object" && !Array.isArray(value)
+    Predicate.isObject(value)
       ? Object.fromEntries(
-          Object.entries(value as Record<string, unknown>).toSorted(([a], [b]) =>
-            a < b ? -1 : a > b ? 1 : 0,
-          ),
+          Object.entries(value).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
         )
       : value,
   );
@@ -404,6 +403,7 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
     if (seen !== undefined) {
       if (seen.fingerprint !== print) return Promise.resolve(changed());
       if (!seen.done) join(seen, left);
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- one request id with one fingerprint is one kind of request, whose answer has that kind's type
       return seen.answer as Promise<A>;
     }
     const controller = new AbortController();
@@ -495,7 +495,7 @@ export const makeDeviceGate = (options: DeviceGateOptions): DeviceGate => {
         kind,
         folder.path,
         target.path,
-        fetched.kind === "refused" ? (fetched as Refusal).why : "allowed",
+        "why" in fetched ? fetched.why : "allowed",
       );
       return fetched;
     })();

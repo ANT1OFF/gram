@@ -7,6 +7,7 @@ import {
 } from "@gram/contracts/link-trust";
 import { isAppPage, type BrowseContext } from "./browse-rules.ts";
 import type { Cdp } from "./page-driver.ts";
+import * as Predicate from "effect/Predicate";
 
 const CONSOLE_MAX_CHARS = 2_000;
 
@@ -37,7 +38,7 @@ export const loopbackOrigin = (origin: string) =>
   origin !== "null" && origin !== "about:blank" && browseTarget(origin).kind === "loopback";
 
 const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  Predicate.isObject(value) ? value : {};
 
 /** Only http(s) origins leave the driver. No raw path, query, fragment, userinfo or page errors. */
 export function networkOrigin(raw: unknown): string {
@@ -169,7 +170,8 @@ export function browserObservations(cdp: Cdp, heldFrom: number | null) {
         origins.set(context["id"], context["origin"]);
     }),
     cdp.on("Runtime.executionContextDestroyed", (params) => {
-      origins.delete(record(params)["executionContextId"] as number);
+      const id = record(params)["executionContextId"];
+      if (typeof id === "number") origins.delete(id);
     }),
     cdp.on("Runtime.executionContextsCleared", () => origins.clear()),
     cdp.on("Network.requestWillBeSent", (params) => {

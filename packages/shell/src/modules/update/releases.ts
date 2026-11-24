@@ -1,4 +1,4 @@
-import type { ReleaseInfo } from "@gram/contracts";
+import { fieldsOf, type ReleaseInfo } from "@gram/contracts";
 
 import { compareVersions, formatVersion, parseVersion, type Version } from "./semver.ts";
 
@@ -17,10 +17,7 @@ export function validTag(tag: string): boolean {
   return tag.length <= 64 && /^v[0-9A-Za-z._-]*$/.test(tag);
 }
 
-const field = (release: unknown, key: string): unknown =>
-  typeof release === "object" && release !== null
-    ? (release as Record<string, unknown>)[key]
-    : undefined;
+const field = (release: unknown, key: string): unknown => fieldsOf(release).get(key);
 
 /**
  * The channel's installable releases from parsed `gh release list --json tagName,isDraft` output,

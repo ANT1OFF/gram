@@ -122,6 +122,7 @@ import {
   permissionRequestAsk,
   isTrustedSenderUrl,
   lastWindowClosed,
+  nodeTimers,
   surfaceWindow,
   type ShellProduct,
 } from "@gram/shell/core";
@@ -145,7 +146,6 @@ import {
 } from "./quit.ts";
 import { createQuitWindow, isProgressWindow } from "./quit-window.ts";
 import { inheritedServerEnv } from "./server-env.ts";
-import { nodeTimers } from "./node-timers.ts";
 import { createServerHost, DEFAULT_RECOVERY, NO_RECOVERY } from "./server-host.ts";
 import {
   autoUpdateCheckEnabled,

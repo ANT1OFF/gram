@@ -5,6 +5,7 @@ import { type BrowserWindow, clipboard, dialog, shell, type MessageBoxOptions } 
 import { Channels } from "../channels.ts";
 import { createLinkGate, type LinkGate } from "../core/link-gate.ts";
 import { appWindows } from "./decision-windows.ts";
+import { fieldsOf } from "@gram/contracts";
 
 let gate: LinkGate<BrowserWindow> | undefined;
 
@@ -15,7 +16,7 @@ export function loadLinkTrust(path: string) {
   gate = createLinkGate<BrowserWindow>({
     load: () => {
       try {
-        return (JSON.parse(readFileSync(path, "utf8")) as { hosts?: unknown }).hosts;
+        return fieldsOf(JSON.parse(readFileSync(path, "utf8"))).get("hosts");
       } catch {
         return [];
       }

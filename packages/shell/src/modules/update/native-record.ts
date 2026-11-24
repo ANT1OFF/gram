@@ -1,6 +1,7 @@
 import type { AppUpdateNotApplied } from "@gram/contracts";
 
 import { parseVersion } from "./semver.ts";
+import * as Predicate from "effect/Predicate";
 
 export const NATIVE_RECORD_FILE = "native-update.json";
 /** Bigger than any record; a larger file isn't one. */
@@ -30,8 +31,8 @@ export function parseInstallRecord(text: string): NativeInstallRecord | undefine
   } catch {
     return undefined;
   }
-  if (typeof value !== "object" || value === null) return undefined;
-  const { schema, from, to, at } = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return undefined;
+  const { schema, from, to, at } = value;
   if (
     schema !== 1 ||
     typeof from !== "string" ||

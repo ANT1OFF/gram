@@ -58,6 +58,7 @@ const loadedLibraries = (): string[] => {
 export function loadSherpaRuntime(from: string): SpeechRuntime {
   const require = createRequire(from);
   const entry = require.resolve("sherpa-onnx-node");
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the native module is the one its own type declarations describe
   const sherpa = require("sherpa-onnx-node") as typeof Sherpa;
   const platform = process.platform === "win32" ? "win" : process.platform;
   const packageDir = dirname(

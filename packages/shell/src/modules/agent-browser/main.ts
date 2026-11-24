@@ -7,6 +7,7 @@ import { createBrowseHostList, type BrowseHostList } from "../../core/browse-rul
 import type { ShellLog } from "../../core/log.ts";
 import type { ShellIpc } from "../ipc.ts";
 import { appWindows } from "../../electron/decision-windows.ts";
+import { fieldsOf } from "@gram/contracts";
 
 /** A recording frame's JPEG as BGRA pixels, through Chromium's own decoder. */
 export const decodeFrame = (
@@ -27,7 +28,7 @@ export function installAgentBrowse(
   const hosts = createBrowseHostList({
     load: () => {
       try {
-        return (JSON.parse(readFileSync(path, "utf8")) as { hosts?: unknown }).hosts;
+        return fieldsOf(JSON.parse(readFileSync(path, "utf8"))).get("hosts");
       } catch {
         return [];
       }

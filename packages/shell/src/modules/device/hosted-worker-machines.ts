@@ -79,11 +79,14 @@ export const callWorkerMachines = async (
   const body = scrubbed(await jsonOf(response), secrets);
   if (response.status === 401 || (response.status >= 500 && response.status !== 503))
     return failed(
-      scrubbed(refusalOf(body), secrets) ??
+      scrubbedOptional(refusalOf(body), secrets) ??
         (response.status === 401 ? "The server refused the sign-in." : UNREACHABLE),
     );
   return { ok: true, status: response.status, body };
 };
+
+const scrubbedOptional = (text: string | undefined, secrets: ReadonlyArray<string>) =>
+  text === undefined ? undefined : scrubbedText(text, secrets);
 
 const BASE64URL = new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-");
 
@@ -108,20 +111,24 @@ const withoutSignedTokens = (text: string): string => {
 };
 
 /** `value` with every string's copy of a secret, or of a signed token, replaced. */
-export const scrubbed = <T>(value: T, secrets: ReadonlyArray<string>, depth = 0): T => {
-  if (typeof value === "string") {
-    let text: string = value;
-    for (const secret of secrets) if (secret !== "") text = text.split(secret).join("[redacted]");
-    return withoutSignedTokens(text) as T;
-  }
+export const scrubbed = (value: unknown, secrets: ReadonlyArray<string>, depth = 0): unknown => {
+  if (typeof value === "string") return scrubbedText(value, secrets);
   if (typeof value !== "object" || value === null || depth > 16) return value;
-  if (Array.isArray(value)) {
-    const items: ReadonlyArray<unknown> = value;
-    return items.map((each) => scrubbed(each, secrets, depth + 1)) as T;
-  }
+  if (Array.isArray(value)) return value.map((each: unknown) => scrubbed(each, secrets, depth + 1));
   return Object.fromEntries(
-    Object.entries(value).map(([key, each]) => [key, scrubbed(each, secrets, depth + 1)]),
-  ) as T;
+    Object.entries(value).map(([key, each]: [string, unknown]) => [
+      key,
+      scrubbed(each, secrets, depth + 1),
+    ]),
+  );
+};
+
+/** `text` with every copy of a secret, or of a signed token, replaced. */
+export const scrubbedText = (text: string, secrets: ReadonlyArray<string>): string => {
+  let scrubbedSoFar = text;
+  for (const secret of secrets)
+    if (secret !== "") scrubbedSoFar = scrubbedSoFar.split(secret).join("[redacted]");
+  return withoutSignedTokens(scrubbedSoFar);
 };
 
 /**

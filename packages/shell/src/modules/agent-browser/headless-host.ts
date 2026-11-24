@@ -23,6 +23,7 @@ import {
 import { createAgentPanes, type AgentPanes } from "./pane.ts";
 import { servePaneMessage } from "./serve.ts";
 import { createViews, type Views } from "./view.ts";
+import { fieldsOf } from "@gram/contracts";
 
 /** What a navigation off loopback answers here, before the pane would raise a card for it. */
 export const OFF_LOOPBACK: PaneResult = {
@@ -53,14 +54,12 @@ export const STOPPED_ANSWERING: PaneResult = {
 
 /** Whether `raw` is a navigation this browser refuses outright: anything that isn't loopback. */
 export const offLoopback = (raw: unknown): boolean => {
-  const request = paneRequestMessage(raw)?.request as
-    | { command?: { op?: unknown; url?: unknown } }
-    | undefined;
-  const command = request?.command;
+  const command = fieldsOf(fieldsOf(paneRequestMessage(raw)?.request).get("command"));
+  const url = command.get("url");
   return (
-    command?.op === "navigate" &&
-    typeof command.url === "string" &&
-    browseTarget(command.url).kind !== "loopback"
+    command.get("op") === "navigate" &&
+    typeof url === "string" &&
+    browseTarget(url).kind !== "loopback"
   );
 };
 

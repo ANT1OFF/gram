@@ -4,12 +4,15 @@ import { mkdir, open, readFile, rename, rm, stat, statfs, writeFile } from "node
 import { dirname, join } from "node:path";
 
 import {
+  errnoCode,
+  fieldsOf,
   SPEECH_MODEL_VERIFIED_FILE,
   type SpeechInstallFailure,
   type SpeechModelFile,
   type SpeechModelManifest,
   type SpeechVerifiedModel,
 } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * One HTTP request, never following a redirect: a 3xx comes back as it is, with its `location`, so
@@ -115,13 +118,15 @@ const sizeOf = async (path: string): Promise<number | undefined> => {
 };
 
 const hashFile = async (path: string, hash: Hash = createHash("sha256")): Promise<Hash> => {
-  for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+  for await (const chunk of createReadStream(path)) {
+    if (!Buffer.isBuffer(chunk)) throw new TypeError("A model file read gave something else.");
+    hash.update(chunk);
+  }
   return hash;
 };
 
 const errorCode = (error: unknown): string | undefined => {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "string" ? code : undefined;
+  return errnoCode(error);
 };
 
 const FS_FULL = new Set(["ENOSPC", "EDQUOT"]);
@@ -130,7 +135,7 @@ const proxyHelp = (base: string) =>
   `Ask for ${new URL(base).host === "huggingface.co" ? "huggingface.co and *.hf.co" : new URL(base).host} to be allowed through the proxy, or set GRAM_HF_BASE to a mirror you can reach.`;
 
 const networkFailure = (error: unknown, base: string): Failed => {
-  const cause = (error as { cause?: unknown } | null)?.cause;
+  const cause = Predicate.isObject(error) ? error["cause"] : undefined;
   const text = [String(error), String(cause ?? ""), errorCode(cause) ?? ""].join(" ");
   if (/PROXY|TUNNEL_CONNECTION|ERR_CERT|SSL|certificate/i.test(text))
     return new Failed("proxy", `A proxy or the firewall stopped the download. ${proxyHelp(base)}`);
@@ -404,23 +409,21 @@ export const readInstalled = async (
   manifest: SpeechModelManifest,
 ): Promise<{ readonly sizeBytes: number; readonly installedAt: number } | undefined> => {
   const dir = modelDir(root, manifest.id);
-  let verified: { revision?: unknown; verifiedAt?: unknown };
+  let verified: ReadonlyMap<string, unknown>;
   try {
-    verified = JSON.parse(await readFile(join(dir, SPEECH_MODEL_VERIFIED_FILE), "utf8")) as {
-      revision?: unknown;
-      verifiedAt?: unknown;
-    };
+    verified = fieldsOf(JSON.parse(await readFile(join(dir, SPEECH_MODEL_VERIFIED_FILE), "utf8")));
   } catch {
     return undefined;
   }
-  if (verified.revision !== manifest.revision || typeof verified.verifiedAt !== "number")
+  const verifiedAt = verified.get("verifiedAt");
+  if (verified.get("revision") !== manifest.revision || typeof verifiedAt !== "number")
     return undefined;
   let sizeBytes = 0;
   for (const file of manifest.files) {
     if ((await sizeOf(join(dir, file.path))) !== file.size) return undefined;
     sizeBytes += file.size;
   }
-  return { sizeBytes, installedAt: verified.verifiedAt };
+  return { sizeBytes, installedAt: verifiedAt };
 };
 
 /** Deletes the installed model and anything staged for it. */

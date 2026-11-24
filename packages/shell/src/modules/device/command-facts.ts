@@ -671,11 +671,9 @@ const simple = (
   const named: Array<string> = [];
   let index = 0;
   const assigned: Array<string> = [];
-  while (index < words.length && words[index]?.assigns === true) {
-    const text = words[index]?.text ?? "";
-    assigned.push(text.slice(0, text.indexOf("=")).replace(/\+$/, ""));
-    pathFacts(words[index] as Word, found, place);
-    index += 1;
+  for (let word = words[index]; word?.assigns === true; word = words[++index]) {
+    assigned.push(word.text.slice(0, word.text.indexOf("=")).replace(/\+$/, ""));
+    pathFacts(word, found, place);
   }
   while (index < words.length) {
     const word = words[index];
