@@ -61,7 +61,7 @@ const setup = (
   const machines = hostedWorkerMachines({
     servers: () => [server],
     known: (origin) => (origin === ORIGIN ? server : undefined),
-    callsOf: () => ({ discovery, keeper, key, fetch: fetch as typeof globalThis.fetch }),
+    callsOf: () => ({ discovery, keeper, key, fetch: fetch }),
   });
   return { machines, sent };
 };
@@ -300,7 +300,7 @@ describe("a sign-in whose mark moved to its organisation's, as the app tells it"
         discovery: server.discovery,
         keeper,
         key,
-        fetch: fetch as typeof globalThis.fetch,
+        fetch: fetch,
       }),
     });
     expect(machines.workerMachineServer()).toMatchObject({ ok: true, server: { origin: ORIGIN } });

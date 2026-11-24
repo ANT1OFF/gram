@@ -70,7 +70,7 @@ const jobOf = (
   messages: ReadonlyArray<GramUIMessage>,
   basis: string,
 ): HelperJob<unknown, unknown> =>
-  (kind === "title"
+  kind === "title"
     ? { ...titleJob(THREAD, { prompt: `name this: ${SENTINEL}` }), basis }
     : {
         kind,
@@ -90,7 +90,7 @@ const jobOf = (
             : `${fenceConversation(messages, { maxChars: 8_000 })}\n\nJSON:`,
         ),
         output: Material,
-      }) as HelperJob<unknown, unknown>;
+      };
 
 /** An error shaped like AI SDK's `APICallError`, quoting the request back as gateways do. */
 const quoting = (statusCode: number, prompt: string, body: string) =>

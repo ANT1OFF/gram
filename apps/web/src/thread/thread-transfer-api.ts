@@ -80,14 +80,12 @@ export const importThread = async (input: {
   readonly server?: { readonly origin: string; readonly workspaceId: string };
 }): Promise<{ readonly notes: readonly string[]; readonly exportedAt: number }> => {
   const answer = await post("/threads/import", input, "The thread couldn't be put back here.");
-  const notes = (
-    typeof answer === "object" && answer !== null && "notes" in answer ? answer.notes : undefined
-  ) as unknown;
-  const exportedAt = (
+  const notes =
+    typeof answer === "object" && answer !== null && "notes" in answer ? answer.notes : undefined;
+  const exportedAt =
     typeof input.bundle === "object" && input.bundle !== null && "exportedAt" in input.bundle
       ? input.bundle.exportedAt
-      : undefined
-  ) as unknown;
+      : undefined;
   if (typeof exportedAt !== "number")
     throw new ThreadTransferError("The server's thread isn't one this Gram reads.");
   return {

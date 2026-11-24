@@ -135,7 +135,7 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
               "MCP server",
               {
                 displayName: card.action === "replace" ? "Replace MCP server" : "Add MCP server",
-                input: card as unknown as Record<string, unknown>,
+                input: card,
                 description: mcpServerProposalSummary(card),
               },
               logged,

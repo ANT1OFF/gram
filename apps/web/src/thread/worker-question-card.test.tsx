@@ -134,7 +134,7 @@ describe("WorkerQuestionCard", () => {
     const { api, answers } = fakeApi(answered("Member", "09:41"));
     renderWithApi(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, api);
     fireEvent.click(await within(card()).findByTestId("question-update"));
-    const member = within(card()).getByRole("radio", { name: /^Member/ }) as HTMLInputElement;
+    const member = within(card()).getByRole<HTMLInputElement>("radio", { name: /^Member/ });
     expect(member.checked).toBe(true);
     // No dismissing an answered question.
     expect(within(card()).queryByTestId("question-dismiss")).toBeNull();
@@ -170,9 +170,9 @@ describe("WorkerQuestionCard", () => {
 
     // Opened again, it starts from the newer answer and sends against it.
     fireEvent.click(within(card()).getByTestId("question-update"));
-    expect(
-      (within(card()).getByRole("radio", { name: /^Other/ }) as HTMLInputElement).checked,
-    ).toBe(true);
+    expect(within(card()).getByRole<HTMLInputElement>("radio", { name: /^Other/ }).checked).toBe(
+      true,
+    );
     fireEvent.click(within(card()).getByRole("radio", { name: /^Member/ }));
     fireEvent.click(within(card()).getByRole("button", { name: "Update answer" }));
     await waitFor(() => expect(answers).toHaveLength(1));

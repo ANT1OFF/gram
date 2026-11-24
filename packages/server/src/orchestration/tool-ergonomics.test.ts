@@ -51,7 +51,7 @@ describe.skipIf(!hasGit)("orchestration tool ergonomics", () => {
               expect(properties, `${name}.${key} is discoverable`).toHaveProperty(key);
               expect(decode({ ...base, [key]: value }), `${name}.${key}`).toEqual(expected);
             }
-            expect(() => decode({ ...base, [field]: value, [aliases[0]!]: "different" })).toThrow();
+            expect(() => decode({ ...base, [field]: value, [aliases[0]]: "different" })).toThrow();
           }
         }),
       );

@@ -1,11 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  DEFAULT_CHARTER,
-  WorkspaceId,
-  type PrStatus,
-  type ProjectId,
-  type ThreadId,
-} from "@gram/contracts";
+import { DEFAULT_CHARTER, WorkspaceId, type PrStatus, type ThreadId } from "@gram/contracts";
 import { Pr, Proc, ProcTimeout } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -283,7 +277,7 @@ const scenario = <E, R>(
           workspace: {
             id: workspaceId,
             name: `Workspace ${number}`,
-            projectIds: [thread.projectId as ProjectId],
+            projectIds: [thread.projectId],
             homeProjectId: thread.projectId,
             createdAt: 1,
           },

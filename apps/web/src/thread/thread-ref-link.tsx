@@ -42,7 +42,7 @@ function ThreadRefChip({
   return (
     <Link
       to="/t/$threadId"
-      params={{ threadId: id as ThreadId }}
+      params={{ threadId: id }}
       onClick={beside}
       data-testid="thread-ref"
       title={target.title}

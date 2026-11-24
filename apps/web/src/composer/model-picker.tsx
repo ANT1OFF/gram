@@ -181,7 +181,7 @@ export function ModelCombobox({
 
   return (
     <Combobox.Root<Option>
-      items={groups as unknown as Option[]}
+      items={groups}
       value={selected ?? null}
       onValueChange={(next) => {
         if (!next) return;
@@ -436,7 +436,7 @@ export function ModelSearch({
     <Combobox.Root<Option>
       inline
       open
-      items={groups as unknown as Option[]}
+      items={groups}
       value={selected ?? null}
       onValueChange={(next) => {
         if (next) onChange(next.value);

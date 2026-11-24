@@ -384,7 +384,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               "workspace",
               {
                 displayName: "Create workspace",
-                input: card as unknown as Record<string, unknown>,
+                input: card,
                 description: workspaceProposalSummary(card),
               },
               { action: "create" },
@@ -714,7 +714,7 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               "workspace",
               {
                 displayName: "Change workspace",
-                input: card as unknown as Record<string, unknown>,
+                input: card,
                 description: workspaceProposalSummary(card),
               },
               { action: "update", workspaceId: pinned },

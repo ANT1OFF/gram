@@ -322,7 +322,7 @@ describe("the relays the app keeps", () => {
     const told: unknown[] = [];
     const relays = makeWorkerMachineRelays({
       watch: false,
-      device: () => ({ ...deviceFor([]), workerMachineMarks: () => marks }) as HostedDevice,
+      device: () => ({ ...deviceFor([]), workerMachineMarks: () => marks }),
       post: (message) => told.push(message),
     });
     relays.revalidate();

@@ -109,7 +109,7 @@ describe("a client's input", () => {
         const control = yield* FakeAgentControl;
         yield* client["thread.send"]({
           threadId: thread.id,
-          input: { text: "mine", ...FORGED } as UserInput,
+          input: { text: "mine", ...FORGED },
           clientMessageId: "forged-send",
         });
         const sent = control.sessions.at(-1)!.sent.find((input) => input.text === "mine")!;
@@ -143,7 +143,7 @@ describe("a client's input", () => {
         yield* runtimes.send(thread.id, { text: "from a thread", origin });
         yield* client["thread.send"]({
           threadId: thread.id,
-          input: { text: "typed", ...FORGED } as UserInput,
+          input: { text: "typed", ...FORGED },
           clientMessageId: "forged-queue",
         });
         const [fromThread, typed] = yield* store.listQueue(thread.id);
@@ -152,7 +152,7 @@ describe("a client's input", () => {
         yield* client["thread.queue.edit"]({
           threadId: thread.id,
           itemId: fromThread!.id,
-          input: { text: "edited", ...FORGED } as UserInput,
+          input: { text: "edited", ...FORGED },
         });
         const edited = (yield* store.listQueue(thread.id)).find(
           (item) => item.id === fromThread!.id,

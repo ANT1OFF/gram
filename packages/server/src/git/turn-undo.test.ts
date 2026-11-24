@@ -215,7 +215,7 @@ describe.skipIf(!hasGit)("undoing a turn from its footer", () => {
         run(repo, "commit", "-qm", "z");
         yield* checkpoints.snapshot(repo, thread.id, "turn-2");
         write(nodePath.join(repo, "z", "file"), "the turn's edit\n");
-        yield* checkpoints.snapshot(repo, thread.id, endCheckpointId("turn-2" as TurnId));
+        yield* checkpoints.snapshot(repo, thread.id, endCheckpointId("turn-2"));
 
         const error = yield* undoWith(failsWriting)(thread.id, "turn-2" as TurnId).pipe(
           Effect.flip,

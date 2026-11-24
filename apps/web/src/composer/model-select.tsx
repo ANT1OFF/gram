@@ -123,7 +123,7 @@ const noneOf = (
   agent: AgentKind,
 ): ShellModelsNone | undefined => {
   try {
-    return typeof none === "function" ? none(agent as ShellAgent) : none;
+    return typeof none === "function" ? none(agent) : none;
   } catch {
     return undefined;
   }

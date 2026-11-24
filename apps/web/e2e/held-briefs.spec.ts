@@ -120,8 +120,8 @@ test("a provider recovery hold uses the existing held chip and exposes its failu
   const before = await chip.getAttribute("data-held-id");
   await page.evaluate(
     async ([workspaceId, id]) => {
-      await window.gramMock!.releaseHeldBrief(workspaceId as never, id!);
-      window.gramMock!.simulateHeldBrief(workspaceId as never, {
+      await window.gramMock!.releaseHeldBrief(workspaceId, id!);
+      window.gramMock!.simulateHeldBrief(workspaceId, {
         feature: "provider-recovery",
         title: "Provider recovery",
         agent: "codex",

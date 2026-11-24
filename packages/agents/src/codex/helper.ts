@@ -240,7 +240,7 @@ export const makeCodexHelper = (
             yield* Effect.addFinalizer(() =>
               delivered && !completed && turnId !== undefined
                 ? server.rpc
-                    .request("turn/interrupt", { threadId, turnId: turnId! })
+                    .request("turn/interrupt", { threadId, turnId: turnId })
                     .pipe(Effect.timeoutOption("1 second"), Effect.ignore)
                 : Effect.void,
             );

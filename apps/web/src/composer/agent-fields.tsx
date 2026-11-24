@@ -269,7 +269,7 @@ export function AgentFields({
           items={agentItems}
           onValueChange={(next) => {
             if (next === null || next === value.agent) return;
-            onChange({ agent: next as AgentKind, model: "", speed: "standard" });
+            onChange({ agent: next, model: "", speed: "standard" });
           }}
         >
           {ghost ? (

@@ -251,7 +251,7 @@ export function parsePaneCommand(raw: unknown): PaneCommand | undefined {
   const command = parseUnlabelled(c);
   if (command === undefined || !LABELLED.has(command.op)) return command;
   const label = labelOf(c);
-  return label === null ? undefined : ({ ...command, ...label } as PaneCommand);
+  return label === null ? undefined : { ...command, ...label };
 }
 
 function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
@@ -304,8 +304,8 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
             (key) =>
               typeof r[key] === "number" &&
               Number.isFinite(r[key]) &&
-              (r[key] as number) >= 0 &&
-              (r[key] as number) <= 10_000,
+              r[key] >= 0 &&
+              r[key] <= 10_000,
           )
         )
           return undefined;
@@ -320,7 +320,7 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
           ...scaled,
         };
       }
-      return { op: "screenshot", ...some("ref", c["ref"] as string | undefined), ...scaled };
+      return { op: "screenshot", ...some("ref", c["ref"]), ...scaled };
     }
     case "viewport": {
       const preset = presetOf(c["preset"]);
@@ -350,7 +350,7 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
       return {
         op: "viewport",
         ...some("preset", preset),
-        ...some("size", size as { width: number; height: number } | undefined),
+        ...some("size", size),
         ...some("mobile", mobile as boolean | undefined),
         ...some("colorScheme", colorScheme as "light" | "dark" | "system" | undefined),
       };
@@ -416,7 +416,7 @@ function parseUnlabelled(c: Record<string, unknown>): PaneCommand | undefined {
       const target = optionalPoint(c);
       if (target === null || (target.ref === undefined && target.coordinate === undefined))
         return undefined;
-      return { op: "hover", ...(target as PanePoint), ...tokenOf(c) };
+      return { op: "hover", ...target, ...tokenOf(c) };
     }
     case "scroll": {
       const direction = c["direction"];

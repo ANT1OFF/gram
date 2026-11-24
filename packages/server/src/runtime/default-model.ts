@@ -18,12 +18,11 @@ export const discoverDefaultModel = (
       { concurrency: 2 },
     );
     const model = localSubscriptionDefault(
-      Result.isSuccess(results[0]!) ? results[0]!.success : undefined,
-      Result.isSuccess(results[1]!) ? results[1]!.success : undefined,
+      Result.isSuccess(results[0]) ? results[0].success : undefined,
+      Result.isSuccess(results[1]!) ? results[1].success : undefined,
     );
     if (model !== undefined) return model;
-    if (hosts.elsewhere === true && Result.isFailure(results[0]!))
-      return yield* results[0]!.failure;
+    if (hosts.elsewhere === true && Result.isFailure(results[0])) return yield* results[0].failure;
     return yield* new AgentUnavailable({
       agent: "claude",
       message: `No local agent offered a default model. ${results

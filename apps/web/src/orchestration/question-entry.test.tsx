@@ -48,7 +48,7 @@ describe("OpenQuestion", () => {
   it("with nowhere else to answer it, Answer opens the choices on the card itself", async () => {
     const onAnswer = vi.fn(async () => undefined);
     render(<OpenQuestion card={card()} compact={false} onAnswer={onAnswer} />);
-    const answer = screen.getByRole("button", { name: "Answer" }) as HTMLButtonElement;
+    const answer = screen.getByRole<HTMLButtonElement>("button", { name: "Answer" });
     expect(answer.disabled).toBe(false);
     fireEvent.click(answer);
     fireEvent.click(screen.getByRole("radio", { name: /^404/ }));
@@ -65,10 +65,10 @@ describe("OpenQuestion", () => {
   it("in the sheet, picks a choice and sends it with Send answer; Recommended is a tag, not a pick", async () => {
     const onAnswer = vi.fn(async () => undefined);
     render(<OpenQuestion card={card()} compact={false} sheet onAnswer={onAnswer} />);
-    const recommended = screen.getByRole("radio", { name: /^410/ }) as HTMLInputElement;
+    const recommended = screen.getByRole<HTMLInputElement>("radio", { name: /^410/ });
     expect(recommended.checked).toBe(false);
     expect(screen.getByTestId("choice-recommended").textContent).toBe("Recommended");
-    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send answer" });
     expect(send.disabled).toBe(true);
     fireEvent.click(recommended);
     fireEvent.click(send);
@@ -89,11 +89,11 @@ describe("OpenQuestion", () => {
     );
     const scope = screen.getByTestId("scope");
     fireEvent.keyDown(scope, { key: "2" });
-    const gone = screen.getByRole("radio", { name: /^410/ }) as HTMLInputElement;
+    const gone = screen.getByRole<HTMLInputElement>("radio", { name: /^410/ });
     expect(gone.checked).toBe(true);
     // From the radio it just picked, a number still picks: a radio types nothing.
     fireEvent.keyDown(gone, { key: "1" });
-    expect((screen.getByRole("radio", { name: /^404/ }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>("radio", { name: /^404/ }).checked).toBe(true);
     fireEvent.keyDown(scope, { key: "Enter", metaKey: true });
     await waitFor(() => expect(onAnswer).toHaveBeenCalledWith("404"));
   });

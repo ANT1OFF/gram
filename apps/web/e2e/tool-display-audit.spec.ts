@@ -72,6 +72,8 @@ const messages = [
   },
 ] as unknown as GramUIMessage[];
 
+const serialized: unknown = messages;
+
 test.beforeEach(async ({ page }) => {
   // Supply persisted synthetic messages through the existing mock feed, including after reload.
   await page.addInitScript((fixtureMessages: unknown) => {
@@ -93,7 +95,7 @@ test.beforeEach(async ({ page }) => {
         });
       },
     });
-  }, messages as unknown);
+  }, serialized);
 });
 
 test("tool cards retain supplied data and distinguish missing web details after reload", async ({

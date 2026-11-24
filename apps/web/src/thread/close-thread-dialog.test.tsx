@@ -64,7 +64,7 @@ const summary = (overrides: Partial<GitState> = {}) =>
 
 afterEach(() => {
   cleanup();
-  useThreadsStore.setState({ byId: {} as never, notifications: [] });
+  useThreadsStore.setState({ byId: {}, notifications: [] });
 });
 
 describe("merged cleanup helpers", () => {
@@ -98,17 +98,17 @@ describe("cleanAndPushed", () => {
 });
 
 const removalBox = () =>
-  screen.getByRole("checkbox", { name: /Also delete the worktree on disk/ }) as HTMLInputElement;
+  screen.getByRole<HTMLInputElement>("checkbox", { name: /Also delete the worktree on disk/ });
 
 describe("CloseThreadDialog", () => {
   it("ticks removing a clean, pushed worktree, and leaves one with work unticked", () => {
-    useThreadsStore.setState({ byId: { [T]: summary() } as never });
+    useThreadsStore.setState({ byId: { [T]: summary() } });
     const api = { closeThread: vi.fn(), pendingPermissions: async () => [] };
     const first = renderWithApi(<CloseThreadDialog threadId={T} onClose={() => {}} />, api);
     expect(removalBox().checked).toBe(true);
     first.unmount();
 
-    useThreadsStore.setState({ byId: { [T]: summary({ changedFiles: 2 }) } as never });
+    useThreadsStore.setState({ byId: { [T]: summary({ changedFiles: 2 }) } });
     const dirty = renderWithApi(<CloseThreadDialog threadId={T} onClose={() => {}} />, api);
     expect(removalBox().checked).toBe(false);
     dirty.unmount();
@@ -124,7 +124,7 @@ describe("CloseThreadDialog", () => {
   });
 
   it("cleans up a merged worktree and its branch, and says why a branch was kept", async () => {
-    useThreadsStore.setState({ byId: { [T]: summary() } as never });
+    useThreadsStore.setState({ byId: { [T]: summary() } });
     const closeThread = vi.fn(async () => ({
       branch: { name: "fix/flake", deleted: false, reason: "it has commits #42 doesn't" },
     }));
@@ -157,7 +157,7 @@ describe("CloseThreadDialog", () => {
   });
 
   it("never offers to delete the branch without a merged PR", () => {
-    useThreadsStore.setState({ byId: { [T]: summary({ pr: { ...pr, state: "OPEN" } }) } as never });
+    useThreadsStore.setState({ byId: { [T]: summary({ pr: { ...pr, state: "OPEN" } }) } });
     renderWithApi(
       <CloseThreadDialog
         threadId={T}

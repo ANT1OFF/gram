@@ -100,11 +100,7 @@ describe("one modifier alone", () => {
     expect(loneModifierFromEvent({ code: "KeyA" })).toBeUndefined();
     const press = { key: "Alt", code: "AltRight", altKey: true } as KeyboardEvent;
     expect(
-      matches(
-        "altright",
-        { ...press, metaKey: false, ctrlKey: false, shiftKey: false } as KeyboardEvent,
-        true,
-      ),
+      matches("altright", { ...press, metaKey: false, ctrlKey: false, shiftKey: false }, true),
     ).toBe(false);
   });
 });

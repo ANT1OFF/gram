@@ -407,7 +407,7 @@ export const fileNonceStore = (
       )
         throw new Error("Dial nonce storage is invalid");
       return {
-        nonces: record["nonces"] as DialNonce[],
+        nonces: record["nonces"],
         floor: record["floor"] as number,
         seen: record["seen"] as number,
       };

@@ -245,7 +245,7 @@ describe("actual merge launch with GitHub CI evidence", () => {
                     job("subscription-smoke", 38076279307, { conclusion: "skipped" }),
                   ];
                 if (jobs[0]?.name === "check") {
-                  if (scenario === "missing job") jobs = [jobs[0]!];
+                  if (scenario === "missing job") jobs = [jobs[0]];
                   if (scenario === "skipped job")
                     jobs[0] = job("check", 38076279307, { conclusion: "skipped" });
                   if (scenario === "cancelled job")

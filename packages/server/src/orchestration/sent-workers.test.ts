@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { HostedThreadWaited, SentWorkTarget, ThreadId, WorkspaceId } from "@gram/contracts";
+import type { HostedThreadWaited, SentWorkTarget, ThreadId } from "@gram/contracts";
 import { Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -101,7 +101,7 @@ describe("a worker sent to a server", () => {
             expect(refused.message).toContain("doesn't send work to servers");
             expect(app.asked).toEqual([]);
 
-            const state = yield* store.getWorkspace(workspaceId as WorkspaceId);
+            const state = yield* store.getWorkspace(workspaceId);
             yield* orchestration.setCharter(workspaceId, { ...state.charter, sendWork: true });
             yield* settle;
             const sent = (yield* session.callTool("send_worker", {
@@ -156,7 +156,7 @@ describe("a worker sent to a server", () => {
             const reports = yield* waitReal(
               "its report",
               store
-                .listWorkerReports(workspaceId as WorkspaceId, 0)
+                .listWorkerReports(workspaceId, 0)
                 .pipe(Effect.map((all) => (all.length > 0 ? all : undefined))),
             );
             expect(reports.at(-1)?.report).toMatchObject({
@@ -183,7 +183,7 @@ describe("a worker sent to a server", () => {
             yield* waitReal(
               "its question",
               store
-                .listWorkerReports(workspaceId as WorkspaceId, 0)
+                .listWorkerReports(workspaceId, 0)
                 .pipe(
                   Effect.map((all) => (all.at(-1)?.report.state === "question" ? all : undefined)),
                 ),
@@ -218,7 +218,7 @@ describe("a worker sent to a server", () => {
             yield* waitReal(
               "the turn's report",
               store
-                .listWorkerReports(workspaceId as WorkspaceId, 0)
+                .listWorkerReports(workspaceId, 0)
                 .pipe(
                   Effect.map((all) =>
                     all.at(-1)?.report.summary === "Turn ended." ? all : undefined,

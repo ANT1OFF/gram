@@ -45,9 +45,9 @@ const dictate = async (samples: Float32Array, accurate: boolean) => {
   const closed = Promise.withResolvers<void>();
   const port: SessionPort = {
     postMessage: (message) => sent.push(message),
-    on: ((event: "message" | "close", listener: never) => {
+    on: (event: "message" | "close", listener: never) => {
       if (event === "message") listeners.message = listener;
-    }) as SessionPort["on"],
+    },
     start: () => {},
     close: () => closed.resolve(),
   };
@@ -136,9 +136,9 @@ describe.skipIf(process.env["GRAM_LIVE_SPEECH"] !== "1")(
         const listeners: { message?: (event: { data: unknown }) => void } = {};
         const port: SessionPort = {
           postMessage: (message) => sent.push(message),
-          on: ((event: "message" | "close", listener: never) => {
+          on: (event: "message" | "close", listener: never) => {
             if (event === "message") listeners.message = listener;
-          }) as SessionPort["on"],
+          },
           start: () => {},
           close: () => {},
         };

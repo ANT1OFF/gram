@@ -55,7 +55,7 @@ export const toZodObject = (schema: Schema.Codec<unknown, unknown>): z.ZodObject
   const zod = z.fromJSONSchema({
     ...doc.schema,
     $defs: doc.definitions,
-  } as Parameters<typeof z.fromJSONSchema>[0]);
+  });
   if (!(zod instanceof z.ZodObject)) {
     throw new Error(`App tool input must be an object schema, got ${zod.def.type}`);
   }
@@ -138,7 +138,7 @@ export const buildRemoteAppToolServer = (
     name: APP_TOOL_SERVER,
     version: "1.0.0",
     tools: remote.tools.map((listed) => {
-      const zod = z.fromJSONSchema(listed.inputSchema as Parameters<typeof z.fromJSONSchema>[0]);
+      const zod = z.fromJSONSchema(listed.inputSchema);
       if (!(zod instanceof z.ZodObject)) {
         throw new Error(`App tool input must be an object schema, got ${zod.def.type}`);
       }

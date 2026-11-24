@@ -197,7 +197,7 @@ describe("worker-owned CI across badges and notifications", () => {
     ["stalled on a tool", { quiet: { kind: "toolStalled", at: 1 } }],
   ] as const)("never raises a worker's red build to the user: %s", (_, over) => {
     const red = live();
-    setWorker(over as Partial<WorkerLedgerEntry>);
+    setWorker(over);
     expect(attentionOf(red)).toBeUndefined();
     expect(needsYouCount([red])).toBe(0);
     expect(ownsCiFailure(red, red.git!.pr!.url)).toBe(true);

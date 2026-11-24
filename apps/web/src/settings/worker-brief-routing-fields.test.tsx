@@ -39,7 +39,7 @@ describe("the worker brief footer field", () => {
     const onChange = vi.fn();
     const charter = { ...DEFAULT_CHARTER, workerBriefFooter: "Never touch Y." };
     render(<WorkerBriefFooterField charter={charter} disabled={false} onChange={onChange} />);
-    const box = screen.getByRole("textbox", { name: "Worker brief footer" }) as HTMLTextAreaElement;
+    const box = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Worker brief footer" });
     fireEvent.change(box, { target: { value: "Draft" } });
     fireEvent.keyDown(box, { key: "Escape" });
     expect(box.value).toBe("Never touch Y.");

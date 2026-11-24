@@ -53,13 +53,13 @@ async function olderServer(options: {
         disableFatalDefects: true,
         onFromServer: (response) => made.write(response as never),
       });
-      made = (yield* RpcClient.makeNoSerialization(GramRpcs, {
+      made = yield* RpcClient.makeNoSerialization(GramRpcs, {
         supportsAck: true,
         onFromClient: ({ message }) => {
           if (message._tag === "Request") sent.push(message.tag);
-          return server.write(0, message as never);
+          return server.write(0, message);
         },
-      })) as never;
+      });
       return made.client as unknown as RpcClient.FromGroup<typeof GramRpcs>;
     }).pipe(Effect.provide(handlers), Scope.provide(scope)),
   );

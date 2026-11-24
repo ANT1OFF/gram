@@ -10,7 +10,7 @@ import * as fsp from "node:fs/promises";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it, vi } from "@effect/vitest";
-import type { AgentHost, AgentSession, OpenSessionOptions } from "@gram/agents";
+import type { AgentHost, OpenSessionOptions } from "@gram/agents";
 import {
   HOST_PROTOCOL_VERSION,
   HostId,
@@ -357,7 +357,7 @@ const recordingAgent = (during: () => void = () => {}) => {
           respond: () => Effect.void,
           setMode: () => Effect.void,
           setModel: () => Effect.void,
-        } as unknown as AgentSession;
+        };
       }),
   } as unknown as AgentHost;
   return { host, openedIn };

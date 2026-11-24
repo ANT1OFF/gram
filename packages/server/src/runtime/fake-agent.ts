@@ -472,7 +472,7 @@ export const makeFakeAgentAdapter = (
                       toolCallId: chunk.toolCallId,
                       errorText: "refused: the tool gate is closed",
                     },
-                  } as AgentEvent,
+                  },
                 ];
               }
               admitted.add(chunk.toolCallId);

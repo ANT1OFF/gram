@@ -933,7 +933,7 @@ export const makeAgentSwitch = ({
           message: "Wait for this switch to finish, then switch again.",
         });
       if (failed) {
-        const previous = thread.sessionSwitch!.previous;
+        const previous = thread.sessionSwitch.previous;
         if (thread.role === "orchestrator")
           return yield* new InvalidState({
             threadId,

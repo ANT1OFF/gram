@@ -44,7 +44,7 @@ afterEach(() => {
   uninstall();
   navigate.mockReset();
   useBindingsStore.setState({ overrides: {} });
-  useThreadsStore.setState({ byId: {} as never });
+  useThreadsStore.setState({ byId: {} });
 });
 
 const pressEsc = () => fireEvent.keyDown(window, { key: "Escape", code: "Escape" });

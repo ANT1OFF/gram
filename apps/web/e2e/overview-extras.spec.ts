@@ -261,7 +261,7 @@ test("the foot, turned on, matches the title bar meter's usage, and its slots th
   );
   const ledger = () =>
     page.evaluate(async (id) => {
-      const { budget, held } = await window.gramMock!.orchestratorLedger(id as never);
+      const { budget, held } = await window.gramMock!.orchestratorLedger(id);
       return {
         live: budget.liveWorkers,
         cap: budget.maxConcurrentWorkers,

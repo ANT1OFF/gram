@@ -143,7 +143,7 @@ export const answerAsk = (
     if (parsed._tag === "None")
       return refusal(400, "BadRequest", "expected {threadId, requestId, answer}");
     const { threadId, requestId, answer, shown } = parsed.value;
-    if (!readerMay({ subject: actor.id }, readableByOf(threadId as ThreadId)))
+    if (!readerMay({ subject: actor.id }, readableByOf(threadId)))
       return refusal(404, "NotFound", NOT_READABLE);
     const proof: AnswerProof = { statement, method: request.method, path: request.url, body };
     const asActor = <A, E>(effect: Effect.Effect<A, E>) =>

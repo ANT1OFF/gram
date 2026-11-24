@@ -246,7 +246,7 @@ export const packageJsonSuggestions = (
   const names = Object.entries(scripts)
     .filter(([, value]) => typeof value === "string" && value.trim() !== "")
     .map(([name]) => name);
-  const manager = packageManagerOf(pkg as { packageManager?: unknown }, files);
+  const manager = packageManagerOf(pkg, files);
   const kept = names.filter((name) => {
     if (!SCRIPT_KEY.test(name) || LIFECYCLE.has(name)) return false;
     const hooked = /^(pre|post)(.+)$/.exec(name)?.[2];

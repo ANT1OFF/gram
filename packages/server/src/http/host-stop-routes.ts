@@ -222,7 +222,7 @@ export const hostStopRoute = (
       if (cause !== undefined)
         deps.hosts.providerSaid?.(hostId, {
           phase,
-          cause: cause as MachineStopCause,
+          cause: cause,
           at: Date.now(),
         });
     };

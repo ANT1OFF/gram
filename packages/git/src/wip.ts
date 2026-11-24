@@ -637,7 +637,7 @@ export const setAsideFor = (
           IDENTITY_ENV,
         )).stdout.trim()
       : asLeft
-        ? left!
+        ? left
         : head!;
     if (putAside) yield* run(top, ["update-ref", `refs/heads/${aside}`, own ? at : head!, ""]);
     yield* run(top, ["update-ref", "--no-deref", "HEAD", at]);

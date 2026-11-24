@@ -74,7 +74,7 @@ describe("RadioGroup", () => {
     const onChange = vi.fn();
     render(<RadioGroup label="Mode" options={options} value="ask" onChange={onChange} />);
     const group = screen.getByRole("radiogroup", { name: "Mode" });
-    const radios = within(group).getAllByRole("radio") as HTMLInputElement[];
+    const radios = within(group).getAllByRole<HTMLInputElement>("radio");
     expect(radios.map((radio) => radio.checked)).toEqual([true, false, false]);
     expect(radios[2]!.disabled).toBe(true);
     expect(new Set(radios.map((radio) => radio.name)).size).toBe(1);
@@ -114,7 +114,7 @@ describe("RadioGroup", () => {
         disabled
       />,
     );
-    const radios = screen.getAllByRole("radio") as HTMLInputElement[];
+    const radios = screen.getAllByRole<HTMLInputElement>("radio");
     expect(radios.every((radio) => radio.name === "mode" && radio.disabled)).toBe(true);
   });
 });

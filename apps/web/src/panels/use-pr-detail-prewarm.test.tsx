@@ -49,14 +49,14 @@ const setup = (threadId: string) => {
 beforeEach(() => {
   vi.useFakeTimers();
   useThreadsStore.setState({
-    byId: { a: summary("a", true), b: summary("b", false) } as never,
+    byId: { a: summary("a", true), b: summary("b", false) },
   });
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  useThreadsStore.setState({ byId: {} as never });
+  useThreadsStore.setState({ byId: {} });
 });
 
 describe("usePrDetailPrewarm", () => {

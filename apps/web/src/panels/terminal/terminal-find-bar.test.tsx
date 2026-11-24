@@ -77,7 +77,7 @@ describe("TerminalFindBar", () => {
     });
     expect(calls.at(-1)).toEqual(["clear"]);
     expect(screen.getByTestId("terminal-find-status").textContent).toBe("Invalid pattern");
-    expect((screen.getByRole("button", { name: "Next match" }) as HTMLButtonElement).disabled).toBe(
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Next match" }).disabled).toBe(
       true,
     );
   });

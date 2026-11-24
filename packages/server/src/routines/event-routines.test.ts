@@ -480,7 +480,7 @@ describe.skipIf(!hasGit)("event routines", () => {
           const made = yield* addRoutine(workspaceId, {
             name: "Review",
             brief: "Review it.",
-            project: project.id as ProjectId,
+            project: project.id,
             on: { event: "prReady" },
           });
           const told = yield* waitReal(

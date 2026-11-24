@@ -137,7 +137,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   observers.clear();
-  useThreadsStore.setState({ byId: {} as never });
+  useThreadsStore.setState({ byId: {} });
   useApprovalReceipts.setState({ byThread: {} });
 });
 

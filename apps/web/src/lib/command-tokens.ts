@@ -50,7 +50,7 @@ export function paintEmbedded(
       if (colourless(token)) continue;
       for (let index = offset; index < offset + token.content.length; index += 1) {
         if (script.text[index] === "\n" || script.text[index] === "\r") continue;
-        styles.fill(token, script.starts[index]!, script.ends[index]!);
+        styles.fill(token, script.starts[index], script.ends[index]);
         painted = true;
       }
     }

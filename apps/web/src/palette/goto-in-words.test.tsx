@@ -91,7 +91,7 @@ it("keeps edited and removed chips when typing continues", async () => {
   fireEvent.change(kind, { target: { value: "pr" } });
   fireEvent.change(input, { target: { value: "workers waiting on me ack" } });
   await waitFor(() =>
-    expect((screen.getByRole("combobox", { name: "Kind" }) as HTMLSelectElement).value).toBe("pr"),
+    expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Kind" }).value).toBe("pr"),
   );
   fireEvent.click(screen.getByRole("button", { name: "Remove kind" }));
   fireEvent.change(input, { target: { value: "workers waiting on me ack retry" } });
@@ -122,7 +122,7 @@ it("runs unmodified message search and shows helper proposals without applying t
       },
     ],
     truncated: false,
-  } as Awaited<ReturnType<MockApi["searchThreads"]>>);
+  });
   open("the broken builds around here");
   await waitFor(() =>
     expect(search).toHaveBeenCalledWith("the broken builds around here", { limit: 20 }),
@@ -137,9 +137,7 @@ it("runs unmodified message search and shows helper proposals without applying t
   expect(screen.queryByRole("group", { name: "Filtered results" })).toBeNull();
   expect(navigate).not.toHaveBeenCalled();
   fireEvent.click(add);
-  expect((screen.getByRole("combobox", { name: "State" }) as HTMLSelectElement).value).toBe(
-    "failing",
-  );
+  expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "State" }).value).toBe("failing");
   expect(screen.getAllByRole("group")[0]?.getAttribute("aria-label")).toBe("Messages");
   expect(
     within(screen.getByRole("group", { name: "Filtered results" })).queryAllByRole("option").length,

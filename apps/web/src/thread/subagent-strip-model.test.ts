@@ -1,4 +1,4 @@
-import type { BackgroundTask, MessageId, SubagentUsageData, GramUIMessage } from "@gram/contracts";
+import type { BackgroundTask, SubagentUsageData, GramUIMessage } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import { firstLine } from "@/lib/format";
@@ -16,7 +16,7 @@ import {
 type Part = GramUIMessage["parts"][number];
 
 const message = (id: string, parts: Part[], parentToolUseId?: string): GramUIMessage => ({
-  id: id as MessageId,
+  id: id,
   role: "assistant",
   parts,
   ...(parentToolUseId === undefined ? {} : { metadata: { agent: "claude", parentToolUseId } }),

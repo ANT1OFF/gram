@@ -56,7 +56,7 @@ export function lazyPart<T>(load: () => Promise<T>): LazyPart<T> {
     return module;
   };
   const part: LazyPart<T> = { preload, current, useModule };
-  parts.push(part as LazyPart<unknown>);
+  parts.push(part);
   return part;
 }
 

@@ -110,7 +110,7 @@ describe("CustomModelsSection", () => {
 
   it("offers nothing while the agent's own list is still loading", async () => {
     const pending = Promise.withResolvers<{ models: [] }>();
-    listModels.mockImplementationOnce(() => pending.promise as never);
+    listModels.mockImplementationOnce(() => pending.promise);
     start(DEFAULT_SETTINGS);
     await waitFor(() => expect(modelSuggestions).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 20));

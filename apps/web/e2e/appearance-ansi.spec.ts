@@ -131,7 +131,7 @@ for (const { family, mode, contrast } of cases) {
         const ratio = (a: number[], b: number[]) =>
           (Math.max(luminance(a), luminance(b)) + 0.05) /
           (Math.min(luminance(a), luminance(b)) + 0.05);
-        const lines = element.querySelector("[data-terminal-text]")!.textContent!.split("\n");
+        const lines = element.querySelector("[data-terminal-text]")!.textContent.split("\n");
         const bg = rgb("--ansi-background");
         return keys.map((key) => {
           const row = lines.findIndex((line) => line.startsWith(`████ ${key}`));

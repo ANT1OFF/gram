@@ -27,7 +27,7 @@ export const steerOrSend = <E = never>(
         Effect.as(true),
         Effect.catchTag("InvalidState", () => Effect.succeed(false)),
       ));
-    if (steered) return "steered" as SteerOrSendResult;
+    if (steered) return "steered";
     const { queued } = yield* fallback ?? runtimes.send(threadId, input);
-    return (queued ? "queued" : "sent") as SteerOrSendResult;
+    return queued ? "queued" : "sent";
   });

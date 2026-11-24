@@ -50,7 +50,7 @@ describe("the app tool server on the installed SDK", () => {
       descriptor: { name: "merge", class: "outward", description: "Merge it." },
       input: Schema.Struct({
         number: Schema.optionalKey(Schema.Int),
-      }) as unknown as AppTool["input"],
+      }),
       run: (input) =>
         Effect.sync(() => {
           seen.push(input);

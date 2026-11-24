@@ -565,7 +565,7 @@ export function EmbedPageTitle({ title }: { title: string }) {
 /** The embedding app's home page at `/`, in the conversation's place as an added page is. */
 export function EmbedHome() {
   const home = useEmbedShell((s) => s.home);
-  const params = useParams({ strict: false }) as Readonly<Record<string, string>>;
+  const params: Readonly<Record<string, string>> = useParams({ strict: false });
   if (home === undefined) return null;
   return (
     <section data-testid="embed-page" data-path="/" className="min-h-0 flex-1 overflow-y-auto">

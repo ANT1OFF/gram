@@ -126,24 +126,24 @@ test("the agent's page shows as it is, and the header hands it back after the us
     origin,
   );
   await expect(page.getByTestId("preview-address")).toHaveValue(`${origin}/`);
-  await page.evaluate(() => window.gramMock!.shell.preview!.drive("t-deps", "agent"));
-  const opened = await page.evaluate(() => window.gramMock!.shell.preview!.opened.length);
+  await page.evaluate(() => window.gramMock!.shell.preview.drive("t-deps", "agent"));
+  const opened = await page.evaluate(() => window.gramMock!.shell.preview.opened.length);
   await page.evaluate(
     (url) => window.gramMock!.simulateShowPanel("t-deps" as never, "preview", url, true),
     `${origin}/`,
   );
   await expect(page.getByTestId("preview-driver")).toHaveAttribute("data-driver", "agent");
-  expect(await page.evaluate(() => window.gramMock!.shell.preview!.opened.length)).toBe(opened);
+  expect(await page.evaluate(() => window.gramMock!.shell.preview.opened.length)).toBe(opened);
 
   // The agent says what its input is for, and that it records; the user follows in the header.
   await page.evaluate(() =>
-    window.gramMock!.shell.preview!.act("t-deps", "Opens the Filters menu", true),
+    window.gramMock!.shell.preview.act("t-deps", "Opens the Filters menu", true),
   );
   await expect(page.getByTestId("preview-action")).toHaveText("Opens the Filters menu");
   await expect(page.getByTestId("preview-recording")).toBeVisible();
 
   // User takeover hides the agent action; the recording stays armed and visible.
-  await page.evaluate(() => window.gramMock!.shell.preview!.drive("t-deps", "user"));
+  await page.evaluate(() => window.gramMock!.shell.preview.drive("t-deps", "user"));
   await expect(page.getByTestId("preview-action")).toHaveCount(0);
   await expect(page.getByTestId("preview-recording")).toBeVisible();
   const handBack = page.getByRole("button", {
@@ -151,13 +151,13 @@ test("the agent's page shows as it is, and the header hands it back after the us
   });
   await handBack.click();
   await expect(page.getByTestId("preview-driver")).toHaveAttribute("data-driver", "agent");
-  expect(await page.evaluate(() => window.gramMock!.shell.preview!.handedBack)).toEqual(["t-deps"]);
+  expect(await page.evaluate(() => window.gramMock!.shell.preview.handedBack)).toEqual(["t-deps"]);
   await expect(page.getByTestId("preview-action")).toHaveText("Opens the Filters menu");
   await expect(page.getByTestId("preview-recording")).toBeVisible();
 
   // An explicit stop clears the recording, independent of who drives.
-  await page.evaluate(() => window.gramMock!.shell.preview!.drive("t-deps", "user"));
-  await page.evaluate(() => window.gramMock!.shell.preview!.act("t-deps", undefined, false));
+  await page.evaluate(() => window.gramMock!.shell.preview.drive("t-deps", "user"));
+  await page.evaluate(() => window.gramMock!.shell.preview.act("t-deps", undefined, false));
   await expect(page.getByTestId("preview-activity")).toHaveCount(0);
 });
 
@@ -561,7 +561,7 @@ for (const width of [1440, 480]) {
     ).toBeDisabled();
     const observation = driver.inspection();
     await page.evaluate((inspection) => {
-      const preview = window.gramMock!.shell.preview!;
+      const preview = window.gramMock!.shell.preview;
       const bridge = preview as DesktopPreview;
       const owned = window as unknown as {
         ownedFixtureInspect: (target?: { ref?: string }) => Promise<PaneResult>;
@@ -632,7 +632,7 @@ for (const width of [1440, 480]) {
     await expect(page.getByTestId("browser-capture-time")).toContainText("390 × 844 CSS pixels");
     await fixture.goto(`${origin}/?next-document`);
     await page.evaluate(
-      (inspection) => window.gramMock!.shell.preview!.observeInspection("t-deps", inspection),
+      (inspection) => window.gramMock!.shell.preview.observeInspection("t-deps", inspection),
       driver.inspection(),
     );
     await expect(panel.getByText("This action belongs to an earlier document.")).toBeVisible();
@@ -644,7 +644,7 @@ for (const width of [1440, 480]) {
     // Attached capability may disappear after a capture (revocation, navigation or detach).
     // Restore the live view immediately, discard the inspector image and retain a usable exit.
     await page.evaluate(() =>
-      window.gramMock!.shell.preview!.observeInspection("t-deps", undefined),
+      window.gramMock!.shell.preview.observeInspection("t-deps", undefined),
     );
     await expect(panel).toHaveCount(0);
     await expect(

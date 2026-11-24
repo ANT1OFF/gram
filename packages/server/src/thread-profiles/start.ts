@@ -16,7 +16,6 @@ import {
   type ProfileFile,
   type Checkout,
   orchestratorProfile,
-  type ProfileRole,
   WorkspaceId,
 } from "@gram/contracts";
 import {
@@ -439,7 +438,7 @@ export const makeProfileStarter = ({
     Effect.gen(function* () {
       const send = runtimes.send;
       if (orchestration === undefined || send === undefined) return yield* refuse(NO_ORCHESTRATION);
-      const role = profile.role as Extract<ProfileRole, { kind: "orchestrator" }>;
+      const role = profile.role;
       const id = base.id;
       const home = join(dataDir, PROFILE_HOMES_DIR, id);
       yield* writeHomeProfile(home, profile);

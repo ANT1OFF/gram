@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { AppUpdateState, DesktopBridge } from "@gram/contracts";
+import type { AppUpdateState } from "@gram/contracts";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -38,7 +38,7 @@ function bridgeWith(next: Partial<AppUpdateState> = {}) {
     dismiss: vi.fn(resolve),
   };
   Object.defineProperty(window, "gram", {
-    value: { updates: { native } } as unknown as DesktopBridge,
+    value: { updates: { native } },
     configurable: true,
   });
   return native;

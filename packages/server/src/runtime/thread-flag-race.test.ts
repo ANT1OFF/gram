@@ -75,7 +75,7 @@ describe("clearing one flag of a thread", () => {
   it.effect("keeps a rename made after the cleared-limit note was read", () =>
     withStore(
       Effect.gen(function* () {
-        const store = yield* seed({ limitCleared: { at: 5, resetsAt: 10 } } as Partial<Thread>);
+        const store = yield* seed({ limitCleared: { at: 5, resetsAt: 10 } });
         const limits = makeLimitResume({
           store: renamedAfterRead(store),
           publishUpsert: publish,

@@ -2,13 +2,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "@effect/vitest";
 import { makeMapper } from "@gram/agents/claude";
 import { makeCodexMapper } from "@gram/agents/codex";
-import {
-  MessageId,
-  type AgentEvent,
-  type GramUIMessage,
-  type Thread,
-  type ThreadId,
-} from "@gram/contracts";
+import { MessageId, type AgentEvent, type GramUIMessage, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -84,7 +78,7 @@ describe("persisted compaction results", () => {
             unread: false,
             createdAt: at,
             lastActivityAt: at,
-          } as Thread);
+          });
           yield* store.upsertMessage(id, first);
           const initial = yield* store.listMessages(id);
           expect(initial[0]!.parts).toContainEqual({

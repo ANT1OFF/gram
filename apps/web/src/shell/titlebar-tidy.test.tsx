@@ -80,7 +80,7 @@ it("sends the board's tidy-up message, says so, rests across a reopen, then come
   vi.useFakeTimers();
   withOrchestrator("running");
   const applyEvent = vi.spyOn(useThreadsStore.getState(), "applyEvent");
-  const send = vi.fn<Api["send"]>(async () => ({ queued: true }) as never);
+  const send = vi.fn<Api["send"]>(async () => ({ queued: true }));
   renderWithApi(<Bar state={workspace(ORCH)} />, { send });
   // Its name, and under it what it asks the orchestrator to do.
   expect(item().textContent).toBe(`Tidy up${EXPLAIN.tidyUp}`);
@@ -150,7 +150,7 @@ it("sends the discover message, says so, and rests on its own, apart from Tidy u
   vi.useFakeTimers();
   withOrchestrator("idle");
   const applyEvent = vi.spyOn(useThreadsStore.getState(), "applyEvent");
-  const send = vi.fn<Api["send"]>(async () => ({ queued: false }) as never);
+  const send = vi.fn<Api["send"]>(async () => ({ queued: false }));
   renderWithApi(<Bar state={workspace(ORCH)} />, { send });
   expect(discover().textContent).toBe(`Discover workspace${EXPLAIN.discover}`);
 

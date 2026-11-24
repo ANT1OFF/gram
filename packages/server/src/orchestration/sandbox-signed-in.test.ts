@@ -824,7 +824,7 @@ describe("sandbox from a signed-in hosted server", () => {
           ...thread,
           id: "t-placed-there" as typeof thread.id,
           checkout: { ...thread.checkout, hostId: machine.id },
-        } as typeof thread);
+        });
         const result = yield* session.callTool("spawn_worker", SANDBOX).pipe(Effect.result);
         expect(result._tag).toBe("Failure");
         expect(calls.map((each) => each.call)).toEqual(["choices", "start"]);

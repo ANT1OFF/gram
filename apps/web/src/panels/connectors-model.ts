@@ -255,7 +255,7 @@ export const copyTo = (
     };
   }
   const narrow = hasFolder && (source.scope === "local" || source.scope === "project");
-  const scope: McpScope = narrow ? (source.scope as McpScope) : "user";
+  const scope: McpScope = narrow ? source.scope : "user";
   if (
     source.url !== undefined &&
     !source.carriesValues &&

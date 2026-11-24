@@ -35,7 +35,7 @@ function Editor({
   );
 }
 
-const text = () => screen.getByRole("textbox", { name: "Code" }) as HTMLTextAreaElement;
+const text = () => screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Code" });
 
 describe("CodeEditor", () => {
   it("indents with Tab, and lets Tab move on after Escape", () => {

@@ -53,7 +53,7 @@ describe("the boot's send of what was left queued", () => {
   it.effect("still sends the queue of a thread waiting for its machine to be named", () =>
     Effect.gen(function* () {
       const waiting = { ...placed("waiting", "awaited" as HostId), awaitingMachine: { since: 0 } };
-      const drained = yield* bootWith([waiting as unknown as Thread], () => false);
+      const drained = yield* bootWith([waiting], () => false);
       expect(drained).toEqual(["waiting"]);
     }),
   );

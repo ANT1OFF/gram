@@ -407,7 +407,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* fake.setAutoOpenReport("codex", "default", 300);
         yield* handlers["thread.switchAgent"]({
           threadId: worker.thread.id,
-          target: { agent: "codex", model: "fake-opus" } as ModelRef,
+          target: { agent: "codex", model: "fake-opus" },
           note: false,
         });
         const after = yield* waitReal(
@@ -454,7 +454,7 @@ describe.skipIf(!hasGit)("orchestration service", () => {
         yield* fake.setAutoOpenReport("codex", "default", 100);
         yield* handlers["thread.switchAgent"]({
           threadId: worker.thread.id,
-          target: { agent: "codex", model: "fake-opus" } as ModelRef,
+          target: { agent: "codex", model: "fake-opus" },
           note: false,
         });
         expect(

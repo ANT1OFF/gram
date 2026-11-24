@@ -69,7 +69,7 @@ const glyphPixels = (terminal: Locator) =>
   terminal.getByTestId("terminal-surface").evaluate((element) => {
     const canvas = element.querySelector("canvas")!;
     const ctx = canvas.getContext("2d")!;
-    const lines = element.querySelector("[data-terminal-text]")!.textContent!.split("\n");
+    const lines = element.querySelector("[data-terminal-text]")!.textContent.split("\n");
     const row = lines.findIndex((line) => line.startsWith("echo: ICONS:"));
     if (row < 0) throw new Error("glyph fixture is not visible");
     const line = [...lines[row]!];

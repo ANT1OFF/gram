@@ -1,4 +1,3 @@
-import type { ThreadId } from "@gram/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useId, type ReactNode } from "react";
 
@@ -281,10 +280,7 @@ export function NeedsYouShortcut(): null {
   const stepOrThread = (by: 1 | -1) => {
     if (items.length > 0) return step(by);
     if (by === -1) return;
-    const next = nextNeedsYou(
-      Object.values(useThreadsStore.getState().byId),
-      params.threadId as ThreadId | undefined,
-    );
+    const next = nextNeedsYou(Object.values(useThreadsStore.getState().byId), params.threadId);
     if (next) void navigate({ to: "/t/$threadId", params: { threadId: next } });
   };
   useEffect(() => setNeedsYouStepper(stepOrThread));

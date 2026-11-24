@@ -191,7 +191,7 @@ const auditFocus = async (page: Page, root: Locator) => {
       for (const control of controls) {
         if (control.getClientRects().length === 0 || control.matches(":disabled")) continue;
         if (control.closest("[role='menu'], [role='listbox']")) continue;
-        control.focus({ focusVisible: true } as FocusOptions);
+        control.focus({ focusVisible: true });
         if (document.activeElement !== control) continue;
         const style = getComputedStyle(control);
         const outlined = style.outlineStyle !== "none" && Number.parseFloat(style.outlineWidth) > 0;

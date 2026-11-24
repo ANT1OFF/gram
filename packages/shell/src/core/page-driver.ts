@@ -822,19 +822,19 @@ export async function createPageDriver(
         throw new StalePageError("The page changed during input.");
       if (action?.id !== id) throw new PageAccessError("The page is no longer readable.");
       action = {
-        ...action!,
-        status: action!.dispatchStartedAt === undefined ? "not-dispatched" : "dispatch-completed",
+        ...action,
+        status: action.dispatchStartedAt === undefined ? "not-dispatched" : "dispatch-completed",
         completedAt: Date.now(),
       };
     } catch (error) {
       if (action?.id === id)
         action = {
-          ...action!,
+          ...action,
           completedAt: Date.now(),
           failure:
             error instanceof UserControlError
               ? "user-control"
-              : action!.dispatchStartedAt === undefined
+              : action.dispatchStartedAt === undefined
                 ? "target-unavailable"
                 : "dispatch-error",
         };

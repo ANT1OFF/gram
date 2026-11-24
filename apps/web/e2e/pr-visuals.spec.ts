@@ -100,99 +100,81 @@ const seedPrs = (page: Page, made: MockOneThreadSimulation) =>
       });
       const at = Date.now();
       // Failing CI on a running worker that will fix it, its merge armed.
-      mock.world.updateThread(
-        live as never,
-        {
-          boundPr: {
-            repo: "acme/api",
-            number: 214,
-            monitor: true,
-            mergeWhenReady: { method: "squash", allowedBy: "user", setAt: at },
-          },
-          extraPrs: [{ repo: "acme/web", number: 48, monitor: false }],
-        } as never,
-      );
-      mock.world.publishGit(
-        live as never,
-        {
-          ...git,
-          branch: "feat/queue-retry",
-          pr: pr(214, {
-            title: "Retry the queue with backoff",
-            checks: "failing",
-            headRef: "feat/queue-retry",
-            mergeState: "BLOCKED",
+      mock.world.updateThread(live, {
+        boundPr: {
+          repo: "acme/api",
+          number: 214,
+          monitor: true,
+          mergeWhenReady: { method: "squash", allowedBy: "user", setAt: at },
+        },
+        extraPrs: [{ repo: "acme/web", number: 48, monitor: false }],
+      } as never);
+      mock.world.publishGit(live, {
+        ...git,
+        branch: "feat/queue-retry",
+        pr: pr(214, {
+          title: "Retry the queue with backoff",
+          checks: "failing",
+          headRef: "feat/queue-retry",
+          mergeState: "BLOCKED",
+        }),
+        extraPrs: [
+          pr(48, {
+            url: "https://github.com/acme/web/pull/48",
+            title: "Trigger form calls the endpoint",
+            isDraft: true,
+            checks: "pending",
+            review: { ...review, roundInFlight: true },
           }),
-          extraPrs: [
-            pr(48, {
-              url: "https://github.com/acme/web/pull/48",
-              title: "Trigger form calls the endpoint",
-              isDraft: true,
-              checks: "pending",
-              review: { ...review, roundInFlight: true },
-            }),
-          ],
-        } as never,
-      );
+        ],
+      } as never);
       // Green and approved, but its merge paused until the release ships.
-      mock.world.updateThread(
-        asking as never,
-        {
-          boundPr: {
-            repo: "acme/api",
-            number: 215,
-            monitor: true,
-            mergeWhenReady: {
-              method: "squash",
-              allowedBy: "user",
-              setAt: at,
-              hold: "after the 0.2.0 release",
-              heldBy: "orchestrator",
-            },
+      mock.world.updateThread(asking, {
+        boundPr: {
+          repo: "acme/api",
+          number: 215,
+          monitor: true,
+          mergeWhenReady: {
+            method: "squash",
+            allowedBy: "user",
+            setAt: at,
+            hold: "after the 0.2.0 release",
+            heldBy: "orchestrator",
           },
-        } as never,
-      );
-      mock.world.publishGit(
-        asking as never,
-        {
-          ...git,
-          branch: "feat/mail-trigger",
-          pr: pr(215, {
-            title: "Mail trigger",
-            headRef: "feat/mail-trigger",
-            reviewDecision: "APPROVED",
-            mergeState: "CLEAN",
-            review: { ...review, verdictOnHead: "approved", verdictOnHeadBy: "claude" },
-          }),
-        } as never,
-      );
+        },
+      } as never);
+      mock.world.publishGit(asking, {
+        ...git,
+        branch: "feat/mail-trigger",
+        pr: pr(215, {
+          title: "Mail trigger",
+          headRef: "feat/mail-trigger",
+          reviewDecision: "APPROVED",
+          mergeState: "CLEAN",
+          review: { ...review, verdictOnHead: "approved", verdictOnHeadBy: "claude" },
+        }),
+      } as never);
       // Conflicting with main while it waits on #214 to merge.
-      mock.world.updateThread(
-        held as never,
-        {
-          boundPr: {
-            repo: "acme/api",
-            number: 216,
-            monitor: true,
-            mergeWhenReady: { method: "squash", allowedBy: "user", setAt: at },
-            dependsOn: [{ repo: "acme/api", number: 214, setBy: "orchestrator", setAt: at }],
-          },
-        } as never,
-      );
-      mock.world.publishGit(
-        held as never,
-        {
-          ...git,
-          branch: "feat/dead-letter",
-          pr: pr(216, {
-            title: "Dead-letter queue",
-            headRef: "feat/dead-letter",
-            checks: "passing",
-            mergeState: "DIRTY",
-            reviewDecision: "REVIEW_REQUIRED",
-          }),
-        } as never,
-      );
+      mock.world.updateThread(held, {
+        boundPr: {
+          repo: "acme/api",
+          number: 216,
+          monitor: true,
+          mergeWhenReady: { method: "squash", allowedBy: "user", setAt: at },
+          dependsOn: [{ repo: "acme/api", number: 214, setBy: "orchestrator", setAt: at }],
+        },
+      } as never);
+      mock.world.publishGit(held, {
+        ...git,
+        branch: "feat/dead-letter",
+        pr: pr(216, {
+          title: "Dead-letter queue",
+          headRef: "feat/dead-letter",
+          checks: "passing",
+          mergeState: "DIRTY",
+          reviewDecision: "REVIEW_REQUIRED",
+        }),
+      } as never);
     },
     { live: made.live, asking: made.asking, held: made.held },
   );

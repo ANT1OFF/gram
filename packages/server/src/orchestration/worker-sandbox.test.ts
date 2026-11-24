@@ -82,7 +82,7 @@ const setup = (gates: {
         listThreads: (gates.threads ?? Effect.void).pipe(Effect.as([])),
       } as never,
       onDemand: undefined,
-      signedIn: { port, source: Effect.succeed({ source, server: SERVER }) } as never,
+      signedIn: { port, source: Effect.succeed({ source, server: SERVER }) },
       workerHosts: undefined,
       // Only the fields the planner reads of a joined machine.
       joined: () => hosts.list() as never,
@@ -282,7 +282,7 @@ describe("a worker's machine brought up for a spawn", () => {
         signedIn: {
           port,
           source: Effect.sync(() => ({ source: current, server: SERVER })),
-        } as never,
+        },
         workerHosts: undefined,
         joined: () => [] as never,
       });

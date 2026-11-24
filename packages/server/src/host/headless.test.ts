@@ -390,7 +390,7 @@ describe("headlessLocal", () => {
       } as unknown as WorkerHost);
       for (const refused of [
         local.checkouts.prepare({ kind: "current" }, [], "/work/repo"),
-        local.terminals.open({ cols: 80, rows: 24 } as never),
+        local.terminals.open({ cols: 80, rows: 24 }),
         local.worktrees.create({} as never),
       ] as ReadonlyArray<Effect.Effect<unknown, { readonly message: string }, never>>)
         expect(yield* Effect.flip(refused)).toMatchObject({ message: RUNS_NOTHING_HERE });

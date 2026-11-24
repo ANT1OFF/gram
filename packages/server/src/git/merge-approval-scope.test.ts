@@ -1,11 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  DEFAULT_CHARTER,
-  WorkspaceId,
-  type MergeIntent,
-  type PrStatus,
-  type ThreadId,
-} from "@gram/contracts";
+import { DEFAULT_CHARTER, WorkspaceId, type MergeIntent, type PrStatus } from "@gram/contracts";
 import { Pr, Proc } from "@gram/git";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -201,7 +195,7 @@ const armed = (intent: MergeIntent, first: PrStatus) =>
       workspaceId,
       boundPr: { repo: "example/project", number: 7, monitor: true, mergeWhenReady: intent },
     }));
-    const look = service.check(thread.id as ThreadId);
+    const look = service.check(thread.id);
     const waiting = store
       .getThread(thread.id)
       .pipe(Effect.map((t) => t.boundPr?.mergeWaiting?.why));

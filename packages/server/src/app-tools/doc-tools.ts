@@ -7,7 +7,6 @@ import {
   type GramUIMessageChunk,
   type Thread,
   type ThreadId,
-  type WorkspaceId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -182,9 +181,7 @@ export const readDocTool = (
             })),
           };
         }
-        const doc = yield* docs
-          .read(workspaceId as WorkspaceId, id)
-          .pipe(Effect.mapError(failed(READ)));
+        const doc = yield* docs.read(workspaceId, id).pipe(Effect.mapError(failed(READ)));
         return {
           id: doc.id,
           title: doc.title,

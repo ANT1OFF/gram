@@ -486,7 +486,7 @@ scenario("an hour of streaming", async ({ browser }) => {
     // and five others the sidebar and Board show working.
     await page.evaluate(
       (ids) => {
-        for (const id of ids) window.gramMock!.streamThread(id as never, 30);
+        for (const id of ids) window.gramMock!.streamThread(id, 30);
       },
       [watched, ...made.workerIds.slice(10, 15)],
     );

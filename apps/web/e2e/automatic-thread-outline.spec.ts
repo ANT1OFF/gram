@@ -491,8 +491,8 @@ if (phase !== "before") {
       // Ongoing adapter text goes through the production feed fold, never a paid turn.
       await page.evaluate((id) => {
         const mock = window.gramMock!;
-        mock.simulateStatus(id as never, "running");
-        mock.simulateChunks(id as never, "live-reply" as never, [
+        mock.simulateStatus(id, "running");
+        mock.simulateChunks(id, "live-reply" as never, [
           { type: "start", messageId: "live-reply" },
           { type: "text-start", id: "live-text" },
           { type: "text-delta", id: "live-text", delta: "Synthetic streaming text. ".repeat(100) },
@@ -501,12 +501,12 @@ if (phase !== "before") {
       await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();
       await page.evaluate((id) => {
-        window.gramMock!.simulateChunks(id as never, "live-reply" as never, [
+        window.gramMock!.simulateChunks(id, "live-reply" as never, [
           { type: "text-delta", id: "live-text", delta: "Additional streaming text. ".repeat(100) },
           { type: "text-end", id: "live-text" },
           { type: "finish" },
         ]);
-        window.gramMock!.simulateStatus(id as never, "idle");
+        window.gramMock!.simulateStatus(id, "idle");
       }, threadId);
       await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeHidden();
       await expect(transcript.locator('[data-message-id="long-u80"]')).toBeInViewport();

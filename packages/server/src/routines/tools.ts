@@ -9,7 +9,6 @@ import {
   routineWhenText,
   ROUTINES_MAX,
   WorkspaceRoutines,
-  type ModelRef,
   type OrchestratorCharter,
   type ThreadId,
   type PinnedWorkerModel,
@@ -90,7 +89,7 @@ const modelOf = (tool: string, charter: OrchestratorCharter, named: string) =>
       );
     }
     const { useFor: _useFor, default: _default, ...model } = matches[0]!;
-    return model as ModelRef;
+    return model;
   });
 
 const routineText = (routine: WorkspaceRoutine): string =>

@@ -1174,11 +1174,11 @@ test("a worker still running after its feature is delivered shows with its step 
   await expect(worker(page, made.doneToday)).toHaveCount(0);
   await page.evaluate((id) => {
     const mock = window.gramMock!;
-    mock.simulateTurnPlan(id as never, [
+    mock.simulateTurnPlan(id, [
       { content: "Merge the release PR", status: "completed" },
       { content: "Tag the release", status: "inProgress", activeForm: "Tagging the release" },
     ]);
-    mock.simulateStatus(id as never, "running", "Running git tag v0.1.0");
+    mock.simulateStatus(id, "running", "Running git tag v0.1.0");
   }, made.doneToday);
   const row = worker(page, made.doneToday);
   await expect(row).toBeVisible();
@@ -1274,29 +1274,23 @@ test("a worker's PRs show as chips under its row, with checks and the review bot
         threads: { ...threads, unresolved: 0, blockers: 0 },
       },
     };
-    mock.world.updateThread(
-      id as never,
-      { extraPrs: [{ repo: "acme/web", number: 48, monitor: false }] } as never,
-    );
-    mock.world.publishGit(
-      id as never,
-      {
-        repo: true,
-        branch: "feat/queue-retry",
-        worktree: true,
-        head: "abc",
-        changesToken: "tok",
-        changedFiles: 0,
-        base: "origin/main",
-        behindBase: 0,
-        aheadBase: 2,
-        conflicts: false,
-        upstream: "synced",
-        origin: "acme/api",
-        pr,
-        extraPrs: [draft],
-      } as never,
-    );
+    mock.world.updateThread(id, { extraPrs: [{ repo: "acme/web", number: 48, monitor: false }] });
+    mock.world.publishGit(id, {
+      repo: true,
+      branch: "feat/queue-retry",
+      worktree: true,
+      head: "abc",
+      changesToken: "tok",
+      changedFiles: 0,
+      base: "origin/main",
+      behindBase: 0,
+      aheadBase: 2,
+      conflicts: false,
+      upstream: "synced",
+      origin: "acme/api",
+      pr,
+      extraPrs: [draft],
+    } as never);
   }, made.live);
   const chips = overview(page).locator(
     `[data-testid="overview-pr-chips"][data-thread-id="${made.live}"] [data-testid="overview-pr-chip"]`,

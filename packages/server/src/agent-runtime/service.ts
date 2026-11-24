@@ -595,5 +595,5 @@ const settledReplace = (
   next: { readonly active?: ManagedInstall; readonly previous?: ManagedInstall },
 ): RuntimeInstallState => {
   const { active: _a, previous: _p, ...rest } = current;
-  return { ...rest, ...next } as RuntimeInstallState;
+  return { ...rest, ...next };
 };

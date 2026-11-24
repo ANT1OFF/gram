@@ -69,9 +69,7 @@ const harness = (
           checkout: { kind: "worktree", path: root },
         } as unknown as Thread),
       listProjects: Effect.succeed(
-        added
-          ? [{ id: PROJECT, root, name: "repo", bookmarked: false, folderTrust: trust } as Project]
-          : [],
+        added ? [{ id: PROJECT, root, name: "repo", bookmarked: false, folderTrust: trust }] : [],
       ),
     },
     runtimes: {

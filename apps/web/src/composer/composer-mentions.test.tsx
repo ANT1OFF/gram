@@ -25,7 +25,7 @@ const setup = () => {
   const api = createMockApi({ speed: 0, autoplay: false });
   const fsFiles = vi.spyOn(api, "fsFiles");
   renderWithApi(<Composer threadId={THREAD} focused />, api);
-  const composer = screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+  const composer = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   return { composer, fsFiles, user: userEvent.setup() };
 };
 

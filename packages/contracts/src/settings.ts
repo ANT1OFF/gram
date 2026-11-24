@@ -1399,7 +1399,7 @@ export const splitSettingsPatch = (
     if (Object.keys(rest).length === 0) delete shared[section];
     else shared[section] = rest;
   }
-  return { personal: personal as SettingsPatch, shared: shared as SettingsPatch };
+  return { personal: personal, shared: shared };
 };
 
 /** `settings` with every personal setting absent: what is shared, before a person's own is laid over. */

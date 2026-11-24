@@ -69,7 +69,7 @@ export const restorePatch = (list: readonly DefaultSetting[]): SettingsPatch => 
           : value;
     }
   }
-  return merged as SettingsPatch;
+  return merged;
 };
 
 const DEFAULT_CHIME = chimeOf(DEFAULT_SETTINGS.notifications);

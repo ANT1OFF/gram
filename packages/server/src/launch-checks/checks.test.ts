@@ -278,7 +278,7 @@ const installed = (...agents: Array<"claude" | "codex">): LaunchChecks => ({
   checkedAt: 0,
   tools: (["claude", "codex", "git"] as const).map((tool) => ({
     tool,
-    found: tool === "git" || agents.includes(tool as "claude" | "codex"),
+    found: tool === "git" || agents.includes(tool),
   })),
   claudeSignIn: agents.includes("claude") ? "signedIn" : "unknown",
   codexSignIn: agents.includes("codex") ? "signedIn" : "unknown",

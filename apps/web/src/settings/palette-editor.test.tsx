@@ -27,7 +27,7 @@ const setup = (options: { palette?: string; custom?: (typeof MINE)[] } = {}) => 
   return store;
 };
 
-const field = (label: string) => screen.getByRole("textbox", { name: label }) as HTMLInputElement;
+const field = (label: string) => screen.getByRole<HTMLInputElement>("textbox", { name: label });
 const type = (label: string, value: string) =>
   fireEvent.change(field(label), { target: { value } });
 
@@ -90,7 +90,7 @@ describe("PaletteEditor", () => {
 
   it("saves changes to a custom palette and deletes it after confirming", () => {
     const store = setup({ palette: "custom:mine", custom: [MINE] });
-    const save = screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement;
+    const save = screen.getByRole<HTMLButtonElement>("button", { name: "Save changes" });
     expect(save.disabled).toBe(true);
 
     type("Errors", "#ff0000");

@@ -10,7 +10,7 @@ export const Route = createFileRoute("/settings/$page")({
   beforeLoad: async ({ params }) => {
     const { hostSettingsPage, lastSettingsPage } = await import("@/settings/pages");
     if (hostSettingsPage(params.page) === undefined)
-      throw redirect({ to: lastSettingsPage().path as "/settings/general", replace: true });
+      throw redirect({ to: lastSettingsPage().path, replace: true });
   },
   component: HostSettingsPage,
 });

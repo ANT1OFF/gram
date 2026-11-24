@@ -107,7 +107,7 @@ export const makeAppToolsTunnel: Effect.Effect<HostAppTools, never, Scope.Scope>
         });
         Queue.offerUnsafe(calls, {
           id,
-          method: method as HostAppToolsRequest["method"],
+          method: method,
           headers,
           body: Buffer.concat(chunks).toString("utf8"),
         });

@@ -15,7 +15,7 @@ import { Composer } from "./composer";
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 const A = "t-lifecycle-a" as ThreadId;
 const B = "t-lifecycle-b" as ThreadId;
-const field = () => screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+const field = () => screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
 const type = (text: string) => fireEvent.change(field(), { target: { value: text } });
 // While the turn takes input the button steers; ⌥-click queues.
 const queue = () =>

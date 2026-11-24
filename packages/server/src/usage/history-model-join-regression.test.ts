@@ -114,7 +114,6 @@ for (const telemetry of [
             freshSession: true,
             newMessageId: () => MessageId.make("main"),
           });
-          type Notification = Parameters<typeof mapper.map>[0];
           const events = mapper.map({
             method: "turn/started",
             params: {
@@ -131,7 +130,7 @@ for (const telemetry of [
                 durationMs: null,
               },
             },
-          } as Notification);
+          });
           if (telemetry !== "missing")
             events.push(
               ...mapper.map({
@@ -151,7 +150,7 @@ for (const telemetry of [
                     modelContextWindow: null,
                   },
                 },
-              } as Notification),
+              }),
             );
           if (telemetry === "conflicting-model")
             events.push(
@@ -164,7 +163,7 @@ for (const telemetry of [
                   toModel: "other-wire-model",
                   reason: "highRiskCyberActivity",
                 },
-              } as Notification),
+              }),
             );
           const metadata = Object.assign(
             {},

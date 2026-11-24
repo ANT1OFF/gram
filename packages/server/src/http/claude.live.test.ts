@@ -3,7 +3,6 @@ import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
 import {
   GramRpcs,
   type MessageId,
-  type RequestId,
   type ServerEvent,
   type GramUIMessage,
   type ThreadFeedEvent,
@@ -384,7 +383,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
           () => {
             for (const e of events) {
               if (e.type === "thread.request" && e.request.kind === "approval") {
-                return e.request.id as RequestId;
+                return e.request.id;
               }
             }
             return undefined;
@@ -631,7 +630,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
         );
         yield* client["thread.respond"]({
           threadId: thread.id,
-          requestId: card.id as RequestId,
+          requestId: card.id,
           answer: { kind: "approval", decision: "deny", scope: "once" },
         });
         yield* turnDone(events, thread.id, mark);
@@ -709,7 +708,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
         );
         yield* client["thread.respond"]({
           threadId: thread.id,
-          requestId: card.id as RequestId,
+          requestId: card.id,
           answer: { kind: "approval", decision: "allow", scope: "always" },
         });
         yield* turnDone(events, thread.id, mark);
@@ -759,7 +758,7 @@ describe.skipIf(!LIVE)("live claude over the socket", () => {
                   const since = events.slice(from);
                   for (const e of since) {
                     if (e.type === "thread.request" && e.threadId === threadId) {
-                      if (!answered.has(e.request.id)) return { card: e.request.id as RequestId };
+                      if (!answered.has(e.request.id)) return { card: e.request.id };
                     }
                   }
                   const statuses = since.flatMap((e) =>

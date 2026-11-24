@@ -344,7 +344,7 @@ describe.skipIf(process.platform === "win32")(
         () =>
           withHost(agent, (host, f) =>
             Effect.gen(function* () {
-              const models = yield* host.listModels!();
+              const models = yield* host.listModels();
               expect(models[0]?.isDefault).toBe(true);
               const selected = agent === "claude" ? "fixture-small" : "fixture-model";
               let sessionId = "";
@@ -639,7 +639,7 @@ describe.skipIf(process.platform === "win32")(
           withHost(agent, (host, f) =>
             Effect.gen(function* () {
               writeFileSync(f.signedOut, "");
-              const error = yield* Effect.flip(host.listModels!());
+              const error = yield* Effect.flip(host.listModels());
               expect(error).toMatchObject({ agent, reason: "not-logged-in" });
               rmSync(f.signedOut);
               writeFileSync(f.failStart, "");
@@ -650,7 +650,7 @@ describe.skipIf(process.platform === "win32")(
               });
               rmSync(f.failStart);
               yield* host.invalidateRuntime!;
-              expect((yield* host.listModels!()).length).toBeGreaterThan(0);
+              expect((yield* host.listModels()).length).toBeGreaterThan(0);
               const session = yield* host.open({ threadId, cwd: f.cwd });
               yield* session.send({ text: "hello" });
               expect(textOf(yield* collectTurn(session))).toBe("Synthetic reply.");

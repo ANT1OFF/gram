@@ -65,7 +65,7 @@ const folder = (...config: Array<[string, string]>) =>
     ({ tmp }) => Effect.sync(() => removeDirStrict(tmp)),
   );
 const checked = (repo: string) =>
-  effectiveOriginsChecked({ ...project, root: repo } as Project, repo).pipe(
+  effectiveOriginsChecked({ ...project, root: repo }, repo).pipe(
     Effect.provide(ProcLive),
     Effect.result,
   );

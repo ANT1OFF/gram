@@ -38,7 +38,7 @@ const setup = () => {
           durationMs: null,
         },
       },
-    } as ServerNotification);
+    });
   const report = (id: string, total: unknown, last: unknown, threadId = "session") =>
     mapper.map({
       method: "thread/tokenUsage/updated",

@@ -1,11 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  applySettingsPatch,
-  DEFAULT_SETTINGS,
-  type LabelId,
-  type Thread,
-  type ThreadId,
-} from "@gram/contracts";
+import { applySettingsPatch, DEFAULT_SETTINGS, type LabelId, type Thread } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -33,7 +27,7 @@ const insertThread = Effect.gen(function* () {
     lastActivityAt: 1,
   } as unknown as Thread;
   yield* store.insertThread(thread);
-  return thread.id as ThreadId;
+  return thread.id;
 });
 
 describe("ThreadStore settings and settling", () => {

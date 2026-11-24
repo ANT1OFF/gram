@@ -393,7 +393,7 @@ export function PaletteBody({
   >();
   for (const { thread } of recent) {
     const feature = thread.spawnedBy?.feature;
-    const workspaceId = thread.workspaceId as WorkspaceId | undefined;
+    const workspaceId = thread.workspaceId;
     if (feature === undefined || workspaceId === undefined || !workspaceNames.has(workspaceId)) {
       continue;
     }

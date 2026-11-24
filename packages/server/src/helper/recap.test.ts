@@ -8,7 +8,6 @@ import {
   prContextOf,
   type PrContext,
   type PrStatus,
-  type Settings,
   RECAP_PRECOMPUTE_MS,
   type GitState,
   type GramUIMessage,
@@ -56,8 +55,11 @@ const thread = (patch: Partial<Thread> = {}): Thread =>
     ...patch,
   }) as Thread;
 
-const text = (role: "user" | "assistant", body: string, id: string): GramUIMessage =>
-  ({ id, role, parts: [{ type: "text", text: body }] }) as GramUIMessage;
+const text = (role: "user" | "assistant", body: string, id: string): GramUIMessage => ({
+  id,
+  role,
+  parts: [{ type: "text", text: body }],
+});
 
 const git: GitState = {
   repo: true,
@@ -106,7 +108,7 @@ const harness = (
   const deps: RecapDeps = {
     schedule: <A, I>(job: HelperJob<A, I>) =>
       Effect.gen(function* () {
-        jobs.push(job as HelperJob<unknown, unknown>);
+        jobs.push(job);
         prompts.push(yield* job.prompt);
         return (options.result ?? {
           _tag: "Done",
@@ -433,7 +435,7 @@ const withWrapUp = (data: WrapUpData): ReadonlyArray<GramUIMessage> => [
       { type: "data-wrap-up", id: data.id, data },
       { type: "text", text: "All tests pass." },
     ],
-  } as GramUIMessage,
+  },
 ];
 
 describe("makeRecaps with the agent's wrap_up", () => {
@@ -525,7 +527,7 @@ describe("prContextsFor", () => {
     Effect.gen(function* () {
       const seenAsked: Array<string> = [];
       const deps = {
-        settings: Effect.succeed({ ...DEFAULT_SETTINGS, reviewBots: [] } as Settings),
+        settings: Effect.succeed({ ...DEFAULT_SETTINGS, reviewBots: [] }),
         seenChecks: (repo: string, number: number) =>
           Effect.sync(() => void seenAsked.push(`${repo}#${number}`)).pipe(Effect.as(undefined)),
         now: Effect.succeed(PR_NOW),

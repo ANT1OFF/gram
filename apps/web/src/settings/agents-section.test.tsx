@@ -233,7 +233,7 @@ describe("Restore defaults, once saved", () => {
       throw new Error("gh is offline");
     });
     const { getByRole, findByRole } = renderHarness(
-      { refreshReviewRequests } as Partial<Api>,
+      { refreshReviewRequests },
       Object.values(NOTIFICATIONS_DEFAULTS),
     );
     fireEvent.click(getByRole("button", { name: /Restore defaults/ }));

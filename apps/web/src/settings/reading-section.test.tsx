@@ -49,8 +49,7 @@ describe("ReadingSection", () => {
     cleanup();
     setup({ textSize: 20 });
     expect(
-      (screen.getByRole("button", { name: "Larger transcript text" }) as HTMLButtonElement)
-        .disabled,
+      screen.getByRole<HTMLButtonElement>("button", { name: "Larger transcript text" }).disabled,
     ).toBe(true);
   });
 

@@ -636,7 +636,7 @@ const openIn = async (
         debuggerEvents.on(event, listener as (...args: unknown[]) => void),
       off: (event: string, listener: (...args: never[]) => void) =>
         debuggerEvents.off(event, listener as (...args: unknown[]) => void),
-    } as PaneContents["debugger"],
+    },
     on: ((event: string, listener: (...args: never[]) => void) =>
       events.on(event, listener as (...args: unknown[]) => void)) as PaneContents["on"],
     once: (event, listener) => events.once(event, listener),

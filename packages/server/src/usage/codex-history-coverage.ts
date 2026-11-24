@@ -32,7 +32,7 @@ const meets = (counter: TokenUsage | undefined, minimum: Threshold | undefined) 
   keys.every(
     (key) =>
       (minimum?.[key] ?? 0) === 0 ||
-      (counter[key] !== undefined && counter[key]! >= (minimum?.[key] ?? 0)),
+      (counter[key] !== undefined && counter[key] >= (minimum?.[key] ?? 0)),
   );
 
 /** Independent requests constrain coverage; these requirements never become session counters or amounts. */
@@ -151,7 +151,7 @@ export function makeCodexHistoryCoverage() {
       const barrier: Record<string, number> = {};
       for (const key of keys) {
         if (counter[key] === undefined) continue;
-        const difference = counter[key]! - (known?.[key] ?? 0);
+        const difference = counter[key] - (known?.[key] ?? 0);
         if (!Number.isSafeInteger(difference) || difference < 0) {
           refuse(state.order ?? ordered.length);
           return;
@@ -213,7 +213,7 @@ export function makeCodexHistoryCoverage() {
       if (unprovenFrom !== undefined && state.order > unprovenFrom) return false;
       const minimum: Threshold = { ...state.before };
       for (const key of keys)
-        if (ownPrefix[key] !== undefined) minimum[key] = (minimum[key] ?? 0) + ownPrefix[key]!;
+        if (ownPrefix[key] !== undefined) minimum[key] = (minimum[key] ?? 0) + ownPrefix[key];
       return meets(counter, minimum);
     },
     scopeCovered(turn: string) {

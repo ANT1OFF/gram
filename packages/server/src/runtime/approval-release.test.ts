@@ -552,7 +552,7 @@ describe("orphan routing retains server-card ownership", () => {
           type: "request",
           request: {
             kind: "approval",
-            id: saved.requestId as RequestId,
+            id: saved.requestId,
             toolName: "Bash",
             displayName: "Invented native",
             input: {},

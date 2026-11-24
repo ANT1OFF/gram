@@ -90,7 +90,7 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
     if (
       expectedKeys.some(
         (key) =>
-          expected[key] !== undefined && counts[key] !== undefined && expected[key]! < counts[key]!,
+          expected[key] !== undefined && counts[key] !== undefined && expected[key] < counts[key],
       )
     )
       conflict();
@@ -98,7 +98,7 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       prior !== undefined &&
       expectedKeys.some(
         (key) =>
-          prior[key] !== undefined && expected[key] !== undefined && expected[key]! < prior[key]!,
+          prior[key] !== undefined && expected[key] !== undefined && expected[key] < prior[key],
       )
     )
       conflict();
