@@ -23,6 +23,7 @@ import { Spinner } from "@/motion/spinner";
 import { STATUS_WORDS } from "@/orchestration/status-words";
 import { startingHint, WAIT_WORDS } from "@/thread/awaiting-machine-model";
 import { compactingLabel } from "@/thread/compaction-marker";
+import { machineMoveLabel } from "@/thread/machine-move-words";
 
 import type { Attention, AttentionReason } from "./attention";
 
@@ -167,7 +168,8 @@ const TITLE_WORK = 6;
  * the spinner means its own turn and nothing else. Unseen `attention` takes the glyph of a quiet
  * thread, since it is why the row sits under Needs you; behind a working or stacked glyph the row
  * draws it among its chips instead (`ATTENTION_ICON`). A running thread that is compacting its
- * context says so in place of the generic Working. A thread started before its machine says its
+ * context says so in place of the generic Working, and one whose machine is being replaced says
+ * Moving (`Thread.machineMove`): it carries on by itself. A thread started before its machine says its
  * wait before anything else: that its machine is starting (with how many messages wait, `waits`),
  * or that none came.
  */
@@ -204,6 +206,15 @@ export const rowStatus = (
       label: MACHINE_LOST_TAG,
       title: `${line.charAt(0).toUpperCase()}${line.slice(1)}`,
       working: false,
+    };
+  }
+  if (thread.machineMove !== undefined && (status === "running" || status === "starting")) {
+    return {
+      icon: Spinner,
+      tone: "text-status-working",
+      label: "Moving",
+      title: machineMoveLabel(thread.machineMove),
+      working: true,
     };
   }
   if (status === "running" && compaction !== undefined) {

@@ -19,18 +19,21 @@ export const sessionRestartLabel = (
   const machine = restart.machineRestart;
   if (machine !== undefined) {
     const what = machine.continued === "turn" ? "continued the turn" : "resumed the session";
-    return `${machine.machine} restarted · ${what} · ${at}`;
+    const happened = machine.moved === true ? "moved to a new machine" : "restarted";
+    return `${machine.machine} ${happened} · ${what} · ${at}`;
   }
   const why = restart.reason === "mcpConfig" ? "MCP config changed" : "config reloaded";
   return `Session restarted · ${why} · ${at}`;
 };
 
 const restartTitle = (restart: SessionRestartData): string =>
-  restart.machineRestart !== undefined
-    ? `${restart.machineRestart.machine} restarted while this agent ran there, so Gram resumed the same conversation on it and carried on.`
-    : restart.reason === "mcpConfig"
-      ? "An MCP server or connector this agent uses changed, so its session was restarted on the same conversation once it was idle, to load it."
-      : "The agent's session was restarted on the same conversation, and read its settings, MCP servers, connectors, instructions and skills again.";
+  restart.machineRestart?.moved === true
+    ? `${restart.machineRestart.machine} was replaced while this agent ran there. It came back with the same disk, so Gram resumed the same conversation on it and carried on.`
+    : restart.machineRestart !== undefined
+      ? `${restart.machineRestart.machine} restarted while this agent ran there, so Gram resumed the same conversation on it and carried on.`
+      : restart.reason === "mcpConfig"
+        ? "An MCP server or connector this agent uses changed, so its session was restarted on the same conversation once it was idle, to load it."
+        : "The agent's session was restarted on the same conversation, and read its settings, MCP servers, connectors, instructions and skills again.";
 
 /** Where the agent session was restarted to reload its config, as a quiet divider like a compaction's. */
 export function SessionRestartMarker({ restart }: { restart: SessionRestartData }) {

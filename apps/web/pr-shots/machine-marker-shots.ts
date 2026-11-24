@@ -144,7 +144,50 @@ const openMachineStates = async (page: Page) => {
   return made;
 };
 
+/**
+ * A worker whose machine is being replaced mid-turn (a cloud machine reclaimed). After: a quiet
+ * line says it is moving and resumes on its own, and its sidebar row says Moving. Before: on a
+ * build without the move, the turn failed with the agent's exit, as the server ended it then.
+ */
+const MACHINE_MOVING: Shot = {
+  name: "machine-moving",
+  title: "A worker whose machine is being replaced mid-turn: the thread and its sidebar row",
+  open: async (page) => {
+    await page.goto("/t/t-docs");
+    await page.getByLabel("Message", { exact: true }).waitFor();
+    await page.evaluate(() => window.gramMock!.turnEnded?.("t-docs" as never));
+    const moved = await page.evaluate(() => {
+      const mock = window.gramMock! as unknown as Record<string, unknown>;
+      const move = mock["simulateMachineMove"] as
+        | ((threadId: string, machine: string, until?: number) => void)
+        | undefined;
+      if (move === undefined) return false;
+      // The turn the move cut off is still open: the thread waits to carry it on.
+      window.gramMock!.simulateStatus("t-docs" as never, "running");
+      move.call(mock, "t-docs", "build-box", Date.now() + 20 * 60_000);
+      return true;
+    });
+    if (!moved)
+      await page.evaluate(() =>
+        window.gramMock!.simulateTurnError(
+          "t-docs" as never,
+          {
+            kind: "unknown",
+            retryable: false,
+            text: "The turn failed: agent session ended: error: Claude Code process exited with code 143",
+          },
+          "Tidy the guide",
+        ),
+      );
+    const shown = page.getByTestId("machine-move").or(page.getByTestId("agent-error"));
+    await shown.first().waitFor();
+    await shown.first().scrollIntoViewIfNeeded();
+    await expect(shown.first()).toBeInViewport();
+  },
+};
+
 export const MACHINE_MARKER_SHOTS: readonly Shot[] = [
+  MACHINE_MOVING,
   {
     name: "machine-marker-states",
     title:

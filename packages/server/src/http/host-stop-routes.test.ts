@@ -19,6 +19,7 @@ import {
   hostStopRoute,
   MACHINES_JOBS_GET_PATH,
   MACHINES_STOP_EXPECT_PATH,
+  MACHINES_STOP_MOVING_PATH,
   MACHINES_STOP_RESUME_PATH,
   MACHINES_STOP_RESUME_START_PATH,
 } from "./host-stop-routes.ts";
@@ -277,6 +278,43 @@ describe("why the provider stops a machine, or starts it on another disk", () =>
         (yield* post(withWords, jobs, MACHINES_STOP_EXPECT_PATH, { id: MACHINE })).status,
       ).toBe(200);
       expect(told).toHaveLength(1);
+    }),
+  );
+});
+
+describe("a machine whoever runs it says is moving", () => {
+  it.effect("is waited for as long as it says, within bounds", () =>
+    Effect.gen(function* () {
+      const { deps } = machine(makeStopMarks());
+      const said: Array<[HostId, number | undefined]> = [];
+      const moving = {
+        ...deps,
+        hosts: {
+          ...deps.hosts,
+          providerSaid: () => {},
+          moves: { said: (id: HostId, withinMs?: number) => said.push([id, withinMs]) },
+        },
+      } as unknown as StopResumeDeps;
+      const jobs = yield* Scope.provide(yield* Scope.make())(makeMachineJobs());
+
+      const told = yield* post(moving, jobs, MACHINES_STOP_MOVING_PATH, {
+        id: MACHINE,
+        cause: "reclaimed",
+        withinMs: 30 * 60_000,
+      });
+      expect(told.status).toBe(200);
+      expect((yield* post(moving, jobs, MACHINES_STOP_MOVING_PATH, { id: MACHINE })).status).toBe(
+        200,
+      );
+      expect(said).toEqual([
+        [MACHINE, 30 * 60_000],
+        [MACHINE, undefined],
+      ]);
+      for (const withinMs of [1_000, 5 * 60 * 60_000, "20m"])
+        expect(
+          (yield* post(moving, jobs, MACHINES_STOP_MOVING_PATH, { id: MACHINE, withinMs })).status,
+        ).toBe(400);
+      expect(said).toHaveLength(2);
     }),
   );
 });

@@ -124,6 +124,7 @@ const events: unknown[] = [
     },
   },
   { type: "ended", reason: "closed" },
+  { type: "machineMoving", machine: "build-box", until: 1_700_000_000_000 },
   { type: "mode", mode: "acceptEdits" },
   { type: "speed", state: { speed: "standard", detail: "Synthetic Fast cooldown" } },
   { type: "model", model: "claude-preview[1m]" },

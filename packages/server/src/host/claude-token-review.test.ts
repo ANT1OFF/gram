@@ -94,6 +94,7 @@ const hostsOver = (
 ): RemoteHostsShape => ({
   machines,
   stops: makeStopMarks(),
+  moves: { said: () => {}, of: () => undefined },
   connection: (id) =>
     online() && machines.get(id) !== undefined
       ? Effect.succeed({ claude } as unknown as HostConnection)

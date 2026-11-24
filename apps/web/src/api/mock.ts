@@ -168,6 +168,9 @@ import {
   simulateTurnError,
   simulateLimitWait,
   simulateLimitCleared,
+  simulateMachineMove,
+  resumeLimitWait,
+  resumeAfterMachineLost,
   simulateTerminalProcesses,
   simulatePorts,
   simulateWrittenFile,
@@ -1735,17 +1738,18 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     return simulateLimitWait(this.#scenes, threadId, wait, text);
   }
 
+  /** `simulateMachineMove` (`mock-thread-sims.ts`). */
+  simulateMachineMove(threadId: ThreadId, machine: string, until?: number) {
+    return simulateMachineMove(this.#scenes, threadId, machine, until);
+  }
+
   /** `simulateLimitCleared` (`mock-thread-sims.ts`). */
   async simulateLimitCleared(threadId: ThreadId, resumeAt?: number) {
     return simulateLimitCleared(this.#scenes, threadId, resumeAt);
   }
 
   async resumeLimitWait(threadId: ThreadId) {
-    const runtime = this.#runtime(threadId);
-    if (runtime.summary.thread.limitWait === undefined) return;
-    const { limitWait: _, ...thread } = runtime.summary.thread;
-    this.#replaceThread(thread);
-    await this.send(threadId, { text: "The usage limit has reset. Continue where you left off." });
+    return resumeLimitWait(this.#scenes, threadId);
   }
 
   /**
@@ -1765,11 +1769,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
   }
 
   async resumeAfterMachineLost(threadId: ThreadId) {
-    const lost = this.#runtime(threadId).summary.thread.lastError?.machineLost;
-    if (lost === undefined) return;
-    await this.send(threadId, {
-      text: `Note: ${lost.machine}, the machine this session runs on, was lost. Continue where you left off.`,
-    });
+    return resumeAfterMachineLost(this.#scenes, threadId);
   }
 
   async restoreFromBranch(threadId: ThreadId) {
