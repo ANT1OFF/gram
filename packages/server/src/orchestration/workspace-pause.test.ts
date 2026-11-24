@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { AgentEvent, MessageId, ThreadId, WorkspaceId } from "@gram/contracts";
+import type { MessageId, ThreadId, WorkspaceId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
@@ -83,7 +83,7 @@ const startCommand = (session: FakeSession, command: string) =>
     const runtimes = yield* ThreadRuntimes;
     const messageId = `m-${session.options.threadId}` as MessageId;
     yield* session.emit(
-      { type: "chunk", messageId, chunk: { type: "start", messageId } } as AgentEvent,
+      { type: "chunk", messageId, chunk: { type: "start", messageId } },
       {
         type: "chunk",
         messageId,
@@ -93,7 +93,7 @@ const startCommand = (session: FakeSession, command: string) =>
           toolName: "Bash",
           input: { command },
         },
-      } as AgentEvent,
+      },
     );
     yield* waitReal(
       `the command ${command}`,
@@ -106,7 +106,7 @@ const startCommand = (session: FakeSession, command: string) =>
         type: "chunk",
         messageId,
         chunk: { type: "tool-output-available", toolCallId: "c1", output: "" },
-      } as AgentEvent);
+      });
   });
 
 const stoppedOf = (workspaceId: WorkspaceId) =>
@@ -380,7 +380,7 @@ describe.skipIf(!hasGit)("the user's pause of a workspace", () => {
               messageId,
               messageMetadata: { agent: "claude", initiator: "agent" },
             },
-          } as AgentEvent);
+          });
           yield* endsItsTurn(worker.thread.id);
           yield* waitReal(
             "the stop kept on the pause",

@@ -48,7 +48,7 @@ export function useViewSolo(): boolean {
  * workspace and a New task draft on the one it is aimed at. The switcher and Board read this one.
  */
 export function useViewWorkspace(): WorkspaceState | undefined {
-  const params = useParams({ strict: false }) as { threadId?: ThreadId; workspaceId?: WorkspaceId };
+  const params: { threadId?: ThreadId; workspaceId?: WorkspaceId } = useParams({ strict: false });
   const thread = useThreadsStore((s) =>
     params.threadId === undefined ? undefined : s.byId[params.threadId]?.thread,
   );

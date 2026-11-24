@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { type GramUIMessage, HostId, type ThreadId } from "@gram/contracts";
+import { type GramUIMessage, HostId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -67,7 +67,7 @@ const vouchedThread = (options: { readonly dreamHost?: HostId } = {}) =>
         })),
       ],
     } as unknown as GramUIMessage);
-    return { threadId: thread.id as ThreadId, folder, files };
+    return { threadId: thread.id, folder, files };
   });
 
 /** Every preview of a path outside the thread's folders is refused, and resolving says nothing. */
@@ -166,7 +166,7 @@ describe("a preview outside a thread's folders", () => {
           projectRoot: folder,
           checkout: { kind: "main", path: folder },
         });
-        const threadId = (yield* store.insertThread(created)).id as ThreadId;
+        const threadId = (yield* store.insertThread(created)).id;
         const handlers = yield* fsHandlers;
         for (const path of ["secrets/token", "alias.txt", "link.txt"]) {
           expect(yield* Effect.flip(handlers["fs.file"]({ path, threadId }))).toMatchObject({

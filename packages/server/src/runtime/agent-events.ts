@@ -274,7 +274,7 @@ export const makeAgentEvents = ({
 
   const splitAfterSteer = (rt: Runtime, sent: AgentEvent) =>
     Effect.gen(function* () {
-      const original = "messageId" in sent ? (sent.messageId as MessageId) : undefined;
+      const original = "messageId" in sent ? sent.messageId : undefined;
       const aliased = original === undefined ? undefined : rt.replyAliases.get(original);
       const event = (aliased === undefined ? sent : { ...sent, messageId: aliased }) as AgentEvent;
       if (event.type !== "chunk" || original === undefined) return event;

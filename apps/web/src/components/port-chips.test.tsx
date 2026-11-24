@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import type { DesktopBridge, DesktopPreview, ThreadId } from "@gram/contracts";
+import type { DesktopPreview, ThreadId } from "@gram/contracts";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -63,7 +63,7 @@ describe("PortChips", () => {
   it("prefers the desktop bridge when present", () => {
     const openExternal = vi.fn(async () => true);
     Object.defineProperty(window, "gram", {
-      value: { openExternal } as unknown as DesktopBridge,
+      value: { openExternal },
       configurable: true,
     });
     const { api } = renderChips([3000]);
@@ -76,7 +76,7 @@ describe("PortChips", () => {
     const openExternal = vi.fn(async () => true);
     const openLocalPort = vi.fn(async () => true);
     Object.defineProperty(window, "gram", {
-      value: { openExternal, openLocalPort } as unknown as DesktopBridge,
+      value: { openExternal, openLocalPort },
       configurable: true,
     });
     renderChips([3000]);
@@ -88,7 +88,7 @@ describe("PortChips", () => {
   it("opens the thread's Preview tab where the shell has one, and the browser on ⌘-click", async () => {
     const openLocalPort = vi.fn(async () => true);
     Object.defineProperty(window, "gram", {
-      value: { openLocalPort, preview: {} as DesktopPreview } as unknown as DesktopBridge,
+      value: { openLocalPort, preview: {} as DesktopPreview },
       configurable: true,
     });
     useLayoutStore.setState({ previewPages: {} });

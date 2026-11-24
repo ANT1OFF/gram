@@ -417,11 +417,11 @@ describe("OpenCode's rules", () => {
 describe("OpenCode's models and config", () => {
   it("offers every maker's tool-using models but Anthropic's", () => {
     const offered = agentModels([
-      model("gpt-5", "openai", { variants: [{ id: "high" }, { id: "fast" }] } as never),
+      model("gpt-5", "openai", { variants: [{ id: "high" }, { id: "fast" }] }),
       model("claude-sonnet-4-5", "anthropic"),
       model("anthropic/claude-opus", "openrouter"),
-      model("no-tools", "openai", { capabilities: { tools: false } } as never),
-      model("old", "openai", { status: "deprecated" } as never),
+      model("no-tools", "openai", { capabilities: { tools: false } }),
+      model("old", "openai", { status: "deprecated" }),
     ]);
     expect(offered).toEqual([
       { id: "openai/gpt-5", displayName: "gpt-5", supportsEffort: true, efforts: ["high"] },

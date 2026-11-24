@@ -69,9 +69,9 @@ const fakePort = () => {
   let closed = false;
   const port: SessionPort = {
     postMessage: (message) => sent.push(message),
-    on: ((event: "message" | "close", listener: never) => {
+    on: (event: "message" | "close", listener: never) => {
       listeners[event] = listener;
-    }) as SessionPort["on"],
+    },
     start: () => {},
     close: () => {
       closed = true;

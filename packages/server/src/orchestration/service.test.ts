@@ -3,7 +3,6 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   DEFAULT_CHARTER,
   LOCAL_HOST_ID,
-  type ModelRef,
   type OrchestratorLedger,
   type ThreadId,
   type ThreadPlan,
@@ -554,7 +553,7 @@ describe("the ledger's cost today", () => {
     // Opened from its branch while still bound to the first.
     const branch = workerOf(
       shopWorker({
-        git: { ...shopWorker({}).git!, pr: shopBadge(225, "OPEN") } as WorkerFacts["git"],
+        git: { ...shopWorker({}).git!, pr: shopBadge(225, "OPEN") },
       }),
     );
     expect(branch.state).toBe("inReview");
@@ -668,7 +667,7 @@ describe("the ledger's cost today", () => {
       shopWorker(
         {
           completedReason: undefined,
-          git: { ...shopWorker({}).git!, pr: shopBadge(225, "OPEN") } as WorkerFacts["git"],
+          git: { ...shopWorker({}).git!, pr: shopBadge(225, "OPEN") },
           badge: shopBadge(225, "OPEN"),
           plan: { plan, turnPlan: undefined },
           now: 2,
@@ -999,7 +998,7 @@ describe.skipIf(!hasGit)("joining a workspace", () => {
           const plain = yield* plainInWorktree(world, "fix/codex");
           yield* store.updateThread(plain.thread.id, (t) => ({
             ...t,
-            model: { agent: "codex", model: "gpt-5.5" } as ModelRef,
+            model: { agent: "codex", model: "gpt-5.5" },
           }));
           const before = fake.configReloads.filter((reload) => reload === "codex:*").length;
           yield* orchestration.joinWorkspace(plain.thread.id, workspaceId, {});

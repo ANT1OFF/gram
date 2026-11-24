@@ -166,7 +166,7 @@ describe("MoveWorkspaceDialog", () => {
     expect(dialog.textContent).toContain("Kept here afterwards, never deleted.");
     expect(calls).toEqual([`check ${ORIGIN} w1 ${workspaceId}`]);
 
-    const start = screen.getByTestId("move-workspace-start") as HTMLButtonElement;
+    const start = screen.getByTestId<HTMLButtonElement>("move-workspace-start");
     expect(start.textContent).toBe("Move to Platform");
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
@@ -177,9 +177,9 @@ describe("MoveWorkspaceDialog", () => {
     tell({ stage: "sending", sentBytes: 31 * 1024 * 1024, totalBytes: 50 * 1024 * 1024 });
     expect(steps.querySelector('[data-step="sending"]')?.getAttribute("data-state")).toBe("now");
     expect(screen.getByTestId("move-workspace-dialog").textContent).toContain("31 MB of 50 MB");
-    expect((screen.getByTestId("move-workspace-cancel") as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByTestId<HTMLButtonElement>("move-workspace-cancel").disabled).toBe(false);
     tell({ stage: "settingUp" });
-    expect((screen.getByTestId("move-workspace-cancel") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>("move-workspace-cancel").disabled).toBe(true);
 
     await act(async () =>
       finish?.({
@@ -205,7 +205,7 @@ describe("MoveWorkspaceDialog", () => {
     let finish: ((done: HostedMoveDone) => void) | undefined;
     const { calls } = install({ done: () => new Promise((resolve) => (finish = resolve)) });
     await open();
-    const start = screen.getByTestId("move-workspace-start") as HTMLButtonElement;
+    const start = screen.getByTestId<HTMLButtonElement>("move-workspace-start");
     await waitFor(() => expect(start.disabled).toBe(false));
     fireEvent.click(start);
     fireEvent.click(await screen.findByTestId("move-workspace-cancel"));
@@ -228,7 +228,7 @@ describe("MoveWorkspaceDialog", () => {
     expect((await screen.findByTestId("move-workspace-refused")).textContent).toBe(
       "Example Co has turned moving workspaces off.",
     );
-    expect((screen.getByTestId("move-workspace-start") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>("move-workspace-start").disabled).toBe(true);
   });
 
   it("is nothing without the hosted features, or without a sign-in", async () => {

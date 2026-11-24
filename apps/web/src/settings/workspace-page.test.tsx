@@ -117,7 +117,7 @@ describe("a workspace's settings page", () => {
     expect((await screen.findByTestId("switch-orchestrator-open")).textContent).toBe(
       "Continue in Codex…",
     );
-    const select = (await screen.findByTestId("orchestrator-model-follow")) as HTMLSelectElement;
+    const select = await screen.findByTestId<HTMLSelectElement>("orchestrator-model-follow");
     expect((await stored()).charter.autonomy).toBe("full");
     expect(select.value).toBe("follow");
     const original = api.setOrchestratorCharter.bind(api);
@@ -129,18 +129,14 @@ describe("a workspace's settings page", () => {
     fireEvent.change(select, { target: { value: "own" } });
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(select.value).toBe("own");
-    expect((screen.getByTestId("switch-orchestrator-open") as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(screen.getByTestId<HTMLButtonElement>("switch-orchestrator-open").disabled).toBe(true);
     expect(current.textContent).toBe(identity);
     // An async callback keeps the act scope, and the act environment, open while the save that
     // was waiting on `pending` goes on; a sync one returns at once and leaves React's flush of that
     // work to run outside the act environment, which React reports.
     await act(async () => pending.resolve());
     await waitFor(() => expect(useUndoToasts.getState().toasts.at(-1)?.title).toBe("Models saved"));
-    expect((screen.getByTestId("switch-orchestrator-open") as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect(screen.getByTestId<HTMLButtonElement>("switch-orchestrator-open").disabled).toBe(false);
     await undoLast();
     await waitFor(() => expect(select.value).toBe("follow"));
     expect(current.textContent).toBe(identity);

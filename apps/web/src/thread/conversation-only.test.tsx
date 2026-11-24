@@ -37,7 +37,7 @@ const render = (message: GramUIMessage, api: object = {}) =>
       subagents={new Map()}
       subagentUsage={new Map()}
     />,
-    api as never,
+    api,
   );
 
 const PNG =
@@ -51,7 +51,7 @@ const screenshot = (id: string): GramUIMessage["parts"] => [
     state: "output-available",
     input: { file_path: "/repo/shot.png" },
     output: { type: "image", file: { type: "image/png" } },
-  } as GramUIMessage["parts"][number],
+  },
   {
     type: "data-tool-image",
     data: { toolCallId: id, mediaType: "image/png", size: 68, path: STORED },

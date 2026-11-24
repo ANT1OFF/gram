@@ -135,7 +135,7 @@ const marksOf = (value: unknown): ReadonlyArray<WorkerMachineMarks> => {
       Array.isArray(former) &&
       former.length <= 8 &&
       former.every(isMark)
-      ? [{ origin, account, formerAccounts: former as ReadonlyArray<string> }]
+      ? [{ origin, account, formerAccounts: former }]
       : [];
   });
 };

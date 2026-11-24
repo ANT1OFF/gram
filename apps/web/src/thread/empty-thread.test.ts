@@ -3,23 +3,22 @@ import { describe, expect, it } from "vitest";
 
 import { checksOutcome, resumeBrief, threadDidWork } from "./empty-thread";
 
-const thread = (fields: Partial<Thread> = {}): Thread =>
-  ({
-    id: "t1" as ThreadId,
-    projectId: "p" as ProjectId,
-    title: "t1",
-    userNamed: false,
-    model: { agent: "claude", model: "opus" },
-    mode: "default",
-    checkout: { kind: "main", path: "/repo" },
-    labels: [],
-    pinned: false,
-    parked: false,
-    unread: false,
-    createdAt: 1,
-    lastActivityAt: 1,
-    ...fields,
-  }) as Thread;
+const thread = (fields: Partial<Thread> = {}): Thread => ({
+  id: "t1" as ThreadId,
+  projectId: "p" as ProjectId,
+  title: "t1",
+  userNamed: false,
+  model: { agent: "claude", model: "opus" },
+  mode: "default",
+  checkout: { kind: "main", path: "/repo" },
+  labels: [],
+  pinned: false,
+  parked: false,
+  unread: false,
+  createdAt: 1,
+  lastActivityAt: 1,
+  ...fields,
+});
 
 describe("threadDidWork", () => {
   it("is false for a thread that hasn't started, its session unused", () => {

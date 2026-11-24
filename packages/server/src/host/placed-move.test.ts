@@ -97,7 +97,7 @@ describe("a session waiting for a machine its thread was moved off", () => {
         const { placed, opened, online, move } = setup();
         const agent = yield* placed.sessions.get("claude");
         const waiting = yield* Effect.forkScoped(
-          Effect.scoped(agent.open({ threadId: ID, cwd: PATH } as never)),
+          Effect.scoped(agent.open({ threadId: ID, cwd: PATH })),
         );
         yield* TestClock.adjust("5 seconds");
         expect(opened).toEqual([]);
@@ -117,7 +117,7 @@ describe("a session waiting for a machine its thread was moved off", () => {
         const { placed, opened, online } = setup();
         const agent = yield* placed.sessions.get("claude");
         const waiting = yield* Effect.forkScoped(
-          Effect.scoped(agent.open({ threadId: ID, cwd: PATH } as never)),
+          Effect.scoped(agent.open({ threadId: ID, cwd: PATH })),
         );
         yield* TestClock.adjust("5 seconds");
         online.add(GONE);
@@ -137,7 +137,7 @@ describe("a session waiting for a machine its thread was moved off", () => {
           const { placed, opened, online, move } = setup({ hold });
           const agent = yield* placed.sessions.get("claude");
           const waiting = yield* Effect.forkScoped(
-            Effect.scoped(agent.open({ threadId: ID, cwd: PATH } as never)),
+            Effect.scoped(agent.open({ threadId: ID, cwd: PATH })),
           );
           yield* TestClock.adjust("100 millis");
           // The move commits, then the old machine dials in before the next look for a move.
@@ -160,7 +160,7 @@ describe("a session waiting for a machine its thread was moved off", () => {
         moveNow = () => move(NEXT);
         online.add(GONE);
         const agent = yield* placed.sessions.get("claude");
-        const refused = yield* Effect.scoped(agent.open({ threadId: ID, cwd: PATH } as never)).pipe(
+        const refused = yield* Effect.scoped(agent.open({ threadId: ID, cwd: PATH })).pipe(
           Effect.flip,
         );
         expect(refused).toMatchObject({

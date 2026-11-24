@@ -1,11 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  ThreadNotFound,
-  type PageId,
-  type Thread,
-  type ThreadId,
-  type WorkspaceId,
-} from "@gram/contracts";
+import { ThreadNotFound, type Thread, type ThreadId, type WorkspaceId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -99,7 +93,7 @@ describe("offer_page_version", () => {
       expect(Exit.isFailure(unknown) && JSON.stringify(unknown.cause)).toContain(pinned.id);
       const solo = yield* Effect.exit(offer(SOLO).run({ page: pinned.id, path: entry }));
       expect(Exit.isFailure(solo) && JSON.stringify(solo.cause)).toContain("workspace");
-      const unchanged = yield* pages.read(WS, pinned.id as PageId);
+      const unchanged = yield* pages.read(WS, pinned.id);
       expect(unchanged.offer).toBeUndefined();
       expect(unchanged.version).toBe(1);
     }).pipe(Effect.scoped),

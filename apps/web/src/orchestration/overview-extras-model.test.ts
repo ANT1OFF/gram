@@ -15,30 +15,28 @@ import {
 const NOW = new Date(2026, 9, 15, 14, 40).getTime();
 const at = (hour: number, minute = 0) => new Date(2026, 9, 15, hour, minute).getTime();
 
-const request = (repo: string, number: number, updatedAt: string, extra = {}): ReviewRequest =>
-  ({
-    repo,
-    number,
-    title: `Request ${number}`,
-    url: `https://github.com/${repo}/pull/${number}`,
-    author: "jordan",
-    updatedAt,
-    createdAt: updatedAt,
-    ...extra,
-  }) as unknown as ReviewRequest;
+const request = (repo: string, number: number, updatedAt: string, extra = {}): ReviewRequest => ({
+  repo,
+  number,
+  title: `Request ${number}`,
+  url: `https://github.com/${repo}/pull/${number}`,
+  author: "jordan",
+  updatedAt,
+  createdAt: updatedAt,
+  ...extra,
+});
 
-const own = (repo: string, number: number, updatedAt: string, extra = {}): OpenPrRow =>
-  ({
-    repo,
-    number,
-    title: `Mine ${number}`,
-    url: `https://github.com/${repo}/pull/${number}`,
-    author: "me",
-    isDraft: false,
-    updatedAt,
-    createdAt: updatedAt,
-    ...extra,
-  }) as unknown as OpenPrRow;
+const own = (repo: string, number: number, updatedAt: string, extra = {}): OpenPrRow => ({
+  repo,
+  number,
+  title: `Mine ${number}`,
+  url: `https://github.com/${repo}/pull/${number}`,
+  author: "me",
+  isDraft: false,
+  updatedAt,
+  createdAt: updatedAt,
+  ...extra,
+});
 
 describe("the overview's pull requests", () => {
   const requests = [

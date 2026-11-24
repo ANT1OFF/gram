@@ -26,8 +26,8 @@ const fakeIpc = () => {
   const ipc: PreloadIpc = {
     invoke: invoke as PreloadIpc["invoke"],
     send,
-    subscribe: subscribe as PreloadIpc["subscribe"],
-    subscribeWithPorts: subscribeWithPorts as PreloadIpc["subscribeWithPorts"],
+    subscribe: subscribe,
+    subscribeWithPorts: subscribeWithPorts,
   };
   return { ipc, invoke, send, subscribe, subscribeWithPorts };
 };

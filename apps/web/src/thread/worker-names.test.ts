@@ -21,7 +21,7 @@ const element = (tagName: string, children: Node[]): Node => ({
 
 const run = (names: { threadId: string; title: string }[], tree: Node) => {
   rehypeWorkerNames(names.map((name) => ({ ...name, threadId: name.threadId as ThreadId })))()(
-    tree as never,
+    tree,
   );
   return tree;
 };

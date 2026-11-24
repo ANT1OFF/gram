@@ -519,8 +519,8 @@ function ShellPreview({
             <MarkdownPreview
               key={`written:${file}`}
               threadId={threadId}
-              root={markdownRoot(file!, roots)}
-              path={file!}
+              root={markdownRoot(file, roots)}
+              path={file}
               content={written}
               onOpen={(target) => showFileAt(threadId, roots, target)}
             />

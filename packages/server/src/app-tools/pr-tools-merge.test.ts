@@ -220,7 +220,7 @@ describe("merge_when_ready", () => {
                     ? store.updateWorkspace(root.workspaceId, (state) => ({
                         ...state,
                         ...(change === "autonomy"
-                          ? { charter: { ...state.charter!, autonomy: "publish" as const } }
+                          ? { charter: { ...state.charter, autonomy: "publish" as const } }
                           : {}),
                         ...(change === "pause"
                           ? { paused: { reason: "user" as const, at: 1 } }
@@ -403,7 +403,7 @@ describe("merge_when_ready", () => {
               if (change === "fresh autonomy")
                 yield* store.updateWorkspace(root.workspaceId, (state) => ({
                   ...state,
-                  charter: { ...state.charter!, autonomy: "publish" },
+                  charter: { ...state.charter, autonomy: "publish" },
                 }));
               if (change === "fresh policy")
                 yield* store.updateSettings((settings) => ({ ...settings, reviewBots: [] }));

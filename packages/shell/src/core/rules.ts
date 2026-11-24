@@ -110,7 +110,7 @@ export function parseNotification(input: unknown): DesktopNotification | null {
     actions.length <= MAX_NOTIFICATION_ACTIONS &&
     body.length <= MAX_NOTIFICATION_TEXT &&
     noticeBodyFits(body)
-      ? (actions as string[])
+      ? actions
       : undefined;
   return {
     title: title.slice(0, MAX_NOTIFICATION_TEXT),

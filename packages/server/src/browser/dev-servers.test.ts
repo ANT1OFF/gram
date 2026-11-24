@@ -322,10 +322,10 @@ describe("the dev server host", () => {
     expect(await until(() => server.groupGone, 3_000)).toBe(true);
     const signalled: number[] = [];
     const original = process.kill;
-    process.kill = ((pid: number, signal?: string | number) => {
+    process.kill = (pid: number, signal?: string | number) => {
       signalled.push(pid);
       return original.call(process, pid, signal);
-    }) as typeof process.kill;
+    };
     try {
       await host.stop("t1", "quick");
     } finally {
@@ -427,7 +427,7 @@ const harness = (
           checkout: { kind: "worktree", path: root },
           ...thread,
         } as Thread),
-    } as never,
+    },
     runtimes: {
       requestApproval: (_threadId, request) =>
         Effect.sync(() => {

@@ -2,7 +2,7 @@
 // from it can answer one naming the card (`asks/answer`'s `shown`).
 
 import { describe, expect, it } from "@effect/vitest";
-import type { RequestId, SinkBatch, SinkEvent } from "@gram/contracts";
+import type { SinkBatch, SinkEvent } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import {
@@ -44,7 +44,7 @@ describe("the sink's opening snapshot", () => {
             ),
           ),
         );
-        expect(started.data["openAsks"]).toEqual([{ id: card.id as RequestId, shown: card.shown }]);
+        expect(started.data["openAsks"]).toEqual([{ id: card.id, shown: card.shown }]);
       }).pipe(Effect.provide(serverLayer(undefined, sink.url)));
     }),
   );

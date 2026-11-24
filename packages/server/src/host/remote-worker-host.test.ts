@@ -491,7 +491,7 @@ describe("a joined machine's worker host", () => {
       yield* waitGone(connection);
       const agent = yield* host.sessions.get("claude");
       const refused = yield* agent
-        .open({ threadId: ThreadId.make("t-on-machine"), cwd: "/srv/work" } as never)
+        .open({ threadId: ThreadId.make("t-on-machine"), cwd: "/srv/work" })
         .pipe(Effect.flip);
       expect(refused).toMatchObject({
         _tag: "AgentUnavailable",

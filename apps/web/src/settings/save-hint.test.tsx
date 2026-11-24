@@ -23,7 +23,7 @@ function Harness({ onCommit }: { onCommit: (value: number) => void }) {
   );
 }
 
-const input = () => screen.getByRole("spinbutton", { name: "Workers at once" }) as HTMLInputElement;
+const input = () => screen.getByRole<HTMLInputElement>("spinbutton", { name: "Workers at once" });
 
 describe("a typed setting's draft", () => {
   afterEach(() => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, WorkspaceId, type PrStatus, type ThreadId } from "@gram/contracts";
+import { DEFAULT_CHARTER, WorkspaceId, type PrStatus } from "@gram/contracts";
 import { Pr, Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -177,15 +177,15 @@ describe("an armed merge after Gram's own check fails", () => {
           },
         }));
         const service = yield* MergeWhenReady;
-        yield* service.check(thread.id as ThreadId);
+        yield* service.check(thread.id);
         yield* waitReal(
           "Gram's own check started",
           Effect.sync(() => done.length > 0),
         );
         expect(merged).toEqual([]);
         // Each look while it runs (a badge change, say) listens no more: its end is told once.
-        yield* service.check(thread.id as ThreadId);
-        yield* service.check(thread.id as ThreadId);
+        yield* service.check(thread.id);
+        yield* service.check(thread.id);
         expect(done).toHaveLength(1);
         // CI passes on the exact head while the check is still running, then the check ends.
         badge = badgeWith("passing");

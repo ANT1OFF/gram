@@ -311,7 +311,7 @@ export function DiffPanel({
               <Select
                 value={turnId}
                 onValueChange={(value) => {
-                  if (value !== null) setPicked(value as TurnId);
+                  if (value !== null) setPicked(value);
                 }}
               >
                 <SelectTrigger

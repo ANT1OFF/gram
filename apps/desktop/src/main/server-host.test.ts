@@ -37,9 +37,9 @@ const fakeChild = () => {
     pid: nextPid++,
     stdout,
     stderr,
-    on: ((event: "message" | "exit", listener: never) => {
+    on: (event: "message" | "exit", listener: never) => {
       listeners[event] = listener;
-    }) as ServerChild["on"],
+    },
     postMessage: (message) => posted.push(message),
     kill: () => {
       kills++;

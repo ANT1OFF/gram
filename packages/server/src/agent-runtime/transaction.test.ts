@@ -235,7 +235,7 @@ describe("extractTarGz", () => {
     ["a PAX path escape", [pax({ path: "bin/../../x" }), { name: "ok", body: "x" }]],
   ] as const)("refuses %s", async (_, entries) => {
     tempDir();
-    writeFileSync(join(dir, "a.tar.gz"), tarGz(entries as ReadonlyArray<Entry>));
+    writeFileSync(join(dir, "a.tar.gz"), tarGz(entries));
     await mkdir(join(dir, "out"));
     await expect(
       extractTarGz(join(dir, "a.tar.gz"), join(dir, "out"), { maxEntries: 10, maxBytes: 1000 }),

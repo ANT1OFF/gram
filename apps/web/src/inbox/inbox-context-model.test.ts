@@ -3,23 +3,25 @@ import { describe, expect, it } from "vitest";
 
 import { CONTEXT_TURNS, inboxContextOf } from "./inbox-context-model";
 
-const text = (id: string, role: "user" | "assistant", words: string): GramUIMessage =>
-  ({ id, role, parts: [{ type: "text", text: words }] }) as GramUIMessage;
+const text = (id: string, role: "user" | "assistant", words: string): GramUIMessage => ({
+  id,
+  role,
+  parts: [{ type: "text", text: words }],
+});
 
-const edit = (id: string, path: string): GramUIMessage =>
-  ({
-    id,
-    role: "assistant",
-    parts: [
-      {
-        type: "tool-Edit",
-        toolCallId: id,
-        state: "output-available",
-        input: { file_path: path, old_string: "a", new_string: "b\nc" },
-        output: "",
-      },
-    ],
-  }) as GramUIMessage;
+const edit = (id: string, path: string): GramUIMessage => ({
+  id,
+  role: "assistant",
+  parts: [
+    {
+      type: "tool-Edit",
+      toolCallId: id,
+      state: "output-available",
+      input: { file_path: path, old_string: "a", new_string: "b\nc" },
+      output: "",
+    },
+  ],
+});
 
 describe("inboxContextOf", () => {
   it("keeps the latest turns that say something, oldest first", () => {

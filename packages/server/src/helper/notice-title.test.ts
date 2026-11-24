@@ -35,7 +35,7 @@ const harness = (
   const deps: NoticeTitleDeps = {
     schedule: <A, I>(job: HelperJob<A, I>) =>
       Effect.gen(function* () {
-        jobs.push(job as HelperJob<unknown, unknown>);
+        jobs.push(job);
         prompts.push(yield* job.prompt);
         return (options.result ?? {
           _tag: "Done",

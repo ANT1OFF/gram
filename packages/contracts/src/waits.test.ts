@@ -21,7 +21,7 @@ import {
 } from "./waits.ts";
 
 const rpcSchemas = (tag: string) => {
-  const rpc = GramRpcs.requests.get(tag as "thread.addWait")!;
+  const rpc = GramRpcs.requests.get(tag)!;
   return {
     payload: rpc.payloadSchema as unknown as Schema.Codec<unknown, unknown>,
     success: rpc.successSchema as unknown as Schema.Codec<unknown, unknown>,

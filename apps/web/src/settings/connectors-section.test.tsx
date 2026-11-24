@@ -438,7 +438,7 @@ describe("ConnectorsSettings", () => {
     // A claude.ai connector has no address to copy, so the form opens with its name filled in.
     fireEvent.click(within(row("linear")).getByRole("button", { name: "Add linear to Codex" }));
     const form = await screen.findByTestId("connector-add-form");
-    expect((within(form).getByLabelText("Server name") as HTMLInputElement).value).toBe("linear");
+    expect(within(form).getByLabelText<HTMLInputElement>("Server name").value).toBe("linear");
     expect(within(form).getByRole("checkbox", { name: "Codex" }).getAttribute("aria-checked")).toBe(
       "true",
     );

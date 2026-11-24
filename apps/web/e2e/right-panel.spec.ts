@@ -163,7 +163,7 @@ test("a review at its ordinary width names Diff, PR, Files and Terminal, with Fo
   const before = panel.getByTestId("panel-more");
   await expect(before).toBeVisible();
   const gap = await focus.evaluate(
-    (button, more) => button.getBoundingClientRect().left - more!.getBoundingClientRect().right,
+    (button, more) => button.getBoundingClientRect().left - more.getBoundingClientRect().right,
     await before.elementHandle(),
   );
   expect(gap).toBeLessThan(24);

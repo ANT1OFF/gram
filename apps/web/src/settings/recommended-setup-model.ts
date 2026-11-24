@@ -272,12 +272,12 @@ export const turnOnWrites = (
     }
     if (next !== charter) charters.push({ id: workspace.id, charter: next });
   }
-  return { patch: patch as SettingsPatch, charters };
+  return { patch: patch, charters };
 };
 
 const pinHere = (slot: ModelSlot, available: AvailableModels): ModelSlot => {
   if (!isTierRef(slot)) return slot;
-  return resolveTier(RECOMMENDED, slot as TierRef, available)?.ref ?? slot;
+  return resolveTier(RECOMMENDED, slot, available)?.ref ?? slot;
 };
 
 /**
@@ -326,7 +326,7 @@ export const turnOffKeepWrites = (
       },
     });
   }
-  return { patch: { agents } as SettingsPatch, charters };
+  return { patch: { agents }, charters };
 };
 
 /** The setup a machine is, for the Details fold's empty state. */

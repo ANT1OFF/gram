@@ -404,7 +404,7 @@ describe("switchAgent", () => {
         reviewMonitor: true,
         mergeWhenReady: { method: "squash" as const, allowedBy: "user" as const, setAt: 1 },
       };
-      yield* store.updateThread(thread.id, (t) => ({ ...t, boundPr }) as typeof t);
+      yield* store.updateThread(thread.id, (t) => ({ ...t, boundPr }));
       const bound = yield* store.getThread(thread.id);
       yield* runtimes.switchAgent(thread.id, CODEX);
       const after = yield* switched(thread.id);

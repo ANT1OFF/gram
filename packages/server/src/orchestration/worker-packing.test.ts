@@ -256,7 +256,7 @@ const setup = (
       signedIn:
         options.offered === false
           ? undefined
-          : ({ port, source: Effect.succeed({ source, server: SERVER }) } as never),
+          : { port, source: Effect.succeed({ source, server: SERVER }) },
       workerHosts: undefined,
       joined: () => hosts.list() as never,
     });
@@ -576,9 +576,14 @@ describe("one decision for every way onto a workers' machine", () => {
     Effect.gen(function* () {
       // Another orchestrator's exclusive machine, with its worker on it.
       const threads = [
-        worker("b", id, { machine: name, packing: "exclusive" }, {
-          spawnedBy: { threadId: OTHER, feature: "f", placement: { machine: name } },
-        } as never),
+        worker(
+          "b",
+          id,
+          { machine: name, packing: "exclusive" },
+          {
+            spawnedBy: { threadId: OTHER, feature: "f", placement: { machine: name } },
+          },
+        ),
       ];
       const { plan, online, claims, calls } = yield* setup({ threads: () => threads });
       online.set(name, { id, name });

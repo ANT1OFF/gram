@@ -5,7 +5,6 @@ import {
   serializeDigest,
   type OrchestrationDigest,
   type ThreadId,
-  type WorkspaceId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -310,7 +309,7 @@ describe.skipIf(!hasGit)("pausing new workers near a limit", () => {
         const spawned = yield* spawn(session, { feature: "free" });
         expect(spawned.thread.spawnedBy?.feature).toBe("free");
         expect(yield* pauseCards(thread.id)).toEqual([]);
-        const ledger = yield* orchestration.ledger(workspaceId as WorkspaceId);
+        const ledger = yield* orchestration.ledger(workspaceId);
         expect(ledger.budget.pauseAtPct).toBeUndefined();
         const text = serializeDigest({
           kind: "orchestration",

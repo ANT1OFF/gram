@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Swap } from "@/motion";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
+import type { ComponentProps, HTMLAttributes } from "react";
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { BundledLanguage, ThemedToken } from "shiki";
 
@@ -46,16 +46,14 @@ const addKeysToTokens = (lines: ThemedToken[][]): KeyedLine[] =>
 export const TokenSpan = ({ token }: { token: ThemedToken }) => (
   <span
     className="dark:!bg-[var(--shiki-dark-bg)] dark:!text-[var(--shiki-dark)]"
-    style={
-      {
-        backgroundColor: token.bgColor,
-        color: token.color,
-        fontStyle: isItalic(token.fontStyle) ? "italic" : undefined,
-        fontWeight: isBold(token.fontStyle) ? "bold" : undefined,
-        textDecoration: isUnderline(token.fontStyle) ? "underline" : undefined,
-        ...token.htmlStyle,
-      } as CSSProperties
-    }
+    style={{
+      backgroundColor: token.bgColor,
+      color: token.color,
+      fontStyle: isItalic(token.fontStyle) ? "italic" : undefined,
+      fontWeight: isBold(token.fontStyle) ? "bold" : undefined,
+      textDecoration: isUnderline(token.fontStyle) ? "underline" : undefined,
+      ...token.htmlStyle,
+    }}
   >
     {token.content}
   </span>

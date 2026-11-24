@@ -82,7 +82,7 @@ const setup = (gates: {
         listThreads: (gates.threads ?? Effect.void).pipe(Effect.as([])),
       } as never,
       onDemand: undefined,
-      signedIn: { port, source: Effect.succeed({ source, server: SERVER }) } as never,
+      signedIn: { port, source: Effect.succeed({ source, server: SERVER }) },
       workerHosts: undefined,
       // Only the fields the planner reads of a joined machine.
       joined: () => hosts.list() as never,
@@ -131,7 +131,7 @@ describe("a worker's machine brought up for a spawn", () => {
       const planned = yield* plan(CALLER, INPUT, SANDBOX);
       const scope = yield* Scope.make();
       // The first try waits for its machine to join.
-      yield* Effect.forkScoped(planned!.prepare!.pipe(Scope.provide(scope)));
+      yield* Effect.forkScoped(planned!.prepare.pipe(Scope.provide(scope)));
       while (!calls.includes("status")) yield* Effect.yieldNow;
       // It is cancelled: its bring-up is stopped, and gives its machine back.
       const closing = yield* Effect.forkScoped(Scope.close(scope, Exit.void));
@@ -310,18 +310,18 @@ describe("a worker's machine brought up for a spawn", () => {
         signedIn: {
           port,
           source: Effect.sync(() => ({ source: current, server: SERVER })),
-        } as never,
+        },
         workerHosts: undefined,
         joined: () => [] as never,
       });
       const first = yield* plan(CALLER, INPUT, SANDBOX);
       const scope = yield* Scope.make();
-      yield* Effect.forkScoped(first!.prepare!.pipe(Scope.provide(scope)));
+      yield* Effect.forkScoped(first!.prepare.pipe(Scope.provide(scope)));
       while (!calls.some((each) => each.call === "status")) yield* Effect.yieldNow;
       current = signedInSource({ ...SERVER, account: "mark-after-0123456789" }, { port, hosts });
       // A retry of the same request under the new sign-in: refused at once, never joined.
       const retry = yield* plan(CALLER, INPUT, SANDBOX);
-      const exit = yield* Effect.exit(retry!.prepare!.pipe(Scope.provide(yield* Scope.make())));
+      const exit = yield* Effect.exit(retry!.prepare.pipe(Scope.provide(yield* Scope.make())));
       expect(Exit.isFailure(exit) && String(Cause.squash(exit.cause))).toMatch(/another sign-in/);
       expect(calls.filter((each) => each.call === "start").map((each) => each.account)).toEqual([
         "mark-before-0123456789",

@@ -477,7 +477,7 @@ describe("MessageBlock tool images", () => {
     expect(screen.getByTestId("tool-card").textContent).toContain(
       "https://example.com/private.png",
     );
-    expect(screen.getByTestId("tool-card").textContent!.length).toBeLessThan(1000);
+    expect(screen.getByTestId("tool-card").textContent.length).toBeLessThan(1000);
     expect(readAttachment).not.toHaveBeenCalled();
   });
   it("shows an honest fallback when the source is not an authorized available attachment", async () => {
@@ -598,7 +598,7 @@ const renderText = (text: string, index: PrRefIndex, openExternal = vi.fn(async 
         subagentUsage={new Map()}
       />
     </PrRefsContext>,
-    { openExternal } as never,
+    { openExternal },
   );
   return openExternal;
 };
@@ -880,7 +880,7 @@ describe("MessageBlock sent time", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      {} as never,
+      {},
     );
     expect(hint(screen.getByText("Working on it"))).toBe(sentAt);
     expect(screen.queryByTestId("message-sent-at")).toBeNull();
@@ -1003,7 +1003,7 @@ describe("MessageBlock agent errors", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      { send, resumeAfterMachineLost } as never,
+      { send, resumeAfterMachineLost },
     );
     expect(screen.getByTestId("machine-lost").textContent).toContain("bun run check");
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
@@ -1043,7 +1043,7 @@ describe("MessageBlock agent errors", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      { restoreFromBranch, resumeAfterMachineLost } as never,
+      { restoreFromBranch, resumeAfterMachineLost },
     );
     expect(screen.queryByTestId("machine-lost")).toBeNull();
     expect(screen.getByTestId("agent-error").textContent).toContain(gone.text);
@@ -1104,7 +1104,7 @@ describe("MessageBlock agent errors", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      { savedDiff } as never,
+      { savedDiff },
     );
     const files = within(screen.getByTestId("saved-files"));
     expect(files.getByText("src/a.ts")).toBeTruthy();
@@ -1159,7 +1159,7 @@ describe("MessageBlock agent errors", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      {} as never,
+      {},
     );
     const card = screen.getByTestId("agent-error");
     expect(card.dataset["state"]).toBe("retried");
@@ -1215,7 +1215,7 @@ describe("MessageBlock agent errors", () => {
           subagentUsage={new Map()}
         />
       </>,
-      {} as never,
+      {},
     );
     // The first attempt's card folds into the newest one.
     const [newest, ...rest] = screen.getAllByTestId("agent-error");
@@ -1270,7 +1270,7 @@ describe("MessageBlock agent errors", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      { send } as never,
+      { send },
     );
     // Try another model asks this thread's picker to open, not whichever pane has focus.
     fireEvent.click(screen.getByTestId("agent-error-other-model"));
@@ -1376,7 +1376,7 @@ describe("MessageBlock agent errors", () => {
           subagents={new Map()}
           subagentUsage={new Map()}
         />,
-        { send } as never,
+        { send },
       );
       const time = screen.getByTestId("agent-error-retry-time");
       expect(time.dataset["known"]).toBe("true");
@@ -1426,7 +1426,7 @@ describe("MessageBlock agent errors", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      {} as never,
+      {},
     );
     expect(screen.getByTestId("agent-error").dataset["kind"]).toBe("gatewayRefused");
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
@@ -1450,7 +1450,7 @@ const showCompaction = (data: CompactionData) =>
       subagents={new Map()}
       subagentUsage={new Map()}
     />,
-    {} as never,
+    {},
   );
 
 describe("MessageBlock compaction marker", () => {
@@ -1497,7 +1497,7 @@ describe("MessageBlock compaction marker", () => {
       summary: "1. **Intent**",
     });
     const marker = screen.getByTestId("compaction");
-    const text = marker.closest("[data-testid=message-assistant]")!.textContent!;
+    const text = marker.closest("[data-testid=message-assistant]")!.textContent;
     expect(text.indexOf("Done with the first half.")).toBeLessThan(
       text.indexOf("Context compacted"),
     );
@@ -1542,7 +1542,7 @@ describe("MessageBlock compaction marker", () => {
         subagents={new Map()}
         subagentUsage={new Map()}
       />,
-      {} as never,
+      {},
     );
     expect(screen.getByTestId("session-restart").getAttribute("title")).toMatch(
       /same conversation/,
@@ -1627,7 +1627,7 @@ describe("MessageBlock actions in the orchestrator's chat", () => {
           subagentUsage={new Map()}
         />
       </OrchestratorStreamProvider>,
-      {} as never,
+      {},
     );
   const said: GramUIMessage = {
     id: "u-float",

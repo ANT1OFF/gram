@@ -25,7 +25,7 @@ export function pageGuard(): void {
     "execCommand",
     function execCommand(this: Document, command: unknown, showUI?: unknown, value?: unknown) {
       if (typeof command !== "string") return false;
-      const name = apply(lower, command, []) as string;
+      const name = apply<string, [], string>(lower, command, []);
       if (name === "copy" || name === "cut" || name === "paste") return false;
       return apply(exec, this, [
         command,

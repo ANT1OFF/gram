@@ -75,7 +75,7 @@ describe("search_transcripts", () => {
           projectId: project.id,
         } as Thread;
         const { workspaceId: _ws, spawnedBy: _by, ...plain } = outsider;
-        yield* store.insertThread(plain as Thread);
+        yield* store.insertThread(plain);
         yield* say(plain.id, "x-1", "user", "invoices queue somewhere else");
 
         const all = (yield* session.callTool("search_transcripts", {

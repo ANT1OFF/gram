@@ -203,7 +203,7 @@ describe("Quiet, the Board and the sidebar", () => {
 
   it.each(cases)("agree whether a worker is busy: $name", ({ entry, busy }) => {
     const ledger = { features: [{ feature: "quiet", state: entry.state, workers: [entry] }] };
-    const shared = workerActivities(ledger as never, {});
+    const shared = workerActivities(ledger, {});
     const row = workerRow(entry, { byId: {}, statusDetail: {}, now: NOW });
     expect(row.activity).toBe(shared[entry.threadId]);
     expect(isBusy(row.activity)).toBe(busy);
@@ -228,7 +228,7 @@ describe("Quiet, the Board and the sidebar", () => {
   it("reads a wait on automation as waiting, not working, everywhere", () => {
     const entry = worker("inReview", { pr: pr({ checks: "pending" }) });
     const shared = workerActivities(
-      { features: [{ feature: "quiet", state: entry.state, workers: [entry] }] } as never,
+      { features: [{ feature: "quiet", state: entry.state, workers: [entry] }] },
       {},
     );
     const row = workerRow(entry, { byId: {}, statusDetail: {}, now: NOW });
@@ -252,7 +252,7 @@ describe("Quiet, the Board and the sidebar", () => {
     } as unknown as ThreadSummary;
     const byId = { [entry.threadId]: summary };
     const shared = workerActivities(
-      { features: [{ feature: "quiet", state: entry.state, workers: [entry] }] } as never,
+      { features: [{ feature: "quiet", state: entry.state, workers: [entry] }] },
       byId,
     );
     expect(shared[entry.threadId]).toBe("working");
@@ -304,19 +304,19 @@ const everyTone = (
   };
   const byId = summary === undefined ? {} : { [entry.threadId]: summary };
   const running = summary !== undefined && summary.status === "running" ? [entry.threadId] : [];
-  const { tones } = workerTones(ledger as never, running, { byId, statusDetail: {} });
+  const { tones } = workerTones(ledger, running, { byId, statusDetail: {} });
   const row = workerRow(entry, {
     byId,
     statusDetail: {},
     now: NOW,
-    triage: triagedQuestions(ledger as never),
+    triage: triagedQuestions(ledger),
   });
   return {
     shared: tones[entry.threadId],
     board: railTone(card(entry), {
       asking: new Set(),
       status: () => summary?.status,
-      activity: workerActivities(ledger as never, byId),
+      activity: workerActivities(ledger, byId),
       tones,
     }),
     sidebar: rowTone(

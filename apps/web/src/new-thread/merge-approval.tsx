@@ -129,9 +129,9 @@ export function useWorkspaceMergeApproval(state: WorkspaceState | undefined, fal
   };
   const pick = (approval: MergeApproval) => {
     if (charter === undefined) return;
-    const next = autonomyForApproval(autonomy as Autonomy, approval);
+    const next = autonomyForApproval(autonomy, approval);
     if (next === autonomy) return;
-    if (autonomyNeedsConfirm(autonomy as Autonomy, next)) setConfirmFor(id);
+    if (autonomyNeedsConfirm(autonomy, next)) setConfirmFor(id);
     else save(next);
   };
   const confirmFull = () => {

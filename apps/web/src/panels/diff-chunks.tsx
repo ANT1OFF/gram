@@ -89,7 +89,7 @@ function useDiffChunks(source: DiffChunkSource, file: DiffFile) {
         ...(pageParam.cursor === undefined ? {} : { cursor: pageParam.cursor }),
         ...(pageParam.fingerprint === undefined ? {} : { fingerprint: pageParam.fingerprint }),
       }),
-    initialPageParam: {} as PageParam,
+    initialPageParam: {},
     getNextPageParam: (last: DiffChunk, all: DiffChunk[]): PageParam | undefined =>
       last.changed || last.next === undefined
         ? undefined

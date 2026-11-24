@@ -1,12 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import type {
-  Thread,
-  ThreadId,
-  TurnId,
-  UsageSummary,
-  UserInput,
-  WorkspaceId,
-} from "@gram/contracts";
+import type { Thread, ThreadId, TurnId, UsageSummary, WorkspaceId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import type { ComposerHold } from "../runtime/composer-presence.ts";
@@ -178,8 +171,7 @@ const harness = Effect.gen(function* () {
     held: () => Effect.sync(() => state.held),
     compacted: (t) => Effect.sync(() => void compacted.push(t.id)),
   });
-  const build = (rest: DeliveryRest = atRest) =>
-    requests.at(-1)!.build("turn-c" as TurnId, rest) as Effect.Effect<UserInput | undefined>;
+  const build = (rest: DeliveryRest = atRest) => requests.at(-1)!.build("turn-c" as TurnId, rest);
   return { compactor, requests, compacted, state, build };
 });
 

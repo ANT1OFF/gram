@@ -54,12 +54,12 @@ export function WorkspaceAutonomy({
   const charter = changes.charter ?? state?.charter;
   const value = charter === undefined ? autonomy : autonomyOf(charter);
   const level = presentAutonomy(value);
-  const icon = known(AUTONOMY_ICON, value as Autonomy) ?? Shield;
+  const icon = known(AUTONOMY_ICON, value) ?? Shield;
   const label = workspaceAutonomyLabel(value);
 
   const pick = (next: Autonomy) => {
     if (charter === undefined || next === value) return;
-    if (autonomyNeedsConfirm(value as Autonomy, next)) {
+    if (autonomyNeedsConfirm(value, next)) {
       setConfirming(true);
       return;
     }

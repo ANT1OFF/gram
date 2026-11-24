@@ -272,7 +272,7 @@ type Attempt =
 const skipped = (reason: HelperSkipReason): HelperResult<never> => ({ _tag: "Skipped", reason });
 
 const decode = <A, I>(output: Schema.Codec<A, I>, data: unknown) =>
-  Schema.decodeUnknownOption(output as Schema.Codec<A, unknown>)(data);
+  Schema.decodeUnknownOption(output)(data);
 
 const parseOutput = (job: HelperJob<unknown, unknown>, text: string): unknown => {
   try {
@@ -671,9 +671,7 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
             health.delete(route.model);
             yield* Effect.logDebug(`helper ${job.kind} done: ${facts}`);
             if (!(yield* requestPending(job))) return yield* logSkip(job, "noRequest");
-            const encoded = Schema.encodeUnknownOption(
-              job.output as Schema.Codec<unknown, unknown>,
-            )(value.value);
+            const encoded = Schema.encodeUnknownOption(job.output)(value.value);
             if (Option.isSome(encoded)) {
               yield* deps.helperStore.putOutput({
                 threadId: job.threadId,
@@ -784,7 +782,7 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
     const schedule = <A, I>(job: HelperJob<A, I>): Effect.Effect<HelperResult<A>> =>
       Effect.gen(function* () {
         if (!helperOn(yield* deps.store.getSettings, job.kind)) {
-          return yield* logSkip(job as HelperJob<unknown, unknown>, "off");
+          return yield* logSkip(job, "off");
         }
         const settings = yield* deps.store.getSettings;
         const profiles = helperSource(settings) === "gateway" ? yield* deps.store.listProfiles : [];
@@ -817,7 +815,7 @@ export const makeHelperScheduler = (deps: HelperSchedulerDeps) =>
         }
         const lane: HelperLane = waiting?.lane === "interactive" ? "interactive" : job.lane;
         const entry: Entry = {
-          job: job as HelperJob<unknown, unknown>,
+          job: job,
           key,
           basis,
           lane,

@@ -30,7 +30,7 @@ const setup = (folder: string) => {
   // field untyped and fall back to the most recent project once its query landed.
   fireEvent.change(path, { target: { value: " " } });
   fireEvent.change(path, { target: { value: folder } });
-  const prompt = screen.getByRole("combobox", { name: "First prompt" }) as HTMLTextAreaElement;
+  const prompt = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "First prompt" });
   return { fsFiles, prompt, user: userEvent.setup() };
 };
 

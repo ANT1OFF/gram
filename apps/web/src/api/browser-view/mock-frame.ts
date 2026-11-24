@@ -83,8 +83,8 @@ export const mockPageFrame = (): Frame => {
     row.forEach((cell, i) => {
       if (i === 3) {
         const [fill, ink] = STATE_COLOURS[cell]!;
-        box(columns[i]! - 10, y + 14, 78, 26, 13, fill);
-        text(cell, columns[i]!, y + 32, sans(13, 600), ink);
+        box(columns[i] - 10, y + 14, 78, 26, 13, fill);
+        text(cell, columns[i], y + 32, sans(13, 600), ink);
       } else text(cell, columns[i]!, y + 32, sans(14, i === 0 ? 600 : 400), "#0f172a");
     });
   });

@@ -3,7 +3,6 @@ import type {
   BrowserCapture,
   BrowserInspection,
   BrowserRegion,
-  BrowserViewportPreset,
   DesktopPreview,
   PaneResult,
 } from "@gram/contracts";
@@ -110,9 +109,7 @@ export function BrowserInspectionPanel({
                 aria-label={label}
                 aria-pressed={inspection.viewportPreset === preset}
                 disabled={busy || bridge.viewport === undefined}
-                onClick={() =>
-                  void run(() => bridge.viewport!(threadId, preset as BrowserViewportPreset))
-                }
+                onClick={() => void run(() => bridge.viewport!(threadId, preset))}
               />
             }
           >

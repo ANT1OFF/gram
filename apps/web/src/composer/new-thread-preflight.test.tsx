@@ -70,7 +70,7 @@ describe("new-thread preflight workflow", () => {
     renderWithApi(<NewThreadDraft />, api);
     await screen.findByText("Sign in with codex login, then retry.");
     expect(screen.getByLabelText("Agent").textContent).toContain("Codex");
-    expect((screen.getByRole("button", { name: "Start chat" }) as HTMLButtonElement).disabled).toBe(
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start chat" }).disabled).toBe(
       true,
     );
     fireEvent.submit(screen.getByRole("form", { name: "New thread" }));
@@ -79,9 +79,9 @@ describe("new-thread preflight workflow", () => {
     signedOut = false;
     fireEvent.click(screen.getByRole("button", { name: "Retry check" }));
     await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: "Start chat" }) as HTMLButtonElement).disabled,
-      ).toBe(false),
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start chat" }).disabled).toBe(
+        false,
+      ),
     );
     expect(agentSupport).toHaveBeenCalledWith(expect.objectContaining({ agent: "codex" }), {
       refresh: true,
@@ -98,9 +98,9 @@ describe("new-thread preflight workflow", () => {
     renderWithApi(<NewThreadDraft />, api);
     await screen.findByText("Unverified: Synthetic unread account status");
     await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: "Start chat" }) as HTMLButtonElement).disabled,
-      ).toBe(false),
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start chat" }).disabled).toBe(
+        false,
+      ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
@@ -122,9 +122,9 @@ describe("new-thread preflight workflow", () => {
     );
     renderWithApi(<NewThreadDraft />, api);
     await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: "Start chat" }) as HTMLButtonElement).disabled,
-      ).toBe(false),
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start chat" }).disabled).toBe(
+        false,
+      ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Start chat" }));
     await waitFor(() => expect(create).toHaveBeenCalledTimes(1));

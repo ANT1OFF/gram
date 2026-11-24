@@ -141,7 +141,7 @@ export const cloneUrlOf = (identity: string): string | undefined => {
   }
   if (!Array.isArray(parts) || parts.length !== 5 || !parts.every((p) => typeof p === "string"))
     return undefined;
-  const [transport, host, port, user, path] = parts as Array<string>;
+  const [transport, host, port, user, path] = parts;
   const account = user === "" ? "" : `${user}@`;
   const url =
     transport === "https:"

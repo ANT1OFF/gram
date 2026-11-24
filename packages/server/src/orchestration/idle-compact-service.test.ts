@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, type AgentEvent, type ThreadId, type UserInput } from "@gram/contracts";
+import { DEFAULT_CHARTER, type AgentEvent, type UserInput } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
@@ -121,7 +121,7 @@ describe("idle compaction in a workspace", () => {
         // Nothing here starts a git process, so yielding lets the service take each step; one
         // settle after a step every ten minutes covers what would.
         for (let t = 0; t < 62 * MIN; t += MIN / 2) {
-          yield* presence.drafts("window-1", [thread.id as ThreadId]);
+          yield* presence.drafts("window-1", [thread.id]);
           yield* TestClock.adjust(MIN / 2);
           for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
           if (t % (10 * MIN) === 0) yield* settle;

@@ -246,7 +246,7 @@ describe("DocsPanel", () => {
     expect(rows[0]!.textContent).toContain("Opening words of doc 1.");
     fireEvent.click(rows[0]!);
     expect(await screen.findByTestId("doc-title")).toHaveProperty("textContent", "Gap analysis");
-    const stamps = screen.getByTestId("doc-meta").textContent!;
+    const stamps = screen.getByTestId("doc-meta").textContent;
     expect(stamps).toMatch(/^By cp-artifacts · \d{2}:\d{2} · updated \d{2}:\d{2}$/);
     const body = screen.getByTestId("doc-body");
     expect(body.hasAttribute("data-transcript")).toBe(true);
@@ -269,9 +269,9 @@ describe("DocsPanel", () => {
     renderWithApi(<DocsPanel workspaceId={WS} />, api);
     fireEvent.click(await screen.findByTestId("doc-edit"));
     expect(screen.getByTestId("doc-edit").getAttribute("aria-pressed")).toBe("true");
-    const editor = screen.getByTestId("doc-editor") as HTMLTextAreaElement;
+    const editor = screen.getByTestId<HTMLTextAreaElement>("doc-editor");
     expect(editor.value).toBe("Old text.");
-    expect((screen.getByTestId("doc-save") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>("doc-save").disabled).toBe(true);
     fireEvent.change(editor, { target: { value: "New text." } });
     await act(async () => fireEvent.click(screen.getByTestId("doc-save")));
     expect(saveDoc).toHaveBeenCalledWith(WS, "doc-1", "New text.", 3);
@@ -293,7 +293,7 @@ describe("DocsPanel", () => {
     expect((await screen.findByTestId("doc-save-error")).textContent).toContain(
       "changed since you opened it",
     );
-    expect((screen.getByTestId("doc-editor") as HTMLTextAreaElement).value).toBe("Mine.");
+    expect(screen.getByTestId<HTMLTextAreaElement>("doc-editor").value).toBe("Mine.");
   });
 
   it("says docs need a workspace where the window is on none", () => {

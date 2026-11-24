@@ -133,11 +133,12 @@ export function useShellLayout() {
     /** Where the main navigation sits, and whether it hides when not in use. */
     nav,
     /** The auto-hidden sidebar's form, out of view at the window's left until it is wanted. */
-    autoHidden: (settings || nav.position !== "side" || !nav.autoHide
-      ? "none"
-      : overviewSidebar === "compact"
-        ? "compact"
-        : "full") as "none" | "compact" | "full",
+    autoHidden:
+      settings || nav.position !== "side" || !nav.autoHide
+        ? "none"
+        : overviewSidebar === "compact"
+          ? "compact"
+          : "full",
     focusMode,
     /** Settings is open: the title bar carries Back and its name, and no overview shows. */
     settings,

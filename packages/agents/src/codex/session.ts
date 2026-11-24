@@ -1563,7 +1563,7 @@ export const makeCodexHost = (
           for (const model of page.data) ids.add(model.id);
           cursor = page.nextCursor;
         } while (cursor !== null);
-        return ids as ReadonlySet<string> | undefined;
+        return ids;
       }).pipe(
         Effect.scoped,
         Effect.catchDefect(() => Effect.succeed(undefined)),

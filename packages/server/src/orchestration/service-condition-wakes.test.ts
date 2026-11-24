@@ -2,7 +2,6 @@
 // finishing, for a plain thread's own wakes and a workspace's, once each, debounced, over a restart,
 // on their fallback time and under the per-thread cap.
 import { describe, expect, it } from "@effect/vitest";
-import { type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import { hasGit } from "../git/test-repo.ts";
@@ -344,7 +343,7 @@ describe.skipIf(!hasGit)("condition wakes", () => {
           // Set on one archived already: refused.
           const late = yield* plain.session
             .callTool("schedule_wake", {
-              condition: { kind: "threadFinished", threadId: research.thread.id as ThreadId },
+              condition: { kind: "threadFinished", threadId: research.thread.id },
               note: "x",
             })
             .pipe(Effect.flip);

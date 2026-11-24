@@ -1558,7 +1558,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const asker =
       seed.worker?.askedBy === undefined
         ? undefined
-        : this.#threads.get(seed.worker.askedBy as ThreadId)?.summary.thread;
+        : this.#threads.get(seed.worker.askedBy)?.summary.thread;
     const askedBy = asker === undefined ? undefined : { threadId: asker.id, title: asker.title };
     const home =
       state === undefined

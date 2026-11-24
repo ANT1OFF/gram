@@ -65,7 +65,7 @@ const post = (
       "signed",
     );
     const web = HttpServerResponse.toWeb(response);
-    return { status: web.status, body: (yield* Effect.promise(() => web.json())) as unknown };
+    return { status: web.status, body: yield* Effect.promise(() => web.json()) };
   });
 
 const running = Effect.gen(function* () {

@@ -150,7 +150,7 @@ const bigReply = (
       chunk({
         type: "start",
         ...(metadata === undefined ? {} : { messageMetadata: metadata }),
-      } as GramUIMessageChunk),
+      }),
       chunk({ type: "text-start", id: "t" }),
       chunk({ type: "text-delta", id: "t", delta: "x".repeat(8 * 1024 * 1024) }),
       chunk({ type: "text-end", id: "t" }),

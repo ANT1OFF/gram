@@ -282,7 +282,7 @@ describe("a thread whose machine stopped while idle", () => {
       status: "starting",
       queue: [],
       thread: { ...rest, checkout: { kind: "main", path: "/work", hostId: HOST } },
-    } as ThreadSummary);
+    });
   };
 
   afterEach(() => useMachines.setState({ machines: undefined }));

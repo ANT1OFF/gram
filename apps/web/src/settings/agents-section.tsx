@@ -4,7 +4,6 @@ import {
   RECOMMENDED_NEW_CHAT,
   restartOnMcpChangeOn,
   type ModelRef,
-  type PermissionMode,
   type SettingsPatch,
 } from "@gram/contracts";
 import { useId, useState } from "react";
@@ -130,7 +129,7 @@ export function AgentsSection() {
           items={MODE_OPTIONS}
           onValueChange={(value) => {
             if (value !== null && value !== agents.defaultMode) {
-              applyTo("defaultMode")({ agents: { defaultMode: value as PermissionMode } });
+              applyTo("defaultMode")({ agents: { defaultMode: value } });
             }
           }}
         >

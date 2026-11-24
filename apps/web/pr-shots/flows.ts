@@ -259,7 +259,7 @@ const steps: readonly Shot[] = [
         .click();
       await page.evaluate(async (workspaceId) => {
         const mock = window.gramMock!;
-        const ledger = await mock.orchestratorLedger(workspaceId as never);
+        const ledger = await mock.orchestratorLedger(workspaceId);
         const question = ledger.questions?.find((each) => each.id === "WQ1");
         if (question === undefined) throw new Error("no WQ1");
         await mock.simulateWorkerQuestion({

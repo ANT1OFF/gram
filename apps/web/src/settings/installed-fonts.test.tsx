@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import type { DesktopBridge } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -33,7 +32,7 @@ describe("useInstalledFonts", () => {
   it("lists the installed families through the desktop bridge", async () => {
     const listFonts = vi.fn(async () => ["Avenir Next", "Menlo"]);
     Object.defineProperty(window, "gram", {
-      value: { listFonts } as unknown as DesktopBridge,
+      value: { listFonts },
       configurable: true,
     });
     const { result } = renderHook(() => useInstalledFonts(), { wrapper });
@@ -44,7 +43,7 @@ describe("useInstalledFonts", () => {
   it("keeps the curated lists when the computer's fonts can't be listed", async () => {
     const listFonts = vi.fn(async () => []);
     Object.defineProperty(window, "gram", {
-      value: { listFonts } as unknown as DesktopBridge,
+      value: { listFonts },
       configurable: true,
     });
     const { result } = renderHook(() => useInstalledFonts(), { wrapper });

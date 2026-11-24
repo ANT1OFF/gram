@@ -39,7 +39,7 @@ describe("StashMenu", () => {
     const listStashes = vi.fn(async () => []);
     renderWithApi(<StashMenu threadId={threadId} onRestore={vi.fn()} onError={vi.fn()} />, {
       listStashes,
-    } as Partial<Api>);
+    });
     await waitFor(() => expect(listStashes).toHaveBeenCalledWith(threadId));
     expect(screen.queryByTestId("stash-trigger")).toBeNull();
   });
@@ -80,7 +80,7 @@ describe("StashMenu", () => {
   it("opens from the store, as the ⌘K action does", async () => {
     renderWithApi(<StashMenu threadId={threadId} onRestore={vi.fn()} onError={vi.fn()} />, {
       listStashes: vi.fn(async () => [stash("s1", "from the palette")]),
-    } as Partial<Api>);
+    });
     await screen.findByTestId("stash-trigger");
     act(() => useStashMenuStore.getState().open(threadId));
     expect((await screen.findByTestId("stash-menu")).textContent).toContain("from the palette");

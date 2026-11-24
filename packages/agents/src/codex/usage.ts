@@ -18,8 +18,7 @@ const zero = (): Counts => ({
 export function validCodexCounts(counts: Counts): boolean {
   return (
     keys.every(
-      (key) =>
-        counts[key] === undefined || (Number.isSafeInteger(counts[key]) && counts[key]! >= 0),
+      (key) => counts[key] === undefined || (Number.isSafeInteger(counts[key]) && counts[key] >= 0),
     ) &&
     Number.isSafeInteger(counts.inputTokens + counts.outputTokens) &&
     (counts.cacheReadTokens ?? 0) + (counts.cacheWriteTokens ?? 0) <= counts.inputTokens &&
@@ -70,8 +69,8 @@ const difference = (a: Counts, b: Counts): Counts | undefined => {
   const result: Record<string, number> = {};
   for (const key of keys) {
     if (a[key] === undefined || b[key] === undefined) continue;
-    if (a[key]! < b[key]!) return undefined;
-    result[key] = a[key]! - b[key]!;
+    if (a[key] < b[key]) return undefined;
+    result[key] = a[key] - b[key];
   }
   if (result.inputTokens === undefined || result.outputTokens === undefined) return undefined;
   const counts = result as unknown as Counts;
@@ -151,7 +150,7 @@ export function makeCodexUsageLedger(fresh = false) {
         total !== undefined &&
         last !== undefined &&
         keys.some(
-          (key) => total[key] !== undefined && last[key] !== undefined && total[key]! < last[key]!,
+          (key) => total[key] !== undefined && last[key] !== undefined && total[key] < last[key],
         )
       ) {
         invalidateBaseline();

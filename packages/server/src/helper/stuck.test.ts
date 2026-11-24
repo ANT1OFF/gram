@@ -107,7 +107,7 @@ const harness = (
   const deps: StuckDeps = {
     schedule: <A, I>(job: HelperJob<A, I>) =>
       Effect.gen(function* () {
-        jobs.push(job as HelperJob<unknown, unknown>);
+        jobs.push(job);
         prompts.push(yield* job.prompt);
         return (options.result ?? {
           _tag: "Done",
@@ -211,9 +211,9 @@ describe("why is it stuck", () => {
     expect(lastToolOf(RECENT)).toBe("Bash gh pr list --search paging");
     expect(lastToolOf([])).toBeUndefined();
     expect(prFact(PR)).toBe("web#91 open, checks failing");
-    expect(
-      prFact({ ...PR, checks: { ...PR.checks, state: "passing", failing: [] } } as PrContext),
-    ).toBe("web#91 open, checks passing");
+    expect(prFact({ ...PR, checks: { ...PR.checks, state: "passing", failing: [] } })).toBe(
+      "web#91 open, checks passing",
+    );
   });
 
   it("keeps one plain sentence within its cap", () => {

@@ -82,7 +82,7 @@ export function WorktreeFields({
           value={value.prefix}
           items={BRANCH_PREFIXES.map((p) => ({ value: p, label: p }))}
           onValueChange={(next) => {
-            if (next !== null) onChange({ ...value, prefix: next as BranchPrefix });
+            if (next !== null) onChange({ ...value, prefix: next });
           }}
         >
           <SelectTrigger aria-label="Branch prefix" className="font-mono text-meta">

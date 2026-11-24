@@ -165,7 +165,7 @@ const dialAsDevice = (port: number, path: string, headers: Record<string, string
   Effect.gen(function* () {
     const socket = yield* Socket.makeWebSocket(`ws://127.0.0.1:${port}${path}`, {
       headers,
-    } as never).pipe(Effect.provide(NodeWS.layerWebSocketConstructor));
+    }).pipe(Effect.provide(NodeWS.layerWebSocketConstructor));
     yield* Layer.launch(
       RpcServer.layer(DeviceRpcs).pipe(
         Layer.provide(

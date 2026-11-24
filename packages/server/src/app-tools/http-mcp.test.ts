@@ -2,7 +2,6 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { describe, expect, it as effectTest, layer } from "@effect/vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { appToolContent, type AppTool } from "@gram/agents";
 import { AppToolError, type ThreadId } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
@@ -64,7 +63,7 @@ const waitingCall = (threadId: ThreadId, text: string) =>
 const stubTools = (threadId: ThreadId): ReadonlyArray<AppTool> => [
   {
     descriptor: { name: "echo", class: "self", description: "Echo the text back." },
-    input: EchoInput as unknown as Schema.Codec<unknown, unknown>,
+    input: EchoInput,
     run: (raw) =>
       Schema.decodeUnknownEffect(EchoInput)(raw).pipe(
         Effect.mapError((e) => new AppToolError({ tool: "echo", message: e.message })),
@@ -96,10 +95,7 @@ const stubTools = (threadId: ThreadId): ReadonlyArray<AppTool> => [
   },
   {
     descriptor: { name: "fail", class: "read", description: "Always fails." },
-    input: Schema.Struct({ reason: Schema.optionalKey(Schema.String) }) as unknown as Schema.Codec<
-      unknown,
-      unknown
-    >,
+    input: Schema.Struct({ reason: Schema.optionalKey(Schema.String) }),
     run: () => Effect.fail(new AppToolError({ tool: "fail", message: "boom" })),
   },
 ];
@@ -142,7 +138,7 @@ const withClient = <A>(
       await client.connect(
         new StreamableHTTPClientTransport(new URL(connection.url), {
           requestInit: { headers: connection.headers },
-        }) as Transport,
+        }),
       );
       return client;
     }),

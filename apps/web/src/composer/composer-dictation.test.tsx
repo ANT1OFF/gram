@@ -64,7 +64,7 @@ const setup = () => {
     <Composer threadId={THREAD} focused />,
     createMockApi({ speed: 0, autoplay: false }),
   );
-  return screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+  return screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
 };
 
 afterEach(() => {

@@ -39,7 +39,7 @@ import { installLookDefaults } from "@/theme/look-defaults";
 import { bootTheme } from "./theme-boot";
 
 function ShellPage({ route }: { route: ShellRoute }) {
-  const params = useParams({ strict: false }) as Readonly<Record<string, string>>;
+  const params: Readonly<Record<string, string>> = useParams({ strict: false });
   const Page = route.component;
   return (
     <section
@@ -62,7 +62,7 @@ const addedRoutes = (routes: readonly ShellRoute[]): AnyRoute[] => {
       getParentRoute: () => routeTree,
       path: route.path,
       component: () => <ShellPage route={route} />,
-    }) as unknown as AnyRoute;
+    });
   });
 };
 
@@ -82,7 +82,7 @@ export const mountGram: MountGram = async (options) => {
   mounted = true;
   try {
     const mock = options.server === "mock";
-    setServerBase(mock ? undefined : (options.server as { base?: string } | undefined)?.base);
+    setServerBase(mock ? undefined : options.server?.base);
     setAppBasePath(options.basePath);
     installHostTheme(document, options.theme);
     installLookDefaults(options.defaults);

@@ -26,7 +26,7 @@ const askOf = (input: unknown): TrayAsk | undefined => {
   if (typeof id !== "string" || !TOKEN.test(id)) return undefined;
   if (typeof title !== "string" || typeof context !== "string") return undefined;
   if (!Array.isArray(lines) || !lines.every((line) => typeof line === "string")) return undefined;
-  const shown = lines as string[];
+  const shown = lines;
   const answers = trayAnswerable(shown, answer);
   return {
     id,

@@ -54,9 +54,7 @@ export interface SharedTree {
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const codeOf = (error: unknown) =>
-  typeof error === "object" && error !== null && "code" in error
-    ? String((error as { code: unknown }).code)
-    : undefined;
+  typeof error === "object" && error !== null && "code" in error ? String(error.code) : undefined;
 
 const invalid = (message: string) => new InvalidState({ message });
 

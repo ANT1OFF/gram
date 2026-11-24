@@ -87,12 +87,12 @@ describe("thread.stash.*", () => {
           threadId,
           text: "half a thought",
           attachments: [shot],
-        } as never);
+        });
 
-        expect((yield* h["thread.stash.list"]({ threadId } as never)).stashes).toEqual([added]);
-        const taken = yield* h["thread.stash.take"]({ threadId, stashId: added.id } as never);
+        expect((yield* h["thread.stash.list"]({ threadId })).stashes).toEqual([added]);
+        const taken = yield* h["thread.stash.take"]({ threadId, stashId: added.id });
         expect(taken).toEqual(added);
-        expect((yield* h["thread.stash.list"]({ threadId } as never)).stashes).toEqual([]);
+        expect((yield* h["thread.stash.list"]({ threadId })).stashes).toEqual([]);
         // Taking a stash back hands its files to the composer, so they stay.
         expect(existsSync(shot.path)).toBe(true);
       }),
@@ -111,14 +111,14 @@ describe("thread.stash.*", () => {
           threadId,
           text: "discard me",
           attachments: [shot, { path: desktop, name: "desktop-notes.txt" }],
-        } as never);
+        });
 
-        yield* h["thread.stash.remove"]({ threadId, stashId: added.id } as never);
+        yield* h["thread.stash.remove"]({ threadId, stashId: added.id });
 
         expect(existsSync(shot.path)).toBe(false);
         expect(existsSync(desktop)).toBe(true);
         const missing = yield* Effect.flip(
-          h["thread.stash.remove"]({ threadId, stashId: added.id } as never),
+          h["thread.stash.remove"]({ threadId, stashId: added.id }),
         );
         expect(missing).toMatchObject({ _tag: "NotFound", entity: "stash" });
       }),
@@ -142,9 +142,9 @@ describe("thread.stash.*", () => {
             threadId,
             text: "discard me",
             attachments: [{ path: join(folder, "linked", "victim.txt"), name: "victim.txt" }],
-          } as never);
+          });
 
-          yield* h["thread.stash.remove"]({ threadId, stashId: added.id } as never);
+          yield* h["thread.stash.remove"]({ threadId, stashId: added.id });
 
           expect(existsSync(join(outside, "victim.txt"))).toBe(true);
         }),
@@ -161,7 +161,7 @@ describe("thread.stash.*", () => {
           threadId,
           text: "oldest",
           attachments: [oldest],
-        } as never);
+        });
         for (let n = 1; n <= DRAFT_STASH_LIMIT; n++) {
           // The clock is real, so later stashes sort newer by insertion order too.
           yield* h["thread.stash.add"]({
@@ -169,12 +169,10 @@ describe("thread.stash.*", () => {
             threadId,
             text: `newer ${n}`,
             attachments: [],
-          } as never);
+          });
         }
 
-        const texts = (yield* h["thread.stash.list"]({ threadId } as never)).stashes.map(
-          (s) => s.text,
-        );
+        const texts = (yield* h["thread.stash.list"]({ threadId })).stashes.map((s) => s.text);
         expect(texts).toHaveLength(DRAFT_STASH_LIMIT);
         expect(texts).not.toContain("oldest");
         expect(existsSync(oldest.path)).toBe(false);
@@ -193,17 +191,17 @@ describe("thread.stash.*", () => {
           threadId,
           text: "twice",
           attachments: [shot],
-        } as never);
+        });
         const second = yield* h["thread.stash.add"]({
           id: newId(),
           threadId,
           text: "twice",
           attachments: [shot],
-        } as never);
+        });
 
-        yield* h["thread.stash.remove"]({ threadId, stashId: first.id } as never);
+        yield* h["thread.stash.remove"]({ threadId, stashId: first.id });
         expect(existsSync(shot.path)).toBe(true);
-        yield* h["thread.stash.remove"]({ threadId, stashId: second.id } as never);
+        yield* h["thread.stash.remove"]({ threadId, stashId: second.id });
         expect(existsSync(shot.path)).toBe(false);
       }),
     ),
@@ -219,13 +217,13 @@ describe("thread.stash.*", () => {
           threadId,
           text: "the composer kept its chips",
           attachments: [shot],
-        } as never);
+        });
 
         yield* h["thread.stash.remove"]({
           threadId,
           stashId: added.id,
           keep: [shot.path],
-        } as never);
+        });
 
         expect(existsSync(shot.path)).toBe(true);
       }),
@@ -242,25 +240,23 @@ describe("thread.stash.*", () => {
           threadId,
           text: "oldest",
           attachments: [shot],
-        } as never);
+        });
         yield* h["thread.stash.add"]({
           id: newId(),
           threadId,
           text: "again",
           attachments: [shot],
-        } as never);
+        });
         for (let n = 2; n <= DRAFT_STASH_LIMIT; n++) {
           yield* h["thread.stash.add"]({
             id: newId(),
             threadId,
             text: `newer ${n}`,
             attachments: [],
-          } as never);
+          });
         }
 
-        const texts = (yield* h["thread.stash.list"]({ threadId } as never)).stashes.map(
-          (s) => s.text,
-        );
+        const texts = (yield* h["thread.stash.list"]({ threadId })).stashes.map((s) => s.text);
         expect(texts).not.toContain("oldest");
         expect(texts).toContain("again");
         expect(existsSync(shot.path)).toBe(true);
@@ -279,21 +275,21 @@ describe("thread.stash.*", () => {
           threadId,
           text: "sent once",
           attachments: [],
-        } as never);
+        });
         const retried = yield* h["thread.stash.add"]({
           id,
           threadId,
           text: "sent once",
           attachments: [],
-        } as never);
+        });
 
         expect(retried).toEqual(first);
-        expect((yield* h["thread.stash.list"]({ threadId } as never)).stashes).toEqual([first]);
+        expect((yield* h["thread.stash.list"]({ threadId })).stashes).toEqual([first]);
         const taken = yield* Effect.flip(
-          h["thread.stash.add"]({ id, threadId: other, text: "clash", attachments: [] } as never),
+          h["thread.stash.add"]({ id, threadId: other, text: "clash", attachments: [] }),
         );
         expect(taken).toMatchObject({ _tag: "NotFound", entity: "stash" });
-        expect((yield* h["thread.stash.list"]({ threadId: other } as never)).stashes).toEqual([]);
+        expect((yield* h["thread.stash.list"]({ threadId: other })).stashes).toEqual([]);
       }),
     ),
   );
@@ -302,10 +298,10 @@ describe("thread.stash.*", () => {
     withHandlers((h) =>
       Effect.gen(function* () {
         const threadId = "t-missing" as ThreadId;
-        const error = yield* Effect.flip(h["thread.stash.list"]({ threadId } as never));
+        const error = yield* Effect.flip(h["thread.stash.list"]({ threadId }));
         expect(error).toBeInstanceOf(ThreadNotFound);
         const take = yield* Effect.flip(
-          h["thread.stash.take"]({ threadId, stashId: "stash-0001" as StashId } as never),
+          h["thread.stash.take"]({ threadId, stashId: "stash-0001" as StashId }),
         );
         expect(take).toBeInstanceOf(ThreadNotFound);
       }),

@@ -292,16 +292,12 @@ export const validateHelperPlan = (
   }
 
   const keepGoal = previous?.goalBy === "user" || previous?.goalBy === "agent";
-  const goal = keepGoal ? previous!.goal : planText(output.goal);
+  const goal = keepGoal ? previous.goal : planText(output.goal);
   const nextId = output.next == null ? undefined : renamed.get(output.next);
   const next = steps.find((step) => step.id === nextId && step.status !== "done");
   const plan: ThreadPlan = {
     goal,
-    ...(keepGoal
-      ? { goalBy: previous!.goalBy! }
-      : goal === ""
-        ? {}
-        : { goalBy: "helper" as const }),
+    ...(keepGoal ? { goalBy: previous.goalBy } : goal === "" ? {} : { goalBy: "helper" as const }),
     steps,
     ...(next === undefined ? {} : { next: next.id }),
     basis,

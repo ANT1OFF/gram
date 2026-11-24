@@ -53,7 +53,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetDerivedAsks();
-  useThreadsStore.setState({ byId: {} as never });
+  useThreadsStore.setState({ byId: {} });
   useAttentionStore.setState({ loaded: false, acknowledged: {} });
   useEmbedShell.setState(EMPTY_SHELL);
   at.page = undefined;

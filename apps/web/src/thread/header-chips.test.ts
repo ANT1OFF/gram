@@ -51,7 +51,7 @@ describe("trackWrappedChips", () => {
         }
       },
     );
-    const el = row([2, 2]) as HTMLDivElement;
+    const el = row([2, 2]);
     const stop = trackWrappedChips(el);
     expect(observed[0]).toEqual([el, ...el.children]);
 

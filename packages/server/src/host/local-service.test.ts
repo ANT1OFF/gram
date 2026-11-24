@@ -15,7 +15,7 @@ import { createConnection, createServer } from "node:net";
 import { ensureLocalSecret } from "./local-handshake.ts";
 import { connectLocalService } from "./local-service-unit.ts";
 import { serveLocal } from "./local-service.ts";
-import { HOST_CAPABILITIES, HOST_FEATURES, type HostService } from "./protocol.ts";
+import { HOST_CAPABILITIES, HOST_FEATURES } from "./protocol.ts";
 import { reposOn } from "./repos.ts";
 import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
@@ -41,7 +41,7 @@ const host = Effect.gen(function* () {
     terminals: yield* terminalsOnHost,
     sessions: yield* sessionsOnHost(() => Effect.die(new Error("no agents here"))),
     scan: Effect.succeed({ listening: new Map(), children: new Map() }),
-  } as unknown as HostService;
+  };
 });
 
 const folder = Effect.acquireRelease(

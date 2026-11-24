@@ -4,7 +4,6 @@ import {
   RECAP_IDLE_MS,
   type ThreadId,
   type ThreadRecap,
-  type WaitId,
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Duration from "effect/Duration";
@@ -50,7 +49,7 @@ const waitAnswer: { current: (prompt: string) => WaitOutput } = {
 const scheduler: HelperSchedulerShape = {
   schedule: <A, I>(job: HelperJob<A, I>) =>
     Effect.gen(function* () {
-      jobs.push({ job: job as HelperJob<unknown, unknown>, prompt: yield* job.prompt });
+      jobs.push({ job: job, prompt: yield* job.prompt });
       const during = meanwhile.current;
       meanwhile.current = undefined;
       if (during !== undefined) yield* during;
@@ -192,7 +191,7 @@ describe("ThreadAssistLive", () => {
       yield* waits.keep(thread.id, suggestion!.id);
       waitAnswer.current = (prompt) => ({
         add: null,
-        resolve: prompt.includes(suggestion!.id) ? [suggestion!.id as WaitId] : [],
+        resolve: prompt.includes(suggestion!.id) ? [suggestion!.id] : [],
       });
       yield* runtimes.send(thread.id, { text: "sent" });
       yield* waitFor(

@@ -3,7 +3,6 @@ import {
   DEFAULT_CHARTER,
   type DreamId,
   type OrchestratorCharter,
-  type Thread,
   type ThreadId,
   type WorkspaceId,
   type WorkspaceState,
@@ -80,7 +79,7 @@ const fixture = (charter: Partial<OrchestratorCharter>) =>
         lastActivityAt: completedAt,
         completedAt,
         completedReason: "agent",
-      } as Thread);
+      });
     /** An update that began at `at`: the last one the time condition counts from. */
     const began = (at: number) =>
       store.putDream({ ...syntheticDream(`dream-began-${++n}` as DreamId, WS), createdAt: at });

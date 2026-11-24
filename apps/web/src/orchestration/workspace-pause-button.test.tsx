@@ -83,9 +83,7 @@ it('shows nothing in the bar while running: Pause is the "…"\'s', () => {
 it("pauses in one click when nothing is mid-flight", async () => {
   states.setState({ all: [workspace()] });
   threads("idle", "idle");
-  const setOrchestratorPaused = vi.fn<Api["setOrchestratorPaused"]>(
-    async () => workspace(true) as never,
-  );
+  const setOrchestratorPaused = vi.fn<Api["setOrchestratorPaused"]>(async () => workspace(true));
   renderWithApi(<OpenMenu />, { setOrchestratorPaused, listWorkspaces: async () => [] });
   // What stops, and that only a resume wakes it.
   expect(item().textContent).toBe(`Pause workspace${EXPLAIN.pause}`);
@@ -99,9 +97,7 @@ it("pauses in one click when nothing is mid-flight", async () => {
 it("asks first while a worker or the orchestrator is mid-turn, in the menu", async () => {
   states.setState({ all: [workspace()] });
   threads("running", "running");
-  const setOrchestratorPaused = vi.fn<Api["setOrchestratorPaused"]>(
-    async () => workspace(true) as never,
-  );
+  const setOrchestratorPaused = vi.fn<Api["setOrchestratorPaused"]>(async () => workspace(true));
   renderWithApi(<OpenMenu />, { setOrchestratorPaused, listWorkspaces: async () => [] });
   expect(item().textContent).toBe(`Pause workspace…${EXPLAIN.pause}`);
   await act(async () => {
@@ -125,9 +121,7 @@ it("says since when it is paused, on the 24-hour clock, and resumes in one click
   onTestFinished(() => clock.mockRestore());
   states.setState({ all: [workspace(true)] });
   threads("idle", "running");
-  const setOrchestratorPaused = vi.fn<Api["setOrchestratorPaused"]>(
-    async () => workspace() as never,
-  );
+  const setOrchestratorPaused = vi.fn<Api["setOrchestratorPaused"]>(async () => workspace());
   renderWithApi(<TitlebarPause />, { setOrchestratorPaused, listWorkspaces: async () => [] });
   expect(button().hasAttribute("data-paused")).toBe(true);
   expect(button().textContent).toBe("Paused 14:02");

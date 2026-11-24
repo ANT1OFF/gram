@@ -259,9 +259,7 @@ describe("switchOffer", () => {
       ),
     ).toMatch(/background/);
     expect(refusal(summary(), checks({ codexSignIn: "notSignedIn" }))).toMatch(/Sign in to Codex/);
-    expect(
-      refusal(summary({}, { forkedFrom: { threadId: "t-0" as ThreadId } } as Partial<Thread>)),
-    ).toMatch(/fork/);
+    expect(refusal(summary({}, { forkedFrom: { threadId: "t-0" as ThreadId } }))).toMatch(/fork/);
     // A failed last turn moves too: that's limit mode.
     expect(refusal(summary({ status: "error" }))).toBeUndefined();
   });
@@ -299,16 +297,19 @@ describe("the sheet's words", () => {
     expect(switchLimitOf(summary())).toBeUndefined();
     expect(
       switchLimitOf(
-        summary({}, {
-          limitWait: {
-            kind: "limit",
-            account: "claude",
-            resumeAt: 9,
-            resetsAt: 8,
-            since: 1,
-            attempt: 0,
+        summary(
+          {},
+          {
+            limitWait: {
+              kind: "limit",
+              account: "claude",
+              resumeAt: 9,
+              resetsAt: 8,
+              since: 1,
+              attempt: 0,
+            },
           },
-        } as Partial<Thread>),
+        ),
       ),
     ).toEqual({ reason: "usage", until: 8 });
     expect(switchLimitOf(summary({ status: "error" }))).toEqual({ reason: "failed" });

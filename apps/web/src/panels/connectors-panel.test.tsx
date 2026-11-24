@@ -59,8 +59,7 @@ describe("ConnectorsPanel", () => {
     expect(screen.queryByText(claudeHostedElsewhere("Codex"))).toBeNull();
     expect(within(row("notion")).getByRole("button", { name: "Enable" })).toBeTruthy();
     expect(
-      (within(row("notion")).getByRole("button", { name: "Reconnect" }) as HTMLButtonElement)
-        .disabled,
+      within(row("notion")).getByRole<HTMLButtonElement>("button", { name: "Reconnect" }).disabled,
     ).toBe(true);
   });
 
@@ -138,12 +137,12 @@ describe("ConnectorsPanel", () => {
     const form = await screen.findByRole("form", { name: "Add MCP server" });
     // Read afresh, which connects nothing, and Codex's own `atlassian` keeps its name.
     expect(listConfiguredConnectors).toHaveBeenCalledWith({ fresh: true });
-    expect((within(form).getByRole("textbox", { name: "URL" }) as HTMLInputElement).value).toBe(
+    expect(within(form).getByRole<HTMLInputElement>("textbox", { name: "URL" }).value).toBe(
       "https://mcp.atlassian.com/v1/mcp",
     );
-    expect(
-      (within(form).getByRole("textbox", { name: "Server name" }) as HTMLInputElement).value,
-    ).toBe("atlassian-2");
+    expect(within(form).getByRole<HTMLInputElement>("textbox", { name: "Server name" }).value).toBe(
+      "atlassian-2",
+    );
     expect(screen.getByText(/accept only claude.ai's sign-in/)).toBeTruthy();
 
     // Claude's own sign-in was turned down: the fix is to sign in to Claude, not the connector.
@@ -266,14 +265,12 @@ describe("ConnectorsPanel", () => {
 
     const builtIn = within(await waitFor(() => row("gram")));
     expect(builtIn.getByText("built-in")).toBeTruthy();
-    const disable = builtIn.getByRole("button", { name: "Disable" }) as HTMLButtonElement;
+    const disable = builtIn.getByRole<HTMLButtonElement>("button", { name: "Disable" });
     expect(disable.disabled).toBe(true);
     expect(disable.getAttribute("aria-describedby")).toBeTruthy();
 
     const docs = within(row("docs"));
-    expect((docs.getByRole("button", { name: "Reconnect" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect(docs.getByRole<HTMLButtonElement>("button", { name: "Reconnect" }).disabled).toBe(true);
 
     fireEvent.click(docs.getByRole("button", { name: "Disable" }));
     expect((await screen.findByRole("status")).textContent).toContain("docs");

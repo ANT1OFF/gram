@@ -319,7 +319,7 @@ describe("Gram's own check of a thread on a joined machine", () => {
         const found = yield* checks.configuration(site, thread.projectId);
         expect(found).toMatchObject({ config: { command: "invented-check" } });
         expect(found.declaredCiOnly).toBeUndefined();
-        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* (yield* MergeWhenReady).check(thread.id);
         yield* waitReal(
           "the merge",
           Effect.sync(() => merged.length > 0),
@@ -414,7 +414,7 @@ describe("Gram's own check of a thread on a joined machine", () => {
       yield* Effect.gen(function* () {
         const { thread, site } = yield* placed(dir);
         const checks = yield* LocalChecks;
-        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* (yield* MergeWhenReady).check(thread.id);
         yield* waitReal(
           "asked again once the machine is back",
           Effect.sync(() => host.asked.length === 2),
@@ -455,7 +455,7 @@ describe("Gram's own check of a thread on a joined machine", () => {
       yield* Effect.gen(function* () {
         const { thread, site } = yield* placed(dir);
         const checks = yield* LocalChecks;
-        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* (yield* MergeWhenReady).check(thread.id);
         const ended = yield* waitReal(
           "the check given up",
           checks
@@ -491,7 +491,7 @@ describe("Gram's own check of a thread on a joined machine", () => {
       yield* Effect.gen(function* () {
         const { thread, site } = yield* placed(dir);
         const checks = yield* LocalChecks;
-        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* (yield* MergeWhenReady).check(thread.id);
         yield* waitReal(
           "the pass refused",
           checks
@@ -514,7 +514,7 @@ describe("Gram's own check of a thread on a joined machine", () => {
       yield* Effect.gen(function* () {
         const { thread, site } = yield* placed(dir);
         const checks = yield* LocalChecks;
-        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* (yield* MergeWhenReady).check(thread.id);
         yield* waitReal(
           "the refusal recorded",
           checks
@@ -560,11 +560,11 @@ describe("a thread on a provisioned machine", () => {
         expect(found).toMatchObject({ config: undefined, declaredCiOnly: true });
         const gate = yield* MergeWhenReady;
         // local_check refuses rather than loading the machine with the full check.
-        expect(yield* gate.runLocalCheck(thread.id as ThreadId)).toEqual({
+        expect(yield* gate.runLocalCheck(thread.id)).toEqual({
           refused: found.reason,
         });
         // GitHub's checks are green, but the declared CI is still running: no merge yet.
-        yield* gate.check(thread.id as ThreadId);
+        yield* gate.check(thread.id);
         yield* waitReal(
           "the launch's fresh read",
           Effect.sync(() => launches.length > 0),
@@ -573,7 +573,7 @@ describe("a thread on a provisioned machine", () => {
         expect(merged).toEqual([]);
         expect(launches.every((read) => read.declaredCi === true)).toBe(true);
         declared = "passing";
-        yield* gate.check(thread.id as ThreadId);
+        yield* gate.check(thread.id);
         yield* waitReal(
           "the merge",
           Effect.sync(() => merged.length > 0),
@@ -599,8 +599,8 @@ describe("a thread on a provisioned machine", () => {
         );
         yield* Effect.gen(function* () {
           const { thread } = yield* placed(dir);
-          yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
-          yield* waitReal("the refusal", refusedOnHead(thread.id as ThreadId));
+          yield* (yield* MergeWhenReady).check(thread.id);
+          yield* waitReal("the refusal", refusedOnHead(thread.id));
           expect(merged).toEqual([]);
           expect(host.asked).toEqual([]);
         }).pipe(Effect.scoped, Effect.provide(layer));
@@ -617,7 +617,7 @@ describe("a thread on a provisioned machine", () => {
       );
       yield* Effect.gen(function* () {
         const { thread } = yield* placed(dir);
-        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* (yield* MergeWhenReady).check(thread.id);
         yield* waitReal(
           "the merge",
           Effect.sync(() => merged.length > 0),
@@ -642,7 +642,7 @@ describe("a thread on a provisioned machine", () => {
       );
       yield* Effect.gen(function* () {
         const { thread } = yield* placed(dir);
-        yield* (yield* MergeWhenReady).check(thread.id as ThreadId);
+        yield* (yield* MergeWhenReady).check(thread.id);
         yield* waitReal(
           "the launch's fresh read",
           Effect.sync(() => launches.length > 0),

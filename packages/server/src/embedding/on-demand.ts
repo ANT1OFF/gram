@@ -194,7 +194,7 @@ export const parseStart = (
   const flags = {
     ...(value["keep"] === true ? { keep: true as const } : {}),
     ...(value["restart"] === true ? { restart: true as const } : {}),
-    ...(workspace === undefined ? {} : { workspace: workspace as string }),
+    ...(workspace === undefined ? {} : { workspace: workspace }),
   };
   const listed = value["repositories"];
   if (listed === undefined) return { repositories: [], choices, ...flags };
@@ -325,7 +325,7 @@ export const choicesFor = (hosts: OnDemandHosts, owner: string, now: number = Da
           ? Effect.promise(() => response.body?.cancel() ?? Promise.resolve()).pipe(
               Effect.as(undefined),
             )
-          : Effect.promise(() => response.json().catch(() => undefined) as Promise<unknown>),
+          : Effect.promise((): Promise<unknown> => response.json().catch(() => undefined)),
       ),
       Effect.result,
     );
@@ -443,7 +443,7 @@ export const onDemandRequest = (
           path: "/hosts/start",
           json: json_,
         }).pipe(
-          Effect.flatMap((response) => Effect.promise(() => response.json() as Promise<unknown>)),
+          Effect.flatMap((response) => Effect.promise(() => response.json())),
           Effect.result,
         );
         if (answered._tag === "Failure")

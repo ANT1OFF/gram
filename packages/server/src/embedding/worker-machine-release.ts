@@ -219,7 +219,7 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
     timeoutMs: 15_000,
   }).pipe(
     Effect.flatMap((response) =>
-      Effect.promise(() => response.json().catch(() => undefined) as Promise<unknown>),
+      Effect.promise((): Promise<unknown> => response.json().catch(() => undefined)),
     ),
     Effect.flatMap((body) =>
       releaseOccupied(body) ? Effect.fail(new ReleaseOccupied()) : Effect.void,

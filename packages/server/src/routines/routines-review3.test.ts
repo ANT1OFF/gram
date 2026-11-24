@@ -232,7 +232,7 @@ describe.skipIf(!hasGit)("routines and worker memory: third review", () => {
             const run = yield* runNow(routine.id).pipe(Effect.forkScoped);
             for (let i = 0; i < 50; i++) yield* Effect.yieldNow;
             // Removed while its run is under way: the charter's write prunes its state.
-            yield* editRoutines(workspaceId as WorkspaceId, () => []);
+            yield* editRoutines(workspaceId, () => []);
             yield* Fiber.join(racing);
             yield* Fiber.await(run);
             yield* settle;

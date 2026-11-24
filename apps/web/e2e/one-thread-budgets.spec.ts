@@ -39,7 +39,7 @@ const settle = async (page: Page) => {
 const visibleWords = (page: Page, selector: string, except?: string) =>
   page.evaluate(
     ([root, skip]) => {
-      const box = document.querySelector(root!);
+      const box = document.querySelector(root);
       if (box === null) return -1;
       const words: string[] = [];
       const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);

@@ -1168,7 +1168,7 @@ describe("digestDiff on failing checks", () => {
     ["stopped on an error", { state: "error", status: "error" }],
     ["held by the user", { userIntervened: true }],
   ] as const)("leaves a live worker's failing checks to it when %s", (_, over) => {
-    const diff = digest([owner()], [owner(over as Partial<WorkerLedgerEntry>)]);
+    const diff = digest([owner()], [owner(over)]);
     expect(diff.notes.filter((note) => note.includes("failing checks"))).toEqual([]);
   });
 

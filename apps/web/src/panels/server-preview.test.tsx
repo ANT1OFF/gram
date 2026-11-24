@@ -118,10 +118,10 @@ describe("ServerPreview", () => {
     mount(server);
     await say(server, { type: "page", page: PAGE }, FRAME);
     expect(screen.getByTestId("server-preview").dataset["state"]).toBe("agent");
-    const frame = screen.getByTestId("server-preview-frame") as HTMLImageElement;
+    const frame = screen.getByTestId<HTMLImageElement>("server-preview-frame");
     expect(frame.src).toBe("data:image/jpeg;base64,/9j/AA==");
     // At rest the address reads as a browser's bar does; focused, it is the whole address.
-    const address = screen.getByTestId("preview-address") as HTMLInputElement;
+    const address = screen.getByTestId<HTMLInputElement>("preview-address");
     expect(PAGE.url).toMatch(/^http:/);
     expect(address.value).toBe(PAGE.url.replace("http://", ""));
     fireEvent.focus(address);

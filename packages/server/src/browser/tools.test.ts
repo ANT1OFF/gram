@@ -58,7 +58,7 @@ const harness = (options: {
   const tools = browserTools({
     hub: {
       publish: (event: unknown) => Effect.sync(() => void world.published.push(event)),
-    } as never,
+    },
     pane: {
       send: (request) =>
         Effect.sync(() => {
@@ -70,7 +70,7 @@ const harness = (options: {
       getThread: () => Effect.succeed({ id: THREAD, ...options.thread } as Thread),
       getSettings: Effect.succeed({} as Settings),
       getWorkspace: () => Effect.die("no workspace"),
-    } as never,
+    },
     runtimes: {
       requestApproval: (_threadId, request) =>
         Effect.sync(() => {
@@ -169,10 +169,9 @@ describe("browser tools", () => {
     for (const tool of tools) {
       const { schema } = Schema.toJsonSchemaDocument(tool.input);
       expect(schema["type"], tool.descriptor.name).toBe("object");
-      expect(
-        Object.keys((schema["properties"] ?? {}) as object).length,
-        tool.descriptor.name,
-      ).toBeGreaterThan(0);
+      expect(Object.keys(schema["properties"] ?? {}).length, tool.descriptor.name).toBeGreaterThan(
+        0,
+      );
     }
   });
 
@@ -448,7 +447,7 @@ describe("browser tools", () => {
 
       const worker = harness({
         replies: [],
-        thread: { spawnedBy: { threadId: "t-orch" as ThreadId, feature: "x" } } as Partial<Thread>,
+        thread: { spawnedBy: { threadId: "t-orch" as ThreadId, feature: "x" } },
       });
       yield* worker.call("browser_click", { coordinate: [3, 4] });
       expect(worker.world.sent[0]?.limits).toEqual({ actOnLoopbackOnly: true });
@@ -728,7 +727,7 @@ describe("labels, local-only debugging and evidence files", () => {
           { ok: true, page: PAGE, image: { data: PNG_HEAD, mimeType: "image/png" } },
           { ok: true, page: PAGE, image: { data: PNG_HEAD, mimeType: "image/png" } },
         ],
-        thread: { checkout: { kind: "worktree", path: root } } as Partial<Thread>,
+        thread: { checkout: { kind: "worktree", path: root } },
       });
       const saved = (yield* call("browser_save_screenshot", {
         path: "docs/verification/x/after.png",
@@ -769,7 +768,7 @@ describe("labels, local-only debugging and evidence files", () => {
             },
             { ok: true, page: PAGE },
           ],
-          thread: { checkout: { kind: "worktree", path: root } } as Partial<Thread>,
+          thread: { checkout: { kind: "worktree", path: root } },
         });
         expect(yield* call("browser_record", { action: "start", scale: 0.25 })).toContain(
           "Recording.",
@@ -829,7 +828,7 @@ describe("labels, local-only debugging and evidence files", () => {
       writeFileSync(join(root, "blocker"), "a file, not a folder");
       const { call } = harness({
         replies: [{ ok: true, page: PAGE, image: { data: PNG_HEAD, mimeType: "image/png" } }],
-        thread: { checkout: { kind: "worktree", path: root } } as Partial<Thread>,
+        thread: { checkout: { kind: "worktree", path: root } },
       });
       const failed = yield* Effect.flip(call("browser_save_screenshot", { path: "blocker/x.png" }));
       expect(failed.message).toBe("Couldn't write blocker/x.png.");

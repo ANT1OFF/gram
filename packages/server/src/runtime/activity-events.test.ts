@@ -13,12 +13,11 @@ import { ThreadRuntimes } from "./thread-runtimes.ts";
 
 const messageId = "m1" as MessageId;
 
-const tool = (toolCallId: string, toolName: string, input: unknown): AgentEvent =>
-  ({
-    type: "chunk",
-    messageId,
-    chunk: { type: "tool-input-available", toolCallId, toolName, input },
-  }) as AgentEvent;
+const tool = (toolCallId: string, toolName: string, input: unknown): AgentEvent => ({
+  type: "chunk",
+  messageId,
+  chunk: { type: "tool-input-available", toolCallId, toolName, input },
+});
 
 const running = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
@@ -268,7 +267,7 @@ describe("ThreadRuntimes activity line", () => {
             messageId: subagent,
             messageMetadata: { parentToolUseId: "bg1" },
           },
-        } as AgentEvent,
+        },
         { type: "chunk", messageId: subagent, chunk: { type: "reasoning-start", id: "r" } },
         { type: "chunk", messageId, chunk: { type: "finish" } },
         { type: "turnEnd", reason: "completed" },

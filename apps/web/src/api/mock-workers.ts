@@ -115,7 +115,7 @@ export async function simulateWorkersList(
       role,
       metadata: { createdAt: at },
       parts: [{ type: "text", text, ...(role === "assistant" ? { state: "done" as const } : {}) }],
-    } as GramUIMessage);
+    });
   const brief = (threadId: ThreadId, text: string, at: number) => {
     const id = host.ids();
     const orchestrator = host.threads().find((thread) => thread.id === orchestratorThreadId);
@@ -136,7 +136,7 @@ export async function simulateWorkersList(
           },
         },
       ],
-    } as GramUIMessage);
+    });
   };
   const tool = (threadId: ThreadId, name: string, input: unknown, at: number, running = false) =>
     host.putMessage(threadId, {

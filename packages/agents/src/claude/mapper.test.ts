@@ -116,7 +116,7 @@ const assemble = async (events: ReadonlyArray<AgentEvent>): Promise<Map<string, 
   for (const e of events) {
     if (e.type !== "chunk") continue;
     const list = chunks.get(e.messageId) ?? [];
-    list.push(e.chunk as UIMessageChunk);
+    list.push(e.chunk);
     chunks.set(e.messageId, list);
   }
   const messages = new Map<string, GramUIMessage>();

@@ -106,8 +106,8 @@ function controlledFeed() {
     signal: AbortSignal,
   ): AsyncIterable<ApiThreadFeedEvent> {
     yield { type: "subscribed" };
-    yield { type: "messages", messages: HISTORY } as ApiThreadFeedEvent;
-    yield { type: "caughtUp", rev: 1 } as ApiThreadFeedEvent;
+    yield { type: "messages", messages: HISTORY };
+    yield { type: "caughtUp", rev: 1 };
     while (!signal.aborted) {
       const next = queue.shift();
       if (next !== undefined) {

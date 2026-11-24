@@ -162,7 +162,7 @@ test.describe("the ask window's page", () => {
       page.evaluate(
         ([showId, shown]) =>
           (window as unknown as { showAsk: (id: string, v: unknown) => void }).showAsk(
-            showId as string,
+            showId,
             shown,
           ),
         [id, view(command)] as const,

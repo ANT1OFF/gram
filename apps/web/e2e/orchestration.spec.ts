@@ -161,7 +161,7 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
   await expect(feature.getByTestId("feature-card-now")).toHaveText("reported done");
   // The worker's own message is the worker's, named as one, never the user's.
   await page.evaluate(({ orchestratorThreadId, workerThreadId }) => {
-    window.gramMock!.simulateMessage(orchestratorThreadId as never, {
+    window.gramMock!.simulateMessage(orchestratorThreadId, {
       id: "m-from-worker",
       role: "user",
       parts: [
@@ -170,7 +170,7 @@ test("an orchestrator and its worker are marked, and their transcripts show the 
           type: "data-thread-origin",
           id: "m-from-worker",
           data: {
-            threadId: workerThreadId as never,
+            threadId: workerThreadId,
             title: "Return rate-limit headers",
             depth: 2,
             feature: "rate-limit-headers",

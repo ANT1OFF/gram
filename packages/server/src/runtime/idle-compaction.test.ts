@@ -170,8 +170,8 @@ describe("idle compaction in the runtime", () => {
     Effect.gen(function* () {
       const { end, parts } = yield* idleCompaction((session) =>
         session.emit(
-          { type: "turnEnd", reason: "error", error: "synthetic failure" } as AgentEvent,
-          { type: "status", status: "idle" } as AgentEvent,
+          { type: "turnEnd", reason: "error", error: "synthetic failure" },
+          { type: "status", status: "idle" },
         ),
       );
       expect(end.idleCompaction).toBe("failed");

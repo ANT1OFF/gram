@@ -3993,7 +3993,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   VALUES (${workspaceId}, ${outbox})
                   ON CONFLICT (workspace_id) DO UPDATE SET data = excluded.data`;
               }
-              return renamed as ReadonlyArray<Thread>;
+              return renamed;
             }),
           ),
         putFeatureCardSummary: (workspaceId, feature, summary) =>

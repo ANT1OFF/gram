@@ -99,8 +99,10 @@ const headless = (
     runtimes: {
       create: (input) => {
         created.push(input);
-        return (options.create?.(input) ??
-          Effect.succeed({ id: input.id, checkout: input.checkout } as Thread)) as never;
+        return (
+          options.create?.(input) ??
+          Effect.succeed({ id: input.id, checkout: input.checkout } as Thread)
+        );
       },
       close: (threadId) => Effect.sync(() => void calls.push({ call: "close", threadId })) as never,
     },

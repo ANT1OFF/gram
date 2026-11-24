@@ -401,13 +401,13 @@ describe("a machine started for one person, on every route to it", () => {
         ).pipe(Effect.flip);
         expect(signIn.message).toBe(NOT_YOUR_MACHINE);
         for (const open of [
-          placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 } as never),
+          placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 }),
           placed.terminals.open({ threadId: "t-remote", cols: 80, rows: 24 } as never),
         ])
           expect((yield* as("ada")(open).pipe(Effect.flip)).message).toBe(NOT_YOUR_MACHINE);
         // A terminal Grace opened is hers: Ada's keystrokes never reach it.
         const opened = yield* as("grace")(
-          placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 } as never),
+          placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 }),
         );
         calls.length = 0;
         const typed = yield* as("ada")(
@@ -441,7 +441,7 @@ describe("a machine started for one person, on every route to it", () => {
         openSignInTerminal(placed.terminals, get, MACHINE, { cols: 80, rows: 24 }),
       );
       const opened = yield* as("grace")(
-        placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 } as never),
+        placed.terminals.open({ hostId: MACHINE, cols: 80, rows: 24 }),
       );
       yield* as("grace")(placed.terminals.input(opened.terminalId, "ls\r"));
       // A session the server reopens on its own carries no caller, and holds the capability.

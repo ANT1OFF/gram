@@ -862,7 +862,7 @@ test("late image preview and reasoning start/end below the reading edge preserve
       path === "/mock/scroll.png"
         ? { path, mediaType: "image/png", size: 1024, tooLarge: false, base64 }
         : read(threadId, path);
-    mock.simulateChunks(targetId as never, "scroll-live" as never, [
+    mock.simulateChunks(targetId, "scroll-live" as never, [
       { type: "file", mediaType: "image/png", url: "file:///mock/scroll.png" },
       { type: "reasoning-start", id: "reason" },
       { type: "reasoning-delta", id: "reason", delta: "Invented reasoning." },

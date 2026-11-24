@@ -644,8 +644,7 @@ export const hostSettingsPage = (id: string): ShellSettingsPage | undefined =>
  */
 export function advancedRedirect(pathname: string): SettingsPath {
   const id = pathname.replace(/^\/settings\/advanced\/?/, "").split("/")[0] ?? "";
-  return (settingsPageById(id === "" ? null : id, ALL_SETTINGS_PAGES)?.path ??
-    "/settings/general") as SettingsPath;
+  return settingsPageById(id === "" ? null : id, ALL_SETTINGS_PAGES)?.path ?? "/settings/general";
 }
 
 const LAST_PAGE_KEY = "gram.settings.page";

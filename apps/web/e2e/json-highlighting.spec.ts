@@ -161,7 +161,7 @@ for (const [provider, mode, narrow] of [
         const selected = selection.toString();
         const plain = el.closest("pre")!.cloneNode(false) as HTMLElement;
         plain.id = "synthetic-reference";
-        const originalText = document.createTextNode(el.textContent!);
+        const originalText = document.createTextNode(el.textContent);
         plain.append(originalText);
         // Match the old stdout text node plus adjacent stderr, including its terminal-newline behavior.
         for (let sibling = el.nextSibling; sibling; sibling = sibling.nextSibling)

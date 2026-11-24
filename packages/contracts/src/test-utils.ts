@@ -9,8 +9,8 @@ export const expectRoundTrip = <A, I>(schema: Schema.Codec<A, I>, value: A): voi
 };
 
 export const readFixture = (name: string): Array<Record<string, unknown>> =>
-  // oxlint-disable-next-line typescript/consistent-type-imports -- a type of the module read at run time, so contracts keeps no static Node import
-  (process.getBuiltinModule("node:fs") as typeof import("node:fs"))
+  process
+    .getBuiltinModule("node:fs")
     .readFileSync(new URL(`../../agents/fixtures/claude/${name}`, import.meta.url), "utf8")
     .split("\n")
     .filter((line) => line.trim() !== "")

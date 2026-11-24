@@ -100,7 +100,7 @@ function SettingsLayout() {
       isSettingsPath(pathname) &&
       pathname !== "/settings"
     )
-      void navigate({ to: first.path as "/settings/general", replace: true });
+      void navigate({ to: first.path, replace: true });
   }, [current, first, pathname, navigate]);
   const resultsRef = useRef<HTMLDivElement>(null);
   const openFirstMatch = () => {

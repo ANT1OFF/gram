@@ -251,7 +251,7 @@ describe.skipIf(!hasGit || !hasOpenssl || process.platform === "win32")(
               Layer.provide(
                 Socket.layerWebSocket(`ws://127.0.0.1:${port}/ws`, {
                   headers: { cookie, [ORIGIN_KEY_HEADER]: key },
-                } as never),
+                }),
               ),
               Layer.provide(NodeWS.layerWebSocketConstructor),
               Layer.provide(RpcSerialization.layerJson),

@@ -78,7 +78,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetDerivedAsks();
-  useThreadsStore.setState({ byId: {} as never });
+  useThreadsStore.setState({ byId: {} });
   useAttentionStore.setState({ loaded: false, acknowledged: {} });
 });
 

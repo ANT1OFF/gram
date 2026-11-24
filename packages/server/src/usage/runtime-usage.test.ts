@@ -40,7 +40,7 @@ it.effect(
             messageId: id as MessageId,
             chunk: {
               type: "start",
-              messageId: id as MessageId,
+              messageId: id,
               messageMetadata: { agent: "claude", model },
             },
           },

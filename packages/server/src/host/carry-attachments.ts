@@ -19,7 +19,7 @@ export type AttachmentsOnMachine = () => Effect.Effect<HostAttachments, string>;
 
 const failure = (error: unknown) =>
   typeof error === "object" && error !== null && "message" in error
-    ? String((error as { message: unknown }).message)
+    ? String(error.message)
     : String(error);
 
 const readHere = (

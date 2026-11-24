@@ -1032,7 +1032,7 @@ describe("QuestionCard", () => {
     );
     expect(screen.queryByText("Which locales?")).toBeNull();
     expect(screen.queryByRole("button", { name: "Send answers" })).toBeNull();
-    expect((screen.getByTestId("question-previous") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>("question-previous").disabled).toBe(true);
 
     fireEvent.click(screen.getByLabelText("date-fns"));
     fireEvent.click(screen.getByLabelText("dayjs"));
@@ -1042,7 +1042,7 @@ describe("QuestionCard", () => {
     expect((send as HTMLButtonElement).disabled).toBe(true);
 
     fireEvent.click(screen.getByTestId("question-previous"));
-    expect((screen.getByLabelText("dayjs") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>("dayjs").checked).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Locales" }));
     fireEvent.click(screen.getByLabelText("en-GB"));
     fireEvent.click(screen.getByLabelText("nb-NO"));
@@ -1072,8 +1072,8 @@ describe("QuestionCard", () => {
   it("sends the Other text instead of the picked option on a single-select question", async () => {
     const respond = renderOne(0);
     const other = screen.getByLabelText("Other answer: Which library?");
-    const otherRadio = screen.getByRole("radio", { name: "Other" }) as HTMLInputElement;
-    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    const otherRadio = screen.getByRole<HTMLInputElement>("radio", { name: "Other" });
+    const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send answer" });
 
     // Focus alone picks Other, and an Other with nothing typed isn't an answer.
     fireEvent.focus(other);
@@ -1084,7 +1084,7 @@ describe("QuestionCard", () => {
     expect(otherRadio.checked).toBe(false);
     fireEvent.change(other, { target: { value: "luxon" } });
     expect(otherRadio.checked).toBe(true);
-    expect((screen.getByLabelText("date-fns") as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByLabelText<HTMLInputElement>("date-fns").checked).toBe(false);
     fireEvent.click(send);
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r2", {
@@ -1096,10 +1096,10 @@ describe("QuestionCard", () => {
 
   it("keeps the Other text but stops sending it once an option is picked again", async () => {
     const respond = renderOne(0);
-    const other = screen.getByLabelText("Other answer: Which library?") as HTMLInputElement;
+    const other = screen.getByLabelText<HTMLInputElement>("Other answer: Which library?");
     fireEvent.change(other, { target: { value: "luxon" } });
     fireEvent.click(screen.getByLabelText("dayjs"));
-    expect((screen.getByRole("radio", { name: "Other" }) as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByRole<HTMLInputElement>("radio", { name: "Other" }).checked).toBe(false);
     expect(other.value).toBe("luxon");
     fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
     await waitFor(() =>
@@ -1113,16 +1113,16 @@ describe("QuestionCard", () => {
   it("picks with a number key and sends with ⌘⏎, the answer rule of every ask", async () => {
     const respond = renderOne(0);
     const card = screen.getByTestId("question-card");
-    const send = screen.getByRole("button", { name: "Send answer" }) as HTMLButtonElement;
+    const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send answer" });
     // Nothing picked, nothing sent.
     fireEvent.keyDown(card, { key: "Enter", metaKey: true });
     expect(send.disabled).toBe(true);
     expect(respond).not.toHaveBeenCalled();
     fireEvent.keyDown(card, { key: "2" });
-    expect((screen.getByLabelText("dayjs") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>("dayjs").checked).toBe(true);
     // A number typed into Other is the text's, not a pick.
     fireEvent.keyDown(screen.getByLabelText("Other answer: Which library?"), { key: "1" });
-    expect((screen.getByLabelText("date-fns") as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByLabelText<HTMLInputElement>("date-fns").checked).toBe(false);
     fireEvent.keyDown(card, { key: "Enter", ctrlKey: true });
     await waitFor(() =>
       expect(respond).toHaveBeenCalledWith(T, "r2", {
@@ -1134,7 +1134,7 @@ describe("QuestionCard", () => {
 
   it("ticks Other on a multi-select question when typed into, and sends it beside the options", async () => {
     const respond = renderOne(1);
-    const otherBox = screen.getByRole("checkbox", { name: "Other" }) as HTMLInputElement;
+    const otherBox = screen.getByRole<HTMLInputElement>("checkbox", { name: "Other" });
     const other = screen.getByLabelText("Other answer: Which locales?");
     fireEvent.click(screen.getByLabelText("en-GB"));
     fireEvent.change(other, { target: { value: "de-DE" } });
@@ -1159,7 +1159,7 @@ describe("QuestionCard", () => {
     expect(document.activeElement).toBe(other);
     fireEvent.keyDown(other, { key: "ArrowUp" });
     expect(document.activeElement).toBe(screen.getByLabelText("dayjs"));
-    expect((screen.getByLabelText("dayjs") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByLabelText<HTMLInputElement>("dayjs").checked).toBe(true);
   });
 });
 
@@ -1224,7 +1224,7 @@ const mcpCard = (
     id: "r-mcp" as RequestId,
     toolName: "mcp__gram__mcp_server_propose",
     displayName: "Add MCP server",
-    input: card as unknown as Record<string, unknown>,
+    input: card,
     description: mcpServerProposalSummary(card),
     suggestions: [],
     scopes: ["once"],

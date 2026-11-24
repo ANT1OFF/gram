@@ -1,11 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { AgentHost } from "@gram/agents";
-import {
-  featurePreflight,
-  type LaunchChecks,
-  type ProfileId,
-  type ThreadId,
-} from "@gram/contracts";
+import { featurePreflight, type LaunchChecks, type ProfileId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
@@ -272,7 +267,7 @@ describe("selected harness read-only service", () => {
         expect(result.support.compaction?.state).toBe("supported");
         const other = yield* handlers["agents.support"]({
           model: { agent: "claude", model: "other" },
-          threadId: thread.id as ThreadId,
+          threadId: thread.id,
         });
         expect(other.support.compaction?.state).toBe("unknown");
       }).pipe(Effect.provide(RuntimeTestLayer)),

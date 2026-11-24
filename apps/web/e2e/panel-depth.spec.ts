@@ -51,21 +51,18 @@ test("a commit that empties the tree moves the Diff panel to the branch", async 
   const publish = (changedFiles: number, changesToken: string) =>
     page.evaluate(
       (git) =>
-        window.gramMock!.world.publishGit(
-          "t-flaky" as never,
-          {
-            repo: true,
-            branch: "fix/flaky-retry",
-            worktree: true,
-            head: "a1b2c3d",
-            changesToken: git.changesToken,
-            changedFiles: git.changedFiles,
-            base: "origin/main",
-            behindBase: 0,
-            aheadBase: 3,
-            conflicts: false,
-          } as never,
-        ),
+        window.gramMock!.world.publishGit("t-flaky" as never, {
+          repo: true,
+          branch: "fix/flaky-retry",
+          worktree: true,
+          head: "a1b2c3d",
+          changesToken: git.changesToken,
+          changedFiles: git.changedFiles,
+          base: "origin/main",
+          behindBase: 0,
+          aheadBase: 3,
+          conflicts: false,
+        }),
       { changedFiles, changesToken },
     );
   await publish(0, "committed");
