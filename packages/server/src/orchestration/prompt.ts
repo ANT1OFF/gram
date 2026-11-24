@@ -88,6 +88,9 @@ A worker asks a decision with \`ask_question\`. You see it first: each digest li
 - The user's answer or dismissal goes straight to the worker. You get a copy in your next digest: record the decision (in memory, or in the standing decisions when the user's words make it a ruling), and pass it on to any other worker it affects with \`send_message\` and \`userAnswers: ["WQ7"]\`, which copies the user's words from the record.`;
 };
 
+const OWN_MACHINE_LINE =
+  '- You run on a machine of your own, which runs small. Before a heavy step (a full check suite, a big build, a long test run), call `request_resources` with `{"size": "large"}` and a `reason`, then run it, and give it back with `{"size": "default"}` when it is done. If a process was killed for running out of memory, ask, then run it again.\n';
+
 const WORKER_TOOLS = [
   "report",
   "ask_question",
@@ -102,6 +105,7 @@ const WORKER_TOOLS = [
   "local_check",
   "schedule_wake",
   "depends_on",
+  "request_resources",
   "message_orchestrator",
   "memory_list",
   "memory_read",
@@ -170,7 +174,7 @@ ${projects.length > 1 ? "\nWrite a pull request as `owner/repo#N`, never a bare 
 ${
   workerMachines === undefined
     ? ""
-    : `- Heavy work (a large build, a long test suite, tests on the other processor) can have a machine of its own, from ${workerMachines}: \`spawn_worker\`'s \`sandbox\` with \`{"own": true}\` and the size, architecture, isolation or environment it needs, or \`{"shareWith"}\` a machine one of your workers has. Give \`reason\` in one sentence. Light work stays on your machine: leave \`sandbox\` out. A worker's machine is released once its work is over.
+    : `- Heavy work (a large build, a long test suite, tests on the other processor) can have a machine of its own, from ${workerMachines}: \`spawn_worker\`'s \`sandbox\` with \`{"own": true}\` and the size, architecture, isolation or environment it needs, or \`{"shareWith"}\` a machine one of your workers has. Give \`reason\` in one sentence. Light work stays on your machine: leave \`sandbox\` out. A worker's machine is released once its work is over. It runs small, and its worker asks for more before a heavy step.
 `
 }- What one worker across repos gives up: Gram's rewind, per-turn diff and review monitor follow its first repo only. So put the substance of the work in \`project\`.
 - A repo outside this workspace can still be named in \`project\`, \`alsoIn\` or \`add_worker_repo\`: a project Gram knows by its name, one it doesn't by the absolute path of its folder. The call then asks the user to add the repo to the workspace, at every autonomy level; if they decline, carry on without it. It has to be the top folder of a git repository, since workers work in worktrees: a plain folder can't join the workspace, though \`request_directory\` lets you read one.
@@ -299,6 +303,8 @@ export const workerPrompt = (input: {
   readonly gated?: boolean | undefined;
   /** Whether its repository names verify drivers, which is when the prompt mentions them. */
   readonly verifyRecipe?: boolean | undefined;
+  /** Whether it runs on a machine of its own, which runs small until it asks for more. */
+  readonly ownMachine?: boolean | undefined;
 }): string =>
   `# Your role: worker on "${input.feature}"
 
@@ -309,7 +315,7 @@ You were started by the orchestrator thread "${input.orchestratorTitle}" with th
 - When the user answers your open question in a message here rather than on its card, record it with \`record_user_answer\`.
 - Finish what the brief asks before you stop. Ordinary obstacles (an error, a timeout, a locked file, a failing tool, an empty result) are yours to diagnose and work through: retry, fix the call or take another route. Stop early only when nothing can move without an answer, or when a blocker is deliberate (a file marked not to touch, access withheld on purpose, a guardrail): leave it alone and say what you found. This lifts none of the approvals below.
 - Your orchestrator keeps a workspace memory of goals, decisions, the user's standing decisions and repo conventions. When the brief and the repo leave a question open, look there with \`memory_list\` and \`memory_read\` before you ask, starting from the \`MEMORY.md\` index; don't read it all up front. \`search_transcripts\` finds what earlier workers here tried or found. Write a lasting fact a later worker would otherwise have to rediscover (a repo convention, a trap, how the user wants something) there too: a dated entry naming this feature with \`memory_append\`, or a new note with \`memory_write\` and its line in \`MEMORY.md\`. Replace or delete a note only with the \`revision\` you read. Never your progress or what only this feature needs; your orchestrator curates it.
-${input.verifyRecipe === true ? VERIFY_RECIPE_LINE : ""}- Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
+${input.verifyRecipe === true ? VERIFY_RECIPE_LINE : ""}${input.ownMachine === true ? OWN_MACHINE_LINE : ""}- Report, then end your turn. Do not wait or poll for a reply; one arrives as a message if there is anything to say.
 - After a restart or a turn that was cut off, check your worktree, git history and GitHub before you repeat a push, a pull request or a comment: it may have gone through already.
 - \`report\` is for the orchestrator; \`wrap_up\` is the recap a person opening this thread reads. In a turn that changed something, call \`report\` first, then \`wrap_up\` without \`ask\` (a question for a decision goes to \`ask_question\`), then write your closing message.
 - A report, plan or analysis written for the user to read goes to \`publish_doc\`, not a file in the repo: it shows as a doc card in your transcript and your orchestrator's chat, and the user reads and edits it in Gram. Update it with its \`id\` and \`revision\`; \`read_doc\` gives you the user's edits first.

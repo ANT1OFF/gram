@@ -10,15 +10,16 @@ import * as Schedule from "effect/Schedule";
 import * as Duration from "effect/Duration";
 import { ServerConfig } from "../config.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
-import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
+import { RemoteHosts } from "../host/remote-hosts.ts";
 import { noAppToolsTunnel } from "../host/app-tools-tunnel.ts";
-import { CHOICES_TTL_MS, type OnDemandChoices, parseChoices } from "./on-demand.ts";
+import { CHOICES_TTL_MS, parseChoices } from "./on-demand.ts";
 import {
+  askResize,
   askWorkerMachine,
   choicesOfAsk,
-  type OfferedModel,
   parseOfferedModels,
   type ProvidedMachine,
+  resizeBody,
   type WorkerMachineSource,
   type WorkerMachineStart,
   workerMachineIdentity,
@@ -63,7 +64,6 @@ import {
   OWED_MOST,
   ownsOwing,
   type NameLocks,
-  type OwedStops,
   RECLAIMED_AFTER_MISSES,
   settleOwedStops,
   stopHoldUntil,
@@ -88,6 +88,8 @@ export * from "./signed-in-calls.ts";
 export * from "./worker-machine-stops.ts";
 export * from "./signed-in-room.ts";
 export * from "./signed-in-dial.ts";
+export * from "./signed-in-deps.ts";
+import type { SignedInDeps, OfferedByServer } from "./signed-in-deps.ts";
 
 const STOP_ATTEMPTS = 3;
 const STOP_RETRY_MS = 2_000;
@@ -99,58 +101,6 @@ export const ARRIVE_TIMEOUT_MS = 5 * 60_000;
 const ARRIVE_EVERY_MS = 2_000;
 
 const failedWords = (name: string, why: string) => `The machine ${name} didn't join: ${why}`;
-
-export interface SignedInDeps {
-  readonly port: WorkerMachinePortShape;
-  readonly hosts: Pick<RemoteHostsShape, "remove" | "providerSaid"> & {
-    readonly list: () => ReadonlyArray<ProvidedMachine>;
-    /** Its host's hello once online, to refuse one that can't carry app tools; absent in fakes. */
-    readonly connection?: RemoteHostsShape["connection"];
-    readonly machines: Pick<RemoteHostsShape["machines"], "provision"> &
-      Partial<Pick<RemoteHostsShape["machines"], "get" | "setAside">>;
-  };
-  readonly now?: () => number;
-  readonly timeoutMs?: number;
-  readonly everyMs?: number;
-  readonly stopRetryMs?: number;
-  /** How long a name is kept after a stop no one answered (`UNANSWERED_STOP_HOLD_MS`). */
-  readonly unansweredHoldMs?: number;
-  /** What each server offered, kept across sources a short while; none kept when left out. */
-  readonly offered?: OfferedByServer;
-  /** Stops a server never confirmed, for machines not registered here, to ask again later. */
-  readonly owed?: OwedStops;
-  /** The names a start is on its way for, which no stop owed for an earlier one may end. */
-  readonly starting?: Set<string>;
-  /** One lock per name, shared with the settling of stops owed (`withName`). */
-  readonly locks?: NameLocks;
-  /** How long a start the server is unavailable for waits before it is asked again, doubled. */
-  readonly startRetryMs?: number;
-  /**
-   * Names the server says are stopped or failed: not relayed, since no dial wakes one there, until
-   * a start of the name wakes it (`forgetReclaimed`, `wakeSignedIn`, `SignedInWorkersLive`).
-   */
-  readonly asleep?: Set<string>;
-  /** The starts sent of each name, shared by every source and pass (`StartsSent`). */
-  readonly sent?: StartsSent;
-  /**
-   * The mark a sign-in at `origin` has now, for one it had: a source made before its sign-in took
-   * its organisation's mark finds what was moved to it, and asks and owes under it from then on.
-   */
-  readonly markOf?: (origin: string, account: string) => string | undefined;
-}
-
-/**
- * The choices and models each server offered, kept a short while, by origin and the sign-in they
- * were asked under (`workerMachineIdentity`): another sign-in's offer is never another's.
- */
-export type OfferedByServer = Map<
-  string,
-  {
-    readonly at: number;
-    readonly value?: OnDemandChoices;
-    readonly models?: ReadonlyArray<OfferedModel>;
-  }
->;
 
 /** A hosted server the app is signed in to, as `sandbox`'s provider. */
 export const signedInSource = (
@@ -318,6 +268,19 @@ export const signedInSource = (
         ),
       ),
     idOf: (name) => named(name)?.id,
+    resize: (ask) =>
+      askResize(
+        ask,
+        port
+          .call(origin, "resize", resizeBody(ask), { account: accountNow() })
+          .pipe(
+            Effect.map((answered) =>
+              answered.ok
+                ? { status: answered.status, body: answered.body }
+                : { failed: answered.why },
+            ),
+          ),
+      ),
     abandon: (name, options) => Effect.asVoid(forget(name, options?.unsettled === true)),
     start: (ask) =>
       Effect.suspend(() => {

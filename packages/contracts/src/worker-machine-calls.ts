@@ -5,6 +5,7 @@ export const WORKER_MACHINE_CALLS = [
   "status",
   "release",
   "stop",
+  "resize",
   "move",
 ] as const;
 export type WorkerMachineCall = (typeof WORKER_MACHINE_CALLS)[number];

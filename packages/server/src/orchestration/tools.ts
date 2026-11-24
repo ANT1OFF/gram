@@ -57,6 +57,7 @@ import { AppToolRegistry } from "../app-tools/registry.ts";
 import { parsePrRef } from "../git/merge-when-ready.ts";
 import { refuseOutOfReach } from "../git/repo-reach.ts";
 import { makeDependsOn } from "./depends-on-tool.ts";
+import { makeRequestResources } from "./request-resources-tool.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { OnDemand } from "../embedding/on-demand.ts";
@@ -87,7 +88,7 @@ import { noQuestionsAsked } from "./question-edits.ts";
 import { prWakeEventOf, prWatchSeenOf, refusal } from "./rules.ts";
 import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
-import { makeWorkerSandbox } from "./worker-sandbox.ts";
+import { makeWorkerSandbox, requestWorkerResize } from "./worker-sandbox.ts";
 
 /**
  * The tools only an orchestrator or a worker is bound, and the wake
@@ -594,6 +595,9 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     });
 
     const dependsOn = yield* makeDependsOn;
+    const requestResources = makeRequestResources((caller, input) =>
+      requestWorkerResize({ store, onDemand, signedIn, workerHosts, joined }, caller, input),
+    );
 
     const setStage = defineAppTool({
       descriptor: {
@@ -1116,6 +1120,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
       scheduleWake,
       cancelWake,
       dependsOn,
+      requestResources,
       memoryList,
       memoryRead,
       memoryWrite,
