@@ -13,12 +13,8 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { makeRuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import {
-  archiveHold,
-  joinMessages,
-  OrchestrationAppToolsLive,
-  originOf,
-} from "./orchestration-tools.ts";
+import { archiveHold } from "./archive-leaves.ts";
+import { joinMessages, OrchestrationAppToolsLive, originOf } from "./orchestration-tools.ts";
 import { AppToolRegistry } from "./registry.ts";
 
 const TestLayer = OrchestrationAppToolsLive.pipe(Layer.provideMerge(makeRuntimeTestLayer()));

@@ -91,9 +91,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * themselves). Bound for workers alone, with its description cut to two sentences and the prompt's
  * line shown only on such a machine; measured then at 42,495. The orchestrator's held, its machine
  * line grown by one short sentence.
+ * The orchestrator's raised on 2026-11-24, on purpose and at the user's word, for keeping the
+ * whole workspace's Waiting on you true: `list_waits` across every thread of the workspace,
+ * archived workers' among them, `wait_on_user`'s `threadId` to edit another thread's item, and
+ * `resolve_wait`'s `deleted` ending. The descriptions were cut first, `list_waits`'s field list
+ * among them; measured then at 65,947. The worker's held.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 65_760,
+  orchestrator: 65_960,
   worker: 42_510,
   plain: 23_650,
 };

@@ -99,7 +99,7 @@ import {
   rememberPrivateIn,
 } from "./private-readers.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
-import { resolvedWait, type WaitResolution } from "./wait-resolution.ts";
+import { resolvedWait, waitRowsOf, type WaitResolution, type WaitRows } from "./wait-resolution.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
 import { captureReadWorker, layer as readWorkerLayer, withReadWorker } from "./read-worker.ts";
@@ -807,10 +807,11 @@ export interface ThreadStoreShape {
 
   /**
    * The thread's Waiting on you items, oldest first: the open ones, or with `all` the resolved ones
-   * kept too. A row that doesn't decode is left out.
+   * kept too, or with `deleted` only those deleted (`WaitItem.deletedAt`), which neither of the
+   * others answers. A row that doesn't decode is left out.
    */
-  listWaits(threadId: ThreadId, which?: "open" | "all"): Effect.Effect<ReadonlyArray<WaitItem>>;
-  /** The thread's items resolved at or after `since` (epoch ms), oldest first. */
+  listWaits(threadId: ThreadId, which?: WaitRows): Effect.Effect<ReadonlyArray<WaitItem>>;
+  /** The thread's items resolved at or after `since` (epoch ms), oldest first, deleted ones aside. */
   listResolvedWaits(threadId: ThreadId, since: number): Effect.Effect<ReadonlyArray<WaitItem>>;
   getWait(threadId: ThreadId, id: WaitId): Effect.Effect<WaitItem, NotFound>;
   /**
@@ -818,6 +819,8 @@ export interface ThreadStoreShape {
    * now is, the agent having written it; absent, the agent hasn't, and it is news (`listWaitNews`).
    */
   putWait(threadId: ThreadId, item: WaitItem, toldAt?: number): Effect.Effect<void>;
+  /** Replaces an item as stored, leaving when the agent last heard of it as it was. */
+  replaceWait(threadId: ThreadId, item: WaitItem): Effect.Effect<void>;
   /**
    * Resolves an item as `resolution` says, or with `undefined` reopens it, in one transaction, and
    * answers it as it then is. An item already resolved keeps its first resolution. The agent's own
@@ -3348,6 +3351,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   (r) => decodeStored(WaitItem, r.item),
                 ),
               ),
+              Effect.map(waitRowsOf(which)),
             ),
           ),
         listResolvedWaits: (threadId, since) =>
@@ -3364,10 +3368,12 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   (r) => decodeStored(WaitItem, r.item),
                 ),
               ),
+              Effect.map(waitRowsOf("all")),
             ),
           ),
         getWait: (threadId, id) => run(readWait(threadId, id)),
         putWait: (threadId, item, toldAt) => run(writeWait(threadId, item, toldAt ?? null)),
+        replaceWait: (threadId, item) => run(writeWait(threadId, item, undefined)),
         resolveWait: (threadId, id, resolution) =>
           tx(
             Effect.gen(function* () {
