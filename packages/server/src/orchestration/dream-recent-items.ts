@@ -91,9 +91,11 @@ export const makePlanRecent = (store: ThreadStoreShape, memory: OrchestrationMem
         const recap = live.has(thread.id)
           ? latestRecap(yield* store.lastMessages(thread.id, RECAP_LOOKBACK_MESSAGES))
           : latestRecap(
-              (yield* store.listMessagesFrom(thread.id, 0, true))
-                .slice(-RECAP_LOOKBACK_MESSAGES)
-                .map((row) => row.message),
+              (yield* store.listMessagesFrom(
+                thread.id,
+                (yield* store.messageMarks(thread.id, true)).at(-RECAP_LOOKBACK_MESSAGES)?.seq ?? 0,
+                true,
+              )).map((row) => row.message),
             );
         items.push({
           kind: "thread",

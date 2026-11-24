@@ -84,7 +84,7 @@ const oneLine = (text: string, max: number) => cut(text.replace(/\s+/g, " "), ma
  */
 export const quote = (label: string, text: string, max = Number.POSITIVE_INFINITY): string =>
   `${label}:\n${cut(text, max)
-    .split(/\r?\n/)
+    .split(/\r\n|[\n\r\v\f\u0085\u2028\u2029]/)
     .map((line) => `> ${line}`)
     .join("\n")}`;
 

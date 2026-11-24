@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, layer } from "@effect/vitest";
 import {
   DEFAULT_CHARTER,
+  type DreamId,
   GramRpcs,
   type HostId,
   PROFILE_MOVE_PATH,
@@ -21,6 +22,7 @@ import {
   ThreadId,
   WorkspaceId,
 } from "@gram/contracts";
+import { syntheticDream } from "../orchestration/dream-fixtures.ts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -1366,6 +1368,9 @@ describe("sign-in through a fronting proxy", () => {
             },
             charter: DEFAULT_CHARTER,
           });
+          // A memory update of her workspace, named only by its own id.
+          const dreamId = "dream-grace-0001" as DreamId;
+          yield* store.putDream(syntheticDream(dreamId, workspaceId));
           // Her worker, on her machine too: an orchestration has one owner (`host/ownership.ts`).
           const worker = yield* opened(lineageFolder(dirs), graceClient);
           yield* store.updateThread(worker.id, (thread) => ({
@@ -1398,6 +1403,7 @@ describe("sign-in through a fronting proxy", () => {
               input: { text: "Ada's instructions" },
               clientMessageId: "lineage-1",
             }),
+            revertMemory: adaClient["dream.revert"]({ dreamId }),
           };
           for (const [name, call] of Object.entries(tries))
             expect([name, yield* refusal(call as Effect.Effect<unknown, unknown>)]).toEqual([

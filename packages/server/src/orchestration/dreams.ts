@@ -1666,6 +1666,13 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                       "This update doesn't say which notes it changed. Restore a version from History instead.",
                     );
                   }
+                  const kept = yield* memory.versions(dream.workspaceId);
+                  const base = kept.find((one) => one.version === made)?.basedOn ?? before;
+                  if (!kept.some((one) => one.version === base)) {
+                    return yield* refuse(
+                      `Version ${base}, which this update was made from, is no longer kept. Restore a version from History instead.`,
+                    );
+                  }
                   const readOf = (version: string) =>
                     Effect.forEach(changed, ({ path }) =>
                       memory.readVersion(dream.workspaceId, version, path).pipe(
@@ -1677,7 +1684,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                     );
                   const set = revertSet({
                     changed,
-                    before: yield* readOf(before),
+                    before: yield* readOf(base),
                     current: current.files,
                   });
                   if (set.undone.length === 0) {
