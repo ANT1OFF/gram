@@ -15,13 +15,6 @@ export type SidebarSection = (typeof SECTIONS)[number];
 
 const ASKING: ReadonlySet<ThreadStatus> = new Set(["needsApproval", "needsInput"]);
 
-/**
- * The status a thread is grouped by. An agent says it awaits an approval or an answer apart from
- * the request itself, and keeps saying it after the request is answered until its turn goes on;
- * a request the server's policy decides never shows at all. With no request left to answer, the
- * thread asks nothing of the user: it is mid-turn, as the status that follows will say. Read as
- * asking, every busy worker blinked into Needs you, and out, on each tool call.
- */
 const groupedStatus = (s: Pick<ThreadSummary, "status" | "pendingRequests">): ThreadStatus =>
   ASKING.has(s.status) && s.pendingRequests.length === 0 ? "running" : s.status;
 

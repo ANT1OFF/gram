@@ -150,8 +150,6 @@ function PublishRow({
   const diffKey = ["git.diff", threadId, "branch", null, stamp] as const;
   const query = useQuery({
     queryKey: [...diffKey, false],
-    // The summary on screen stays while the tree's newer one is read: a worker at work moves its
-    // stamp often, and "Reading its changes…" blinked in between each time.
     placeholderData: keptDiff(diffKey),
     queryFn: () => api.gitDiff(threadId, { kind: "branch" }),
     retry: false,

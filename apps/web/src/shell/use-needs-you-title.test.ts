@@ -1,10 +1,5 @@
 // @vitest-environment happy-dom
-import type {
-  ProjectId,
-  ThreadId,
-  ThreadStatus,
-  ThreadSummary,
-} from "@gram/contracts";
+import type { ProjectId, ThreadId, ThreadStatus, ThreadSummary } from "@gram/contracts";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

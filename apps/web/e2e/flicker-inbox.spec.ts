@@ -79,6 +79,7 @@ test("workers asking and answered as they carry on add no row for a frame", asyn
   // request resolved, then the status the turn goes on in, which may come a frame or more later.
   await page.evaluate(async (ids) => {
     const { world } = window.gramMock!;
+    // oxlint-disable-next-line unicorn/consistent-function-scoping -- runs in the page, so it lives inside
     const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
     for (let round = 0; round < 4; round++) {
       const requestId = (id: string) => `r-busy-${round}-${id}`;
