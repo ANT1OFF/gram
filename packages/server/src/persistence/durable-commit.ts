@@ -86,9 +86,7 @@ export const durableSqliteLayer = (
             );
             const sql = Context.get(context, SqlClient.SqlClient);
             const stopped =
-              WriterWorker.writerStopped in sql
-                ? (sql as WriterWorker.WriterClient)[WriterWorker.writerStopped]
-                : () => false;
+              WriterWorker.writerStopped in sql ? sql[WriterWorker.writerStopped] : () => false;
             yield* sql`PRAGMA synchronous = NORMAL`;
             if (initialize !== undefined) yield* initialize(sql);
             const raw = yield* sql.reserve.pipe(Scope.provide(scope));
@@ -163,7 +161,7 @@ export const durableCommit = <A, E, R>(
         if (!(discardConnection in conn)) {
           return yield* Effect.die(new Error("durableCommit requires durableSqliteLayer"));
         }
-        const discard = (conn as OwnedConnection)[discardConnection];
+        const discard = discardConnection in conn ? conn[discardConnection] : undefined;
         const execute = (text: string) => conn.executeUnprepared(text, [], undefined);
         return yield* execute("PRAGMA synchronous = FULL").pipe(
           Effect.andThen(execute("BEGIN IMMEDIATE")),

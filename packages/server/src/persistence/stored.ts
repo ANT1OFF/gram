@@ -15,6 +15,7 @@ export type Decoded<A> =
 type Json = unknown;
 
 const codec = <S extends Schema.Top>(schema: S) =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored values are JSON, so any stored schema encodes to unknown
   schema as unknown as Schema.Codec<S["Type"], unknown>;
 
 interface IssueAt {
@@ -195,7 +196,9 @@ const setDeep = (root: Record<PropertyKey, Json>, path: FieldPath, value: Json):
       if (value === undefined) return;
       node[key] = {};
     }
-    node = node[key] as Record<PropertyKey, Json>;
+    const next = node[key];
+    if (!Predicate.isObject(next)) break;
+    node = next;
   }
   setAt(node, path.slice(-1), value);
 };
@@ -327,6 +330,7 @@ export const mendedWrite = <S extends Schema.Top>(
     return { json: encoded, replacesUnreadable: false };
   const { mended } = decodeMended(schema, defaults, encodedDefaults, stored);
   if (mended.some((path) => path.length === 0)) return { json: encoded, replacesUnreadable: true };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the stored text is JSON this module wrote from an object
   const raw = JSON.parse(stored) as Record<PropertyKey, Json>;
   const out = structuredClone(encoded);
   for (const path of mended) {

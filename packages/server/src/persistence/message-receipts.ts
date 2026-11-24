@@ -80,8 +80,8 @@ export const makeMessageReceipts = (
               message:
                 "This message may already have been delivered. Its result is unavailable; inspect the thread before sending again.",
             });
-          const outcome = JSON.parse(prior.outcome) as { ok: boolean; value: unknown };
-          return outcome.ok
+          const outcome = fieldsOf(JSON.parse(prior.outcome));
+          return outcome.get("ok") === true
             ? Schema.decodeUnknownSync(success)(outcome.value)
             : yield* Effect.fail(Schema.decodeUnknownSync(error)(outcome.value));
         }

@@ -68,8 +68,8 @@ export const notePrivateThreads = (sql: SqlClient.SqlClient) =>
       SELECT thread_id AS id, data FROM private_readers
         WHERE thread_id NOT IN (SELECT id FROM threads)
           AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`.pipe(Effect.orDie)) {
-      const stored = JSON.parse(row.data) as Partial<Thread>;
-      if (typeof stored.readableBy !== "string") continue;
+      const readableBy = fieldsOf(JSON.parse(row.data)).get("readableBy");
+      if (typeof readableBy !== "string") continue;
       const noted = { ...stored, id: ThreadId.make(row.id), readableBy: stored.readableBy };
       notePrivacy(noted);
       noteReaders({
@@ -132,8 +132,9 @@ export const holderMachinesIn = (sql: SqlClient.SqlClient, workspaceId: string) 
       if (rows[0] === undefined) return undefined;
       try {
         const kept: unknown = JSON.parse(rows[0].data);
-        const checkout = (kept as Partial<Thread> | null)?.checkout;
-        if (typeof checkout?.path !== "string") return "unreadable";
+        const checkout = fieldsOf(fieldsOf(kept).get("checkout"));
+        if (typeof checkout.get("path") !== "string") return "unreadable";
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row is a thread this store wrote; its checkout was just checked
         return kept as Pick<Thread, (typeof MACHINE_FIELDS)[number]>;
       } catch {
         return "unreadable";

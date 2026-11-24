@@ -1171,7 +1171,17 @@ const threadWakePrJson = (wake: ThreadWake): string | null =>
 
 const alreadyHere = (message: string) => new InvalidState({ message });
 
+const roleOf = (role: string): GramUIMessage["role"] =>
+  role === "user" || role === "system" ? role : "assistant";
+const isCompletedReason = Schema.is(CompletedReason);
+const completedReasonOf = (reason: string | null | undefined) =>
+  isCompletedReason(reason) ? reason : undefined;
+const isTurnEndReason = Schema.is(TurnEndReason);
+const turnEndReasonOf = (reason: string | null | undefined) =>
+  isTurnEndReason(reason) ? reason : undefined;
+
 const toJson = <S extends Schema.Top>(schema: S, value: S["Type"]): string =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- stored values are JSON, so any stored schema encodes to unknown
   JSON.stringify(Schema.encodeSync(schema as unknown as Schema.Codec<S["Type"], unknown>)(value));
 
 const ENCODED_DEFAULT_SETTINGS = Schema.encodeSync(Settings)(DEFAULT_SETTINGS);
@@ -1228,6 +1238,7 @@ const run = <A, E, R>(
 ): Effect.Effect<A, Exclude<E, SqlError>, R> =>
   effect.pipe(
     Effect.catch((e) =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript can't narrow a generic E by instanceof
       e instanceof SqlError ? Effect.die(e) : Effect.fail(e as Exclude<E, SqlError>),
     ),
   );
@@ -2193,7 +2204,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                       const actor =
                         r.actor === null ? undefined : decodeStored(StoredActorJson, r.actor);
                       return {
-                        id: r.id as QueueItemId,
+                        id: QueueItemId.make(r.id),
                         input,
                         ...(r.notice_key === null ? {} : { noticeKey: r.notice_key }),
                         ...(r.turn_id === null ? {} : { turnId: TurnId.make(r.turn_id) }),
@@ -2246,8 +2257,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 rows[0] === undefined
                   ? undefined
                   : {
-                      role: rows[0].role as GramUIMessage["role"],
-                      turnId: (rows[0].turn_id ?? undefined) as TurnId | undefined,
+                      role: roleOf(rows[0].role),
+                      turnId: rows[0].turn_id === null ? undefined : TurnId.make(rows[0].turn_id),
                     },
               ),
             ),
@@ -2347,9 +2358,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           run(
             sql<{ completed_reason: string | null }>`SELECT completed_reason FROM threads
               WHERE id = ${id}`.pipe(
-              Effect.map(
-                (rows) => (rows[0]?.completed_reason ?? undefined) as CompletedReason | undefined,
-              ),
+              Effect.map((rows) => completedReasonOf(rows[0]?.completed_reason)),
             ),
           ),
         updateSettings: (f, touched) =>
@@ -3098,7 +3107,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   threadId: ThreadId.make(r.thread_id),
                   startedAt: Number(r.started_at),
                   endedAt: r.ended_at === null ? undefined : Number(r.ended_at),
-                  reason: (r.reason ?? undefined) as TurnEndReason | undefined,
+                  reason: turnEndReasonOf(r.reason),
                 } satisfies TurnRecord;
               }),
             ),
@@ -3113,7 +3122,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   threadId: ThreadId.make(r.thread_id),
                   startedAt: Number(r.started_at),
                   endedAt: r.ended_at === null ? undefined : Number(r.ended_at),
-                  reason: (r.reason ?? undefined) as TurnEndReason | undefined,
+                  reason: turnEndReasonOf(r.reason),
                 })),
               ),
             ),
@@ -3896,7 +3905,8 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 rows.map((r): ActorEventRecord => {
                   let data: Record<string, unknown> = {};
                   try {
-                    data = JSON.parse(r.data) as Record<string, unknown>;
+                    const parsed: unknown = JSON.parse(r.data);
+                    if (Predicate.isObject(parsed)) data = parsed;
                   } catch (_aRowWhoseDetailDoesntParseStillSaysWho) {}
                   return {
                     seq: Number(r.seq),
@@ -4117,7 +4127,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   ...(r.request_id === null ? {} : { requestId: r.request_id }),
                   approvedBy: "user",
                   approvedAt: Number(r.approved_at),
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the audit row holds the changes this store wrote as JSON
                   changes: JSON.parse(r.changes) as SettingsAuditEntry["changes"],
+                  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the audit row holds the rows this store wrote as JSON
                   shown: JSON.parse(r.shown) as SettingsAuditEntry["shown"],
                   ...(r.reason === null ? {} : { reason: r.reason }),
                 })),

@@ -288,17 +288,20 @@ export const layer = (options: {
         execute: (sql, params, transformRows) =>
           run(sql, params, "rows", true).pipe(
             Effect.map((rows) => {
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the worker answers each mode with the rows SQLite gives for it
               const array = rows as ReadonlyArray<object>;
               return transformRows === undefined ? array : transformRows(array);
             }),
           ),
         executeRaw: (sql, params) => run(sql, params, "raw", true),
         executeValues: (sql, params) =>
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the worker answers each mode with the rows SQLite gives for it
           run(sql, params, "values", true) as Effect.Effect<
             ReadonlyArray<ReadonlyArray<unknown>>,
             SqlError
           >,
         executeValuesUnprepared: (sql, params) =>
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the worker answers each mode with the rows SQLite gives for it
           run(sql, params, "values", false) as Effect.Effect<
             ReadonlyArray<ReadonlyArray<unknown>>,
             SqlError
@@ -306,6 +309,7 @@ export const layer = (options: {
         executeUnprepared: (sql, params, transformRows) =>
           run(sql, params ?? [], "rows", false).pipe(
             Effect.map((rows) => {
+              // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the worker answers each mode with the rows SQLite gives for it
               const array = rows as ReadonlyArray<object>;
               return transformRows === undefined ? array : transformRows(array);
             }),

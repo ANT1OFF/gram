@@ -85,12 +85,9 @@ const seal = (sql: SqlClient.SqlClient) =>
     const durable = yield* Effect.gen(function* () {
       yield* run("BEGIN IMMEDIATE");
       yield* run("ROLLBACK");
-      const [row] = (yield* run("PRAGMA wal_checkpoint(TRUNCATE)")) as ReadonlyArray<{
-        readonly busy?: unknown;
-        readonly log?: unknown;
-        readonly checkpointed?: unknown;
-      }>;
-      return row !== undefined && row.busy === 0 && row.log === row.checkpointed;
+      const rows: unknown = yield* run("PRAGMA wal_checkpoint(TRUNCATE)");
+      const row = fieldsOf(Array.isArray(rows) ? rows[0] : undefined);
+      return row.get("busy") === 0 && row.get("log") === row.get("checkpointed");
     }).pipe(Effect.orElseSucceed(() => false));
     if (!durable) yield* run(`PRAGMA busy_timeout = ${CLIENT_BUSY_TIMEOUT_MS}`).pipe(Effect.ignore);
     return durable;

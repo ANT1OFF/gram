@@ -363,25 +363,6 @@
     },
     {
       "files": [
-        "packages/server/src/app-tools/**",
-        "packages/server/src/browser/**",
-        "packages/server/src/gateway/**",
-        "packages/server/src/git/**",
-        "packages/server/src/http/**",
-        "packages/server/src/orchestration/**",
-        "packages/server/src/persistence/**",
-        "packages/server/src/rpc/**",
-        "packages/server/src/runtime/**",
-        "packages/server/src/transfer/**",
-        "packages/server/src/usage/**"
-      ],
-      "rules": {
-        // Mid-migration: these folders' assertions are cleared in the change that follows.
-        "typescript/no-unsafe-type-assertion": "off"
-      }
-    },
-    {
-      "files": [
         "**/testing.ts",
         "**/testing/**",
         "**/*.testing.ts",
