@@ -74,9 +74,10 @@ export const makeMoveMemory = (): MoveMemory => ({ done: new Set(), tries: new M
  * cuts off wait for it, saying the machine is moving, and carry on once it is back.
  *
  * A move the provider refuses takes the stop back, so the machine works on where it is, and the run
- * is settled (`done`). One it can't do now (a 5xx, a 429, a 404 that isn't the provider's own
+ * is settled (`done`). One it can't do now (a 503, a 429, a 404 that isn't the provider's own
  * answer) takes the stop back too, and is asked again at the next look. One whose answer was lost
- * keeps the stop, since the move may have gone through. Neither is tried past `MOVE_TRIES` looks:
+ * keeps the stop, since the move may have gone through; the app reports other 5xx answers and a
+ * 401 as lost. Neither is tried past `MOVE_TRIES` looks:
  * the stop is then taken back for good, so a machine is never held off work for longer.
  */
 export const moveAskedMachines = (deps: MoveDeps, memory: MoveMemory, now = Date.now) =>

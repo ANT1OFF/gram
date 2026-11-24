@@ -426,11 +426,13 @@ subscription token reaches a machine, with its own consent.
   [When its machine is replaced](../MACHINES.md#when-its-machine-is-replaced)), and this Gram
   resumes the machine as it does any relayed one owed a resume. A move refused (`moved: false`,
   `superseded`, `expired`, a provider's `not_found`, or another 4xx) takes the stop back, so the
-  machine works on where it is, and that run is settled. A move the provider can't do now (a 5xx,
+  machine works on where it is, and that run is settled. A move the provider can't do now (a 503,
   a 429, a 404 that isn't its own answer) takes the stop back too and is asked again at the next
-  look. One with no answer keeps the stop, since it may have gone through. Neither is tried past
-  three looks a run: the stop is then taken back for good, so a request that can't be met never
-  holds the machine's threads off work for long. Work a forced stop couldn't keep at its remote is
+  look. One with no answer keeps the stop, since it may have gone through; the app reports other
+  5xx answers and a 401 as no answer, so they do the same. Neither is tried past three looks a run
+  (counted in memory, so a restart of the app starts the count again): the stop is then taken back
+  for good, so a request that can't be met never holds the machine's threads off work for long.
+  Work a forced stop couldn't keep at its remote is
   logged, and the move goes on: the disk comes back with it. Up to four machines are readied at
   once. The app fences a move as a stop: a start of the name waits for it.
 - **The app quits or the desktop sleeps.** The relay closes; the machine shows offline, as a joined
