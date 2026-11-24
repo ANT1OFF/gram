@@ -9,6 +9,7 @@ import {
   runsSentWork,
   type SignedTurnGrant,
 } from "@gram/contracts";
+import { errnoCode } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
@@ -1134,8 +1135,8 @@ export const makeHostedDevice = async (options: HostedDeviceOptions): Promise<Ho
         await old?.close();
         for (const file of [SETTINGS_FILE, LOG_FILE]) {
           const path = join(options.dataDir, file);
-          await rename(path, `${path}.${aside}`).catch((error: NodeJS.ErrnoException) => {
-            if (error.code !== "ENOENT") throw error;
+          await rename(path, `${path}.${aside}`).catch((error: unknown) => {
+            if (errnoCode(error) !== "ENOENT") throw error;
           });
         }
         log = await openDeviceLog(join(options.dataDir, LOG_FILE), keys.log);

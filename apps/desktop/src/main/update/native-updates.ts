@@ -534,15 +534,15 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
           live();
           invoked = true;
           staging = true;
-          const stage = port
-            .stage(candidate.snapshot, version)
-            .then(async () => {
+          const stage = (async () => {
+            try {
+              await port.stage(candidate.snapshot, version);
               await forget();
-            })
-            .finally(async () => {
+            } finally {
               staging = false;
               if (disposed) await forget();
-            });
+            }
+          })();
           let waiting: unknown;
           const slow = new Promise<"slow">((resolve) => {
             waiting = later(() => resolve("slow"), STAGE_DEADLINE_MS);

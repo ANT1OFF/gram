@@ -520,15 +520,18 @@ export function useWorkerQuestionActions(workspaceId: WorkspaceId) {
      * Changes the answer `question` holds: refused when it changed since (its `closedAt`), and the
      * ledger read again either way, so the card shows the newer answer.
      */
-    change: (question: WorkerQuestion) => (text: string) =>
-      api
-        .answerWorkerQuestion({
+    change: (question: WorkerQuestion) => async (text: string) => {
+      try {
+        await api.answerWorkerQuestion({
           workspaceId,
           questionId: question.id,
           answer: text,
           replaces: { closedAt: question.closedAt ?? 0 },
-        })
-        .finally(refresh),
+        });
+      } finally {
+        await refresh();
+      }
+    },
     dismiss: (question: WorkerQuestion) => (reason: string | undefined) =>
       api
         .dismissWorkerQuestion({

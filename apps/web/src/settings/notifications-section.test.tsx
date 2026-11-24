@@ -331,7 +331,9 @@ describe("NotificationsSection", () => {
 
   it("says when Motion Off keeps notifications quiet, while Preview still plays", () => {
     expect(screen.queryByTestId("sound-motion-off")).toBeNull();
-    act(() => themeStore.setState({ motion: "off" }));
+    act(() => {
+      themeStore.setState({ motion: "off" });
+    });
     expect(screen.getByTestId("sound-motion-off").textContent).toContain("Preview still plays");
     fireEvent.click(screen.getByRole("button", { name: "Preview Chime" }));
     expect(playChime).toHaveBeenCalledWith("chime");

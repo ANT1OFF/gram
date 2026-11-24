@@ -19,7 +19,7 @@ import {
   type HostCapability,
   ThreadId,
 } from "@gram/contracts";
-import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
+import { errnoCode, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as TestClock from "effect/testing/TestClock";
@@ -295,7 +295,7 @@ describe("the gate fails closed", () => {
       const unreadable = yield* Effect.promise(() =>
         fsp.stat(join(parent, "login")).then(
           () => false,
-          (error: { readonly code?: string }) => error.code === "EACCES" || error.code === "EPERM",
+          (error: unknown) => ["EACCES", "EPERM"].includes(errnoCode(error) ?? ""),
         ),
       );
       if (!unreadable) return; // Run as a user every folder is readable to: nothing to show.

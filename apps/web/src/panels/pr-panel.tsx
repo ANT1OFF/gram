@@ -808,15 +808,15 @@ function RerunFailedChecks({ threadId, available }: { threadId: ThreadId; availa
           disabled={action.pending}
           onClick={() =>
             void action.run(async () => {
-              const { runIds, skipped } = await api
-                .prRerunChecks(threadId)
-                .finally(() =>
-                  queryClient.invalidateQueries({ queryKey: ["git.prDetail", threadId] }),
-                );
-              const runs = runIds.length === 1 ? "1 run" : `${runIds.length} runs`;
-              const others =
-                skipped.length === 0 ? "" : ` Rerun ${skipped.join(", ")} on its provider.`;
-              return `Rerunning the failed jobs of ${runs}.${others}`;
+              try {
+                const { runIds, skipped } = await api.prRerunChecks(threadId);
+                const runs = runIds.length === 1 ? "1 run" : `${runIds.length} runs`;
+                const others =
+                  skipped.length === 0 ? "" : ` Rerun ${skipped.join(", ")} on its provider.`;
+                return `Rerunning the failed jobs of ${runs}.${others}`;
+              } finally {
+                await queryClient.invalidateQueries({ queryKey: ["git.prDetail", threadId] });
+              }
             })
           }
         >

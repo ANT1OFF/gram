@@ -149,11 +149,11 @@ export function registerIpc({
   handle(Channels.trustedLinksRemove, (host) => {
     if (typeof host === "string") untrustLinkHost(host);
   });
-  handle(Channels.copyText, (text) => {
+  handle(Channels.copyText, async (text) => {
     if (typeof text !== "string" || text.length > MAX_CLIPBOARD_CHARS) {
       throw new Error("copyText needs a string of at most 5 MB");
     }
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
   });
   handle(Channels.showItemInFolder, (path) => {
     if (!isRevealablePath(path) || !existsSync(path)) return false;

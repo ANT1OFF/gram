@@ -5,7 +5,7 @@ import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { openOutside, readUpTo, type OpenRace } from "../fs/files.ts";
 import { IMAGE_MAX_BYTES } from "../fs/images.ts";
-import { realPath } from "@gram/git";
+import { errnoCode, realPath } from "@gram/git";
 
 const EXTENSIONS: Record<string, string> = {
   "image/png": "png",
@@ -75,8 +75,8 @@ export const storeToolImage = (
         const expectedStorage = join(await realPath(dirname(storage)), basename(storage));
         const root = await lstat(storage, { bigint: true });
         if (!root.isDirectory() || (await realPath(storage)) !== expectedStorage) throw new Error();
-        await mkdir(dir, { mode: 0o700 }).catch((error: NodeJS.ErrnoException) => {
-          if (error.code !== "EEXIST") throw error;
+        await mkdir(dir, { mode: 0o700 }).catch((error: unknown) => {
+          if (errnoCode(error) !== "EEXIST") throw error;
         });
         const owner = await lstat(dir, { bigint: true });
         const expectedDir = join(expectedStorage, threadId);

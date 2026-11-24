@@ -63,7 +63,10 @@ describe("the Focus review offer", () => {
 });
 
 /** Past the hook's settle delay, so a cramped review takes focus. */
-const settle = () => act(() => vi.advanceTimersByTime(500));
+const settle = () =>
+  act(() => {
+    vi.advanceTimersByTime(500);
+  });
 
 describe("useAutoReviewFocus", () => {
   beforeEach(() => {
@@ -74,7 +77,9 @@ describe("useAutoReviewFocus", () => {
 
   it("takes Focus review once the layout settles after the review runs too narrow", () => {
     render(<Room />);
-    act(() => useLayoutStore.setState({ windowWidth: 1024 }));
+    act(() => {
+      useLayoutStore.setState({ windowWidth: 1024 });
+    });
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(true);
@@ -92,7 +97,9 @@ describe("useAutoReviewFocus", () => {
   it("leaves a thread come to in a cramped window on its conversation, with the offer", () => {
     useLayoutStore.setState({ ...cramped, threadInView: false });
     render(<Room />);
-    act(() => useLayoutStore.setState({ threadInView: true }));
+    act(() => {
+      useLayoutStore.setState({ threadInView: true });
+    });
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
     expect(screen.getByTestId("review-room-offer")).toBeTruthy();
@@ -101,7 +108,9 @@ describe("useAutoReviewFocus", () => {
   it("leaves a page that comes to offer the panel in a cramped window as it is", () => {
     useLayoutStore.setState({ ...cramped, panelBarred: true });
     render(<Room />);
-    act(() => useLayoutStore.setState({ panelBarred: false }));
+    act(() => {
+      useLayoutStore.setState({ panelBarred: false });
+    });
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
   });
@@ -109,7 +118,9 @@ describe("useAutoReviewFocus", () => {
   it("waits while a drag holds the pointer down, and takes it once let go", () => {
     render(<Room />);
     fireEvent.pointerDown(window);
-    act(() => useLayoutStore.setState({ windowWidth: 1024 }));
+    act(() => {
+      useLayoutStore.setState({ windowWidth: 1024 });
+    });
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
     fireEvent.pointerUp(window);
@@ -119,7 +130,9 @@ describe("useAutoReviewFocus", () => {
 
   it("leaves the review side by side once the user leaves focus, with the offer, until it has room", () => {
     render(<Room />);
-    act(() => useLayoutStore.setState({ windowWidth: 1024 }));
+    act(() => {
+      useLayoutStore.setState({ windowWidth: 1024 });
+    });
     settle();
     act(() => useLayoutStore.getState().setReviewFocus(false));
     settle();
@@ -127,10 +140,14 @@ describe("useAutoReviewFocus", () => {
     expect(screen.getByTestId("review-room-offer")).toBeTruthy();
 
     // Room again (the window widened), then short once more: focus is taken again.
-    act(() => useLayoutStore.setState({ windowWidth: 1728 }));
+    act(() => {
+      useLayoutStore.setState({ windowWidth: 1728 });
+    });
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
-    act(() => useLayoutStore.setState({ windowWidth: 1024 }));
+    act(() => {
+      useLayoutStore.setState({ windowWidth: 1024 });
+    });
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(true);
   });
@@ -138,7 +155,9 @@ describe("useAutoReviewFocus", () => {
   it("does nothing off a review", () => {
     useLayoutStore.setState({ panelTab: "terminal" });
     render(<Room />);
-    act(() => useLayoutStore.setState({ windowWidth: 1024 }));
+    act(() => {
+      useLayoutStore.setState({ windowWidth: 1024 });
+    });
     settle();
     expect(useLayoutStore.getState().reviewFocus).toBe(false);
   });

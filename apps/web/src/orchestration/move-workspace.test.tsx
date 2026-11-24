@@ -174,11 +174,11 @@ describe("MoveWorkspaceDialog", () => {
     // Under way: three steps, how much is sent, and a way out until the server has it all.
     const steps = await screen.findByTestId("move-workspace-steps");
     expect(steps.querySelector('[data-step="stopping"]')?.getAttribute("data-state")).toBe("now");
-    await tell({ stage: "sending", sentBytes: 31 * 1024 * 1024, totalBytes: 50 * 1024 * 1024 });
+    tell({ stage: "sending", sentBytes: 31 * 1024 * 1024, totalBytes: 50 * 1024 * 1024 });
     expect(steps.querySelector('[data-step="sending"]')?.getAttribute("data-state")).toBe("now");
     expect(screen.getByTestId("move-workspace-dialog").textContent).toContain("31 MB of 50 MB");
     expect((screen.getByTestId("move-workspace-cancel") as HTMLButtonElement).disabled).toBe(false);
-    await tell({ stage: "settingUp" });
+    tell({ stage: "settingUp" });
     expect((screen.getByTestId("move-workspace-cancel") as HTMLButtonElement).disabled).toBe(true);
 
     await act(async () =>

@@ -54,7 +54,9 @@ export function PrActionItems({ threadId }: { threadId: ThreadId }) {
       .catch((error: unknown) =>
         useThreadDialogs.getState().fail(`${failure}: ${errorMessage(error)}`),
       )
-      .finally(() => queryClient.invalidateQueries({ queryKey: ["git.prDetail", threadId] }));
+      .finally(() => {
+        void queryClient.invalidateQueries({ queryKey: ["git.prDetail", threadId] });
+      });
 
   return (
     <>

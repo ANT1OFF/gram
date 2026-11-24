@@ -462,11 +462,11 @@ describe("DiffPanel", () => {
     expect(scroll).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(useLayoutStore.getState().panelTargets.diff).toBeUndefined());
 
-    act(() =>
+    act(() => {
       useLayoutStore.setState({
         panelTargets: { diff: { id: 102, threadId: T, target: "./src/retry.test.ts" } },
-      }),
-    );
+      });
+    });
     await waitFor(() => expect(expandedPaths()).toEqual(["src/clock.ts", "src/retry.test.ts"]));
     expect(scroll).toHaveBeenCalledTimes(2);
   });
@@ -483,11 +483,11 @@ describe("DiffPanel", () => {
     expect(expandedPaths()).toEqual(["docs/testing.md"]);
     expect(useLayoutStore.getState().panelTargets.diff).toBe(other);
 
-    act(() =>
+    act(() => {
       useLayoutStore.setState({
         panelTargets: { diff: { id: 104, threadId: T, target: "src/missing.ts" } },
-      }),
-    );
+      });
+    });
     await waitFor(() => expect(useLayoutStore.getState().panelTargets.diff).toBeUndefined());
     expect(expandedPaths()).toEqual(["docs/testing.md"]);
     expect(scroll).not.toHaveBeenCalled();

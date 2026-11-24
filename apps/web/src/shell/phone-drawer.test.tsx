@@ -111,7 +111,9 @@ describe("PhoneDrawer", () => {
   ])("closes once %s opens from it", (_, show) => {
     render(<Shell />);
     openDrawer();
-    act(show);
+    act(() => {
+      show();
+    });
     expect(usePhoneDrawer.getState().open).toBe(false);
   });
 
