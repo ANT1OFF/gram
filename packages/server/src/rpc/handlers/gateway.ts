@@ -28,6 +28,7 @@ import {
 import type { AgentHost } from "@gram/agents";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import { makeDraftPreWake, preWakeOrOff } from "../../host/pre-wake.ts";
 import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 
@@ -598,13 +599,19 @@ export const gatewayHandlers = Effect.gen(function* () {
 
   const scheduler = yield* HelperScheduler;
   const composers = yield* ComposerPresence;
+  const drafting = yield* makeDraftPreWake(yield* preWakeOrOff);
   return {
     ...gateway.handlers,
     "helper.status": () => scheduler.status,
     "helper.presence": (presence) =>
       scheduler
         .presence(presence)
-        .pipe(Effect.andThen(presence.typing ? composers.typed : Effect.void)),
-    "composer.drafts": ({ windowId, threadIds }) => composers.drafts(windowId, threadIds),
+        .pipe(
+          Effect.andThen(
+            presence.typing ? Effect.andThen(composers.typed, drafting.typed) : Effect.void,
+          ),
+        ),
+    "composer.drafts": ({ windowId, threadIds }) =>
+      Effect.andThen(composers.drafts(windowId, threadIds), drafting.drafts(windowId, threadIds)),
   } satisfies Partial<Handlers>;
 });

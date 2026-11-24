@@ -39,7 +39,7 @@ import { makeAdoption } from "./service/adoption.ts";
 import { makeFeatures } from "./service/features.ts";
 import { makePauses } from "./service/pauses.ts";
 import { makeDigests } from "./service/digests.ts";
-import { makeWakeAlarms } from "./service/wake-alarms.ts";
+import { makeWakeAlarms, preWakeOrOff } from "./service/wake-alarms.ts";
 import { makeWorkers } from "./service/workers.ts";
 import { makeSessionPolicy } from "./service/session-policy.ts";
 import { makeTaskStartup } from "./service/task-startup.ts";
@@ -376,7 +376,7 @@ export const OrchestrationLive = Layer.effect(
       scheduleWake,
       cancelWake,
       onWakeAlarm,
-    } = makeWakeAlarms(kit, { wake });
+    } = makeWakeAlarms(kit, { wake, preWake: yield* preWakeOrOff });
 
     const {
       listWorkers,

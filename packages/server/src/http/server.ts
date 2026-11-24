@@ -92,6 +92,7 @@ import { LaunchChecksCache } from "../launch-checks/handler.ts";
 import { ReviewRequestsLive } from "../github/review-requests.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
+import { MachinePreWake } from "../host/pre-wake.ts";
 import { BranchHeadsLive } from "../wakes/branch-heads.ts";
 import { CiJobsLive } from "../wakes/ci-stuck.ts";
 import { wakeConditionsLayer } from "../wakes/condition-sources.ts";
@@ -930,7 +931,9 @@ export const ServerCore = Layer.unwrap(
           ),
         ),
         Layer.provideMerge(ReviewRequestsLive),
-        Layer.provideMerge(Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer)),
+        Layer.provideMerge(
+          Layer.mergeAll(HelperScheduler.layer, ComposerPresence.layer, MachinePreWake.layer),
+        ),
         Layer.provideMerge(ThreadVisibility.layer),
         Layer.provideMerge(ThreadPorts.layer),
         Layer.provideMerge(
