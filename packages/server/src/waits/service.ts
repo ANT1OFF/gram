@@ -4,7 +4,9 @@ import {
   NotFound,
   WaitId,
   waitData,
+  waitContentOf,
   waitIsKept,
+  withWaitChange,
   type MessageId,
   type GramUIMessageChunk,
   type ThreadId,
@@ -76,12 +78,16 @@ export interface ThreadWaitsShape {
    * before anything is drawn, and an `id` that names no open item. What the agent writes is no news
    * to it; what another `source` writes goes in its next note. A new item waits on a person where
    * the server knows one (`WaitItem.person`): the one this call is made for when the user adds it,
-   * else whoever typed the thread's latest message. An update leaves that as it was.
+   * else whoever typed the thread's latest message. An update leaves that as it was, and records
+   * what the item said before in its `history`. `editor` is the thread that updates it when another
+   * than its own, its orchestrator: such an update stays in place, restyling the chip where it is,
+   * is news to the item's own agent, and only updates (`draft.id`).
    */
   put(
     threadId: ThreadId,
     draft: WaitDraft,
     source: WaitSource,
+    editor?: ThreadId,
   ): Effect.Effect<WaitPut, WaitsFull | NotFound | ThreadNotFound>;
   /**
    * Resolves an item, done, dismissed or withdrawn as `resolution.ending` says, or with `undefined`
@@ -89,6 +95,7 @@ export interface ThreadWaitsShape {
    * resolving one already resolved keeps the first resolution.
    * Reopening is refused while `MAX_OPEN_WAITS` are open, as adding one is. With `revision`, an item
    * revised since (`waitRevision`) is left as it is: the resolver read another version of it.
+   * A deleted item is left as it is too.
    */
   resolve(
     threadId: ThreadId,
@@ -96,6 +103,21 @@ export interface ThreadWaitsShape {
     resolution: WaitResolution | undefined,
     revision?: number,
   ): Effect.Effect<{ readonly item: WaitItem; readonly changed: boolean }, NotFound | WaitsFull>;
+  /**
+   * Deletes an item: resolves it as withdrawn when it is open, then keeps it only as the record of
+   * what it was (`WaitItem.deletedAt`, a `deleted` change in its `history`), out of every list.
+   * Answers it with whether this call changed it: one already deleted stays as it was.
+   */
+  remove(
+    threadId: ThreadId,
+    id: WaitId,
+    change: {
+      readonly by: WaitResolution["by"];
+      readonly at: number;
+      readonly thread?: ThreadId | undefined;
+      readonly note?: string | undefined;
+    },
+  ): Effect.Effect<{ readonly item: WaitItem; readonly changed: boolean }, NotFound>;
   /**
    * Adds the helper's suggestion, anchored to `messageId` and drawn as no chip. `false`, adding
    * nothing, when the message already has, or had, an item from the helper, which is how a dismissed
@@ -133,7 +155,7 @@ export interface ThreadWaitsShape {
    */
   listForAgent(
     threadId: ThreadId,
-    which: WaitListState,
+    which: WaitListState | "deleted",
     heard?: boolean,
   ): Effect.Effect<ReadonlyArray<WaitItem>>;
   /** Late-bound by the runtimes, which depend on this service. */
@@ -209,17 +231,22 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
       return ThreadWaits.of({
         open: (threadId) => store.listWaits(threadId),
         helperResolved,
-        put: (threadId, draft, source) =>
+        put: (threadId, draft, source, editor) =>
           writes.withPermits(1)(
             Effect.gen(function* () {
               const open = yield* store.listWaits(threadId);
               const previous =
-                draft.id === undefined ? undefined : open.find((item) => item.id === draft.id);
-              if (draft.id !== undefined && previous === undefined) {
+                draft.id === undefined
+                  ? undefined
+                  : open.find(
+                      (item) =>
+                        item.id === draft.id && (editor === undefined || item.suggested !== true),
+                    );
+              if ((draft.id !== undefined || editor !== undefined) && previous === undefined) {
                 return yield* new NotFound({
                   entity: "wait",
-                  id: draft.id,
-                  message: `no open item ${draft.id} in this thread`,
+                  id: draft.id ?? "",
+                  message: `no open item ${draft.id ?? ""} in this thread`,
                 });
               }
               const kept = fullAt(open);
@@ -245,10 +272,22 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                   ? {}
                   : { updatedAt: now, revision: waitRevision(previous) + 1 }),
                 ...(person === undefined ? {} : { person }),
+                ...(previous === undefined || previous.suggested === true
+                  ? {}
+                  : {
+                      history: withWaitChange(previous.history, {
+                        at: now,
+                        by: source,
+                        ...(editor === undefined ? {} : { thread: editor }),
+                        change: "edited",
+                        from: waitContentOf(previous),
+                      }),
+                    }),
               };
+              const inPlace = editor !== undefined ? previous?.messageId : draft.anchor;
               const messageId =
-                draft.anchor !== undefined
-                  ? draft.anchor
+                inPlace !== undefined || editor !== undefined
+                  ? inPlace
                   : transcript === undefined
                     ? undefined
                     : yield* transcript.emitChunk(threadId, waitChunk(drawn));
@@ -256,8 +295,12 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                 ...drawn,
                 ...(messageId === undefined ? {} : { messageId }),
               };
-              yield* store.putWait(threadId, item, source === "agent" ? now : undefined);
-              if (draft.anchor !== undefined) yield* restyle(threadId, item);
+              yield* store.putWait(
+                threadId,
+                item,
+                source === "agent" && editor === undefined ? now : undefined,
+              );
+              if (inPlace !== undefined) yield* restyle(threadId, item);
               yield* publish(threadId);
               if (previous?.messageId !== undefined && previous.messageId !== item.messageId) {
                 yield* restyle(threadId, previous, "revised");
@@ -273,7 +316,10 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
           writes.withPermits(1)(
             Effect.gen(function* () {
               const before = yield* store.getWait(threadId, id);
-              if (revision !== undefined && waitRevision(before) !== revision) {
+              if (
+                before.deletedAt !== undefined ||
+                (revision !== undefined && waitRevision(before) !== revision)
+              ) {
                 return { item: before, changed: false };
               }
               if (
@@ -291,6 +337,38 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                 yield* restyle(threadId, item);
               }
               return { item, changed };
+            }),
+          ),
+        remove: (threadId, id, change) =>
+          writes.withPermits(1)(
+            Effect.gen(function* () {
+              const before = yield* store.getWait(threadId, id);
+              if (before.deletedAt !== undefined) return { item: before, changed: false };
+              const resolved =
+                before.resolvedAt === undefined
+                  ? yield* store.resolveWait(threadId, id, {
+                      by: change.by,
+                      at: change.at,
+                      ending: "withdrawn",
+                      ...(change.thread === undefined ? {} : { thread: change.thread }),
+                      ...(change.note === undefined ? {} : { note: change.note }),
+                    })
+                  : before;
+              const item: WaitItem = {
+                ...resolved,
+                deletedAt: change.at,
+                revision: waitRevision(resolved) + 1,
+                history: withWaitChange(resolved.history, {
+                  at: change.at,
+                  by: change.by,
+                  ...(change.thread === undefined ? {} : { thread: change.thread }),
+                  change: "deleted",
+                }),
+              };
+              yield* store.replaceWait(threadId, item);
+              yield* publish(threadId);
+              yield* restyle(threadId, item);
+              return { item, changed: true };
             }),
           ),
         suggest: (threadId, draft, messageId, fresh = Effect.succeed(true)) =>

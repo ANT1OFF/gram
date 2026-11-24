@@ -54,3 +54,39 @@ describe("digestWaiting's endings", () => {
     });
   });
 });
+
+const open = (id: string, createdAt: number): WaitItem => ({
+  id: id as WaitId,
+  kind: "action",
+  title: `Item ${id}`,
+  source: "agent",
+  createdAt,
+});
+
+describe("digestWaiting's stale items", () => {
+  it("counts every thread's open items and names the archived or merged threads' between boots", () => {
+    const threads = [
+      { threadId: ORCH, items: [open("w-1", 10 * MIN)], title: "Orchestrator" },
+      { threadId: WORKER, items: [open("w-2", 20 * MIN)], title: "Live", stale: undefined },
+      {
+        threadId: "gone" as ThreadId,
+        items: [open("w-3", 30 * MIN)],
+        title: "Gone",
+        stale: "archived" as const,
+      },
+    ];
+    const digest = digestWaiting({ variant: "digest", now: 60 * MIN, since: 0, threads });
+    expect(digest).toMatchObject({
+      open: 3,
+      stale: 1,
+      items: [{ threadId: "gone", thread: "Gone", id: "w-3", stale: "archived", ageMin: 30 }],
+    });
+    // A boot names them all, the stale one still flagged.
+    const boot = digestWaiting({ variant: "boot", now: 60 * MIN, since: undefined, threads });
+    expect(boot?.items?.map((item) => [item.id, item.stale])).toEqual([
+      ["w-1", undefined],
+      ["w-2", undefined],
+      ["w-3", "archived"],
+    ]);
+  });
+});

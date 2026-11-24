@@ -5,9 +5,19 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { makeOnDemandHosts } from "./on-demand.ts";
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ReleaseNotApplied, ReleaseRateLimited } from "./signed-in-calls.ts";
 import {
+  fileReleaseState,
+  memoryReleaseState,
+  RELEASE_PAUSE_FIRST_MS,
+  RELEASE_RETRY_FIRST_MS,
   recordTold,
   releaseDecisions,
+  releaseSends,
+  type ReleaseMachine,
   tellRelease,
   WORKER_RELEASE_SETTLE_MS,
   workerMachineWork,
@@ -26,7 +36,10 @@ const machine = (id: string, extra: object = {}) => ({
 /** A machine from a hosted server the desktop app is signed in to, rather than an embedder's. */
 const relayed = (id: string, extra: object = {}) =>
   machine(id, { owner: undefined, via: "https://hosted.example.test", ...extra });
-type Placed = Pick<Thread, "id" | "checkout" | "currentCheckout" | "spawnedBy" | "parked">;
+type Placed = Pick<
+  Thread,
+  "id" | "checkout" | "currentCheckout" | "spawnedBy" | "parked" | "runWatches"
+>;
 const on = (id: string, hostId: string, extra: Partial<Placed> = {}): Placed =>
   ({
     id: id as ThreadId,
@@ -286,4 +299,143 @@ describe("a worker machine's work", () => {
       ),
     ).toEqual([]);
   });
+});
+
+const decideArchived = (thread: Placed, busy: ReadonlySet<ThreadId> = new Set()) =>
+  releaseDecisions([relayed("aaaa")], [thread], new Set(), now, new Map(), new Set(), busy).map(
+    ({ released }) => released,
+  );
+
+const hosted = (id: string) => relayed(id) as ReleaseMachine;
+const recorder = (answer: (machine: ReleaseMachine) => Error | undefined) => {
+  const sent: Array<[string, boolean]> = [];
+  const tell = (asked: ReleaseMachine, released: boolean) =>
+    Effect.suspend(() => {
+      sent.push([asked.id, released]);
+      const failed = answer(asked);
+      return failed === undefined ? Effect.void : Effect.fail(failed);
+    });
+  return { sent, tell };
+};
+
+describe("an archived worker", () => {
+  it("lets its machine go once nothing goes on in it, unless a run is watched for it", () => {
+    expect(decideArchived(on("t1", "aaaa"))).toEqual([false]);
+    expect(decideArchived(on("t1", "aaaa", { parked: true }))).toEqual([true]);
+    expect(decideArchived(on("t1", "aaaa", { parked: true }), new Set(["t1" as ThreadId]))).toEqual(
+      [false],
+    );
+    expect(
+      decideArchived(
+        on("t1", "aaaa", { parked: true, runWatches: [{ repo: "o/r", runId: 1, since: now }] }),
+      ),
+    ).toEqual([false]);
+  });
+});
+
+describe("the releases a pass sends", () => {
+  it.effect("tells machines at work first, and stops every send at a 429 until a wait", () =>
+    Effect.gen(function* () {
+      const state = memoryReleaseState();
+      let clock = now;
+      const decided = ["aaaa", "bbbb", "cccc", "dddd"].map((id, i) => ({
+        machine: hosted(id),
+        released: i !== 3,
+      }));
+      const limited = recorder((m) =>
+        m.id === "bbbb" ? new ReleaseRateLimited("429") : undefined,
+      );
+      yield* releaseSends(decided, limited.tell, state, { now: () => clock, gapMs: 0 });
+      // The take-back first; nothing after the 429 is sent this pass.
+      expect(limited.sent).toEqual([
+        ["dddd", false],
+        ["aaaa", true],
+        ["bbbb", true],
+      ]);
+      // Nothing at all before the wait is up, then the rest.
+      const later = recorder(() => undefined);
+      clock += RELEASE_PAUSE_FIRST_MS - 1;
+      yield* releaseSends(decided, later.tell, state, { now: () => clock, gapMs: 0 });
+      expect(later.sent).toEqual([]);
+      clock += 1;
+      yield* releaseSends(decided, later.tell, state, { now: () => clock, gapMs: 0 });
+      expect(later.sent.map(([id]) => id)).toEqual(["dddd", "aaaa", "bbbb", "cccc"]);
+      expect(state.paused).toBeUndefined();
+    }),
+  );
+
+  it.effect("sends one the server applied to no run again only after a wait that doubles", () =>
+    Effect.gen(function* () {
+      const state = memoryReleaseState();
+      let clock = now;
+      const decided = [{ machine: hosted("aaaa"), released: true }];
+      const none = recorder(() => new ReleaseNotApplied("no run"));
+      const pass = () => releaseSends(decided, none.tell, state, { now: () => clock, gapMs: 0 });
+      yield* pass();
+      clock += RELEASE_RETRY_FIRST_MS - 1;
+      yield* pass();
+      expect(none.sent).toHaveLength(1);
+      clock += 1;
+      yield* pass();
+      expect(none.sent).toHaveLength(2);
+      clock += RELEASE_RETRY_FIRST_MS;
+      yield* pass();
+      expect(none.sent).toHaveLength(2);
+      clock += RELEASE_RETRY_FIRST_MS;
+      yield* pass();
+      expect(none.sent).toHaveLength(3);
+      // Decided the other way, it is sent at once.
+      const back = recorder(() => undefined);
+      yield* releaseSends([{ machine: hosted("aaaa"), released: false }], back.tell, state, {
+        now: () => clock,
+        gapMs: 0,
+      });
+      expect(back.sent).toEqual([["aaaa", false]]);
+    }),
+  );
+
+  it.effect("keeps releases told and owed across a restart, so none is sent again in a burst", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(join(tmpdir(), "gram-releases-"));
+      try {
+        const clock = now;
+        const before = fileReleaseState(dir, () => clock);
+        const decided = ["aaaa", "bbbb", "cccc"].map((id, i) => ({
+          machine: hosted(id),
+          released: i !== 2,
+        }));
+        const first = recorder((m) => (m.id === "bbbb" ? new Error("no answer") : undefined));
+        yield* releaseSends(decided, first.tell, before, { now: () => clock, gapMs: 0 });
+
+        const after = fileReleaseState(dir, () => clock);
+        // The release told is kept; the take-back is not, so it is told once again.
+        expect(
+          releaseDecisions(
+            decided.map((each) => each.machine),
+            [on("t3", "cccc")],
+            new Set(),
+            clock,
+            after.told,
+          ).map((each) => [each.machine.id, each.released]),
+        ).toEqual([
+          ["bbbb", true],
+          ["cccc", false],
+        ]);
+        // The one owed waits out its wait, restart or not.
+        const second = recorder(() => undefined);
+        yield* releaseSends([{ machine: hosted("bbbb"), released: true }], second.tell, after, {
+          now: () => clock,
+          gapMs: 0,
+        });
+        expect(second.sent).toEqual([]);
+        yield* releaseSends([{ machine: hosted("bbbb"), released: true }], second.tell, after, {
+          now: () => clock + RELEASE_RETRY_FIRST_MS,
+          gapMs: 0,
+        });
+        expect(second.sent).toEqual([["bbbb", true]]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }),
+  );
 });

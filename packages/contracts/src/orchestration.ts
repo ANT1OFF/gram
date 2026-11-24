@@ -11,7 +11,13 @@ import { PrReviewRequest } from "./pr-people.ts";
 import { RunWatch } from "./run-watch.ts";
 import { ThreadStatus } from "./thread-status.ts";
 import { verifyReportLine, WorkerReportVerify } from "./verify-recipe.ts";
-import { DigestWaiting, type DigestWaitingEnded } from "./digest-waiting.ts";
+import {
+  DigestWaiting,
+  digestWaitingItemText,
+  staleWaitsText,
+  waitAgeText,
+  type DigestWaitingEnded,
+} from "./digest-waiting.ts";
 import type { WaitKind } from "./waits.ts";
 import { StoredWakeCondition, WakeCondition, wakeConditionWhen } from "./wake-conditions.ts";
 import { WorkerQuestion } from "./worker-questions.ts";
@@ -1221,13 +1227,6 @@ const WAIT_WORDS: Readonly<Record<WaitKind, readonly [one: string, many: string]
   action: ["step to take", "steps to take"],
 };
 
-const ageText = (minutes: number): string =>
-  minutes < 60
-    ? `${minutes}m`
-    : minutes < 48 * 60
-      ? `${Math.floor(minutes / 60)} h`
-      : `${Math.floor(minutes / (24 * 60))} d`;
-
 const endedNames = (items: ReadonlyArray<DigestWaitingEnded>) =>
   items
     .map(
@@ -1243,15 +1242,11 @@ const waitingLines = (waiting: DigestWaiting): ReadonlyArray<string> => {
       .map(({ kind, count }) => `${count} ${WAIT_WORDS[kind][count === 1 ? 0 : 1]}`)
       .join(", ");
     const oldest =
-      waiting.oldestMin === undefined ? "" : `; the oldest for ${ageText(waiting.oldestMin)}`;
+      waiting.oldestMin === undefined ? "" : `; the oldest for ${waitAgeText(waiting.oldestMin)}`;
     lines.push(
-      `Waiting on the user: ${kinds}${oldest}. Mention it when it matters; don't repeat it every reply.`,
+      `Waiting on the user: ${kinds}${oldest}. Mention it when it matters; don't repeat it every reply.${staleWaitsText(waiting.stale)}`,
     );
-    for (const item of waiting.items ?? []) {
-      lines.push(
-        `- ${item.kind} "${inline(item.title)}" [thread ${item.threadId}] (${item.id}), ${ageText(item.ageMin)}`,
-      );
-    }
+    for (const item of waiting.items ?? []) lines.push(digestWaitingItemText(item, inline));
     const unnamed = waiting.open - (waiting.items?.length ?? waiting.open);
     if (unnamed > 0) lines.push(`- and ${unnamed} more`);
   }

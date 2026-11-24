@@ -61,3 +61,15 @@ export const resolvedWait = (
       resolution.by === "agent" && resolution.thread === undefined ? resolution.at : undefined,
   };
 };
+
+/** Which of a thread's stored items a read answers: open, `all` kept, or only the `deleted` ones. */
+export type WaitRows = "open" | "all" | "deleted";
+
+/**
+ * `items` as a read of `which` answers them: deleted ones (`WaitItem.deletedAt`) only for
+ * `deleted`, and never otherwise.
+ */
+export const waitRowsOf =
+  (which: WaitRows) =>
+  (items: ReadonlyArray<WaitItem>): ReadonlyArray<WaitItem> =>
+    items.filter((item) => (item.deletedAt !== undefined) === (which === "deleted"));

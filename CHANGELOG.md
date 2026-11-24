@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.42.0](https://github.com/ANT1OFF/gram/compare/v1.41.0...v1.42.0) (2026-11-24)
+
+
+### Features
+
+* an orchestrator sees and manages its whole workspace's Waiting on you ([#1022](https://github.com/ANT1OFF/gram/issues/1022)) ([96f82e5](https://github.com/ANT1OFF/gram/commit/96f82e599ba5d76eb01a135b48be3b4c91b1d1fb))
+* lightweight memory updates with Auto mode, schedule and revert ([#1020](https://github.com/ANT1OFF/gram/issues/1020)) ([ced9591](https://github.com/ANT1OFF/gram/commit/ced959160bc36e45e48da681f6b6363966beecd1))
+
+
+### Bug Fixes
+
+* keep the Inbox still while busy workers ask and edit ([#1021](https://github.com/ANT1OFF/gram/issues/1021)) ([c0b0886](https://github.com/ANT1OFF/gram/commit/c0b0886a3e70a6c31592907f133522c8adc6d985))
+* **machines:** pace worker-machine releases, retry them durably, and release archived workers' machines ([#1023](https://github.com/ANT1OFF/gram/issues/1023)) ([5cb7675](https://github.com/ANT1OFF/gram/commit/5cb76756eea35e9e4d486f51cf87ee1b077c0bf4))
+
 ## [1.41.0](https://github.com/ANT1OFF/gram/compare/v1.40.0...v1.41.0) (2026-11-24)
 
 
