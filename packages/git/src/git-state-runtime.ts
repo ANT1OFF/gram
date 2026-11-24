@@ -10,6 +10,7 @@ import { carryRebaseTier, fetchRedundant, localGitState, withPr } from "./git-st
 import { originOwnerRepo, Pr, prLookupReason } from "./pr.ts";
 import { samePathKey } from "./paths.ts";
 import { Proc } from "./proc.ts";
+import { isBranchName } from "./ref-format.ts";
 import { localBaseRef, originTips } from "./refs.ts";
 import { remoteGit } from "./remote-git.ts";
 import { cachedRepoRoots } from "./repo-facts.ts";
@@ -101,7 +102,7 @@ const maybeFetch = (
   lastFetch: Map<string, number>,
 ) =>
   Effect.gen(function* () {
-    if (branch === undefined) return false;
+    if (branch === undefined || !isBranchName(branch)) return false;
     const roots = yield* cachedRepoRoots(cwd);
     if (roots === undefined) return false;
     const last = lastFetch.get(roots.common);
@@ -117,10 +118,19 @@ const maybeFetch = (
     }
     if (!fetchDue(lastFetch, roots.common, Date.now(), FETCH_THROTTLE_MS)) return false;
     const base = pr?.baseRef ?? (yield* localBaseRef(cwd))?.replace(/^origin\//, "");
-    const refs = base === undefined || base === branch ? [branch] : [branch, base];
+    const refs =
+      base === undefined || base === branch || !isBranchName(base) ? [branch] : [branch, base];
     yield* remoteGit(
       cwd,
-      ["-c", "credential.interactive=false", "fetch", "--quiet", "origin", ...refs],
+      [
+        "-c",
+        "credential.interactive=false",
+        "fetch",
+        "--quiet",
+        "--end-of-options",
+        "origin",
+        ...refs,
+      ],
       {
         tier: "network",
       },

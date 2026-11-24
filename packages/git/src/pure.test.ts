@@ -31,13 +31,8 @@ import { childEnv, parsePathProbe, resolveExecutable, withGitLongPaths } from ".
 import { cacheFresh, findOnPath } from "./tools.ts";
 import { classifyPath, cooldownDelay, type Classification, type WatchedCheckout } from "./watch.ts";
 import { includePatterns, matchesInclude } from "./worktree-include.ts";
-import {
-  checkoutInUse,
-  folderName,
-  matchesDirtyStderr,
-  parseWorktrees,
-  sanitizeBranch,
-} from "./worktrees.ts";
+import { checkoutInUse, folderName, matchesDirtyStderr, parseWorktrees } from "./worktrees.ts";
+import { isBranchName, isRemoteName, originTrackingRef, sanitizeBranch } from "./ref-format.ts";
 
 const classify = (path: string, checkouts: ReadonlyArray<WatchedCheckout>): Classification => {
   const out: Classification = { hit: new Set(), internal: new Set() };
@@ -98,6 +93,39 @@ describe("branch sanitising and placement names", () => {
     for (const bad of ["", "bad branch", "-evil", "tick`tick", "semi;colon", "ünïcode"]) {
       expect(sanitizeBranch(bad)).toBeUndefined();
     }
+  });
+
+  it("holds names a repository hands over to git's ref grammar, never option-shaped", () => {
+    for (const good of ["main", "feat/x-1.2_y", "release/v1", "ünïcode", "a@b"])
+      expect(isBranchName(good)).toBe(true);
+    for (const bad of [
+      "",
+      "HEAD",
+      "-x",
+      "--upload-pack=/tmp/x",
+      "a..b",
+      "a/.b",
+      "a.lock",
+      "a/",
+      "a//b",
+      "a.",
+      "a b",
+      "a~1",
+      "a^",
+      "a:b",
+      "a?",
+      "a*",
+      "a[b",
+      "a\\b",
+      "a@{1}",
+      "a\u0001b",
+    ])
+      expect(isBranchName(bad), bad).toBe(false);
+    expect(isRemoteName("origin")).toBe(true);
+    expect(isRemoteName("--upload-pack=x")).toBe(false);
+    expect(originTrackingRef("origin/main")).toBe("origin/main");
+    expect(originTrackingRef("origin/--upload-pack=x")).toBeUndefined();
+    expect(originTrackingRef("upstream/main")).toBeUndefined();
   });
 
   it("flattens slashes", () => {

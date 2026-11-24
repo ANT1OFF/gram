@@ -95,7 +95,7 @@ const cloneCommand = (remote: RepoRemote, into: string, cwd: string) =>
     ? gh(cwd, ["repo", "clone", `${remote.owner}/${remote.repo}`, into], {
         timeoutMs: TIER_MILLIS.slow,
       })
-    : remoteGit(cwd, ["clone", "--", remote.url, into], {
+    : remoteGit(cwd, ["clone", "--end-of-options", remote.url, into], {
         tier: "slow",
         env: { GIT_ALLOW_PROTOCOL: "https:ssh" },
       });

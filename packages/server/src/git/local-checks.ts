@@ -697,8 +697,6 @@ const selectedTreeOf = (
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: "/dev/null",
     };
-    const upload =
-      "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack";
     const advertise = yield* remoteG(
       own,
       [
@@ -707,7 +705,8 @@ const selectedTreeOf = (
         "-c",
         "protocol.version=2",
         "ls-remote",
-        upload,
+        "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack",
+        "--end-of-options",
         pathToFileURL(repoDir).href,
       ],
       { ...env, GIT_TRACE_PACKET: "1" },
@@ -731,7 +730,8 @@ const selectedTreeOf = (
           "--quiet",
           "--no-tags",
           "--filter=blob:none",
-          upload,
+          "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack",
+          "--end-of-options",
           pathToFileURL(repoDir).href,
           sha,
         ],
@@ -803,7 +803,8 @@ const selectedTreeOf = (
             "fetch",
             "--quiet",
             "--no-tags",
-            upload,
+            "--upload-pack=git -c uploadpack.allowFilter=true -c uploadpack.allowAnySHA1InWant=true upload-pack",
+            "--end-of-options",
             pathToFileURL(repoDir).href,
             ...blobs.slice(offset, offset + 128),
           ],
@@ -1085,6 +1086,7 @@ export const LocalChecksLive = Layer.effect(
               "fetch",
               "--no-tags",
               "--quiet",
+              "--end-of-options",
               pathToFileURL(repoDir).href,
               sha,
             ],
@@ -1096,7 +1098,7 @@ export const LocalChecksLive = Layer.effect(
         yield* ran(
           remoteGit(
             repoDir,
-            ["fetch", "--no-tags", "--quiet", "origin", sha],
+            ["fetch", "--no-tags", "--quiet", "--end-of-options", "origin", sha],
             isolatedGitOptions(),
           ),
         );

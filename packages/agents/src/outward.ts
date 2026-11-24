@@ -380,6 +380,36 @@ export const outwardKind = (command: string): OutwardKind | undefined => {
   }
 };
 
+const forcesOf = (raw: ReadonlyArray<string>): boolean => {
+  const [head, ...args] = unwrap(raw);
+  if (head === undefined) return false;
+  const name = binaryName(head);
+  if (name === "git") return gitKind(args) === "irreversible";
+  if (name === "eval") return isForcePush(args.join(" "));
+  if (SHELLS.has(name)) {
+    const at = args.findIndex((arg) => /^-[A-Za-z]*c[A-Za-z]*$/.test(arg));
+    const script = at === -1 ? undefined : args[at + 1];
+    return script !== undefined && isForcePush(script);
+  }
+  return false;
+};
+
+/**
+ * Whether a shell command line pushes over or deletes what a remote holds by an ordinary spelling:
+ * a `git push` that `outwardKind` calls `irreversible` (`--force`, `-f`, `--force-with-lease`, a
+ * `+` refspec, `--delete`, a `:branch` refspec, `--mirror`, `--prune`). A decision about the push
+ * is asked as a force push then; a line too strange to read counts as one.
+ */
+export const isForcePush = (command: string): boolean => {
+  const commands: Array<ReadonlyArray<string>> = [];
+  try {
+    collectCommands(command, commands);
+    return commands.some(forcesOf);
+  } catch {
+    return true;
+  }
+};
+
 /** What an outward command does, named: for a decision asked about the command (`outwardActions`). */
 export type OutwardAction =
   | "push"

@@ -6,7 +6,7 @@ import { parseOwnerRepo } from "./pr.ts";
 import type { ProcError } from "./errors.ts";
 import type { Proc, ProcOutput } from "./proc.ts";
 import { repoFromPrUrl } from "./review-actions.ts";
-import { isValidGitRefCharset } from "./worktrees.ts";
+import { isRemoteName, isValidGitRefCharset } from "./ref-format.ts";
 
 /** The repository clone URL from a PR URL, preserving the old suffix replacement semantics. */
 export const prCloneUrl = (url: string): string => {
@@ -128,7 +128,9 @@ const remoteFor = (repoTop: string, repo: string) =>
         : out.stdout.split("\n").flatMap((line) => {
             const [key = "", url = ""] = line.trim().split(/\s+/);
             const name = /^remote\.(.+)\.url$/.exec(key)?.[1];
-            return name !== undefined && parseOwnerRepo(url)?.toLowerCase() === repo.toLowerCase()
+            return name !== undefined &&
+              isRemoteName(name) &&
+              parseOwnerRepo(url)?.toLowerCase() === repo.toLowerCase()
               ? [name]
               : [];
           })[0],
@@ -136,13 +138,11 @@ const remoteFor = (repoTop: string, repo: string) =>
     Effect.orElseSucceed(() => undefined),
   );
 
-const ran = (args: ReadonlyArray<string>, out: Effect.Effect<ProcOutput, ProcError, Proc>) =>
+const ran = (verb: string, out: Effect.Effect<ProcOutput, ProcError, Proc>) =>
   out.pipe(
     Effect.mapError((e) => fail(e.message)),
     Effect.flatMap((done) =>
-      done.status === 0
-        ? Effect.void
-        : Effect.fail(fail(gitFailMsg(done, `git ${args[0]} failed`))),
+      done.status === 0 ? Effect.void : Effect.fail(fail(gitFailMsg(done, `git ${verb} failed`))),
     ),
   );
 
@@ -158,20 +158,31 @@ export const fetchPrHead = (
   Effect.gen(function* () {
     const branch = localPrBranch(head);
     if (yield* branchExists(repoTop, `refs/heads/${branch}`)) return branch;
-    const run = (args: ReadonlyArray<string>) => ran(args, git(repoTop, args));
-    const fetch = (args: ReadonlyArray<string>) =>
-      ran(args, remoteGit(repoTop, ["fetch", ...args], { tier: "network" }));
+    const run = (args: ReadonlyArray<string>) => ran(args[0] ?? "", git(repoTop, args));
+    const fetch = (from: string, refspec: string) =>
+      ran(
+        "fetch",
+        remoteGit(repoTop, ["fetch", "--quiet", "--end-of-options", from, refspec], {
+          tier: "network",
+        }),
+      );
     const remote = yield* remoteFor(repoTop, head.repo);
     if (!head.fork && remote !== undefined && branch === head.headRefName) {
       const tracking = `refs/remotes/${remote}/${head.headRefName}`;
-      yield* fetch(["--quiet", remote, `+refs/heads/${head.headRefName}:${tracking}`]);
-      yield* run(["branch", "--track", branch, `${remote}/${head.headRefName}`]);
+      yield* fetch(remote, `+refs/heads/${head.headRefName}:${tracking}`);
+      yield* run([
+        "branch",
+        "--track",
+        "--end-of-options",
+        branch,
+        `${remote}/${head.headRefName}`,
+      ]);
       return branch;
     }
     const source = remote ?? prCloneUrl(head.url);
     const ref = `refs/gram/pr-checkout/pr-${head.number}-${process.pid}-${Date.now()}`;
     yield* Effect.gen(function* () {
-      yield* fetch(["--quiet", source, `+refs/pull/${head.number}/head:${ref}`]);
+      yield* fetch(source, `+refs/pull/${head.number}/head:${ref}`);
       const resolved = yield* git(repoTop, [
         "rev-parse",
         "--verify",
@@ -187,7 +198,7 @@ export const fetchPrHead = (
           fail(`PR #${head.number}'s head moved while it was fetched; try again`),
         );
       }
-      yield* run(["branch", branch, oid]);
+      yield* run(["branch", "--end-of-options", branch, oid]);
     }).pipe(Effect.ensuring(Effect.ignore(git(repoTop, ["update-ref", "-d", ref]))));
     return branch;
   });

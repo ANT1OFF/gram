@@ -71,6 +71,7 @@ export const cloneWorktrees = (
           "credential.interactive=false",
           "fetch",
           "--quiet",
+          "--end-of-options",
           "origin",
           `+refs/heads/${name}:refs/remotes/origin/${name}`,
         ],
