@@ -44,6 +44,43 @@ Requests go through [retry](../src/retry.ts) before they reach the network.
 See the [README](/README.md) and the [upstream docs](https://organization.example.invalid/docs).
 `;
 
+const LONG_GUIDE_WITH_EVERY_BLOCK_MD = [
+  "# Operating the API",
+  "",
+  "How the service retries, backs off and reports, one topic a section.",
+  ...Array.from({ length: 16 }, (_, index) => {
+    const step = index + 1;
+    return [
+      "",
+      `## ${step}. Retry budget ${step}`,
+      "",
+      `Each call gets ${step + 2} attempts. The backoff doubles from ${step * 50} ms, so a burst of failures spreads out instead of hammering the upstream.`,
+      "",
+      "```ts",
+      `export const budget${step} = {`,
+      `  attempts: ${step + 2},`,
+      `  backoffMs: ${step * 50},`,
+      `  jitter: (attempt: number) => Math.random() * ${step * 10} * attempt,`,
+      "};",
+      "",
+      `await retry(() => fetchOrders(${step}), budget${step});`,
+      "```",
+      "",
+      "| Attempt | Wait | Total |",
+      "| ------- | ---- | ----- |",
+      ...[1, 2, 3].map((attempt) => {
+        const wait = step * 50 * 2 ** (attempt - 1);
+        return `| ${attempt} | ${wait} ms | ${step * 50 * (2 ** attempt - 1)} ms |`;
+      }),
+      "",
+      ...(step % 4 === 0 ? ["![Logo](logo.png)", ""] : []),
+      "- Log each attempt with its number.",
+      "- Give up on a `4xx`; retry a `5xx`.",
+    ].join("\n");
+  }),
+  "",
+].join("\n");
+
 const dir = (children: Record<string, MockNode>): MockNode => ({ kind: "dir", children });
 const text = (content: string): MockNode => ({ kind: "file", content });
 
@@ -96,6 +133,7 @@ const CHECKOUT = dir({
     "architecture.md": text(ARCHITECTURE_MD),
     "diagram.svg": { kind: "file", content: DIAGRAM_SVG, image: btoa(DIAGRAM_SVG) },
     "font.woff2": { kind: "file", size: 24_512, binary: true },
+    "guide.md": text(LONG_GUIDE_WITH_EVERY_BLOCK_MD),
     "logo.png": { kind: "file", size: 440, binary: true, image: LOGO_PNG },
   }),
   fixtures: dir({ "recording.json": { kind: "file", size: 5_242_880 } }),
