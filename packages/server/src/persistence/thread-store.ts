@@ -3808,9 +3808,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
               const rows = yield* sql<{
                 data: string;
               }>`SELECT data FROM dream_cursors WHERE workspace_id = ${id}`;
-              const decoded = rows[0] === undefined ? undefined : decodeStored(DreamCursor, rows[0].data);
-              const next =
-                decoded?.ok === true ? laterCursor(decoded.value, cursor) : cursor;
+              const decoded =
+                rows[0] === undefined ? undefined : decodeStored(DreamCursor, rows[0].data);
+              const next = decoded?.ok === true ? laterCursor(decoded.value, cursor) : cursor;
               yield* sql`INSERT INTO dream_cursors (workspace_id, data) VALUES (${id}, ${toJson(DreamCursor, next)})
                 ON CONFLICT (workspace_id) DO UPDATE SET data = excluded.data`;
             }),

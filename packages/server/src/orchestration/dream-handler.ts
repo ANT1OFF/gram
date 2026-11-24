@@ -267,7 +267,10 @@ export const dreamHandlers = Effect.gen(function* () {
     "dream.merge": ({ dreamId, path }) => dreams.merge(dreamId, path),
     "dream.discard": ({ dreamId }) => dreams.discard(dreamId),
     "dream.revert": ({ dreamId }) =>
-      dreams.revert(dreamId).pipe(Effect.tap((workspaceId) => changed(workspaceId)), Effect.asVoid),
+      dreams.revert(dreamId).pipe(
+        Effect.tap((workspaceId) => changed(workspaceId)),
+        Effect.asVoid,
+      ),
 
     "memory.list": ({ workspaceId }) =>
       Effect.andThen(guard(workspaceId), memory.list(workspaceId)),

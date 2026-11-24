@@ -633,9 +633,9 @@ test("Auto discards the waiting drafts once confirmed, runs on a schedule, and R
   await memoryTab(page, "History");
   const versions = page.getByTestId("memory-versions");
   await expect(
-    versions.locator('[data-testid="memory-version"][data-version="0001"]').getByTestId(
-      "memory-version-current",
-    ),
+    versions
+      .locator('[data-testid="memory-version"][data-version="0001"]')
+      .getByTestId("memory-version-current"),
   ).toBeVisible();
   const made = versions.locator('[data-testid="memory-version"][data-version="0002"]');
   await expect(made.getByTestId("memory-version-source")).toContainText("memory update");

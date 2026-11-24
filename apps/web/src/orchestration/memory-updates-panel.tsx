@@ -268,7 +268,11 @@ export function MemoryUpdatesPanel({
         </div>
       )}
       {reverted !== undefined && (
-        <p role="status" data-testid="memory-update-reverted" className="text-meta text-description">
+        <p
+          role="status"
+          data-testid="memory-update-reverted"
+          className="text-meta text-description"
+        >
           Reverted: memory is back at version {reverted}. History keeps the version it undid.
         </p>
       )}

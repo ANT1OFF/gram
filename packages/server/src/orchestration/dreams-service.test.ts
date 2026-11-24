@@ -705,7 +705,9 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
             expect((yield* Effect.flip(dreams.adopt(dream.id))).message).toContain(
               "already adopted",
             );
-            expect(titles(events)).toContainEqual(expect.stringMatching(/^Memory updated \(0002\): /));
+            expect(titles(events)).toContainEqual(
+              expect.stringMatching(/^Memory updated \(0002\): /),
+            );
             expect(titles(events)).not.toContain("Memory update finished — review it");
             const report = (yield* store.listMessagesFrom(dream.threadId!, 0, true)).flatMap((m) =>
               m.message.parts.filter((p) => p.type === "data-dream-report"),

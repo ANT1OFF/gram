@@ -394,7 +394,9 @@ export const recentIndex = (read: DreamRecentRead, notes: ReadonlyArray<string> 
       plural(read.questions, "answered question"),
       plural(read.threads, "finished thread"),
     ].join(", ")} · ${tokensText(read.estimatedTokens)}`,
-    ...(notes.length === 0 ? [] : ["", "## Not in this snapshot", "", ...notes.map((n) => `- ${n}`)]),
+    ...(notes.length === 0
+      ? []
+      : ["", "## Not in this snapshot", "", ...notes.map((n) => `- ${n}`)]),
     "",
   ].join("\n");
 
@@ -798,14 +800,23 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             workspaceId,
             cursor.reportSeq,
           )) {
-            items.push({ kind: "report", seq, at: report.at, title: titleOf(report.threadId), report });
+            items.push({
+              kind: "report",
+              seq,
+              at: report.at,
+              title: titleOf(report.threadId),
+              report,
+            });
           }
           for (const event of yield* store.listOrchestrationEventsAfter(
             workspaceId,
             cursor.eventSeq,
             ["merge"],
           )) {
-            const data = (event.data ?? {}) as { readonly threadId?: unknown; readonly pr?: unknown };
+            const data = (event.data ?? {}) as {
+              readonly threadId?: unknown;
+              readonly pr?: unknown;
+            };
             const threadId = typeof data.threadId === "string" ? data.threadId : undefined;
             items.push({
               kind: "merge",
@@ -1139,7 +1150,12 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 ? yield* settleUnchanged(completed)
                 : yield* autoAdopt(completed, outputDigest(verdict.output));
           yield* announce(ended, verdict.review, reportWithChecks(verdict.output).report, {
-            kind: ended.adoptionFailure === undefined ? (ended.mode === "auto" ? "info" : "done") : "error",
+            kind:
+              ended.adoptionFailure === undefined
+                ? ended.mode === "auto"
+                  ? "info"
+                  : "done"
+                : "error",
             title:
               ended.mode !== "auto"
                 ? "Memory update finished — review it"
@@ -1432,7 +1448,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             memoryVersion: current.version,
             memory: current.files,
             sessions,
-            index: recent === undefined ? sessionIndex(sessions, notes) : recentIndex(recent, notes),
+            index:
+              recent === undefined ? sessionIndex(sessions, notes) : recentIndex(recent, notes),
             instructions: input.instructions,
             seeds,
           });
@@ -1442,7 +1459,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             id: dreamId,
             workspaceId: workspace.id,
             kind: input.kind,
-            mode: input.mode ?? (input.kind === "dream" ? memoryUpdateModeOf(state.charter) : "review"),
+            mode:
+              input.mode ?? (input.kind === "dream" ? memoryUpdateModeOf(state.charter) : "review"),
             status: "running",
             inputs: {
               memoryVersion: current.version,
@@ -2039,7 +2057,12 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               ),
             );
             yield* Effect.logInfo("dream reverted").pipe(
-              Effect.annotateLogs({ dreamId, workspaceId: dream.workspaceId, from: made, to: before }),
+              Effect.annotateLogs({
+                dreamId,
+                workspaceId: dream.workspaceId,
+                from: made,
+                to: before,
+              }),
             );
             yield* orchestration.addNote(
               dream.workspaceId,
@@ -2104,7 +2127,9 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           if (now - last < hours * HOUR_MS) continue;
           if ((yield* automaticDream.gate(state)) !== undefined) continue;
           yield* startLock
-            .withPermits(1)(startUnlocked({ workspaceId: id, kind: "dream" }, undefined, undefined, true))
+            .withPermits(1)(
+              startUnlocked({ workspaceId: id, kind: "dream" }, undefined, undefined, true),
+            )
             .pipe(
               asWorkspaceOwner(state),
               Effect.tap(() => Effect.sync(() => tried.set(id, now))),

@@ -41,12 +41,13 @@ export function AutomaticDreamField({
         label="Update memory automatically"
         checked={threshold !== undefined}
         disabled={disabled}
-        description="Start a memory update, which drafts memory from past threads, once enough finish."
+        description="Start a memory update, which files what happened since the last one, once enough threads finish."
         learnMore={
           <p>
-            Each run waits for your review. Turning this on or changing the threshold starts a fresh
-            count; earlier completions do not trigger a run. A manual or automatic start resets the
-            count. Failed or cancelled runs need a fresh batch.
+            Each run lands as the workspace's memory updates do (Review or Auto, on its Memory
+            page). Turning this on or changing the threshold starts a fresh count; earlier
+            completions do not trigger a run. A manual or automatic start resets the count. Failed
+            or cancelled runs need a fresh batch.
           </p>
         }
         keywords={["memory update", "dream", "automatic", "completed threads", "memory"]}

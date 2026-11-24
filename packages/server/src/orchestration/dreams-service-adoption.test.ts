@@ -29,7 +29,8 @@ describe.skipIf(!hasGit)("dreams", () => {
         const { dream, session } = yield* startDream(workspaceId, undefined, "auto");
         writeOutput(dream, {
           "MEMORY.md": "# Candidate\n\n- [[goals]]: goals\n",
-          "goals.md": "---\nname: goals\ndescription: what the user wants\ntype: goal\n---\n\n- Ship it (2026-11-24, thread t-1)\n",
+          "goals.md":
+            "---\nname: goals\ndescription: what the user wants\ntype: goal\n---\n\n- Ship it (2026-11-24, thread t-1)\n",
         });
         const newer = "# Newer user edit, exact bytes\n\nPreserve me.\n";
         yield* memory.write(workspaceId, "MEMORY.md", newer);
