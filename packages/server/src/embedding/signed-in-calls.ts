@@ -299,6 +299,18 @@ export const wakeSignedIn = (
 export class ReleaseRefused extends Error {}
 
 /**
+ * A release the server turned away for now (`429`): the pass that sent it sends no more until a
+ * wait has passed (`releaseSends`).
+ */
+export class ReleaseRateLimited extends Error {}
+
+/**
+ * A release the server took but applied to no run of the machine (`applied: false`, or fenced as
+ * `superseded`): not told, and not sent again until a wait has passed (`releaseSends`).
+ */
+export class ReleaseNotApplied extends Error {}
+
+/**
  * Tells a signed-in server a worker machine's work is over, or going on again. `missing`: answered
  * `404 not_found`, which a server says of a machine it reclaimed, but also for a while of every
  * machine while it has no backend or the workspace no backend: never taken as the machine gone
@@ -350,6 +362,8 @@ export const tellSignedInRelease = (
       }
       if (answered.status === 400)
         return yield* Effect.fail(new ReleaseRefused("the server refused it as malformed"));
+      if (answered.status === 429)
+        return yield* Effect.fail(new ReleaseRateLimited("the server answered 429"));
       if (answered.status >= 300)
         return yield* Effect.fail(new Error(`the server answered ${answered.status}`));
       const known =
@@ -373,7 +387,9 @@ export const tellSignedInRelease = (
           { name: machine.name },
           { account: machine.account },
         );
-        return yield* Effect.fail(new Error("the server applied it to no run of the machine"));
+        return yield* Effect.fail(
+          new ReleaseNotApplied("the server applied it to no run of the machine"),
+        );
       }
       return "applied" as const;
     }
