@@ -180,7 +180,9 @@ export interface ShellSidebar {
   readonly header?: ComponentType<ShellSlotProps>;
   /**
    * The person signed in: an avatar, a name and one line, drawn at the sidebar's foot (above
-   * Collapse in the `roomy` look). A phone's drawer has it at its foot too.
+   * Collapse in the `roomy` look). A phone's drawer has it at its foot too. The compact strip
+   * draws it at its foot with `placement: "rail"`, in a tile's room: an avatar alone, say, that
+   * opens the same menu.
    */
   readonly account?: ComponentType<ShellSlotProps>;
   /**

@@ -174,6 +174,24 @@ export function EmbedSidebarHeader({ className }: { className?: string }) {
   );
 }
 
+/**
+ * The embedding app's account at the compact strip's foot, given `placement: "rail"`: a tile of
+ * its own, such as an avatar that opens its menu. Nothing when it supplied none.
+ */
+export function EmbedRailAccount() {
+  const account = useEmbedShell((s) => s.sidebar.account);
+  if (account === undefined) return null;
+  return (
+    <div
+      data-testid="embed-account"
+      data-placement="rail"
+      className="flex shrink-0 justify-center pt-1 [-webkit-app-region:no-drag]"
+    >
+      {createElement(account, { placement: "rail" })}
+    </div>
+  );
+}
+
 /** The embedding app's account, at the sidebar's foot. Nothing when it supplied none. */
 export function EmbedAccount({ className }: { className?: string }) {
   const account = useEmbedShell((s) => s.sidebar.account);

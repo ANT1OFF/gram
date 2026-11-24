@@ -397,8 +397,19 @@ function Brand() {
   );
 }
 
-/** The person signed in, at the sidebar's foot. */
-function Account() {
+/** The person signed in, at the sidebar's foot; on the compact strip, the initial alone. */
+function Account({ placement }: ShellSlotProps) {
+  if (placement === "rail")
+    return (
+      <button
+        type="button"
+        data-testid="fixture-account-rail"
+        aria-label="Ingrid Example: account"
+        className="grid size-8 place-items-center rounded-full bg-foreground text-meta font-semibold text-background"
+      >
+        I
+      </button>
+    );
   return (
     <span data-testid="fixture-account" className="flex min-w-0 items-center gap-3 px-1">
       <span

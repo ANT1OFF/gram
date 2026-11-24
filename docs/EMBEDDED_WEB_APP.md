@@ -280,8 +280,9 @@ caps. Its head is your `header` with Gram's New beside it, and its foot holds Hi
 your `account` and Collapse as labelled rows, in place of the head's Hide and Compact. `header`
 and `account` are components of yours (a brand mark and name; an avatar, a name and one line),
 given `placement: "sidebar"`; in the standard look the header is a row under the head's toggles
-and the account sits above History. The compact strip keeps its own shape in either look; the
-strip's overlay takes the look without Collapse. Change it through `update({ sidebar })`.
+and the account sits above History. The compact strip keeps its own shape in either look, with
+your `account` at its foot under Settings, given `placement: "rail"` (a tile's room: an avatar
+alone that opens the same menu, say); the strip's overlay takes the look without Collapse. Change it through `update({ sidebar })`.
 
 **On a phone.** In the standard look the phone's drawer is Gram's own. In the roomy look it is a
 plain menu: your `header` large at its head beside a round Search, your switcher under it, your
