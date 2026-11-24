@@ -1,6 +1,7 @@
 import * as nodeFs from "node:fs";
 
 import type { DesktopWindowInfo, GridLayout } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 
 export interface Rect {
   readonly x: number;
@@ -85,25 +86,24 @@ export function nextWindowId(ids: Iterable<string>): string {
   return `w${n}`;
 }
 
-const isRect = (value: unknown): value is Rect =>
-  typeof value === "object" &&
-  value !== null &&
-  ["x", "y", "width", "height"].every((key) => Number.isFinite(Reflect.get(value, key)));
+const Finite = Schema.Number.check(Schema.isFinite());
+const isRect = Schema.is(Schema.Struct({ x: Finite, y: Finite, width: Finite, height: Finite }));
 
 /** Saved windows in id order, dropping anything malformed or duplicated. */
 export function parseWindowRecords(input: unknown): WindowRecord[] {
   if (!Array.isArray(input)) return [];
+  const items: ReadonlyArray<unknown> = input;
   const seen = new Set<string>();
   const records: WindowRecord[] = [];
-  for (const item of input) {
+  for (const item of items) {
     if (typeof item !== "object" || item === null) continue;
-    const id: unknown = Reflect.get(item, "id");
-    const bounds: unknown = Reflect.get(item, "bounds");
+    const id: unknown = "id" in item ? item.id : undefined;
+    const bounds: unknown = "bounds" in item ? item.bounds : undefined;
     if (typeof id !== "string" || !WINDOW_ID.test(id) || seen.has(id) || !isRect(bounds)) continue;
     seen.add(id);
-    const displayId: unknown = Reflect.get(item, "displayId");
-    const maximized: unknown = Reflect.get(item, "maximized");
-    const layout: unknown = Reflect.get(item, "layout");
+    const displayId: unknown = "displayId" in item ? item.displayId : undefined;
+    const maximized: unknown = "maximized" in item ? item.maximized : undefined;
+    const layout: unknown = "layout" in item ? item.layout : undefined;
     records.push({
       id,
       bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },

@@ -41,7 +41,11 @@ const loadedLibraries = (): string[] => {
   const report: unknown = process.report.getReport();
   const parsed: unknown = typeof report === "string" ? JSON.parse(report) : report;
   const shared: unknown =
-    typeof parsed === "object" && parsed !== null ? Reflect.get(parsed, "sharedObjects") : [];
+    typeof parsed === "object" && parsed !== null
+      ? "sharedObjects" in parsed
+        ? parsed.sharedObjects
+        : undefined
+      : [];
   return Array.isArray(shared) ? shared.filter((s): s is string => typeof s === "string") : [];
 };
 

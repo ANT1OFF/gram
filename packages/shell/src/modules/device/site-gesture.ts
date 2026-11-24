@@ -84,7 +84,7 @@ export const fromSitePage = (
 /** A thread id as Gram makes them. */
 export const siteThreadIdOf = (arg: unknown): string | undefined => {
   if (typeof arg !== "object" || arg === null) return undefined;
-  const id: unknown = Reflect.get(arg, "threadId");
+  const id: unknown = "threadId" in arg ? arg.threadId : undefined;
   return typeof id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(id) ? id : undefined;
 };
 

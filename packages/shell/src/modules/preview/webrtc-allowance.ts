@@ -93,7 +93,7 @@ export function installWebRtcSwitch<P extends SwitchedPage>(
   ipc.handle(Channels.previewSetWebRtc, async (input, event) => {
     const preview = host.previewFor(input, event.sender);
     const allowed: unknown =
-      typeof input === "object" && input !== null ? Reflect.get(input, "allowed") : undefined;
+      typeof input === "object" && input !== null && "allowed" in input ? input.allowed : undefined;
     if (preview?.kind !== "local" || typeof allowed !== "boolean") return false;
     if ((preview.webRtcOrigin !== undefined) === allowed) return true;
     const origin = allowed ? host.originFor(preview) : undefined;

@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
-import { displayCommand } from "@gram/contracts";
+import { displayCommand, fieldsOf } from "@gram/contracts";
 import type {
   HostedDeviceActivity,
   HostedDeviceDone,
@@ -222,7 +222,7 @@ const text = (value: unknown, most: number): string | undefined =>
   typeof value === "string" && value.length > 0 && value.length <= most ? value : undefined;
 
 const field = (arg: unknown, name: string, most: number): string | undefined =>
-  typeof arg === "object" && arg !== null ? text(Reflect.get(arg, name), most) : undefined;
+  text(fieldsOf(arg).get(name), most);
 
 /** The device's decisions, put to the person: each answers only what they chose. */
 export const deviceDecisionsFor = (

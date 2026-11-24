@@ -11,10 +11,9 @@ export interface RelayWindow {
 }
 
 const lastMessage = (_kind: SpeechSessionKind, data: unknown): boolean => {
-  const type: unknown =
-    typeof data === "object" && data !== null ? Reflect.get(data, "type") : undefined;
-  if (type === "error") return true;
-  return type === "final" && Reflect.get(data as object, "reason") === "stop";
+  if (typeof data !== "object" || data === null || !("type" in data)) return false;
+  if (data.type === "error") return true;
+  return data.type === "final" && "reason" in data && data.reason === "stop";
 };
 
 const crashOf = (_kind: SpeechSessionKind, message: string) => ({
@@ -55,13 +54,11 @@ export function createSpeechRelay(window: RelayWindow) {
         if (lastMessage(kind, event.data)) close();
       });
       page.addEventListener("message", (event) => {
+        const data: unknown = event.data;
         // oxlint-disable-next-line unicorn/require-post-message-target-origin -- MessagePort
-        upstream.postMessage(event.data);
-        const type: unknown =
-          typeof event.data === "object" && event.data !== null
-            ? Reflect.get(event.data, "type")
-            : undefined;
-        if (type === "cancel") close();
+        upstream.postMessage(data);
+        if (typeof data === "object" && data !== null && "type" in data && data.type === "cancel")
+          close();
       });
       upstream.addEventListener("close", () => {
         if (!open) return;

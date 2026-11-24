@@ -86,7 +86,8 @@ export function ghReleaseSource(options: {
         warn("update check: gh output is not a list");
         return undefined;
       }
-      return parsed;
+      const releases: readonly unknown[] = parsed;
+      return releases;
     },
 
     async view(tag) {

@@ -142,9 +142,11 @@ describe("speech host", () => {
     }
     void host.prewarm("m", "efficient");
     await flush();
-    expect(children[0]!.posted.map(({ message }) => Reflect.get(message, "threads"))).toEqual([
-      1, 2, 2, 2, 1,
-    ]);
+    expect(
+      children[0]!.posted.map(({ message }) =>
+        "threads" in message ? message.threads : undefined,
+      ),
+    ).toEqual([1, 2, 2, 2, 1]);
   });
 
   it("refuses a bad session id or a missing model without starting anything", async () => {

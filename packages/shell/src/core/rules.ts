@@ -53,8 +53,8 @@ export function isThreadIdArg(value: unknown): value is string {
 /** A renderer's pane grid, checked loosely; the renderer owns its details. */
 export function parseGridLayout(input: unknown): GridLayout | null {
   if (typeof input !== "object" || input === null) return null;
-  const preset: unknown = Reflect.get(input, "preset");
-  const panes: unknown = Reflect.get(input, "panes");
+  const preset: unknown = "preset" in input ? input.preset : undefined;
+  const panes: unknown = "panes" in input ? input.panes : undefined;
   if (typeof preset !== "string" || !Array.isArray(panes) || panes.length > 6) return null;
   if (!panes.every((pane) => pane === null || isThreadIdArg(pane))) return null;
   return input as GridLayout;

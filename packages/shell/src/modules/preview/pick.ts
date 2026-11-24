@@ -1,4 +1,4 @@
-import type { PickedElement } from "@gram/contracts";
+import { fieldsOf, type PickedElement } from "@gram/contracts";
 
 /**
  * The isolated world the picker runs in: the page's own scripts can't see or replace its listeners
@@ -127,19 +127,20 @@ const number = (value: unknown): number =>
  */
 export function parsePicked(value: unknown, url: string): PickedElement | null {
   if (typeof value !== "object" || value === null) return null;
-  const selector = text(Reflect.get(value, "selector"), SELECTOR_MAX);
-  const tag = text(Reflect.get(value, "tag"), 40);
-  const html = text(Reflect.get(value, "html"), HTML_MAX);
+  const selector = text("selector" in value ? value.selector : undefined, SELECTOR_MAX);
+  const tag = text("tag" in value ? value.tag : undefined, 40);
+  const html = text("html" in value ? value.html : undefined, HTML_MAX);
   if (selector === undefined || selector === "" || tag === undefined || html === undefined) {
     return null;
   }
-  const rect = Reflect.get(value, "rect");
+  const rect = "rect" in value ? value.rect : undefined;
   const box = typeof rect === "object" && rect !== null ? rect : {};
-  const reported = Reflect.get(value, "styles");
+  const reported = "styles" in value ? value.styles : undefined;
   const styles: Record<string, string> = {};
   if (typeof reported === "object" && reported !== null) {
+    const given = fieldsOf(reported);
     for (const name of PICK_STYLES) {
-      const style = text(Reflect.get(reported, name), STYLE_MAX);
+      const style = text(given.get(name), STYLE_MAX);
       if (style !== undefined && style !== "") styles[name] = style;
     }
   }
@@ -147,13 +148,15 @@ export function parsePicked(value: unknown, url: string): PickedElement | null {
     url,
     selector,
     tag,
-    text: (text(Reflect.get(value, "text"), TEXT_MAX) ?? "").replace(/\s+/g, " ").trim(),
+    text: (text("text" in value ? value.text : undefined, TEXT_MAX) ?? "")
+      .replace(/\s+/g, " ")
+      .trim(),
     html,
     rect: {
-      x: number(Reflect.get(box, "x")),
-      y: number(Reflect.get(box, "y")),
-      width: number(Reflect.get(box, "width")),
-      height: number(Reflect.get(box, "height")),
+      x: number("x" in box ? box.x : undefined),
+      y: number("y" in box ? box.y : undefined),
+      width: number("width" in box ? box.width : undefined),
+      height: number("height" in box ? box.height : undefined),
     },
     styles,
   };

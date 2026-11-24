@@ -10,6 +10,7 @@ import {
   type WorkerMachineSignInsMessage,
   WORKER_MACHINE_RELAYS_MOST,
 } from "@gram/contracts";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { HostedDevice } from "./hosted-device.ts";
@@ -38,17 +39,55 @@ const closeSafely = (socket: RelaySocket, code: number, reason: string) => {
   } catch (_alreadyClosed) {}
 };
 
-const isRequest = (message: unknown): message is { type: "machines.request"; id: string } =>
-  typeof message === "object" &&
-  message !== null &&
-  Reflect.get(message, "type") === "machines.request" &&
-  typeof Reflect.get(message, "id") === "string" &&
-  (Reflect.get(message, "id") as string).length <= 64;
+const isRequest = Schema.is(
+  Schema.Struct({
+    type: Schema.Literal("machines.request"),
+    id: Schema.String.check(Schema.isMaxLength(64)),
+    op: Schema.optional(Schema.Unknown),
+  }),
+);
 
-const textOf = (message: object, name: string, most: number): string | undefined => {
-  const value = Reflect.get(message, name);
-  return typeof value === "string" && value.length > 0 && value.length <= most ? value : undefined;
-};
+const Text = (most: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(most));
+const MachineName = Schema.String.check(Schema.isPattern(WORKER_MACHINE_NAME));
+const Mark = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_-]{8,64}$/));
+
+const decodeUnrelay = Schema.decodeUnknownOption(
+  Schema.Struct({ name: Text(40).check(Schema.isPattern(WORKER_MACHINE_NAME)) }),
+);
+
+const decodeRelays = Schema.decodeUnknownOption(
+  Schema.Struct({
+    machines: Schema.Array(
+      Schema.Struct({
+        origin: Schema.String.check(Schema.isMaxLength(512)),
+        name: MachineName,
+        account: Schema.optional(Mark),
+      }),
+    ).check(Schema.isMaxLength(WORKER_MACHINE_RELAYS_MOST)),
+    fresh: Schema.optional(Schema.Unknown),
+  }),
+);
+
+const decodeRelay = Schema.decodeUnknownOption(
+  Schema.Struct({
+    origin: Text(512),
+    name: Text(40).check(Schema.isPattern(WORKER_MACHINE_NAME)),
+    account: Schema.optional(Mark),
+  }),
+);
+
+const decodeOrigin = Schema.decodeUnknownOption(Schema.Struct({ origin: Text(512) }));
+
+const decodeCall = Schema.decodeUnknownOption(
+  Schema.Struct({
+    call: Schema.Literals(WORKER_MACHINE_CALLS),
+    body: Schema.Record(Schema.String, Schema.Unknown).check(
+      Schema.makeFilter((body) => !Array.isArray(body) && JSON.stringify(body).length <= 8 * 1024),
+    ),
+    sendBy: Schema.optional(Schema.Number.check(Schema.makeFilter(Number.isSafeInteger))),
+    account: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
+  }),
+);
 
 /** A WebSocket as the relay uses one: Node's and Electron's, which take handshake headers. */
 export interface RelaySocket {
@@ -328,18 +367,18 @@ export const makeWorkerMachineRelays = (options: {
 
 const serverRelayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined => {
   if (typeof message !== "object" || message === null) return undefined;
-  const type = Reflect.get(message, "type");
-  const conn = Reflect.get(message, "conn");
+  if (!("type" in message) || !("conn" in message)) return undefined;
+  const { type, conn } = message;
   if (typeof conn !== "string" || conn.length > 64) return undefined;
   if (type === "machines.relay.frame") {
-    const data = Reflect.get(message, "data");
+    const data = "data" in message ? message.data : undefined;
     return typeof data === "string" || data instanceof Uint8Array
       ? { type, conn, data }
       : undefined;
   }
   if (type === "machines.relay.end") {
-    const code = Reflect.get(message, "code");
-    const reason = Reflect.get(message, "reason");
+    const code = "code" in message ? message.code : undefined;
+    const reason = "reason" in message ? message.reason : undefined;
     return {
       type,
       conn,
@@ -382,38 +421,10 @@ const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> 
 
 const answerFields = (call: WorkerMachineCall, body: unknown): unknown => {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined;
-  const kept: Record<string, unknown> = {};
-  for (const field of ANSWER_FIELDS[call])
-    if (Object.hasOwn(body, field)) kept[field] = Reflect.get(body, field);
-  return kept;
-};
-
-const isMark = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(value);
-
-const relaysOf = (
-  value: unknown,
-):
-  | ReadonlyArray<{ readonly origin: string; readonly name: string; readonly account?: string }>
-  | undefined => {
-  if (!Array.isArray(value) || value.length > WORKER_MACHINE_RELAYS_MOST) return undefined;
-  const listed: Array<{ origin: string; name: string; account?: string }> = [];
-  for (const each of value) {
-    if (typeof each !== "object" || each === null) return undefined;
-    const origin = Reflect.get(each, "origin");
-    const name = Reflect.get(each, "name");
-    const account = Reflect.get(each, "account");
-    if (
-      typeof origin !== "string" ||
-      origin.length > 512 ||
-      typeof name !== "string" ||
-      !WORKER_MACHINE_NAME.test(name) ||
-      (account !== undefined && !isMark(account))
-    )
-      return undefined;
-    listed.push({ origin, name, ...(account === undefined ? {} : { account }) });
-  }
-  return listed;
+  const fields: ReadonlyArray<string> = ANSWER_FIELDS[call];
+  return Object.fromEntries(
+    Object.entries(body).filter(([field]: [string, unknown]) => fields.includes(field)),
+  );
 };
 
 /** Answers one request from the server, or undefined for any other message. */
@@ -428,31 +439,28 @@ export const answerWorkerMachines = async (
     id: message.id,
     result,
   });
-  const op = Reflect.get(message, "op");
+  const { op } = message;
   if (op === "unrelay") {
-    const name = textOf(message, "name", 40);
-    if (name === undefined || !WORKER_MACHINE_NAME.test(name)) return respond(MALFORMED);
-    relays.unrelay(name);
+    const unrelay = decodeUnrelay(message);
+    if (Option.isNone(unrelay)) return respond(MALFORMED);
+    relays.unrelay(unrelay.value.name);
     return respond({ ok: true });
   }
   if (op === "relays") {
-    const listed = relaysOf(Reflect.get(message, "machines"));
-    if (listed === undefined) return respond(MALFORMED);
-    relays.sync(listed, Reflect.get(message, "fresh") === true);
+    const listed = decodeRelays(message);
+    if (Option.isNone(listed)) return respond(MALFORMED);
+    relays.sync(
+      listed.value.machines.map(({ account, ...machine }) =>
+        account === undefined ? machine : { ...machine, account },
+      ),
+      listed.value.fresh === true,
+    );
     return respond({ ok: true });
   }
   if (op === "relay") {
-    const origin = textOf(message, "origin", 512);
-    const name = textOf(message, "name", 40);
-    const account = Reflect.get(message, "account");
-    if (
-      origin === undefined ||
-      name === undefined ||
-      !WORKER_MACHINE_NAME.test(name) ||
-      (account !== undefined && !isMark(account))
-    )
-      return respond(MALFORMED);
-    relays.relay(origin, name, account);
+    const relay = decodeRelay(message);
+    if (Option.isNone(relay)) return respond(MALFORMED);
+    relays.relay(relay.value.origin, relay.value.name, relay.value.account);
     return respond({ ok: true });
   }
   if (device === undefined) return respond(NONE);
@@ -466,39 +474,22 @@ export const answerWorkerMachines = async (
     });
   }
   if (op === "marks") return respond({ ok: true, marks: device.workerMachineMarks() });
-  const origin = textOf(message, "origin", 512);
-  if (origin === undefined) return respond(MALFORMED);
+  const origin = decodeOrigin(message);
+  if (Option.isNone(origin)) return respond(MALFORMED);
   if (op === "call") {
-    const call = Reflect.get(message, "call");
-    const body = Reflect.get(message, "body");
-    if (
-      typeof call !== "string" ||
-      !(WORKER_MACHINE_CALLS as readonly string[]).includes(call) ||
-      typeof body !== "object" ||
-      body === null ||
-      Array.isArray(body) ||
-      JSON.stringify(body).length > 8 * 1024
-    )
-      return respond(MALFORMED);
-    const sendBy = Reflect.get(message, "sendBy");
-    if (sendBy !== undefined && !Number.isSafeInteger(sendBy)) return respond(MALFORMED);
-    const account = Reflect.get(message, "account");
-    if (account !== undefined && (typeof account !== "string" || account.length > 64))
-      return respond(MALFORMED);
+    const decoded = decodeCall(message);
+    if (Option.isNone(decoded)) return respond(MALFORMED);
+    const { call, body, sendBy, account } = decoded.value;
     const answered = await device.workerMachineCall(
-      origin,
-      call as WorkerMachineCall,
-      body as Record<string, unknown>,
-      sendBy as number | undefined,
+      origin.value.origin,
+      call,
+      body,
+      sendBy,
       account,
     );
     return respond(
       answered.ok
-        ? {
-            ok: true,
-            status: answered.status,
-            body: answerFields(call as WorkerMachineCall, answered.body),
-          }
+        ? { ok: true, status: answered.status, body: answerFields(call, answered.body) }
         : answered,
     );
   }
@@ -524,7 +515,7 @@ export const serveWorkerMachineMessage = (
   void answerWorkerMachines(message, device, relays)
     .catch(() => ({
       type: "machines.response" as const,
-      id: (message as { id: string }).id,
+      id: message.id,
       result: { ok: false as const, why: "The app couldn't make the call." },
     }))
     .then((response) => {

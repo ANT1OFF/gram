@@ -79,7 +79,7 @@ export function installAgentHandlers(
   ipc.handle(Channels.previewInspect, (input, event) => {
     const preview = previewFor(input, event.sender);
     const target =
-      typeof input === "object" && input !== null ? Reflect.get(input, "target") : undefined;
+      typeof input === "object" && input !== null && "target" in input ? input.target : undefined;
     const command = parsePaneCommand({
       op: "screenshot",
       ...(typeof target === "object" && target !== null ? target : {}),
@@ -96,7 +96,7 @@ export function installAgentHandlers(
   ipc.handle(Channels.previewViewport, (input, event) => {
     const preview = previewFor(input, event.sender);
     const preset =
-      typeof input === "object" && input !== null ? Reflect.get(input, "preset") : undefined;
+      typeof input === "object" && input !== null && "preset" in input ? input.preset : undefined;
     const command = parsePaneCommand({ op: "viewport", preset });
     if (
       preview === undefined ||

@@ -617,7 +617,10 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     rule: (raw: string) => string | undefined,
   ) => {
     const threadId = previewThreadOf(input);
-    const raw: unknown = threadId === undefined ? undefined : Reflect.get(input as object, "url");
+    const raw: unknown =
+      threadId !== undefined && typeof input === "object" && input !== null && "url" in input
+        ? input.url
+        : undefined;
     const url = typeof raw === "string" ? rule(raw) : undefined;
     if (threadId === undefined || url === undefined) return false;
     reopenable.delete(threadId);
@@ -631,7 +634,11 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     touch(preview);
     preview.watchers.add(sender);
     preview.typedOrigin =
-      kind === "local" && Reflect.get(input as object, "typed") === true
+      kind === "local" &&
+      typeof input === "object" &&
+      input !== null &&
+      "typed" in input &&
+      input.typed === true
         ? originOf(url)
         : undefined;
     await openIn(preview, kind, url);
@@ -648,7 +655,9 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
   ipc.handle(Channels.previewReopenWeb, async (input, event) => {
     const threadId = previewThreadOf(input);
     const token: unknown =
-      threadId === undefined ? undefined : Reflect.get(input as object, "token");
+      threadId !== undefined && typeof input === "object" && input !== null && "token" in input
+        ? input.token
+        : undefined;
     const closed = threadId === undefined ? undefined : reopenable.get(threadId);
     if (
       threadId === undefined ||
@@ -669,7 +678,7 @@ export function installPreview(ipc: ShellIpc, options: PreviewOptions): PreviewH
     const preview = previewFor(input, event.sender);
     const window = BrowserWindow.fromWebContents(event.sender);
     const bounds = parsePreviewBounds(
-      typeof input === "object" && input !== null ? Reflect.get(input, "bounds") : undefined,
+      typeof input === "object" && input !== null && "bounds" in input ? input.bounds : undefined,
     );
     if (preview === undefined || window === null || bounds === undefined) return;
     if (bounds === null || bounds.width === 0 || bounds.height === 0) {

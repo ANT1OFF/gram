@@ -144,3 +144,4 @@ export * from "./ci-fix-ownership.ts";
 
 export * from "./remote-access.ts";
 export * from "./untrusted-fence.ts";
+export * from "./untyped-fields.ts";
