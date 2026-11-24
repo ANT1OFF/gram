@@ -1,6 +1,26 @@
 import * as Result from "effect/Result";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import { chimeOf } from "./chime.ts";
+import { fieldsOf } from "./untyped-fields.ts";
+import {
+  applySettingsWrites,
+  sameValue,
+  storedAt,
+  type SettingsRequirement,
+  type SettingsWrite,
+} from "./settings-writes.ts";
+
+export {
+  applyCharterWrites,
+  applyProjectSettingsWrites,
+  applySettingsWrites,
+  sameValue,
+  settingsHold,
+  type SettingsRequirement,
+  type SettingsWrite,
+} from "./settings-writes.ts";
 import {
   ProjectLocalCheck,
   DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
@@ -15,7 +35,7 @@ import {
   FollowEffort,
   isPinned,
   isTierRef,
-  type ModelSlot,
+  ModelSlot,
   tierName,
   type TierRef,
   type UnknownTierRef,
@@ -48,7 +68,7 @@ import {
   WORKER_MODEL_NOTE_MAX,
   WorkerBriefFooter,
   type RosterModel,
-  type WorkerModel,
+  WorkerModel,
   type WorkspaceState,
 } from "./workspaces.ts";
 import { decodeCharterScalar, PACKING_ROWS } from "./settings-chat-scalars.ts";
@@ -163,23 +183,51 @@ export const workerFallback = <T extends WorkerModel | RosterModel>(
 const pinnedOf = (slot: ModelSlot | undefined): ModelRef | undefined =>
   slot === undefined || !isPinned(slot) ? undefined : slot;
 
-interface Entry {
+interface EntryBase {
   readonly key: string;
   readonly label: string;
   readonly tier: SettingsTier;
   readonly scope: SettingsScope;
-  readonly list?: true;
-  readonly read: (world: SettingsWorld) => unknown;
   readonly unset?: string;
 }
 
+interface ValueEntry extends EntryBase {
+  readonly list?: undefined;
+  readonly read: (world: SettingsWorld) => unknown;
+}
+
+interface ListEntry extends EntryBase {
+  readonly list: true;
+  readonly read: (world: SettingsWorld) => ReadonlyArray<WorkerModel> | undefined;
+}
+
+type Entry = ValueEntry | ListEntry;
+
+const decodeRoster = Schema.decodeUnknownOption(Schema.Array(WorkerModel));
+const decodeWorkerModel = Schema.decodeUnknownOption(WorkerModel);
+const isModelSlot = Schema.is(ModelSlot);
+const slotOf = (stored: unknown): ModelSlot | undefined =>
+  isModelSlot(stored) ? stored : undefined;
+const isLocalCheckField = (field: string): field is keyof ProjectLocalCheck =>
+  field in ProjectLocalCheck.fields;
+
+const listed = (
+  { key, label, tier, scope, unset }: ValueEntry,
+  read: ListEntry["read"],
+): ListEntry => ({
+  key,
+  label,
+  tier,
+  scope,
+  list: true,
+  read,
+  ...(unset === undefined ? {} : { unset }),
+});
+
 const at = (settings: Settings, key: string): unknown => {
   const [group, field] = key.split(".");
-  const section = (settings as Record<string, unknown>)[group!];
-  if (field === undefined) return section;
-  return typeof section === "object" && section !== null
-    ? (section as Record<string, unknown>)[field]
-    : undefined;
+  const section = fieldsOf(settings).get(group!);
+  return field === undefined ? section : fieldsOf(section).get(field);
 };
 
 const pref = (
@@ -187,7 +235,7 @@ const pref = (
   label: string,
   read: (settings: Settings) => unknown = (settings) => at(settings, key),
   unset?: string,
-): Entry => ({
+): ValueEntry => ({
   key,
   label,
   tier: "preference",
@@ -207,7 +255,7 @@ const ws = (
   label: string,
   read: (world: SettingsWorld) => unknown,
   unset?: string,
-): Entry => ({
+): ValueEntry => ({
   key,
   label,
   tier: "workspace",
@@ -263,15 +311,15 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
     (w) => orchestratorModelOf(w)?.variant,
     "the model's default",
   ),
-  {
-    ...ws(
+  listed(
+    ws(
       "workspace.workerModels",
       "Worker model",
-      (w) => charterOf(w)?.workerModels,
+      () => undefined,
       "the orchestrator's own model only",
     ),
-    list: true,
-  },
+    (w) => charterOf(w)?.workerModels,
+  ),
   ws(
     "workspace.workerBriefFooter",
     "Worker brief footer",
@@ -334,14 +382,10 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
     (s) => s.workspaces?.localCheckConcurrency,
     "automatic: 1, or 2 on a machine with 12 or more cores",
   ),
-  {
-    ...pref(
-      "agents.workerModels",
-      "New-workspace worker model",
-      (s) => s.agents.workerModels ?? [],
-    ),
-    list: true,
-  },
+  listed(
+    pref("agents.workerModels", "New-workspace worker model"),
+    (w) => w.settings.agents.workerModels ?? [],
+  ),
 ];
 
 /** A key no agent may set, even with the user's approval. */
@@ -501,16 +545,12 @@ export const userOnlySetting = (key: string): UserOnlyKey | undefined => {
 };
 
 const isModelRef = (value: unknown): value is ModelRef =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as ModelRef).agent === "string" &&
-  typeof (value as ModelRef).model === "string";
+  Predicate.isObject(value) &&
+  typeof value["agent"] === "string" &&
+  typeof value["model"] === "string";
 
 const isTierValue = (value: unknown): value is TierRef =>
-  typeof value === "object" &&
-  value !== null &&
-  typeof (value as TierRef).tier === "string" &&
-  !("model" in value);
+  Predicate.isObject(value) && typeof value["tier"] === "string" && !("model" in value);
 
 /**
  * `claude:opus · high · fast · profile p1`: every field a model ref stores. A speed is shown whenever
@@ -614,32 +654,6 @@ export const readUserOnlyRows = (world: SettingsWorld) =>
   });
 
 /**
- * One stored field a proposal writes, with its value as stored before (`undefined` when absent)
- * and after (`undefined` clears it). `path` is where it is stored: a settings group and field
- * (`["appearance", "mode"]`), a top-level setting (`["logLevel"]`), a charter field
- * (`["maxConcurrentWorkers"]`).
- */
-export interface SettingsWrite {
-  readonly key: string;
-  readonly path: ReadonlyArray<string>;
-  readonly before: unknown;
-  readonly after: unknown;
-}
-
-/** An app setting a workspace write depends on, with the value the card was drawn from. */
-export interface SettingsRequirement {
-  readonly key: string;
-  readonly path: ReadonlyArray<string>;
-  readonly value: unknown;
-}
-
-/** Whether every app setting `requires` names still holds the value the card showed. */
-export const settingsHold = (
-  settings: Settings,
-  requires: ReadonlyArray<SettingsRequirement>,
-): boolean => requires.every((each) => sameValue(storedAt(settings, each.path), each.value));
-
-/**
  * A change set's effect, checked against the schemas the Settings UI writes through. `writes` is
  * what is applied, each only while its field still holds `before`; `rows` show every one of them.
  */
@@ -669,11 +683,8 @@ const strict = { onExcessProperty: "error" } as const;
 
 const firstLine = (message: string) => message.split("\n").slice(0, 3).join(" ").trim();
 
-const decodeWith = <S extends Schema.Top>(schema: S, value: unknown) =>
-  Schema.decodeUnknownResult(schema as never, strict)(value) as Result.Result<
-    S["Type"],
-    { readonly message: string }
-  >;
+const decodeWith = <S extends Schema.Decoder<unknown>>(schema: S, value: unknown) =>
+  Schema.decodeUnknownResult(schema, strict)(value);
 
 const WorkerModelAdd = Schema.Struct({
   agent: AgentKind,
@@ -831,11 +842,7 @@ export const planSettingsChanges = (
         errors.push(`${key} is a list: change it with add, update or remove.`);
         continue;
       }
-      const list =
-        lists.get(key) ??
-        ([
-          ...((entry.read(world) as ReadonlyArray<WorkerModel> | undefined) ?? []),
-        ] as Array<WorkerModel>);
+      const list = lists.get(key) ?? [...(entry.read(world) ?? [])];
       lists.set(key, list);
       if (change.op === "add") {
         if ("profileId" in change.item) {
@@ -888,7 +895,7 @@ export const planSettingsChanges = (
         following &&
         update.variant !== undefined &&
         update.variant !== null &&
-        !FollowEffort.literals.includes(update.variant as FollowEffort)
+        !Schema.is(FollowEffort)(update.variant)
       ) {
         errors.push(
           `${key}: ${change.match} follows the recommendation, whose effort stops at high; pin a model to go above it.`,
@@ -905,7 +912,12 @@ export const planSettingsChanges = (
         else next[field] = value;
       }
       if (update.default === false) delete next["default"];
-      list[index] = next as WorkerModel;
+      const model = decodeWorkerModel(next);
+      if (Option.isNone(model)) {
+        errors.push(`${key}: ${change.match} wouldn't be a worker model after that change.`);
+        continue;
+      }
+      list[index] = model.value;
       if (update.default === true) withoutDefault(list, index);
       const changed = list[index];
       if (isPinned(changed) && (update.variant !== undefined || update.speed !== undefined))
@@ -1057,7 +1069,7 @@ export const planSettingsChanges = (
         break;
       }
       case "workspace.orchestratorEffort": {
-        const base = into["orchestratorModel"] as ModelSlot | undefined;
+        const base = slotOf(into["orchestratorModel"]);
         if (base === undefined) {
           errors.push(
             `${key}: this workspace's orchestrator follows the app's default model, so there is no model here to set the effort of. Set workspace.orchestratorModel with a variant instead.`,
@@ -1117,7 +1129,8 @@ export const planSettingsChanges = (
     if (Result.isFailure(decoded))
       return { ok: false, errors: [firstLine(decoded.failure.message)] };
     writes = keys.map((key) => {
-      const field = key.slice("project.localCheck.".length) as keyof ProjectLocalCheck;
+      const field = key.slice("project.localCheck.".length);
+      if (!isLocalCheckField(field)) throw new Error(`${key} isn't a project check field.`);
       return {
         key,
         path: ["localCheck", field],
@@ -1256,8 +1269,8 @@ const rowsFor = (
 ): Array<SettingsDiffRow> => {
   const entry = entryOf(write.key)!;
   if (entry.list === true) {
-    const before = (entry.read(world) as ReadonlyArray<WorkerModel> | undefined) ?? [];
-    const after = (entry.read(next) as ReadonlyArray<WorkerModel> | undefined) ?? [];
+    const before = entry.read(world) ?? [];
+    const after = entry.read(next) ?? [];
     const was = before.map(identity);
     const now = after.map(identity);
     if (new Set(was).size === was.length && new Set(now).size === now.length) {
@@ -1321,7 +1334,7 @@ export const charterRows = (world: SettingsWorld): Array<SettingsDiffRow> => {
     if (entry.list !== true) {
       return [{ key: entry.key, label: entry.label, before: null, after: valueText(entry, value) }];
     }
-    const roster = value as ReadonlyArray<WorkerModel>;
+    const roster = Option.getOrElse(decodeRoster(value), (): ReadonlyArray<WorkerModel> => []);
     return [
       ...roster.map((model) => ({
         key: entry.key,
@@ -1346,7 +1359,7 @@ const fallbackText = (entry: Entry, world: SettingsWorld): string => {
       : (world.orchestrator ??
         world.workspace?.charter.orchestratorModel ??
         world.settings.agents.defaultModel);
-  const list = entry.read(world) as ReadonlyArray<WorkerModel> | undefined;
+  const list = entry.list === true ? entry.read(world) : undefined;
   if (list === undefined || list.length === 0) {
     return own === undefined
       ? "the orchestrator's own model"
@@ -1362,70 +1375,6 @@ const storedText = (entry: Entry, stored: unknown, effective: unknown): string =
   return `${valueText(entry, effective)} (default)`;
 };
 
-const canonical = (value: unknown): string | undefined =>
-  JSON.stringify(value, (_key, each: unknown) =>
-    typeof each === "object" && each !== null && !Array.isArray(each)
-      ? Object.fromEntries(
-          Object.entries(each).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-        )
-      : each,
-  );
-
-/** Whether two stored values are the same value, whatever their keys' order. */
-export const sameValue = (a: unknown, b: unknown): boolean => canonical(a) === canonical(b);
-
-const storedAt = (root: unknown, path: ReadonlyArray<string>): unknown =>
-  path.reduce<unknown>(
-    (here, step) =>
-      typeof here === "object" && here !== null
-        ? (here as Record<string, unknown>)[step]
-        : undefined,
-    root,
-  );
-
-const withAt = (
-  root: Record<string, unknown>,
-  path: ReadonlyArray<string>,
-  value: unknown,
-): Record<string, unknown> => {
-  const [head, ...rest] = path;
-  const next = { ...root };
-  if (rest.length === 0) {
-    if (value === undefined) delete next[head!];
-    else next[head!] = value;
-    return next;
-  }
-  const inner = next[head!];
-  next[head!] = withAt(
-    typeof inner === "object" && inner !== null ? (inner as Record<string, unknown>) : {},
-    rest,
-    value,
-  );
-  return next;
-};
-
-const applyWrites = <A>(root: A, writes: ReadonlyArray<SettingsWrite>): A | undefined => {
-  if (writes.some((write) => !sameValue(storedAt(root, write.path), write.before))) {
-    return undefined;
-  }
-  return writes.reduce<Record<string, unknown>>(
-    (stored, write) => withAt(stored, write.path, write.after),
-    root as Record<string, unknown>,
-  ) as A;
-};
-
-/** App writes applied to the settings as they stand now, or `undefined` if one has moved. */
-export const applySettingsWrites = (
-  settings: Settings,
-  writes: ReadonlyArray<SettingsWrite>,
-): Settings | undefined => applyWrites(settings, writes);
-
-/** Charter writes applied to the charter as it stands now, or `undefined` if one has moved. */
-export const applyCharterWrites = (
-  charter: OrchestratorCharter,
-  writes: ReadonlyArray<SettingsWrite>,
-): OrchestratorCharter | undefined => applyWrites(charter, writes);
-
 /** The card's lead sentence: what changes, in a line. */
 export const settingsProposalSummary = (card: SettingsProposalCard): string => {
   const where =
@@ -1437,9 +1386,3 @@ export const settingsProposalSummary = (card: SettingsProposalCard): string => {
   const count = card.rows.length;
   return `Change ${count === 1 ? "1 setting" : `${count} settings`} in ${where}.`;
 };
-
-/** Apply only the approved project fields while their before values still match. */
-export const applyProjectSettingsWrites = (
-  project: Project,
-  writes: ReadonlyArray<SettingsWrite>,
-): Project | undefined => applyWrites(project, writes);

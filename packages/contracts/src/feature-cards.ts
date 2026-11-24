@@ -15,6 +15,7 @@ import {
   type WorkerReport,
   WorkerState,
 } from "./orchestration.ts";
+import * as Predicate from "effect/Predicate";
 
 /** The five stations of a card's stage line, in order. */
 export const FeatureStation = Schema.Literals(["briefed", "working", "checks", "review", "merged"]);
@@ -495,11 +496,9 @@ const cardWorkerOf = (
 
 const canonical = (value: unknown): string =>
   JSON.stringify(value, (_key, each: unknown) =>
-    each !== null && typeof each === "object" && !Array.isArray(each)
+    Predicate.isObject(each)
       ? Object.fromEntries(
-          Object.entries(each as Record<string, unknown>).toSorted(([a], [b]) =>
-            a < b ? -1 : a > b ? 1 : 0,
-          ),
+          Object.entries(each).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
         )
       : each,
   );

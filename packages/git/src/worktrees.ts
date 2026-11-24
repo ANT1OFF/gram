@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import type { Checkout, WorktreeEntry } from "@gram/contracts";
@@ -417,7 +418,7 @@ export const excludeWorktreesFolder = (commonDir: string): void => {
   try {
     content = fs.readFileSync(file, "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (errnoCode(error) !== "ENOENT") throw error;
   }
   if (content.split(/\r?\n/).some((line) => EXCLUDES_WORKTREES.test(line))) return;
   const eol = content.includes("\r\n") ? "\r\n" : "\n";

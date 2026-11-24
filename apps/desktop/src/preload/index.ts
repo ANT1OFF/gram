@@ -88,9 +88,10 @@ const base = {
     set: (enabled) => ipcRenderer.invoke(Channels.launchAtLoginSet, enabled),
     openSettings: () => ipcRenderer.invoke(Channels.launchAtLoginSettings),
   },
-  chooseFolder: async (options) =>
-    ((await ipcRenderer.invoke(Channels.chooseFolder, options ?? {})) as string | null) ??
-    undefined,
+  chooseFolder: async (options) => {
+    const chosen: unknown = await ipcRenderer.invoke(Channels.chooseFolder, options ?? {});
+    return typeof chosen === "string" ? chosen : undefined;
+  },
   appBuildInfo: () => ipcRenderer.invoke(Channels.appBuildInfo),
   appBundlePath: () => ipcRenderer.invoke(Channels.appBundlePath),
   openWindow: async (options) => {
@@ -98,8 +99,11 @@ const base = {
   },
   focusWindow: (windowId, threadId) =>
     ipcRenderer.invoke(Channels.windowFocus, { windowId, threadId }),
-  windowLayout: async () =>
-    ((await ipcRenderer.invoke(Channels.windowLayoutGet)) as GridLayout | null) ?? undefined,
+  windowLayout: async () => {
+    const layout: unknown = await ipcRenderer.invoke(Channels.windowLayoutGet);
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- main answers this channel with the layout it parsed and saved itself
+    return (layout as GridLayout | null) ?? undefined;
+  },
   setWindowLayout: (layout) => ipcRenderer.send(Channels.windowLayoutSet, layout),
   onOpenThread: (callback) => subscribe<string>(Channels.windowOpenThread, callback),
   updates: {

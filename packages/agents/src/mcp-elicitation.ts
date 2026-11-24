@@ -1,4 +1,5 @@
 import type { ApprovalScope } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 /** An elicitation as either agent hands it over. */
 export interface McpPrompt {
@@ -27,9 +28,7 @@ export interface McpPromptAnswer {
 const DECLINE: McpPromptAnswer = { action: "decline" };
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  Predicate.isObject(value) ? value : undefined;
 
 const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;

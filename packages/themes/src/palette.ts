@@ -278,8 +278,17 @@ export function derivePalette(palette: Palette, contrast: Contrast = "standard")
   };
 }
 
+const BRIGHT_ANSI = [
+  ["red", "brightRed"],
+  ["green", "brightGreen"],
+  ["yellow", "brightYellow"],
+  ["blue", "brightBlue"],
+  ["magenta", "brightMagenta"],
+  ["cyan", "brightCyan"],
+] as const satisfies ReadonlyArray<readonly [AnsiKey, AnsiKey]>;
+
 function normalizeSeeds(seeds: SeedTokens): SeedTokens {
-  const out = {} as SeedTokens;
+  const out: SeedTokens = { ...seeds };
   for (const key of SEED_TOKEN_KEYS) out[key] = normalizeHex(seeds[key]);
   return out;
 }
@@ -348,10 +357,7 @@ function deriveAnsi(
         continue;
       ansi[key] = text(ansi[key]);
     }
-    for (const key of ["red", "green", "yellow", "blue", "magenta", "cyan"] as const) {
-      const brightKey = `bright${key[0]!.toUpperCase()}${key.slice(1)}` as AnsiKey;
-      ansi[brightKey] = text(bright(ansi[key]));
-    }
+    for (const [key, brightKey] of BRIGHT_ANSI) ansi[brightKey] = text(bright(ansi[key]));
   }
   return ansi;
 }

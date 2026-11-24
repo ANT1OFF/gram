@@ -1,4 +1,5 @@
 import type { TokenUsage } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 type Counts = TokenUsage;
 const keys = [
@@ -8,6 +9,10 @@ const keys = [
   "cacheWriteTokens",
   "reasoningTokens",
 ] as const;
+const OPTIONAL_KEYS = ["cacheReadTokens", "cacheWriteTokens", "reasoningTokens"] as const;
+type OptionalCounts = Partial<Record<(typeof OPTIONAL_KEYS)[number], number>>;
+const isCount = (n: unknown): n is number =>
+  typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
 const zero = (): Counts => ({
   inputTokens: 0,
   outputTokens: 0,
@@ -31,8 +36,7 @@ export const codexTelemetryVersion = (basis: CodexUsageBasis) =>
 
 /** Validate telemetry, preserving absent cache detail rather than guessing zero. */
 export function codexCounts(value: unknown, snake = false): Counts | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const raw = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return undefined;
   const names = snake
     ? [
         "input_tokens",
@@ -48,14 +52,16 @@ export function codexCounts(value: unknown, snake = false): Counts | undefined {
         "cacheWriteInputTokens",
         "reasoningOutputTokens",
       ];
-  const counts: Record<string, number> = {};
-  for (const [index, key] of keys.entries()) {
-    const n = raw[names[index]!];
-    if (n === undefined && index > 1) continue;
-    if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0) return undefined;
-    counts[key] = n;
+  const [inputTokens, outputTokens] = [value[names[0]!], value[names[1]!]];
+  if (!isCount(inputTokens) || !isCount(outputTokens)) return undefined;
+  const optional: OptionalCounts = {};
+  for (const [index, key] of OPTIONAL_KEYS.entries()) {
+    const n = value[names[index + 2]!];
+    if (n === undefined) continue;
+    if (!isCount(n)) return undefined;
+    optional[key] = n;
   }
-  const result = counts as unknown as Counts;
+  const result: Counts = { inputTokens, outputTokens, ...optional };
   return validCodexCounts(result) ? result : undefined;
 }
 
@@ -66,28 +72,32 @@ const primaryFits = (amount: Counts, progress: Counts | undefined) =>
   amount.inputTokens <= progress.inputTokens &&
   amount.outputTokens <= progress.outputTokens;
 const difference = (a: Counts, b: Counts): Counts | undefined => {
-  const result: Record<string, number> = {};
-  for (const key of keys) {
-    if (a[key] === undefined || b[key] === undefined) continue;
-    if (a[key] < b[key]) return undefined;
-    result[key] = a[key] - b[key];
+  if (a.inputTokens < b.inputTokens || a.outputTokens < b.outputTokens) return undefined;
+  const optional: OptionalCounts = {};
+  for (const key of OPTIONAL_KEYS) {
+    const [x, y] = [a[key], b[key]];
+    if (x === undefined || y === undefined) continue;
+    if (x < y) return undefined;
+    optional[key] = x - y;
   }
-  if (result.inputTokens === undefined || result.outputTokens === undefined) return undefined;
-  const counts = result as unknown as Counts;
+  const counts: Counts = {
+    inputTokens: a.inputTokens - b.inputTokens,
+    outputTokens: a.outputTokens - b.outputTokens,
+    ...optional,
+  };
   return validCodexCounts(counts) ? counts : undefined;
 };
 export const addCodexCounts = (a: Counts, b: Counts): Counts => {
-  const result: Record<string, number> = {};
-  for (const key of keys) {
-    if (
-      key !== "inputTokens" &&
-      key !== "outputTokens" &&
-      (a[key] === undefined || b[key] === undefined)
-    )
-      continue;
-    result[key] = (a[key] ?? 0) + (b[key] ?? 0);
+  const optional: OptionalCounts = {};
+  for (const key of OPTIONAL_KEYS) {
+    const [x, y] = [a[key], b[key]];
+    if (x !== undefined && y !== undefined) optional[key] = x + y;
   }
-  return result as unknown as Counts;
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    ...optional,
+  };
 };
 
 /** Session counters are a baseline, never a turn snapshot. A new mapper may be resuming history. */

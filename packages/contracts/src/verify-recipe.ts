@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { inline } from "./agent-text.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Where a repository keeps its verify recipe, relative to its folder. */
 export const VERIFY_FILE = ".gram/verify.json";
@@ -44,7 +45,8 @@ export type VerifyDriver = typeof VerifyDriver.Type;
 
 const NAME = /^[a-z0-9][a-z0-9_.-]{0,47}$/;
 const CONTROL = /[\p{Cc}؜​-‏‪-‮⁠⁦-⁩﻿]/u;
-const KINDS: ReadonlySet<string> = new Set(VerifyDriverKind.literals);
+const isKind = Schema.is(VerifyDriverKind);
+const isString = (value: unknown): value is string => typeof value === "string";
 
 const patternProblem = (pattern: string): string | undefined => {
   if (pattern === "" || pattern.trim() !== pattern)
@@ -67,14 +69,14 @@ export const parseVerifyRecipe = (
   } catch {
     return { error: `${VERIFY_FILE} isn't valid JSON.` };
   }
-  const entries = (raw as { drivers?: unknown } | null)?.drivers;
+  const entries = Predicate.isObject(raw) ? raw["drivers"] : undefined;
   if (!Array.isArray(entries)) return { error: `${VERIFY_FILE} has no "drivers" list.` };
   if (entries.length > VERIFY_DRIVERS_MAX)
     return { error: `${VERIFY_FILE}: keep at most ${VERIFY_DRIVERS_MAX} drivers.` };
   const drivers: VerifyDriver[] = [];
   for (const [index, entry] of entries.entries()) {
     const at = `${VERIFY_FILE} driver ${index + 1}`;
-    const e = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
+    const e: Record<string, unknown> = Predicate.isObject(entry) ? entry : {};
     const { name, run, covers, kind, required, timeoutMinutes } = e;
     if (typeof name !== "string" || typeof run !== "string")
       return { error: `${at} needs a "name" and a "run" command.` };
@@ -94,19 +96,21 @@ export const parseVerifyRecipe = (
       return {
         error: `${at} (${name}): keep the command on one line, without control characters.`,
       };
+    let patterns: string[] | undefined;
     if (covers !== undefined) {
-      if (!Array.isArray(covers) || covers.some((pattern) => typeof pattern !== "string"))
+      if (!Array.isArray(covers) || !covers.every(isString))
         return { error: `${at} (${name}): "covers" is a list of path patterns.` };
-      if (covers.length > VERIFY_COVERS_MAX)
+      patterns = covers;
+      if (patterns.length > VERIFY_COVERS_MAX)
         return { error: `${at} (${name}): keep "covers" to ${VERIFY_COVERS_MAX} patterns.` };
-      for (const pattern of covers as string[]) {
+      for (const pattern of patterns) {
         const problem = patternProblem(pattern);
         if (problem !== undefined) return { error: `${at} (${name}): ${problem}.` };
       }
     }
-    if (kind !== undefined && (typeof kind !== "string" || !KINDS.has(kind)))
+    if (kind !== undefined && !isKind(kind))
       return {
-        error: `${at} (${name}): "kind" is one of ${[...KINDS].join(", ")}.`,
+        error: `${at} (${name}): "kind" is one of ${VerifyDriverKind.literals.join(", ")}.`,
       };
     if (required !== undefined && typeof required !== "boolean")
       return { error: `${at} (${name}): "required" is true or false.` };
@@ -123,8 +127,8 @@ export const parseVerifyRecipe = (
     drivers.push({
       name,
       run: command,
-      ...(covers === undefined ? {} : { covers: covers as string[] }),
-      ...(kind === undefined ? {} : { kind: kind as VerifyDriverKind }),
+      ...(patterns === undefined ? {} : { covers: patterns }),
+      ...(isKind(kind) ? { kind } : {}),
       ...(required === undefined ? {} : { required }),
       ...(timeoutMinutes === undefined ? {} : { timeoutMinutes }),
     });

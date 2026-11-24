@@ -194,7 +194,7 @@ export const gatewayModelUsable = (model: GatewayModel): boolean => {
 
 /** A synthetic gateway profile on a reserved host, for tests and examples. */
 export const EXAMPLE_GATEWAY = {
-  id: "example" as ProfileId,
+  id: ProfileId.make("example"),
   name: "Example gateway",
   baseURL: "https://gateway.example.invalid/v1",
 } as const;

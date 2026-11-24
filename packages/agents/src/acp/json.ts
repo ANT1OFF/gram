@@ -1,9 +1,9 @@
+import * as Predicate from "effect/Predicate";
 /** A JSON object as ACP carries it. */
 export type Json = Readonly<Record<string, unknown>>;
 
 /** `value` as an object, or an empty one. */
-export const record = (value: unknown): Json =>
-  typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : {};
+export const record = (value: unknown): Json => (Predicate.isObject(value) ? value : {});
 
 /** `value` when it is a string. */
 export const text = (value: unknown): string | undefined =>

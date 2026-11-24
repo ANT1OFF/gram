@@ -1,4 +1,4 @@
-import { AgentUnavailable } from "@gram/contracts";
+import { AgentUnavailable, errnoCode } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
@@ -40,7 +40,7 @@ const processKnownAlive = (pid: number | undefined) => {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+    return errnoCode(error) !== "ESRCH";
   }
 };
 

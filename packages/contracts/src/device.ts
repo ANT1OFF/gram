@@ -706,6 +706,8 @@ export interface HostedThreadWait {
 
 /** Where a thread there stands: `waiting` is waiting on a person there. All the server's word. */
 export const HOSTED_THREAD_STATES = ["running", "waiting", "done", "failed", "stopped"] as const;
+const isHostedThreadState = (state: string): state is HostedThreadState =>
+  HOSTED_THREAD_STATES.some((each) => each === state);
 export type HostedThreadState = (typeof HOSTED_THREAD_STATES)[number];
 
 const cut = (most: number) =>
@@ -730,9 +732,7 @@ export const HostedThreadWaited = Schema.Struct({
     state: Schema.String.pipe(
       Schema.decodeTo(Schema.Literals(HOSTED_THREAD_STATES), {
         decode: SchemaGetter.transform((state: string) =>
-          (HOSTED_THREAD_STATES as readonly string[]).includes(state)
-            ? (state as HostedThreadState)
-            : "running",
+          isHostedThreadState(state) ? state : "running",
         ),
         encode: SchemaGetter.transform((value) => value),
       }),

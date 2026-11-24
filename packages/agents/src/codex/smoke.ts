@@ -7,6 +7,7 @@ import { parseCliVersion } from "../cli/discovery.ts";
 import { runCommand } from "../cli/process.ts";
 import { spawnServe, stopChild } from "../child-process.ts";
 import { CODEX_CLI_VERSION } from "./version.ts";
+import * as Predicate from "effect/Predicate";
 
 export class CodexSmokeFailed extends Schema.TaggedError<CodexSmokeFailed>()("CodexSmokeFailed", {
   step: Schema.Literals(["version", "handshake"]),
@@ -72,15 +73,18 @@ const handshake = (binary: string, env: Record<string, string>, timeoutMs: numbe
       while ((index = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + 1);
-        let message: { id?: unknown; result?: unknown; error?: { message?: unknown } };
+        let parsed: unknown;
         try {
-          message = JSON.parse(line) as typeof message;
+          parsed = JSON.parse(line);
         } catch {
           continue;
         }
-        if (message.id !== 0) continue;
-        if (message.result !== undefined) return finish(Effect.void);
-        return fail(`initialize failed: ${String(message.error?.message ?? "no result")}`);
+        const message = Predicate.isObject(parsed) ? parsed : {};
+        if (message["id"] !== 0) continue;
+        if (message["result"] !== undefined) return finish(Effect.void);
+        const error = message["error"];
+        const why = Predicate.isObject(error) ? error["message"] : undefined;
+        return fail(`initialize failed: ${String(why ?? "no result")}`);
       }
       if (buffer.length > 1024 * 1024) fail("app-server wrote a megabyte without a newline");
     });

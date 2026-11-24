@@ -1,4 +1,5 @@
 import { MODEL_NOT_GRANTED, type AgentFailure, type AgentFailureKind } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 const failure = (
   kind: AgentFailureKind,
@@ -60,7 +61,9 @@ export const httpFailure = (
 
 const bodyStatus = (text: string): number | undefined => {
   try {
-    const code: unknown = (JSON.parse(text) as { error?: { code?: unknown } }).error?.code;
+    const body: unknown = JSON.parse(text);
+    const error = Predicate.isObject(body) ? body["error"] : undefined;
+    const code = Predicate.isObject(error) ? error["code"] : undefined;
     const status = Number(code);
     return Number.isInteger(status) && status >= 400 && status < 600 ? status : undefined;
   } catch {
@@ -108,7 +111,7 @@ export const codexFailure = (error: CodexTurnError, gateway: boolean): AgentFail
   }
   if (typeof info === "object" && info !== null) {
     const [code, detail] = Object.entries(info)[0] ?? [];
-    const status = (detail as { httpStatusCode?: unknown } | undefined)?.httpStatusCode;
+    const status = Predicate.isObject(detail) ? detail["httpStatusCode"] : undefined;
     const httpStatus = typeof status === "number" ? status : undefined;
     if (httpStatus === 429 && gateway && !NO_DEPLOYMENTS.test(text)) {
       return failure("gatewayRefused", false, httpStatus, code);

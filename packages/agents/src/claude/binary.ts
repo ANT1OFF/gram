@@ -7,6 +7,7 @@ import {
   resolveBinary as resolveExecutable,
   type BinaryFs,
 } from "../cli/discovery.ts";
+import * as Predicate from "effect/Predicate";
 
 export {
   classifyExecutable,
@@ -212,7 +213,8 @@ const OAUTH_METHODS: ReadonlySet<string> = new Set([
 /** Private CLI fingerprint; the control plane re-keys it per install before public state. Never uses credentials. */
 export const accountScopeFromStatus = (stdout: string): string | undefined => {
   if (checkAuthStatus(stdout) !== undefined) return undefined;
-  const status = JSON.parse(stdout) as Record<string, unknown>;
+  const parsed: unknown = JSON.parse(stdout);
+  const status = Predicate.isObject(parsed) ? parsed : {};
   const identity = status["accountId"] ?? status["email"];
   if (typeof identity !== "string" || identity.trim() === "") return undefined;
   const organization = typeof status["orgId"] === "string" ? status["orgId"] : "";
@@ -230,7 +232,7 @@ export const checkAuthStatus = (stdout: string): AuthProblem | undefined => {
     return "unparseable";
   }
   if (typeof status !== "object" || status === null) return "unparseable";
-  const { loggedIn, authMethod, apiProvider } = status as Record<string, unknown>;
+  const { loggedIn, authMethod, apiProvider } = Predicate.isObject(status) ? status : {};
   if (loggedIn !== true) return "not-logged-in";
   if (apiProvider !== undefined && apiProvider !== "firstParty") return "third-party-provider";
   return typeof authMethod === "string" && OAUTH_METHODS.has(authMethod)

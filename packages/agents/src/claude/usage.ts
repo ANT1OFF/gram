@@ -1,10 +1,11 @@
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentEvent, CacheWriteSplit, TokenUsage } from "@gram/contracts";
 import { learnedRate, listRate, weightedTokens } from "./cost-estimate.ts";
+import * as Predicate from "effect/Predicate";
 
 type UsageEvent = Extract<AgentEvent, { readonly type: "usage" }>;
 const asRecord = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  Predicate.isObject(value) ? value : {};
 const int = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : undefined;
 

@@ -12,7 +12,11 @@ import {
 const SCALARS: Readonly<
   Record<
     string,
-    { readonly schema: Schema.Top; readonly expected: string; readonly unset?: unknown }
+    {
+      readonly schema: Schema.Codec<unknown, unknown>;
+      readonly expected: string;
+      readonly unset?: unknown;
+    }
   >
 > = {
   "workspace.pauseAtLimitPct": {
@@ -45,7 +49,7 @@ export const decodeCharterScalar = (
   if (scalar === undefined) return { ok: false, expected: "isn't a setting" };
   if (value === null || (scalar.unset !== undefined && value === scalar.unset))
     return { ok: true, value: undefined };
-  const decoded = Schema.decodeUnknownResult(scalar.schema as never, {
+  const decoded = Schema.decodeUnknownResult(scalar.schema, {
     onExcessProperty: "error",
   })(value);
   return Result.isFailure(decoded)

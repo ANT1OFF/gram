@@ -1,6 +1,7 @@
 import type { ChildProcess } from "node:child_process";
 
 import { spawnServe, stopChild } from "../child-process.ts";
+import * as Predicate from "effect/Predicate";
 
 /** A JSON-RPC error an ACP agent answered with. */
 export class AcpError extends Error {
@@ -23,7 +24,7 @@ export interface AcpHandlers {
 
 /** One ACP agent process over stdio, newline-delimited JSON-RPC 2.0 both ways. */
 export interface AcpConnection {
-  request<T = unknown>(method: string, params: Record<string, unknown>): Promise<T>;
+  request(method: string, params: Record<string, unknown>): Promise<unknown>;
   notify(method: string, params: Record<string, unknown>): void;
   /** Settles with why the process ended, once it has. */
   readonly ended: Promise<string>;
@@ -34,9 +35,7 @@ export interface AcpConnection {
 const STDERR_TAIL = 2_000;
 
 const record = (value: unknown): Readonly<Record<string, unknown>> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  Predicate.isObject(value) ? value : {};
 
 /** Wires JSON-RPC over an already started child's stdio. */
 export const connectAcp = (child: ChildProcess, handlers: AcpHandlers): AcpConnection => {
@@ -133,11 +132,11 @@ export const connectAcp = (child: ChildProcess, handlers: AcpHandlers): AcpConne
   });
 
   return {
-    request: <T>(method: string, params: Record<string, unknown>) =>
-      new Promise<T>((resolve, reject) => {
+    request: (method: string, params: Record<string, unknown>) =>
+      new Promise<unknown>((resolve, reject) => {
         if (gone !== undefined) return reject(new AcpError(-32000, gone));
         const id = ++next;
-        waiting.set(id, { resolve: resolve as (value: unknown) => void, reject });
+        waiting.set(id, { resolve, reject });
         write({ id, method, params });
       }),
     notify: (method, params) => write({ method, params }),

@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import * as Predicate from "effect/Predicate";
 
 /** The longest a conversation's id is, in characters. */
 export const CONVERSATION_ID_MAX = 200;
@@ -43,9 +44,8 @@ export type ConversationRef = typeof ConversationRef.Type;
 
 /** Why `value` isn't a conversation reference a host may give, or `undefined` when it is one. */
 export const conversationRefProblem = (value: unknown): string | undefined => {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return "`conversation` is `{ id, label? }`";
-  const { id, label, ...rest } = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return "`conversation` is `{ id, label? }`";
+  const { id, label, ...rest } = value;
   if (Object.keys(rest).length > 0) return "`conversation` takes only `id` and `label`";
   if (typeof id !== "string" || !CONVERSATION_ID.test(id))
     return `\`conversation.id\` is 1 to ${CONVERSATION_ID_MAX} printable characters, with no space`;

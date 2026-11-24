@@ -1,9 +1,12 @@
 export type PowerState = "awake" | "suspended";
 
 /** The slice of Electron's `powerMonitor` this needs. */
+const POWER_EVENTS = ["suspend", "resume", "lock-screen", "unlock-screen"] as const;
+type PowerEvent = (typeof POWER_EVENTS)[number];
+
 export interface PowerEvents {
-  on(event: "suspend" | "resume" | "lock-screen" | "unlock-screen", listener: () => void): void;
-  off?(event: "suspend" | "resume" | "lock-screen" | "unlock-screen", listener: () => void): void;
+  on(event: PowerEvent, listener: () => void): void;
+  off?(event: PowerEvent, listener: () => void): void;
 }
 
 /**
@@ -41,13 +44,9 @@ export const watchPower = (
       locked = false;
       publish();
     },
-  } as const;
-  for (const [event, handler] of Object.entries(handlers)) {
-    monitor.on(event as keyof typeof handlers, handler);
-  }
+  } satisfies Record<PowerEvent, () => void>;
+  for (const event of POWER_EVENTS) monitor.on(event, handlers[event]);
   return () => {
-    for (const [event, handler] of Object.entries(handlers)) {
-      monitor.off?.(event as keyof typeof handlers, handler);
-    }
+    for (const event of POWER_EVENTS) monitor.off?.(event, handlers[event]);
   };
 };

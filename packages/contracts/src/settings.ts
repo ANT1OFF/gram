@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
+import { fieldsOf } from "./untyped-fields.ts";
 import { RuntimeSourceChoice } from "./agent-runtime.ts";
 import { ChimeSound } from "./chime.ts";
 import { AgentKind, PermissionMode, ReasoningVariant } from "./domain.ts";
@@ -22,6 +23,7 @@ import {
 import { VocabularyList, type VocabularyEntry } from "./vocabulary.ts";
 import { ModelSlot, type TierRef } from "./recommended.ts";
 import { connectorEntryProblem, WorkerModel } from "./workspaces.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Glass is the only look. */
 export const Look = Schema.Literal("glass");
@@ -1321,12 +1323,11 @@ export const applySettingsPatch = (settings: Settings, patch: SettingsPatch): Se
       next[key] = value;
       continue;
     }
-    const merged: Record<string, unknown> = {
-      ...(next[key] as object | undefined),
-      ...value,
-    };
+    const held = next[key];
+    const merged: Record<string, unknown> = { ...(Predicate.isObject(held) ? held : {}), ...value };
     next[key] = Object.fromEntries(Object.entries(merged).filter(([, leaf]) => leaf !== null));
   }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- each section of a decoded SettingsPatch is a partial Settings section, so merging it in leaves a Settings
   return next as Settings;
 };
 
@@ -1364,12 +1365,8 @@ export const hostSettingChangedBy = (
   patch: SettingsPatch,
 ): ReadonlyArray<string> | undefined => {
   const next = applySettingsPatch(settings, patch);
-  const at = (root: Settings, [section, field]: readonly [string, string]): unknown => {
-    const value: unknown = (root as Record<string, unknown>)[section];
-    return typeof value === "object" && value !== null
-      ? (value as Record<string, unknown>)[field]
-      : undefined;
-  };
+  const at = (root: Settings, [section, field]: readonly [string, string]): unknown =>
+    fieldsOf(fieldsOf(root).get(section)).get(field);
   return HOST_SETTINGS.find(
     (path) => JSON.stringify(at(settings, path)) !== JSON.stringify(at(next, path)),
   );
@@ -1392,9 +1389,8 @@ export const splitSettingsPatch = (
   const shared: Record<string, unknown> = { ...patch };
   for (const [section, field] of PERSONAL_SETTINGS) {
     const given = shared[section];
-    if (typeof given !== "object" || given === null || Array.isArray(given) || !(field in given))
-      continue;
-    const { [field]: value, ...rest } = given as Record<string, unknown>;
+    if (!Predicate.isObject(given) || !(field in given)) continue;
+    const { [field]: value, ...rest } = given;
     (personal[section] ??= {})[field] = value;
     if (Object.keys(rest).length === 0) delete shared[section];
     else shared[section] = rest;
@@ -1407,11 +1403,11 @@ export const withoutPersonalSettings = (settings: Settings): Settings => {
   const next: Record<string, unknown> = { ...settings };
   for (const [section, field] of PERSONAL_SETTINGS) {
     const held = next[section];
-    if (typeof held !== "object" || held === null || !(field in held)) continue;
-    const { [field]: _dropped, ...rest } = held as Record<string, unknown>;
-    void _dropped;
+    if (!Predicate.isObject(held) || !(field in held)) continue;
+    const { [field]: _dropped, ...rest } = held;
     next[section] = rest;
   }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only optional personal fields were dropped
   return next as Settings;
 };
 

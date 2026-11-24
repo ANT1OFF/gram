@@ -1,3 +1,4 @@
+import * as Predicate from "effect/Predicate";
 /**
  * What a bounded synchronous run of `ps`/PowerShell/`taskkill` gave back; undefined if it failed.
  * `pid` is the run's own process, which a process table it printed lists too.
@@ -35,8 +36,8 @@ const TABLE_COMMAND: Readonly<Record<"posix" | "win32", readonly [string, string
 
 /** The pid in the server's `{ type: "launched", pid }`, posted for each program it opened. */
 export function launchedPidFromMessage(message: unknown): number | null {
-  if (typeof message !== "object" || message === null) return null;
-  const { type, pid } = message as Record<string, unknown>;
+  if (!Predicate.isObject(message)) return null;
+  const { type, pid } = message;
   return type === "launched" && Number.isSafeInteger(pid) && Number(pid) > 1 ? Number(pid) : null;
 }
 

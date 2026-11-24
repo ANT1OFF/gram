@@ -2,6 +2,7 @@ import { createHmac, type KeyObject, randomBytes } from "node:crypto";
 import { join } from "node:path";
 import {
   type DeviceId,
+  errnoCode,
   type HostedDiscovery,
   type HostedMachine,
   type HostedRepositoryReach,
@@ -9,7 +10,6 @@ import {
   runsSentWork,
   type SignedTurnGrant,
 } from "@gram/contracts";
-import { errnoCode } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";

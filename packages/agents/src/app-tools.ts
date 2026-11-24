@@ -1,4 +1,5 @@
 import type { AppToolClass } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 /** The MCP server name each thread's app tools are registered under, in every agent's config. */
 export const APP_TOOLS_SERVER_NAME = "gram";
@@ -23,11 +24,14 @@ export const appToolContent = (parts: ReadonlyArray<AppToolPart>): AppToolConten
  * An app tool's output as an MCP result's content, for every transport alike: its parts when it
  * returned `AppToolContent`, else one text part, the output itself when a string, else its JSON.
  */
+const isAppToolContent = (output: unknown): output is AppToolContent =>
+  Predicate.isObject(output) &&
+  output["_tag"] === "AppToolContent" &&
+  Array.isArray(output["parts"]);
+
 export const appToolResultContent = (output: unknown): AppToolPart[] =>
-  typeof output === "object" &&
-  output !== null &&
-  (output as { _tag?: unknown })._tag === "AppToolContent"
-    ? [...(output as AppToolContent).parts]
+  isAppToolContent(output)
+    ? [...output.parts]
     : [
         {
           type: "text",

@@ -27,11 +27,15 @@ export const isSceneId = (value: unknown): value is SceneId =>
  * How opaque cards, the sidebar and the title bar are over a picture: solid, frosted, or
  * see-through. Frosted and see-through blur what is behind them.
  */
-export const SURFACE_OPACITY = { solid: 1, frosted: 0.8, clear: 0.62 } as const;
+export const SURFACES_IDS = ["solid", "frosted", "clear"] as const;
 
-export type SurfacesId = keyof typeof SURFACE_OPACITY;
+export type SurfacesId = (typeof SURFACES_IDS)[number];
 
-export const SURFACES_IDS = Object.keys(SURFACE_OPACITY) as SurfacesId[];
+export const SURFACE_OPACITY: Readonly<Record<SurfacesId, number>> = {
+  solid: 1,
+  frosted: 0.8,
+  clear: 0.62,
+};
 
 /**
  * The least share of the page colour washed over a picture, per mode. {@link backdropLevels}

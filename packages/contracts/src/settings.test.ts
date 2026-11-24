@@ -202,6 +202,14 @@ describe("review request filters", () => {
 });
 
 describe("SettingsPatch", () => {
+  it("still applies when the stored settings hold a value an older Gram wrote", () => {
+    const stored = applySettingsPatch(DEFAULT_SETTINGS, {
+      helpers: { source: "local" },
+    } as unknown as SettingsPatch);
+    const next = applySettingsPatch(stored, { onboarding: { lastSeenVersion: "1.0.0" } });
+    expect(next.onboarding.lastSeenVersion).toBe("1.0.0");
+  });
+
   it("decodes a partial group and merges it field by field", () => {
     const patch = Schema.decodeUnknownSync(SettingsPatch)({
       updates: { channel: "prerelease" },

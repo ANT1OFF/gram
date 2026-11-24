@@ -2,6 +2,7 @@ import * as os from "node:os";
 import type { ChecksRollup, ReviewBot, ReviewRequestBot } from "@gram/contracts";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Predicate from "effect/Predicate";
 import { gh, ghApi, gitFailMsg } from "./exec.ts";
 import type { Proc } from "./proc.ts";
 import { buildLatestReview } from "./review.ts";
@@ -70,9 +71,7 @@ export const reviewRequestsSearchArgs = (options: ReviewRequestsSearch): Readonl
 ];
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  Predicate.isObject(value) ? value : undefined;
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
 

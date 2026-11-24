@@ -13,11 +13,11 @@ import {
   type RequestAnswer,
 } from "@gram/contracts";
 import { outwardKind, type OutwardKind } from "../outward.ts";
+import * as Predicate from "effect/Predicate";
 
 export type CanUseToolOptions = Parameters<CanUseTool>[2];
 
-const asRecord = (u: unknown): Record<string, unknown> =>
-  typeof u === "object" && u !== null ? (u as Record<string, unknown>) : {};
+const asRecord = (u: unknown): Record<string, unknown> => (Predicate.isObject(u) ? u : {});
 
 const str = (u: unknown): string | undefined => (typeof u === "string" ? u : undefined);
 

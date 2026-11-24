@@ -155,13 +155,16 @@ export const makeCodexRpc = (
         if (line.trim() === "") return;
         let message: Incoming;
         try {
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the app-server speaks the protocol generated in ./protocol; its lines are taken as typed
           message = JSON.parse(line) as Incoming;
         } catch {
           return;
         }
         if (message.method !== undefined) {
-          observe(message as ServerMessage);
-          Queue.offerUnsafe(messages, message as ServerMessage);
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a line with a method is a server message of the generated protocol
+          const serverMessage = message as ServerMessage;
+          observe(serverMessage);
+          Queue.offerUnsafe(messages, serverMessage);
           return;
         }
         const entry = message.id === undefined ? undefined : pending.get(message.id);
@@ -215,10 +218,12 @@ export const makeCodexRpc = (
           const id = nextId++;
           const done = yield* Deferred.make<unknown, CodexRpcError>();
           pending.set(id, { method, done });
-          return (yield* sendFor(method, { id, method, params }).pipe(
+          const result = yield* sendFor(method, { id, method, params }).pipe(
             Effect.andThen(Deferred.await(done)),
             Effect.ensuring(Effect.sync(() => pending.delete(id))),
-          )) as CodexMethods[typeof method][1];
+          );
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the app-server answers each method with the result the generated protocol names
+          return result as CodexMethods[typeof method][1];
         }),
       notify: (method, params) =>
         sendFor(method, params === undefined ? { method } : { method, params }),

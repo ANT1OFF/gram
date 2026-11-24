@@ -226,7 +226,7 @@ export const withRoutineIds = (
     const name = routine.name.trim();
     if (routine.id !== undefined) return name === routine.name ? routine : { ...routine, name };
     const known = byName.get(routineNameKey(name));
-    const id = (known !== undefined && !taken.has(known) ? known : newId()) as RoutineId;
+    const id = known !== undefined && !taken.has(known) ? known : RoutineId.make(newId());
     taken.add(id);
     return { ...routine, id, name };
   });

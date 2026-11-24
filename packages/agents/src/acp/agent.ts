@@ -38,11 +38,11 @@ export interface AcpOpened {
   readonly gate: OutwardGate | undefined;
   readonly mapper: AcpMapper;
   /** A request whose failure fails the session's start with `what`. */
-  call<T = unknown>(
+  call(
     what: string,
     method: string,
     params: Record<string, unknown>,
-  ): Effect.Effect<T, AgentUnavailable>;
+  ): Effect.Effect<unknown, AgentUnavailable>;
 }
 
 /** The agent's own controls of an open session. */

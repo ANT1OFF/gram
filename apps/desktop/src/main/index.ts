@@ -145,6 +145,7 @@ import {
 } from "./quit.ts";
 import { createQuitWindow, isProgressWindow } from "./quit-window.ts";
 import { inheritedServerEnv } from "./server-env.ts";
+import { nodeTimers } from "./node-timers.ts";
 import { createServerHost, DEFAULT_RECOVERY, NO_RECOVERY } from "./server-host.ts";
 import {
   autoUpdateCheckEnabled,
@@ -404,8 +405,7 @@ const server = createServerHost({
         treeCheck: { watch: (root: number) => watchTree(root, treeCheckDeps, launched) },
       }),
   log,
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (timer) => clearTimeout(timer as NodeJS.Timeout),
+  ...nodeTimers(),
   now: () => Date.now(),
   recovery: SMOKE ? NO_RECOVERY : DEFAULT_RECOVERY,
   ...(SMOKE
@@ -467,8 +467,7 @@ const speech = createSpeechHost({
   channel: () => new MessageChannelMain(),
   resolveModel: (modelId) => resolveSpeechModel(dataDir, modelId),
   resolveAccurate: () => resolveAccurateModels(dataDir),
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (timer) => clearTimeout(timer as NodeJS.Timeout),
+  ...nodeTimers(),
   log: (fields, message) => log.info(fields, message),
 });
 
@@ -528,8 +527,7 @@ const quit = createQuit({
   exit: (code) => app.exit(code),
   onProgress: (progress) => quitWindow.show(progress),
   log,
-  setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (timer) => clearTimeout(timer as NodeJS.Timeout),
+  ...nodeTimers(),
   now: () => Date.now(),
 });
 const quitWindow = createQuitWindow({ colors: themeColors, onForce: () => quit.force("user") });
@@ -754,6 +752,7 @@ async function runApp() {
     openSpeechModelStore({
       dataDir,
       base: speechModelBase(process.env),
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- ClientRequest overloads `on` for every event, which TypeScript can't match to the three ElectronNet names
       fetch: electronFetch(net as unknown as ElectronNet),
       log,
     });

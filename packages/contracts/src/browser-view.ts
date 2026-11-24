@@ -1,3 +1,5 @@
+import * as Predicate from "effect/Predicate";
+
 /** The agent's page as a watcher's Preview tab shows it: a `PreviewState` without a shell. */
 export interface ViewPage {
   readonly url: string;
@@ -74,8 +76,10 @@ export type ViewInput =
 /** What the strip's buttons do to the page. `handBack` gives it back to its agent at once. */
 export type ViewControl = "back" | "forward" | "reload" | "handBack";
 
-const VIEW_CONTROLS: ReadonlySet<string> = new Set(["back", "forward", "reload", "handBack"]);
-const BUTTONS: ReadonlySet<string> = new Set(["none", "left", "right"]);
+const VIEW_CONTROLS: ReadonlyArray<ViewControl> = ["back", "forward", "reload", "handBack"];
+const BUTTONS: ReadonlyArray<ViewButton> = ["none", "left", "right"];
+const isOneOf = <T extends string>(allowed: ReadonlyArray<T>, value: unknown): value is T =>
+  allowed.some((each) => each === value);
 
 /** The server asks the host to send a thread's page and frames, for `VIEW_LEASE_MS` more. */
 export interface ViewWatchMessage {
@@ -258,8 +262,8 @@ const allowedKey = (
 
 /** `raw` as one input, or `undefined` when it isn't one: nothing unchecked reaches the browser. */
 export function viewInput(raw: unknown): ViewInput | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const r = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return undefined;
+  const r = raw;
   if (!whole(r["modifiers"], 0, 15)) return undefined;
   const modifiers = r["modifiers"];
   if (r["type"] === "key") {
@@ -290,14 +294,14 @@ export function viewInput(raw: unknown): ViewInput | undefined {
   if (r["type"] !== "pointer") return undefined;
   const { action, button, buttons, clickCount } = r;
   if (action !== "move" && action !== "down" && action !== "up") return undefined;
-  if (typeof button !== "string" || !BUTTONS.has(button)) return undefined;
+  if (!isOneOf(BUTTONS, button)) return undefined;
   if (!whole(buttons, 0, 31) || (buttons & 4) !== 0 || !whole(clickCount, 0, 3)) return undefined;
   return {
     type: "pointer",
     action,
     x,
     y,
-    button: button as ViewButton,
+    button,
     buttons,
     clickCount,
     modifiers,
@@ -323,9 +327,7 @@ export function viewServerMessage(raw: unknown): ViewServerMessage | undefined {
   if (m.type === "pane.view.watch")
     return { type: m.type, threadId, ...(m.fresh === true ? { fresh: true } : {}) };
   if (m.type === "pane.view.control")
-    return typeof m.op === "string" && VIEW_CONTROLS.has(m.op)
-      ? { type: m.type, threadId, op: m.op as ViewControl }
-      : undefined;
+    return isOneOf(VIEW_CONTROLS, m.op) ? { type: m.type, threadId, op: m.op } : undefined;
   if (m.type !== "pane.view.input") return undefined;
   if (!Array.isArray(m.inputs) || m.inputs.length > VIEW_INPUT_BATCH) return undefined;
   const inputs = m.inputs.flatMap((each) => viewInput(each) ?? []);
@@ -334,16 +336,17 @@ export function viewServerMessage(raw: unknown): ViewServerMessage | undefined {
 
 /** A message from the host about a thread's view; `undefined` for anything else. */
 export function viewHostMessage(raw: unknown): ViewHostMessage | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const m = raw as Record<string, unknown>;
-  if (typeof m["threadId"] !== "string") return undefined;
-  if (m["type"] === "pane.view.page") {
-    const page = m["page"];
-    if (page !== null && (typeof page !== "object" || page === undefined)) return undefined;
-    return m as unknown as ViewPageMessage;
+  if (!Predicate.isObject(raw)) return undefined;
+  const { type, threadId, jpeg, width, height } = raw;
+  if (typeof threadId !== "string") return undefined;
+  if (type === "pane.view.page") {
+    const page = raw["page"];
+    if (page !== null && typeof page !== "object") return undefined;
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's own page snapshot, which it builds as a ViewPage
+    return raw as unknown as ViewPageMessage;
   }
-  if (m["type"] !== "pane.view.frame") return undefined;
-  return short(m["jpeg"], FRAME_MAX) && within(m["width"], 1, FAR) && within(m["height"], 1, FAR)
-    ? (m as unknown as ViewFrameMessage)
+  if (type !== "pane.view.frame") return undefined;
+  return short(jpeg, FRAME_MAX) && within(width, 1, FAR) && within(height, 1, FAR)
+    ? { type, threadId, jpeg, width, height }
     : undefined;
 }

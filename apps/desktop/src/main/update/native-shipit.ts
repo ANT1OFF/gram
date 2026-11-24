@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { lstat, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { errnoCode } from "@gram/contracts";
 
 export type RunTool = (
   file: string,
@@ -49,7 +50,7 @@ export function createShipIt(options: {
       await lstat(state);
       return true;
     } catch (error) {
-      return (error as NodeJS.ErrnoException).code === "ENOENT" ? false : undefined;
+      return errnoCode(error) === "ENOENT" ? false : undefined;
     }
   };
   const jobLoaded = async (): Promise<boolean | undefined> => {

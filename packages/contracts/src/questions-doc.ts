@@ -43,6 +43,7 @@ const storedEntry = ({ question, source }: Draft): StoredEntry => {
   const { detail: _detail, ...rest } = question;
   const kept = Object.entries(rest).filter(([, value]) => value !== undefined);
   return {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the draft question less its detail and its undefined fields
     question: Object.fromEntries(kept) as StoredEntry["question"],
     source,
   };

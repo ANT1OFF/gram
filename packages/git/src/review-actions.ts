@@ -1,9 +1,10 @@
 import * as fs from "node:fs";
 import {
-  repoFromPrUrl,
   type BoundPr,
+  errnoCode,
   type PrReview,
   type PrStatus,
+  repoFromPrUrl,
   type ReviewBot,
   type ReviewComment,
 } from "@gram/contracts";
@@ -278,8 +279,7 @@ export const postPrComment = (
     reviewWritten();
   });
 
-const isMissing = (error: unknown): boolean =>
-  (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+const isMissing = (error: unknown): boolean => errnoCode(error) === "ENOENT";
 
 /** A suggestion that can't be applied: outdated, no block, or the file changed underneath it. */
 export class SuggestionError extends Data.TaggedError("SuggestionError")<{
