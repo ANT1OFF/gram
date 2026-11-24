@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { answer, EmbedInbound, refusal } from "../embedding/inbound.ts";
 import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 import { makeSettingsWriter } from "./writer.ts";
+import * as Predicate from "effect/Predicate";
 
 /** What a change to a supplied setting is refused with. */
 export const suppliedRefusal = (path: ReadonlyArray<string>): string =>
@@ -13,7 +14,7 @@ export const suppliedRefusal = (path: ReadonlyArray<string>): string =>
 const ordered = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(ordered)
-    : typeof value === "object" && value !== null
+    : Predicate.isObject(value)
       ? Object.fromEntries(
           Object.entries(value)
             .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -27,8 +28,8 @@ const same = (a: unknown, b: unknown): boolean =>
 const valueAt = (root: unknown, path: ReadonlyArray<string>): unknown => {
   let value = root;
   for (const key of path) {
-    if (typeof value !== "object" || value === null) return undefined;
-    value = (value as Record<string, unknown>)[key];
+    if (!Predicate.isObject(value)) return undefined;
+    value = value[key];
   }
   return value;
 };
@@ -92,7 +93,7 @@ export const SuppliedSettingsLive = Layer.effectDiscard(
     yield* inbound.route("PUT", "settings", (body) =>
       Effect.gen(function* () {
         const given = body?.["settings"];
-        if (typeof given !== "object" || given === null || Array.isArray(given)) {
+        if (!Predicate.isObject(given)) {
           return refusal(400, "`settings` is a settings patch");
         }
         const patch = yield* decodePatch(given).pipe(Effect.catch(() => Effect.succeed(undefined)));

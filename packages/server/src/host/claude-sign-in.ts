@@ -21,6 +21,7 @@ import * as Effect from "effect/Effect";
 import { parseToolVersion } from "../launch-checks/checks.ts";
 import { NOT_YOUR_MACHINE } from "./ownership.ts";
 import type { Terminals } from "../terminal/terminals.ts";
+import * as Predicate from "effect/Predicate";
 
 const BY_REASON: Partial<Record<AgentUnavailableReason, ClaudeSignIn>> = {
   "not-logged-in": "notSignedIn",
@@ -196,7 +197,7 @@ export const openSignInTerminal = (
         (error) =>
           new InvalidState({
             message:
-              (error as { readonly message?: unknown } | undefined)?.message === NOT_YOUR_MACHINE
+              Predicate.isObject(error) && error["message"] === NOT_YOUR_MACHINE
                 ? NOT_YOUR_MACHINE
                 : "That machine isn't joined and online, so it can't sign in now.",
           }),

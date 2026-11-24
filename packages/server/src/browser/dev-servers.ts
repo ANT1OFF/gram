@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -37,7 +38,7 @@ const isStrings = (value: unknown): value is string[] =>
 
 /** `raw` as launch configurations, or why not. */
 export function parseLaunchConfig(raw: unknown, file: string): LaunchConfig {
-  const entries = (raw as { configurations?: unknown } | null)?.configurations;
+  const entries = fieldsOf(raw).get("configurations");
   if (!Array.isArray(entries) || entries.length === 0)
     throw new LaunchConfigError(`${file} has no "configurations".`);
   const configurations = entries.map((entry, index): LaunchConfiguration => {

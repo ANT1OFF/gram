@@ -112,7 +112,7 @@ export const storeToolImage = (
         try {
           await writeFile(path, bytes, { flag: "wx", mode: 0o600 });
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          if (errnoCode(error) !== "EEXIST") throw error;
         }
       });
       yield* checkParents();

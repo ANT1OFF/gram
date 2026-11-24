@@ -23,21 +23,21 @@ import {
 } from "./runtime-state.ts";
 import { startMachineMove } from "./machine-move.ts";
 import {
-  listedRow,
   type AgentEvent,
-  checkoutRoots,
-  type UsageSummary,
-  type ServerEvent,
-  type BackgroundTask,
   type BackgroundOutput,
+  type BackgroundTask,
+  checkoutRoots,
   type GramUIMessageChunk,
-  type MessageId,
-  type RequestId,
-  type ThreadId,
-  type Thread,
-  type PermissionMode,
+  listedRow,
   LOCAL_HOST_ID,
+  MessageId,
+  type PermissionMode,
+  type RequestId,
+  type ServerEvent,
   sessionHostOf,
+  type Thread,
+  type ThreadId,
+  type UsageSummary,
 } from "@gram/contracts";
 import { BACKGROUND_SETTLE } from "./session-restarts.ts";
 import { touchesRemote } from "./remote-commands.ts";
@@ -303,7 +303,7 @@ export const makeAgentEvents = ({
         yield* appendChunk(rt, reply.messageId, { type: "finish-step" });
       yield* appendChunk(rt, reply.messageId, { type: "finish" });
       rt.toolTimes.delete(reply.messageId);
-      const next = `reply-${randomUUID()}` as MessageId;
+      const next = MessageId.make(`reply-${randomUUID()}`);
       rt.replyAliases.set(original, next);
       yield* appendChunk(rt, next, {
         type: "start",

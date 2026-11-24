@@ -1,10 +1,10 @@
 import {
+  DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
   type HostCheckResult,
   localCheckConcurrencyOf,
-  DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
   type Project,
-  type ProjectLocalCheck,
   type ProjectId,
+  type ProjectLocalCheck,
 } from "@gram/contracts";
 import {
   canonicalizeOrOwned,
@@ -445,7 +445,7 @@ export const materializeSelectedPublisher = (
         lstatSync(path!);
         throw new Error(`publisher ${label} forbidden`);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
       }
     }
     const treeRows = requiredPublisherGit(yield* g(["ls-tree", "-r", "-z", "--full-tree", head]))

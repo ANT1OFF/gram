@@ -1,4 +1,4 @@
-import { AppToolError, type ThreadId } from "@gram/contracts";
+import { AppToolError, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -110,7 +110,7 @@ export const TranscriptReadAppToolsLive = Layer.effectDiscard(
               tool: TOOL,
               message: refusal("no_authority", NOT_RUNNING),
             });
-          const threadId = input.threadId as ThreadId;
+          const threadId = ThreadId.make(input.threadId);
           const fromSeq = Math.max(input.fromSeq ?? 0, 0);
           const limit = Math.min(Math.max(input.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
           const open = yield* store.getThread(threadId).pipe(Effect.option);

@@ -23,6 +23,7 @@ import {
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Each joined machine: dialled in, readied to stop, wanted by a thread. */
 export const MACHINES_STOP_STATUS_PATH = "/machines/stop/status";
@@ -93,7 +94,7 @@ const keptBefore = (value: unknown): ReadonlyArray<KeptBefore> | undefined => {
   if (!Array.isArray(value) || value.length > STOP_FOLDERS_MAX) return undefined;
   const kept: Array<KeptBefore> = [];
   for (const entry of value as ReadonlyArray<unknown>) {
-    if (typeof entry !== "object" || entry === null) return undefined;
+    if (!Predicate.isObject(entry)) return undefined;
     const { threadId, cwd, commit, caughtUp, branch, remote, pushed } = entry as Record<
       string,
       unknown
@@ -146,9 +147,7 @@ const jsonBody = (max: number) =>
 const parsed = (text: string): Record<string, unknown> | undefined => {
   try {
     const value: unknown = JSON.parse(text);
-    return typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
+    return Predicate.isObject(value) ? value : undefined;
   } catch {
     return undefined;
   }

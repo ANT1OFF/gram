@@ -6,6 +6,7 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import { npmFailure, refusedSignIn } from "./npm-registry.ts";
 import { compareVersions, NPM_PACKAGES, parseSemver } from "./policy.ts";
+import * as Predicate from "effect/Predicate";
 
 interface VendorRelease {
   readonly version: string;
@@ -64,7 +65,7 @@ export const npmView =
       );
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+  Predicate.isObject(value) ? value : undefined;
 
 /** The `latest` dist-tag of an `npm view … dist-tags time --json` answer, when it's a stable `x.y.z`. */
 export const latestOf = (view: unknown): string | undefined => {

@@ -1,16 +1,16 @@
 import {
-  FINISHED_WORKER_MESSAGES_MAX,
-  ThreadNotFound,
   briefOf,
   changedFilesOf,
   type ClosedThread,
+  FINISHED_WORKER_MESSAGES_MAX,
   type FinishedWorker,
   type FinishedWorkerDetail,
   type FinishedWorkerPr,
   type FinishedWorkersCursor,
   type FinishedWorkersPage,
   type Thread,
-  type ThreadId,
+  ThreadId,
+  ThreadNotFound,
   type WorkerReport,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -132,7 +132,7 @@ export const makeFinishedWorkers = ({ store, archive }: FinishedWorkersDeps) => 
         const heading = archivedHeading(text);
         if (heading === undefined || heading.threadId !== file.threadId) continue;
         found.push({
-          threadId: file.threadId as ThreadId,
+          threadId: ThreadId.make(file.threadId),
           workspaceId,
           title: heading.title,
           feature: heading.feature,

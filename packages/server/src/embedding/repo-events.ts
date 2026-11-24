@@ -3,6 +3,7 @@ import * as Layer from "effect/Layer";
 import { RepoEvents, type PushedRepoEvent } from "../git/publisher.ts";
 import { Embedding } from "./embedding.ts";
 import { answer, EmbedInbound, refusal } from "./inbound.ts";
+import * as Predicate from "effect/Predicate";
 
 /** How many events one call may carry. */
 export const REPO_EVENTS_MAX = 200;
@@ -12,10 +13,13 @@ const KINDS: ReadonlySet<string> = new Set(["pull_request", "check", "review", "
 
 /** One event of the call's body, or why it isn't one. */
 export const parseRepoEvent = (value: unknown): PushedRepoEvent | string => {
-  if (typeof value !== "object" || value === null) return "an event is an object";
-  const { repo, number, branch, kind } = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return "an event is an object";
+  const { repo, number, branch, kind } = value;
   if (typeof repo !== "string" || !REPO.test(repo)) return "`repo` is `owner/name`";
-  if (number !== undefined && (!Number.isSafeInteger(number) || (number as number) <= 0)) {
+  if (
+    number !== undefined &&
+    (typeof number !== "number" || !Number.isSafeInteger(number) || number <= 0)
+  ) {
     return "`number` is a pull request's number";
   }
   if (
@@ -29,7 +33,7 @@ export const parseRepoEvent = (value: unknown): PushedRepoEvent | string => {
   }
   return {
     repo,
-    ...(number === undefined ? {} : { number: number as number }),
+    ...(typeof number === "number" ? { number } : {}),
     ...(branch === undefined ? {} : { branch }),
   };
 };

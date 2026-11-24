@@ -1,7 +1,8 @@
-import type { Thread, ThreadId } from "@gram/contracts";
+import { type Thread, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
 import type { SqlClient } from "../platform/unstable.ts";
+import * as Predicate from "effect/Predicate";
 
 const privateFieldsOf = (data: string): string | undefined => {
   let stored: unknown;
@@ -10,8 +11,8 @@ const privateFieldsOf = (data: string): string | undefined => {
   } catch {
     return undefined;
   }
-  if (typeof stored !== "object" || stored === null) return undefined;
-  const thread = stored as Record<string, unknown>;
+  if (!Predicate.isObject(stored)) return undefined;
+  const thread = stored;
   if (typeof thread["readableBy"] !== "string") return undefined;
   const kept: Record<string, unknown> = {};
   for (const key of [
@@ -69,7 +70,7 @@ export const notePrivateThreads = (sql: SqlClient.SqlClient) =>
           AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`.pipe(Effect.orDie)) {
       const stored = JSON.parse(row.data) as Partial<Thread>;
       if (typeof stored.readableBy !== "string") continue;
-      const noted = { ...stored, id: row.id as ThreadId, readableBy: stored.readableBy };
+      const noted = { ...stored, id: ThreadId.make(row.id), readableBy: stored.readableBy };
       notePrivacy(noted);
       noteReaders({
         ...noted,
@@ -105,10 +106,10 @@ export const rememberHolderIn = (sql: SqlClient.SqlClient, threadId: string) =>
       } catch {
         stored = undefined;
       }
-      const thread = typeof stored === "object" && stored !== null ? stored : {};
+      const thread = Predicate.isObject(stored) ? stored : {};
       const kept = Object.fromEntries(
         MACHINE_FIELDS.flatMap((key) => {
-          const value = (thread as Record<string, unknown>)[key];
+          const value = thread[key];
           return value === undefined || value === null ? [] : [[key, value]];
         }),
       );

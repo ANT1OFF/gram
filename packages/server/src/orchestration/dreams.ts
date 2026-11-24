@@ -7,41 +7,41 @@ import {
 } from "./automatic-dream.ts";
 
 import {
-  DREAM_REPORT_EXCERPT_MAX,
-  DREAM_SESSIONS_MAX,
-  InvalidState,
-  NotFound,
   type AgentUnavailable,
   type AutomaticDreamStatus,
   type Dream,
+  DREAM_REPORT_EXCERPT_MAX,
+  DREAM_SESSIONS_MAX,
   type DreamAgentSession,
   type DreamFailure,
   type DreamFileDiff,
   type DreamId,
-  type DreamWatermark,
   type DreamKind,
-  type DreamMode,
   type DreamMerge,
+  type DreamMode,
   type DreamReport,
   type DreamResolution,
   type DreamReview,
+  type DreamWatermark,
   effectiveCheckout,
   type FsError,
   type HostId,
   hostOf,
+  type ImportPreview,
+  InvalidState,
   isPinned,
   LOCAL_HOST_ID,
-  type ImportPreview,
+  memoryUpdateModeOf,
+  memoryUpdateRuleOf,
   type ModelRef,
+  NotFound,
   type Project,
   type ProjectId,
   type ServerEvent,
   type Thread,
-  type ThreadId,
+  ThreadId,
   type WorkspaceId,
   type WorkspaceState,
-  memoryUpdateModeOf,
-  memoryUpdateRuleOf,
 } from "@gram/contracts";
 import { Worktrees } from "@gram/git";
 import * as Cause from "effect/Cause";
@@ -393,7 +393,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             .read(workspaceId, entry.threadId)
             .pipe(Effect.orElseSucceed(() => undefined));
           if (text === undefined) return undefined;
-          const threadId = entry.threadId as ThreadId;
+          const threadId = ThreadId.make(entry.threadId);
           const common = {
             threadId,
             source: "archive" as const,
@@ -1011,7 +1011,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             instructions: input.instructions,
             seeds,
           });
-          const threadId = randomUUID() as ThreadId;
+          const threadId = ThreadId.make(randomUUID());
           const instructions = input.instructions?.trim();
           const dream: Dream = {
             id: dreamId,
@@ -1510,7 +1510,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 model: dream.model,
                 outwardGate: outwardGateFor({
                   thread: {
-                    id: `merge-${dream.id}` as ThreadId,
+                    id: ThreadId.make(`merge-${dream.id}`),
                     role: "dream",
                     model: dream.model,
                   },

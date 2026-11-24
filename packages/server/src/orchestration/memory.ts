@@ -1,5 +1,5 @@
 import { withAnchoredFiles } from "./anchored-files.ts";
-import { FsError, InvalidState, NotFound, type MemoryWrite } from "@gram/contracts";
+import { errnoCode, FsError, InvalidState, type MemoryWrite, NotFound } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -305,7 +305,7 @@ const workerMayWrite = (path: string, current: string | undefined, next: string 
   return Effect.void;
 };
 
-const codeOf = (error: unknown): unknown => (error as { code?: unknown } | undefined)?.code;
+const codeOf = (error: unknown): unknown => errnoCode(error);
 
 const fsError = (rel: string, error: unknown) => {
   const code = codeOf(error);

@@ -1,7 +1,7 @@
 import type { KeyObject } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
-import { type HostId, type HostStatus, hostedOrigin } from "@gram/contracts";
+import { fieldsOf, hostedOrigin, type HostId, type HostStatus } from "@gram/contracts";
 import { makeLaunchToken, tokensEqual } from "../http/auth.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
 import { makeDialNonceRecord } from "./dial-nonce-record.ts";
@@ -16,6 +16,7 @@ import {
 } from "./machine-keys.ts";
 import { SSH_TARGET } from "./ssh-join.ts";
 import type { MachineUpdate } from "./machine-updates.ts";
+import * as Predicate from "effect/Predicate";
 
 /** How long a join link lasts, as a phone's pairing link does. */
 export const JOIN_LIFETIME_MS = 15 * 60_000;
@@ -272,8 +273,8 @@ export const namesThisMachine = (name: string) =>
 const PLATFORM = /^[a-z0-9]{1,16}$/;
 
 const isMachine = (value: unknown): value is PairedMachine => {
-  if (typeof value !== "object" || value === null) return false;
-  const m = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return false;
+  const m = value;
   return (
     typeof m["publicKey"] === "string" &&
     publicKeyFrom(m["publicKey"]) !== undefined &&
@@ -306,19 +307,20 @@ const isMachine = (value: unknown): value is PairedMachine => {
 
 const machinesIn = (value: unknown, provisioned: boolean, most: number): PairedMachine[] => {
   if (value === undefined) return [];
-  const record = value as Record<string, unknown> | null;
+  const record = fieldsOf(value);
+  const machines = record.get("machines");
   if (
-    typeof record !== "object" ||
-    record === null ||
-    record["version"] !== 1 ||
-    !Array.isArray(record["machines"]) ||
-    record["machines"].length > most ||
-    !record["machines"].every(
-      (machine) => isMachine(machine) && isProvisioned(machine) === provisioned,
+    !Predicate.isObject(value) ||
+    record.get("version") !== 1 ||
+    !Array.isArray(machines) ||
+    machines.length > most ||
+    !machines.every(
+      (machine): machine is PairedMachine =>
+        isMachine(machine) && isProvisioned(machine) === provisioned,
     )
   )
     throw new Error("Joined machines storage is invalid");
-  return record["machines"] as PairedMachine[];
+  return machines;
 };
 
 /**
@@ -394,23 +396,23 @@ export const fileNonceStore = (
     read: () => {
       const value = file.read();
       if (value === undefined) return NO_DIALS;
-      const record = value as Record<string, unknown> | null;
+      const record = fieldsOf(value);
+      const nonces = record.get("nonces");
+      const floor = record.get("floor");
+      const seen = record.get("seen");
       if (
-        typeof record !== "object" ||
-        record === null ||
-        record["version"] !== 1 ||
-        !Number.isSafeInteger(record["floor"]) ||
-        !Number.isSafeInteger(record["seen"]) ||
-        !Array.isArray(record["nonces"]) ||
-        record["nonces"].length > NONCES_KEPT ||
-        !record["nonces"].every(isNonce)
+        !Predicate.isObject(value) ||
+        record.get("version") !== 1 ||
+        typeof floor !== "number" ||
+        !Number.isSafeInteger(floor) ||
+        typeof seen !== "number" ||
+        !Number.isSafeInteger(seen) ||
+        !Array.isArray(nonces) ||
+        nonces.length > NONCES_KEPT ||
+        !nonces.every(isNonce)
       )
         throw new Error("Dial nonce storage is invalid");
-      return {
-        nonces: record["nonces"],
-        floor: record["floor"] as number,
-        seen: record["seen"] as number,
-      };
+      return { nonces, floor, seen };
     },
     write: ({ nonces, floor, seen }) => file.write({ version: 1, floor, seen, nonces }, seen),
     lastSeen: () => dialNoncesLastSeen(dataDir, name),

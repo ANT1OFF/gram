@@ -1,14 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   aboveHigh,
-  listedRow,
-  canonicalModelId,
-  AppToolError,
-  ReasoningVariant,
   type AgentKind,
-  type MessageOrigin,
+  AppToolError,
+  canonicalModelId,
   type GramUIMessage,
-  type ThreadId,
+  listedRow,
+  type MessageOrigin,
+  ReasoningVariant,
+  ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
@@ -164,7 +164,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
 
     const resolveSendTarget = (threadId: string) =>
       store
-        .getThread(threadId as ThreadId)
+        .getThread(ThreadId.make(threadId))
         .pipe(Effect.catchTag("ThreadNotFound", () => Effect.fail(missingTarget(threadId))));
 
     const resolveParent = (caller: ThreadId) =>
@@ -195,7 +195,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
 
     const summaryOf = (tool: string, threadId: string) =>
       runtimes
-        .summaryOf(threadId as ThreadId)
+        .summaryOf(ThreadId.make(threadId))
         .pipe(
           Effect.flatMap((summary) =>
             summary === undefined
@@ -213,7 +213,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
       });
 
     const titleOf = (threadId: string) =>
-      store.getThread(threadId as ThreadId).pipe(
+      store.getThread(ThreadId.make(threadId)).pipe(
         Effect.match({
           onFailure: () => `unknown thread ${threadId}`,
           onSuccess: (thread) => `“${thread.title}”`,
@@ -241,7 +241,7 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
         const result = yield* orchestration.sendOnce(
           caller,
           clientRequestId,
-          message.threadId as ThreadId,
+          ThreadId.make(message.threadId),
           sendFingerprint(message.text, message.mode),
           send,
         );

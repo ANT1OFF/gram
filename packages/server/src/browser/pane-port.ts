@@ -2,6 +2,7 @@ import { fork as nodeFork, type ChildProcess, type ForkOptions } from "node:chil
 import { randomUUID } from "node:crypto";
 
 import {
+  fieldsOf,
   PANE_COMMAND_TIMEOUT_MS,
   type PaneCancelMessage,
   type PaneRequest,
@@ -80,9 +81,9 @@ export interface PaneMessagePort {
 const isPaneResponse = (message: unknown): message is PaneResponseMessage =>
   typeof message === "object" &&
   message !== null &&
-  (message as { type?: unknown }).type === "pane.response" &&
-  typeof (message as { id?: unknown }).id === "string" &&
-  typeof (message as { result?: unknown }).result === "object";
+  fieldsOf(message).get("type") === "pane.response" &&
+  typeof fieldsOf(message).get("id") === "string" &&
+  typeof fieldsOf(message).get("result") === "object";
 
 /** Pane commands over `port`, each answered by id or failed after `timeoutMs`. */
 export const bridgePane = (

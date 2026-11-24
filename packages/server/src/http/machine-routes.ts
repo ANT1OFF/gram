@@ -38,6 +38,7 @@ import type { McpTokens } from "../app-tools/mcp-tokens.ts";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import { bearerToken } from "./auth.ts";
 import type { RemoteAccess } from "./remote-access.ts";
+import * as Predicate from "effect/Predicate";
 
 export const MACHINES_LIST_PATH = "/machines/list";
 export const MACHINES_JOIN_LINK_PATH = "/machines/join-link";
@@ -169,9 +170,7 @@ const jsonBody = (max: number) =>
     if (text === undefined) return undefined;
     try {
       const value: unknown = JSON.parse(text);
-      return typeof value === "object" && value !== null && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : undefined;
+      return Predicate.isObject(value) ? value : undefined;
     } catch {
       return undefined;
     }

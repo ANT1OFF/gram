@@ -140,12 +140,12 @@ export class Conversations extends Context.Service<Conversations, ConversationsS
             const moving = [...new Set(ids)].map((id) =>
               (source.conversations ?? []).find((each) => each.id === id),
             );
+            const refs = moving.flatMap((each) => (each === undefined ? [] : [each]));
             const missing = ids.filter((_, i) => moving[i] === undefined);
             if (missing.length > 0)
               return yield* refuse(
                 `You don't own the conversation ${missing.join(", ")}, so it can't be handed on.`,
               );
-            const refs = moving as ReadonlyArray<ConversationRef>;
             if ((target.conversations ?? []).length + refs.length > CONVERSATIONS_PER_THREAD_MAX)
               return yield* refuse(
                 `A thread owns at most ${CONVERSATIONS_PER_THREAD_MAX} conversations.`,

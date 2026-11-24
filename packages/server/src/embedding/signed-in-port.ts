@@ -16,6 +16,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { Socket } from "../platform/unstable.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Why `sandbox` is refused on a desktop with no signed-in server that starts worker machines. */
 export const NO_SIGNED_IN_SERVER =
@@ -109,8 +110,7 @@ export const NO_APP =
 const NO_ANSWER = "The desktop app didn't answer.";
 
 const isResponse = (message: unknown): message is WorkerMachineResponseMessage =>
-  typeof message === "object" &&
-  message !== null &&
+  Predicate.isObject(message) &&
   ("type" in message ? message.type : undefined) === "machines.response" &&
   typeof ("id" in message ? message.id : undefined) === "string" &&
   typeof ("result" in message ? message.result : undefined) === "object" &&
@@ -125,7 +125,7 @@ const isMark = (value: unknown): value is string => typeof value === "string" &&
 const marksOf = (value: unknown): ReadonlyArray<WorkerMachineMarks> => {
   if (!Array.isArray(value)) return [];
   return value.slice(0, MARKS_MOST).flatMap((each: unknown): WorkerMachineMarks[] => {
-    if (typeof each !== "object" || each === null) return [];
+    if (!Predicate.isObject(each)) return [];
     const origin = "origin" in each ? each.origin : undefined;
     const account = "account" in each ? each.account : undefined;
     const former = "formerAccounts" in each ? each.formerAccounts : undefined;
@@ -142,7 +142,7 @@ const marksOf = (value: unknown): ReadonlyArray<WorkerMachineMarks> => {
 const HEADER = /^x-gram-host-[a-z]{2,16}$/;
 
 const relayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined => {
-  if (typeof message !== "object" || message === null) return undefined;
+  if (!Predicate.isObject(message)) return undefined;
   const type = "type" in message ? message.type : undefined;
   const conn = "conn" in message ? message.conn : undefined;
   if (typeof conn !== "string" || !CONN.test(conn)) return undefined;
@@ -166,7 +166,7 @@ const relayMessageOf = (message: unknown): WorkerMachineRelayMessage | undefined
     headers === null
   )
     return undefined;
-  const entries = Object.entries(headers as Record<string, unknown>);
+  const entries = Object.entries(headers);
   if (
     entries.length > 8 ||
     !entries.every(
@@ -252,8 +252,7 @@ export const bridgeWorkerMachines = (
       return;
     }
     if (
-      typeof data === "object" &&
-      data !== null &&
+      Predicate.isObject(data) &&
       ("type" in data ? data.type : undefined) === "machines.signins"
     ) {
       signIns?.();
@@ -279,6 +278,7 @@ export const bridgeWorkerMachines = (
         origin: relayed.origin,
         name: relayed.name,
         headers: relayed.headers,
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the port socket implements the part of WebSocket that Effect's Socket uses
         socket: Socket.fromWebSocket(Effect.succeed(made.ws as unknown as Socket.WebSocketLike)),
         end: (code, reason) => made.ws.close(code, reason),
       });
@@ -309,8 +309,7 @@ export const bridgeWorkerMachines = (
           if (!result.ok) return result;
           const server = "server" in result ? result.server : undefined;
           if (
-            typeof server === "object" &&
-            server !== null &&
+            Predicate.isObject(server) &&
             typeof server.origin === "string" &&
             typeof server.server === "string"
           )

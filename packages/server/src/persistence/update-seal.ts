@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -70,7 +71,7 @@ const walEmpty = (filename: string): boolean => {
   try {
     return statSync(`${filename}-wal`).size === 0;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT";
+    return errnoCode(error) === "ENOENT";
   }
 };
 

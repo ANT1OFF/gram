@@ -1,4 +1,5 @@
 import type { GramUIMessage, GramUIMessageChunk } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 type Part = Record<string, unknown> & { type: string };
 type LooseChunk = Record<string, unknown> & { type: string };
@@ -190,8 +191,8 @@ export class MessageAccumulator {
   }
 
   private mergeMetadata(metadata: unknown) {
-    if (typeof metadata !== "object" || metadata === null) return;
-    const incoming = metadata as Record<string, unknown>;
+    if (!Predicate.isObject(metadata)) return;
+    const incoming = metadata;
     const previousIds = this.metadata?.["agentMessageIds"];
     this.metadata = { ...this.metadata, ...incoming };
     if (Array.isArray(previousIds) && Array.isArray(incoming["agentMessageIds"])) {

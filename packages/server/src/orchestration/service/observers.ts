@@ -1,19 +1,19 @@
 import {
-  isOpenQuestion,
-  effectiveCheckout,
-  isLocalHost,
   type BackgroundTask,
-  type GitState,
-  type PrStatus,
   DEPENDENCY_DRAG_CONFLICT_MIN,
-  prRefText,
-  type Project,
-  type RequestId,
+  effectiveCheckout,
+  type GitState,
+  isLocalHost,
+  isOpenQuestion,
   type LimitWait,
+  type Project,
+  prRefText,
+  type PrStatus,
+  type RequestId,
   type Thread,
-  type ThreadId,
-  type WorkspaceState,
+  ThreadId,
   type WorkspaceId,
+  type WorkspaceState,
 } from "@gram/contracts";
 import { repoFromPrUrl, samePathKey } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -483,7 +483,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
   };
 
   const unsampled = (pair: string) =>
-    pair.split(" ").some((id) => !changedFiles.has(id as ThreadId));
+    pair.split(" ").some((id) => !changedFiles.has(ThreadId.make(id)));
 
   const noteOverlaps = (thread: Thread, state: WorkspaceState) =>
     Effect.gen(function* () {
@@ -507,7 +507,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       if ([...pairs.keys()].some((pair) => !known.has(pair))) {
         const finished = finishedWorkers((yield* survey(state, false)).features);
         for (const pair of pairs.keys()) {
-          if (pair.split(" ").some((id) => finished.has(id as ThreadId))) pairs.delete(pair);
+          if (pair.split(" ").some((id) => finished.has(ThreadId.make(id)))) pairs.delete(pair);
         }
       }
       knownOverlaps.set(
@@ -519,7 +519,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
       );
       for (const [pair, files] of pairs) {
         if (known.has(pair)) continue;
-        const other = pair.split(" ").find((id) => id !== thread.id) as ThreadId;
+        const other = ThreadId.make(pair.split(" ").find((id) => id !== thread.id)!);
         yield* wakeFor(
           workspaceId,
           { type: "overlap", worker: thread.title, other: titles.get(other) ?? other, files },

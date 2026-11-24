@@ -87,12 +87,12 @@ export const parsePsProcesses = (stdout: string): Map<number, ProcessRow> => {
   for (const line of lines(stdout)) {
     const match = /^(\d+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s*(.*)$/.exec(line);
     if (match === null) continue;
-    const [pid, ppid, pgid, tpgid] = match.slice(1, 5).map(Number) as [
-      number,
-      number,
-      number,
-      number,
-    ];
+    const [pid, ppid, pgid, tpgid] = [
+      Number(match[1]),
+      Number(match[2]),
+      Number(match[3]),
+      Number(match[4]),
+    ] as const;
     if (pid === ppid) continue;
     rows.set(pid, { pid, ppid, pgid, tpgid, command: match[5] ?? "" });
   }

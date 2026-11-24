@@ -9,6 +9,7 @@ import {
 } from "@gram/contracts";
 
 import type { PaneViewPort } from "./pane-port.ts";
+import * as Predicate from "effect/Predicate";
 
 export type ViewEvent = BrowserViewEvent;
 type PageEvent = Extract<ViewEvent, { type: "page" }>;
@@ -17,8 +18,8 @@ const URL_MAX = 8_192;
 const TITLE_MAX = 300;
 
 const pageOf = (raw: unknown): BrowserViewPage | null => {
-  if (typeof raw !== "object" || raw === null) return null;
-  const r = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return null;
+  const r = raw;
   if (typeof r["url"] !== "string" || typeof r["title"] !== "string") return null;
   const action = r["action"] as { summary?: unknown; at?: unknown } | undefined;
   return {

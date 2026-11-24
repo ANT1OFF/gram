@@ -1,4 +1,4 @@
-import { HostId } from "@gram/contracts";
+import { fieldsOf, HostId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -172,15 +172,20 @@ const moveOne = (
       { account, run },
     );
     if (!answered.ok) return "unanswered";
-    const said = answered.body as { moved?: unknown; code?: unknown } | null;
-    if (answered.status < 300 && fenceRefusalOf(answered) === undefined && said?.moved === true) {
+    const said = fieldsOf(answered.body);
+    const code = said.get("code");
+    if (
+      answered.status < 300 &&
+      fenceRefusalOf(answered) === undefined &&
+      said.get("moved") === true
+    ) {
       yield* Effect.logInfo("a worker machine is being moved by its provider").pipe(
         Effect.annotateLogs({ machine: machine.name, generation: run.generation }),
       );
       return yield* settle("moved");
     }
     yield* deps.takeBack(id).pipe(Effect.ignore);
-    const later = providerCantMoveNow(answered.status, said?.code);
+    const later = providerCantMoveNow(answered.status, code);
     yield* Effect.logInfo(
       later
         ? "the machine provider can't move a worker machine now; it works on, and is asked again"
@@ -189,7 +194,7 @@ const moveOne = (
       Effect.annotateLogs({
         machine: machine.name,
         status: answered.status,
-        ...(typeof said?.code === "string" ? { code: said.code.slice(0, 40) } : {}),
+        ...(typeof code === "string" ? { code: code.slice(0, 40) } : {}),
       }),
     );
     return later ? "busy" : yield* settle("refused");

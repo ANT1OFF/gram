@@ -1,4 +1,5 @@
 import { redactText } from "../logging/redact.ts";
+import * as Predicate from "effect/Predicate";
 
 const VERSION = /^\d{4}$/;
 
@@ -26,8 +27,7 @@ export const adoptedNote = (
       out.basedOn = note["basedOn"];
     const source = note["source"] as Record<string, unknown> | undefined;
     if (
-      typeof source === "object" &&
-      source !== null &&
+      Predicate.isObject(source) &&
       typeof source["dreamId"] === "string" &&
       /^[A-Za-z0-9-]{8,64}$/.test(source["dreamId"]) &&
       (source["mode"] === "review" || source["mode"] === "auto")

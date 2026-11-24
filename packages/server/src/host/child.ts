@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
-import type { Duplex } from "node:stream";
+import { Duplex } from "node:stream";
 import { fileURLToPath } from "node:url";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { HostUnavailable, LOCAL_HOST_ID } from "@gram/contracts";
@@ -72,7 +72,8 @@ export const spawnHost = (
       }),
       stop,
     );
-    const stream = child.stdio[3] as Duplex | null | undefined;
+    const piped: unknown = child.stdio[3];
+    const stream = piped instanceof Duplex ? piped : undefined;
     stream?.on("error", () => {});
     if (child.pid === undefined || stream === null || stream === undefined) {
       return yield* new HostUnavailable({

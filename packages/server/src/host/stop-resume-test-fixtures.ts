@@ -1,23 +1,17 @@
-import {
-  HostFailed,
-  type HostId,
-  type HostStopRestored,
-  type Thread,
-  type ThreadId,
-} from "@gram/contracts";
+import { HostFailed, HostId, type HostStopRestored, type Thread, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { cloneIdentityOf } from "./repos.ts";
 import { makeStopMarks } from "./stop-marks.ts";
 import type { StopResumeDeps } from "./stop-resume.ts";
 import type { RestoreRequest } from "./stop.ts";
 
-export const MACHINE = "m-1" as HostId;
+export const MACHINE = HostId.make("m-1");
 export const URL = "https://git.example.test/acme/widgets.git";
 export const COMMIT = "a".repeat(40);
 
 export const thread = (id: string, checkout: Partial<Thread["checkout"]> & { path: string }) =>
   ({
-    id: id as ThreadId,
+    id: ThreadId.make(id),
     checkout: { kind: "worktree", hostId: MACHINE, ...checkout },
   }) as unknown as Thread;
 
@@ -55,7 +49,7 @@ export const machine = (present: ReadonlyArray<string>, restores: boolean) => {
     });
   const started: Array<ThreadId> = [];
   const stops = makeStopMarks();
-  stops.stopped(MACHINE, ["t-worker" as ThreadId, "t-folder" as ThreadId]);
+  stops.stopped(MACHINE, [ThreadId.make("t-worker"), ThreadId.make("t-folder")]);
   const deps = {
     hosts: {
       connection: () =>

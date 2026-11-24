@@ -62,6 +62,7 @@ import { showWidgetTool } from "./widget-tool.ts";
 import { moveToWorktreeTool } from "./worktree-tools.ts";
 import { forThread } from "../embedding/gh-thread.ts";
 import { type PendingCard, pendingCardsOf } from "./pending-cards.ts";
+import * as Predicate from "effect/Predicate";
 
 export { defineAppTool, type AppToolDefinition } from "./definition.ts";
 
@@ -592,8 +593,7 @@ export const makeApprovalGate = (
           .requestApproval(threadId, {
             toolName: `mcp__gram__${name}`,
             displayName: name,
-            input:
-              typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {},
+            input: Predicate.isObject(input) ? input : {},
             description: plainCardText(description ?? descriptor.description),
             ...(title === undefined ? {} : { title: plainCardText(title).slice(0, 120) }),
             ...(why === undefined

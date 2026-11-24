@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   GatewayError,
   type GatewayModel,
   type GatewayModelInfo,
@@ -7,6 +8,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as Predicate from "effect/Predicate";
 
 /** The subset of `fetch` discovery needs; injected in tests. */
 export type Fetcher = (
@@ -66,10 +68,10 @@ const hostOf = (baseURL: string) => {
 
 /** Model ids from an OpenAI-style `/models` body (`{ data: [{ id }] }`, or a bare array); null if neither. */
 export const parseModelIds = (body: unknown): Array<string> | null => {
-  const list = Array.isArray(body) ? body : (body as { data?: unknown } | null)?.data;
+  const list = Array.isArray(body) ? body : fieldsOf(body).get("data");
   if (!Array.isArray(list)) return null;
   const ids = list
-    .map((entry) => (entry as { id?: unknown } | null)?.id)
+    .map((entry) => fieldsOf(entry).get("id"))
     .filter((id): id is string => typeof id === "string" && id !== "");
   return [...new Set(ids)];
 };
@@ -98,8 +100,8 @@ export const parseModelInfo = (body: unknown): Map<string, GatewayModelInfo> | n
   if (!Array.isArray(body)) return null;
   const infos = new Map<string, GatewayModelInfo>();
   for (const entry of body) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const record = entry as Record<string, unknown>;
+    if (!Predicate.isObject(entry)) continue;
+    const record = entry;
     const name = record["name"];
     if (typeof name !== "string" || name === "") continue;
     const supports = (record["supports"] ?? {}) as Record<string, unknown>;
@@ -182,12 +184,12 @@ const xaiModel = (record: Record<string, unknown>): InlineModel => {
  * an effort; xAI's carry prices and efforts instead. A LiteLLM body has none, so this is empty for it.
  */
 export const parseInlineModels = (body: unknown): Map<string, InlineModel> => {
-  const list = Array.isArray(body) ? body : (body as { data?: unknown } | null)?.data;
+  const list = Array.isArray(body) ? body : fieldsOf(body).get("data");
   const models = new Map<string, InlineModel>();
   if (!Array.isArray(list)) return models;
   for (const entry of list) {
-    if (typeof entry !== "object" || entry === null) continue;
-    const record = entry as Record<string, unknown>;
+    if (!Predicate.isObject(entry)) continue;
+    const record = entry;
     const id = record["id"];
     if (typeof id !== "string" || id === "") continue;
     if ("prompt_text_token_price" in record || "completion_text_token_price" in record) {

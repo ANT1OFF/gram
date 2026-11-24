@@ -1,10 +1,10 @@
 import { readableByOf, readerMay } from "./readable-by.ts";
 import {
-  type ConversationRef,
+  ConversationRef,
   conversationRefProblem,
   ModelRef,
+  ThreadId,
   ThreadRpcs,
-  type ThreadId,
   type UserInput,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
@@ -29,6 +29,7 @@ import {
 } from "./message-attachments.ts";
 import { attachmentsDir } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
+import * as Predicate from "effect/Predicate";
 
 /** The longest message, as the platform's own API takes it. */
 export const THREAD_MESSAGE_MAX = 20_000;
@@ -43,9 +44,9 @@ const PERSON = /^[A-Za-z0-9_.:@|-]{1,200}$/;
 const sendRpc = [...ThreadRpcs.requests.values()].find((rpc) => rpc._tag === "thread.send")!;
 
 const personOf = (value: unknown): Actor | string => {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
+  if (!Predicate.isObject(value))
     return "`person` is the person the platform signed in, with their `id`";
-  const { id, name } = value as Record<string, unknown>;
+  const { id, name } = value;
   if (typeof id !== "string" || !PERSON.test(id)) return "`person.id` is a person's id";
   if (name !== undefined && (typeof name !== "string" || name.trim() === "" || name.length > 200))
     return "`person.name` is 1 to 200 characters";
@@ -107,12 +108,12 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
         const given = body?.["conversation"];
         const problem = given === undefined ? undefined : conversationRefProblem(given);
         if (problem !== undefined) return refusal(400, problem);
-        const conversation = given as ConversationRef | undefined;
+        const conversation = Schema.is(ConversationRef)(given) ? given : undefined;
         if (conversation !== undefined && conversations === undefined)
           return refusal(409, "this server keeps no conversations");
         const files = attachmentsOf(body?.["attachments"]);
         if (typeof files === "string") return refusal(400, files);
-        const id = threadId as ThreadId;
+        const id = ThreadId.make(threadId);
         if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
           return refusal(404, "there is no such thread");
         const planned = planMessageAttachments(attachmentsDir(config.dataDir), id, key, files);
@@ -178,7 +179,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           return refusal(400, "`threadId` is a thread's id");
         const person = personOf(body?.["person"]);
         if (typeof person === "string") return refusal(400, person);
-        const id = threadId as ThreadId;
+        const id = ThreadId.make(threadId);
         if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
           return refusal(404, "there is no such thread");
         return yield* asPerson(
@@ -213,7 +214,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
             : Option.getOrUndefined(Schema.decodeUnknownOption(ModelRef)(rawModel));
         if (rawModel !== undefined && model === undefined)
           return refusal(400, "`model` is an agent and a model it lists");
-        const id = threadId as ThreadId;
+        const id = ThreadId.make(threadId);
         const thread = Option.getOrUndefined(yield* store.getThread(id).pipe(Effect.option));
         if (thread === undefined) return refusal(404, "there is no such thread");
         if (thread.role !== "orchestrator") {
@@ -274,7 +275,7 @@ export const ThreadMessagesInboundLive = Layer.effectDiscard(
           return refusal(400, "`threadId` is a thread's id");
         const person = personOf(body?.["person"]);
         if (typeof person === "string") return refusal(400, person);
-        const id = threadId as ThreadId;
+        const id = ThreadId.make(threadId);
         if (Option.isNone(yield* store.getThread(id).pipe(Effect.option)))
           return refusal(404, "there is no such thread");
         return yield* asPerson(

@@ -4,9 +4,9 @@ import {
   type AgentEvent,
   type AgentKind,
   AgentUnavailable,
-  HostId,
   HOST_PROTOCOL_VERSION,
-  type ThreadId,
+  HostId,
+  ThreadId,
   type UserInput,
 } from "@gram/contracts";
 import { Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
@@ -30,7 +30,7 @@ import { sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
 
-export const THREAD = "thread-on-the-host" as ThreadId;
+export const THREAD = ThreadId.make("thread-on-the-host");
 export const MACHINE = HostId.make("m-box");
 /** Never cloned into here: no test asks for a repository. */
 export const REPOS = "/nonexistent/gram-host-repos";

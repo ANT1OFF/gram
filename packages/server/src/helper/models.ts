@@ -7,6 +7,7 @@ import {
   type HelperKind,
   type ReasoningVariant,
 } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 /** One model a helper job may run on, and the effort to send it; an absent effort sends none. */
 export interface HelperRoute {
@@ -126,7 +127,7 @@ export interface ClassifiedFailure {
 }
 
 const field = (error: unknown, key: string): unknown =>
-  typeof error === "object" && error !== null ? (error as Record<string, unknown>)[key] : undefined;
+  Predicate.isObject(error) ? error[key] : undefined;
 
 /**
  * Sorts a failed call from its status, body and headers. The body is read here and nowhere else:
@@ -136,10 +137,7 @@ export const classifyFailure = (error: unknown): ClassifiedFailure => {
   const status = field(error, "statusCode");
   const body = `${String(field(error, "responseBody") ?? "")} ${error instanceof Error ? error.message : ""}`;
   const headers = field(error, "responseHeaders");
-  const retryAfter =
-    typeof headers === "object" && headers !== null
-      ? Number((headers as Record<string, unknown>)["retry-after"])
-      : Number.NaN;
+  const retryAfter = Predicate.isObject(headers) ? Number(headers["retry-after"]) : Number.NaN;
   const retryAfterMs =
     Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : undefined;
   if (typeof status !== "number") {

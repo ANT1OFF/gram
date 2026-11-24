@@ -192,6 +192,7 @@ type ReplyRecord = ReturnType<typeof recordOf>;
 
 const readRecord = async (folder: string): Promise<ReplyRecord | undefined> => {
   try {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the record is the one this module wrote into the reply's own folder
     return JSON.parse(await readFile(join(folder, RECORD), "utf8")) as ReplyRecord;
   } catch {
     return undefined;

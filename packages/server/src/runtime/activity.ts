@@ -1,5 +1,7 @@
+import { fieldsOf } from "@gram/contracts";
 import type { AgentEvent } from "@gram/contracts";
 import { relativeInside } from "@gram/git";
+import * as Predicate from "effect/Predicate";
 
 const MAX_TEXT = 60;
 
@@ -15,16 +17,15 @@ const displayPath = (path: string, cwd: string | undefined): string => {
 };
 
 const field = (input: unknown, key: string): string | undefined => {
-  if (typeof input !== "object" || input === null) return undefined;
-  const value = (input as Record<string, unknown>)[key];
+  if (!Predicate.isObject(input)) return undefined;
+  const value = input[key];
   return typeof value === "string" && value !== "" ? value : undefined;
 };
 
 const subagentLabel = (input: unknown) => field(input, "subagent_type") ?? "Agent";
 
 const activeTodo = (input: unknown): string | undefined => {
-  const todos =
-    typeof input === "object" && input !== null ? (input as { todos?: unknown }).todos : undefined;
+  const todos = Predicate.isObject(input) ? fieldsOf(input).get("todos") : undefined;
   if (!Array.isArray(todos)) return undefined;
   const active: unknown = todos.find((todo) => field(todo, "status") === "in_progress");
   return field(active, "activeForm") ?? field(active, "content");

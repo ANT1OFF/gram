@@ -1,4 +1,5 @@
 import type { LogLevel } from "@gram/contracts";
+import type { LogLevel as EffectLogLevel } from "effect/LogLevel";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -7,6 +8,7 @@ import * as Logger from "effect/Logger";
 import * as References from "effect/References";
 import pino, { type Logger as PinoLogger } from "pino";
 import { redactSecrets } from "./redact.ts";
+import * as Predicate from "effect/Predicate";
 
 export interface ServerLogShape {
   readonly logger: PinoLogger;
@@ -31,14 +33,16 @@ export const ServerLog = Context.Reference<ServerLogShape>("@gram/server/ServerL
   },
 });
 
-const PINO_LEVELS = {
+const PINO_LEVELS: Partial<
+  Record<EffectLogLevel, "fatal" | "error" | "warn" | "info" | "debug" | "trace">
+> = {
   Fatal: "fatal",
   Error: "error",
   Warn: "warn",
   Info: "info",
   Debug: "debug",
   Trace: "trace",
-} as const;
+};
 
 const partText = (part: unknown): string => {
   if (typeof part === "string") return part;
@@ -49,13 +53,16 @@ const partText = (part: unknown): string => {
   }
 };
 
+const redactedAnnotations = (annotations: unknown): Record<string, unknown> =>
+  Predicate.isObject(annotations) ? annotations : {};
+
 const pinoLogger = (logger: PinoLogger): Logger.Logger<unknown, void> =>
   Logger.make(({ logLevel, message, cause, fiber }) => {
-    const level = PINO_LEVELS[logLevel as keyof typeof PINO_LEVELS];
+    const level = PINO_LEVELS[logLevel];
     if (level === undefined || !logger.isLevelEnabled(level)) return;
     const msg = (Array.isArray(message) ? message : [message]).map(partText).join(" ");
     const fields = {
-      ...(redactSecrets(fiber.getRef(References.CurrentLogAnnotations)) as Record<string, unknown>),
+      ...redactedAnnotations(redactSecrets(fiber.getRef(References.CurrentLogAnnotations))),
       ...(Cause.hasFails(cause) || Cause.hasDies(cause) || Cause.hasInterrupts(cause)
         ? { cause: Cause.pretty(cause) }
         : {}),

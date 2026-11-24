@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -18,6 +19,7 @@ import {
   workspaceToStart,
 } from "./workspace-machines.ts";
 import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
+import * as Predicate from "effect/Predicate";
 
 export const ON_DEMAND_START_PATH = "/machines/on-demand/start";
 export const ON_DEMAND_STOP_PATH = "/machines/on-demand/stop";
@@ -45,6 +47,7 @@ const PHASES = [
   "failed",
 ] as const;
 export type OnDemandPhase = (typeof PHASES)[number];
+const isPhase = (phase: unknown): phase is OnDemandPhase => PHASES.some((each) => each === phase);
 
 /** How a person's machine stands, as the provider last reported it. */
 export interface OnDemandProgress {
@@ -131,18 +134,21 @@ const refusal = (status: number, tag: string, message: string) =>
 /** What a person picked, by choice id: short ids only. */
 export type Picked = Readonly<Record<string, string>>;
 
-const pickedIn = (picked: unknown): Picked | string =>
-  picked === undefined
-    ? {}
-    : typeof picked !== "object" ||
-        picked === null ||
-        Array.isArray(picked) ||
-        Object.keys(picked).length > MAX_CHOICES ||
-        !Object.entries(picked).every(
-          ([key, each]) => CHOICE_ID.test(key) && typeof each === "string" && CHOICE_ID.test(each),
-        )
-      ? `\`choices\` names at most ${MAX_CHOICES} choices by short id, each with an option's id`
-      : { ...(picked as Record<string, string>) };
+const pickedIn = (picked: unknown): Picked | string => {
+  if (picked === undefined) return {};
+  const entries = Predicate.isObject(picked) ? Object.entries(picked) : undefined;
+  const named = entries?.flatMap(([key, each]: [string, unknown]) =>
+    CHOICE_ID.test(key) && typeof each === "string" && CHOICE_ID.test(each)
+      ? [[key, each] as const]
+      : [],
+  );
+  return entries === undefined ||
+    named === undefined ||
+    entries.length > MAX_CHOICES ||
+    named.length !== entries.length
+    ? `\`choices\` names at most ${MAX_CHOICES} choices by short id, each with an option's id`
+    : Object.fromEntries(named);
+};
 
 const objectIn = (body: string): Record<string, unknown> | string => {
   let value: unknown;
@@ -151,9 +157,7 @@ const objectIn = (body: string): Record<string, unknown> | string => {
   } catch {
     return "the body is not JSON";
   }
-  return typeof value !== "object" || value === null || Array.isArray(value)
-    ? "expected an object"
-    : (value as Record<string, unknown>);
+  return !Predicate.isObject(value) ? "expected an object" : value;
 };
 
 /** The start body, or why not. */
@@ -192,10 +196,10 @@ export const parseStart = (
   if (
     !Array.isArray(listed) ||
     listed.length > MAX_REPOSITORIES ||
-    !listed.every((each) => typeof each === "string" && REPOSITORY.test(each))
+    !listed.every((each): each is string => typeof each === "string" && REPOSITORY.test(each))
   )
     return `\`repositories\` is a list of at most ${MAX_REPOSITORIES} owner/name`;
-  return { repositories: [...new Set(listed as string[])], choices, ...flags };
+  return { repositories: [...new Set(listed)], choices, ...flags };
 };
 
 /** The preferences body, `{choices}`: the picks to keep as the person's own. Or why not. */
@@ -214,21 +218,21 @@ const text = (value: unknown, max: number) =>
 
 /** The provider's `/hosts/choices` answer, read field by field. Undefined: none that hold. */
 export const parseChoices = (value: unknown): OnDemandChoices | undefined => {
-  if (typeof value !== "object" || value === null) return undefined;
-  const listed = (value as { choices?: unknown }).choices;
+  if (!Predicate.isObject(value)) return undefined;
+  const listed = fieldsOf(value).get("choices");
   if (!Array.isArray(listed)) return undefined;
   const choices: OnDemandChoice[] = [];
   for (const raw of listed.slice(0, MAX_CHOICES)) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const entry = raw as Record<string, unknown>;
+    if (!Predicate.isObject(raw)) continue;
+    const entry = raw;
     const id = entry["id"];
     const label = text(entry["label"], 60);
     if (typeof id !== "string" || !CHOICE_ID.test(id) || label === undefined) continue;
     if (!Array.isArray(entry["options"])) continue;
     const options: OnDemandOption[] = [];
     for (const each of entry["options"].slice(0, MAX_OPTIONS)) {
-      if (typeof each !== "object" || each === null) continue;
-      const option = each as Record<string, unknown>;
+      if (!Predicate.isObject(each)) continue;
+      const option = each;
       const optionId = option["id"];
       const optionLabel = text(option["label"], 60);
       if (typeof optionId !== "string" || !CHOICE_ID.test(optionId) || optionLabel === undefined)
@@ -262,14 +266,14 @@ export const parseChoices = (value: unknown): OnDemandChoices | undefined => {
       label,
       ...(description === undefined ? {} : { description }),
       options,
-      default: usable.some((option) => option.id === asked) ? (asked as string) : usable[0]!.id,
+      default: usable.find((option) => option.id === asked)?.id ?? usable[0]!.id,
       ...(fallback === undefined ? {} : { fallback }),
       ...(current === undefined ? {} : { current }),
     });
   }
   if (choices.length === 0) return undefined;
-  const note = text((value as { note?: unknown }).note, 200);
-  const keeps = (value as { keeps?: unknown }).keeps === true;
+  const note = text(fieldsOf(value).get("note"), 200);
+  const keeps = fieldsOf(value).get("keeps") === true;
   return { choices, ...(note === undefined ? {} : { note }), ...(keeps ? { keeps } : {}) };
 };
 
@@ -417,10 +421,7 @@ export const onDemandRequest = (
         if (answered._tag === "Failure")
           return refusal(502, "ProviderFailed", answered.failure.message);
         const value = answered.success;
-        const hostKey =
-          typeof value === "object" && value !== null && "hostKey" in value
-            ? value.hostKey
-            : undefined;
+        const hostKey = Predicate.isObject(value) && "hostKey" in value ? value.hostKey : undefined;
         if (typeof hostKey !== "string" || !HOST_KEY.test(hostKey))
           return refusal(502, "ProviderFailed", "the host provider gave no host key");
         const progress: OnDemandProgress = { hostKey, phase: "starting", at: Date.now() };
@@ -520,7 +521,7 @@ export const takeProgress = (
   const phase = body?.["phase"];
   if (typeof owner !== "string" || typeof hostKey !== "string")
     return { status: 400, body: { message: "`owner` and `hostKey` are required" } };
-  if (typeof phase !== "string" || !(PHASES as readonly string[]).includes(phase))
+  if (!isPhase(phase))
     return { status: 400, body: { message: `\`phase\` is one of ${PHASES.join(", ")}` } };
   const workspace = body?.["workspace"];
   const key = progressKey(owner, typeof workspace === "string" ? workspace : undefined);
@@ -531,7 +532,7 @@ export const takeProgress = (
   const step = line(body?.["step"]);
   hosts.progress.set(key, {
     hostKey,
-    phase: phase as OnDemandPhase,
+    phase,
     ...(message === undefined ? {} : { message }),
     ...(step === undefined ? {} : { step }),
     at: now,

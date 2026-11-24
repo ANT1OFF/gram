@@ -1,4 +1,4 @@
-import type { HelperKind, HelperUsageLine, RequestId, ThreadId } from "@gram/contracts";
+import { type HelperKind, type HelperUsageLine, RequestId, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 
@@ -112,7 +112,7 @@ export const makeHelperStore: Effect.Effect<HelperStore, never, SqlClient.SqlCli
               : {
                   threadId,
                   kind,
-                  ...(requestId === undefined ? {} : { requestId: requestId as RequestId }),
+                  ...(requestId === undefined ? {} : { requestId: RequestId.make(requestId) }),
                   basis: row.basis,
                   promptVersion: Number(row.prompt_version),
                   model: row.model,

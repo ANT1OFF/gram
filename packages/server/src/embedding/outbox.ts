@@ -1,11 +1,25 @@
 import type { SinkEvent } from "@gram/contracts";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import type { DatabaseSync as Database } from "node:sqlite";
+import type { DatabaseSync as Database, SQLOutputValue } from "node:sqlite";
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `require` is untyped; node:sqlite is the module its declarations describe
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as {
   DatabaseSync: typeof Database;
 };
+
+type Row = Record<string, SQLOutputValue> | undefined;
+const textOf = (row: Row, column: string): string | undefined => {
+  const value = row?.[column];
+  return typeof value === "string" ? value : undefined;
+};
+const numberOf = (row: Row, column: string): number | undefined => {
+  const value = row?.[column];
+  return typeof value === "number" ? value : undefined;
+};
+const eventOf = (row: Row): SinkEvent =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the outbox stores only the SinkEvents it serialised itself
+  JSON.parse(textOf(row, "body") ?? "null") as SinkEvent;
 
 /** An event as it is recorded; the outbox gives it its `seq`. */
 export type SinkEventInput = Omit<SinkEvent, "seq">;
@@ -113,8 +127,7 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
        GROUP BY thread_id ORDER BY MIN(events.seq)`,
   );
 
-  const read = (key: string): string | undefined =>
-    (getMeta.get(key) as { value: string } | undefined)?.value;
+  const read = (key: string): string | undefined => textOf(getMeta.get(key), "value");
   const number = (key: string): number => Number(read(key) ?? 0);
   const transaction = <A>(body: () => A): A => {
     db.exec("BEGIN IMMEDIATE");
@@ -149,14 +162,11 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
     append: (events) => transaction(() => append(events)),
     last: () => number("last"),
     confirmed: () => number("confirmed"),
-    after: (seq, limit) =>
-      (select.all(seq, limit) as Array<{ seq: number; body: string }>).map(
-        (row) => JSON.parse(row.body) as SinkEvent,
-      ),
+    after: (seq, limit) => select.all(seq, limit).map(eventOf),
     confirm: (ack) =>
       transaction(() => {
         if (!Number.isInteger(ack) || ack < 0 || ack > number("last")) return false;
-        const kept = (oldest.get() as { seq: number | null }).seq;
+        const kept = numberOf(oldest.get(), "seq") ?? null;
         if (ack < number("last") && (kept === null || kept > ack + 1)) return false;
         setMeta.run("confirmed", String(ack));
         prune.run(ack - keepsConfirmed);
@@ -168,13 +178,11 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
           clearBackfill.run();
           dropMeta.run("backfill");
         } else {
-          const unsent = unsentMessages.all(number("confirmed")) as Array<{
-            thread_id: string | null;
-            first: number | null;
-          }>;
-          for (const { thread_id, first } of unsent) {
-            if (thread_id === null) continue;
-            queueBackfill.run(thread_id, typeof first === "number" ? Math.max(0, first - 1) : 0);
+          for (const row of unsentMessages.all(number("confirmed"))) {
+            const threadId = textOf(row, "thread_id");
+            if (threadId === undefined) continue;
+            const first = numberOf(row, "first");
+            queueBackfill.run(threadId, first === undefined ? 0 : Math.max(0, first - 1));
           }
         }
         clear.run();
@@ -187,8 +195,10 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
         setMeta.run("backfill", "planned");
       }),
     backfillNext: () => {
-      const row = nextBackfill.get() as { thread_id: string; after_seq: number } | undefined;
-      return row === undefined ? undefined : { threadId: row.thread_id, afterSeq: row.after_seq };
+      const row = nextBackfill.get();
+      const threadId = textOf(row, "thread_id");
+      const afterSeq = numberOf(row, "after_seq");
+      return threadId === undefined || afterSeq === undefined ? undefined : { threadId, afterSeq };
     },
     appendBackfill: (threadId, events, afterSeq) =>
       transaction(() => {
@@ -202,10 +212,13 @@ export const openOutbox = (file: string, keepsConfirmed = OUTBOX_KEEPS_CONFIRMED
     },
     creators: () =>
       new Map(
-        (allCreators.all() as Array<{ thread_id: string; person: string }>).map((row) => [
-          row.thread_id,
-          row.person,
-        ]),
+        allCreators.all().flatMap((row) => {
+          const threadId = textOf(row, "thread_id");
+          const person = textOf(row, "person");
+          return threadId === undefined || person === undefined
+            ? []
+            : [[threadId, person] as const];
+        }),
       ),
     close: () => db.close(),
   };

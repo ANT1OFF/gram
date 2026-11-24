@@ -1,4 +1,4 @@
-import { embeddingOn, type ProjectId, type WorkspaceId } from "@gram/contracts";
+import { embeddingOn, ProjectId, WorkspaceId } from "@gram/contracts";
 import { git, Proc } from "@gram/git";
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
@@ -130,9 +130,9 @@ const NOT_ONE = "That isn't a request New task sends.";
 
 const projectIn = (store: ThreadStoreShape, workspaceId: string, projectId: string) =>
   Effect.gen(function* () {
-    const state = yield* store.getWorkspace(workspaceId as WorkspaceId).pipe(Effect.option);
+    const state = yield* store.getWorkspace(WorkspaceId.make(workspaceId)).pipe(Effect.option);
     if (Option.isNone(state)) return "There is no such workspace here." as const;
-    if (!state.value.workspace.projectIds.includes(projectId as ProjectId))
+    if (!state.value.workspace.projectIds.includes(ProjectId.make(projectId)))
       return "That project isn't one of this workspace's." as const;
     const project = (yield* store.listProjects).find((each) => each.id === projectId);
     if (project === undefined) return "That project isn't one of this workspace's." as const;

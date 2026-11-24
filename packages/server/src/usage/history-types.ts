@@ -1,5 +1,6 @@
 import type { TokenUsage, UsageProvider } from "@gram/contracts";
 import type { CodexUsageBasis } from "@gram/agents/codex";
+import * as Predicate from "effect/Predicate";
 export interface HistoryRecord {
   provider: UsageProvider;
   session: string;
@@ -28,9 +29,7 @@ export interface HistoryRecord {
 }
 
 export const object = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  Predicate.isObject(value) ? value : {};
 export const identity = (value: unknown): string | undefined =>
   typeof value === "string" &&
   value.length > 0 &&

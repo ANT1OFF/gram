@@ -4,16 +4,16 @@ import {
   MAX_OPEN_WAITS,
   NotFound,
   plainWaitText,
+  type Thread,
+  ThreadId,
   WAIT_BODY_MAX,
   WAIT_COPY_MAX,
   WAIT_TITLE_MAX,
-  type Thread,
-  type ThreadId,
   type WaitChange,
-  WaitId,
   waitEndingOf,
-  WaitKind,
+  WaitId,
   type WaitItem,
+  WaitKind,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -135,9 +135,9 @@ const targetOf = (
 ): Effect.Effect<ThreadId, AppToolError> =>
   named === undefined || named === caller
     ? Effect.succeed(caller)
-    : Effect.flatMap(managesWaitsOf(threads, runtimes, caller, named as ThreadId), (owns) =>
+    : Effect.flatMap(managesWaitsOf(threads, runtimes, caller, ThreadId.make(named)), (owns) =>
         owns
-          ? Effect.succeed(named as ThreadId)
+          ? Effect.succeed(ThreadId.make(named))
           : Effect.fail(new AppToolError({ tool, message: WAIT_NOT_YOUR_WORKER })),
       );
 

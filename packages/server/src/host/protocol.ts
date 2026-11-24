@@ -265,6 +265,7 @@ type Defined<A> = {
 };
 
 const defined = <A extends object>(value: A): Defined<A> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- dropping the undefined fields is exactly what Defined<A> names
   Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
 const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
@@ -1325,7 +1326,8 @@ export const connectHost = (
           : stream.pipe(
               Stream.catch((error): Stream.Stream<never, Extract<E, NotFound> | HostUnavailable> =>
                 error instanceof NotFound
-                  ? Stream.fail(error as Extract<E, NotFound>)
+                  ? // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a NotFound from this stream is one of its own E's
+                    Stream.fail(error as Extract<E, NotFound>)
                   : Stream.fromEffect(
                       Effect.andThen(
                         markEnded(failureText(error)),
@@ -1568,6 +1570,7 @@ export const connectHost = (
           if (failure instanceof HostFailed)
             return Effect.fail(new HostFailed({ message: publicTokenRefusal(failure.message) }));
           if (cause.reasons.some(Cause.isInterruptReason) && failure === undefined)
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an interruption with no failure carries no error to type
             return Effect.failCause(cause as Cause.Cause<never>);
           return Effect.logWarning("worker host: a token call wasn't answered").pipe(
             Effect.annotateLogs({

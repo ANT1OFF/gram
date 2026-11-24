@@ -1,4 +1,5 @@
-import type { GramUIMessage } from "@gram/contracts";
+import { fieldsOf, type GramUIMessage } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 /** Text as compared: trimmed, line endings and runs of whitespace made one space. */
 export const sameText = (text: string): string => text.replaceAll(/\s+/g, " ").trim();
@@ -309,7 +310,7 @@ const strings = (value: unknown, out: Array<string>, depth = 0): void => {
   if (depth > 4) return;
   if (typeof value === "string") out.push(value);
   else if (Array.isArray(value)) for (const each of value) strings(each, out, depth + 1);
-  else if (typeof value === "object" && value !== null)
+  else if (Predicate.isObject(value))
     for (const each of Object.values(value)) strings(each, out, depth + 1);
 };
 
@@ -330,22 +331,16 @@ const toolCalls = (messages: ReadonlyArray<GramUIMessage>): Array<ToolCall> =>
       ? []
       : message.parts.flatMap((part, index): Array<ToolCall> => {
           if (part.type !== "dynamic-tool" && !part.type.startsWith("tool-")) return [];
-          const raw = part as {
-            readonly toolName?: unknown;
-            readonly input?: unknown;
-            readonly output?: unknown;
-          };
-          const name =
-            typeof raw.toolName === "string" ? raw.toolName : part.type.slice("tool-".length);
-          const input =
-            typeof raw.input === "object" && raw.input !== null && !Array.isArray(raw.input)
-              ? (raw.input as Record<string, unknown>)
-              : {};
+          const raw = fieldsOf(part);
+          const toolName = raw.get("toolName");
+          const name = typeof toolName === "string" ? toolName : part.type.slice("tool-".length);
+          const given = raw.get("input");
+          const input = Predicate.isObject(given) ? given : {};
           return [
             {
               name,
               input,
-              output: raw.output,
+              output: raw.get("output"),
               at: message.metadata?.createdAt,
               key: `${message.id}:${index}`,
             },

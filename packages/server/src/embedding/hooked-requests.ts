@@ -63,6 +63,7 @@ export interface AskedRequest {
 export type HookedKey = string & { readonly HookedKey: unique symbol };
 
 export const hookedKey = (threadId: ThreadId, requestId: RequestId): HookedKey =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- this is the one place a HookedKey is made
   `${threadId}\u0000${requestId}` as HookedKey;
 
 /** A request put to the hook, as it was asked: its answer is for this request alone. */

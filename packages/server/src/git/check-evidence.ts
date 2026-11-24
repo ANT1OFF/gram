@@ -11,13 +11,15 @@ import {
 import * as nodePath from "node:path";
 
 import {
+  fieldsOf,
+  type FileImage,
   VERIFY_EVIDENCE_MANIFEST,
   VERIFY_EVIDENCE_MAX_BYTES,
   VERIFY_EVIDENCE_MAX_ITEMS,
-  type FileImage,
   type VerifyEvidence,
   type VerifyEvidenceKind,
 } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 const MANIFEST_MAX_BYTES = 64 * 1024;
 const CAPTION_MAX = 200;
@@ -132,11 +134,11 @@ const manifestItems = (dir: string) => {
   } catch {
     return undefined;
   }
-  const items = (parsed as { items?: unknown } | null)?.items;
+  const items = fieldsOf(parsed).get("items");
   if (!Array.isArray(items)) return undefined;
   return items.flatMap((item: unknown) => {
-    if (typeof item !== "object" || item === null) return [];
-    const { file, caption, kind } = item as Record<string, unknown>;
+    if (!Predicate.isObject(item)) return [];
+    const { file, caption, kind } = item;
     if (typeof file !== "string") return [];
     return [
       {

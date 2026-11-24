@@ -9,7 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { openAsBlob, type Dirent } from "node:fs";
 import { link, lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import type { ThreadId } from "@gram/contracts";
+import { fieldsOf, type ThreadId } from "@gram/contracts";
 import { tryRealPath } from "@gram/git";
 import { attachmentsDir } from "../attachments/attachments.ts";
 import { ServerConfig } from "../config.ts";
@@ -18,6 +18,7 @@ import type { OutsideService } from "./config.ts";
 import { Embedding } from "./embedding.ts";
 import { bytesOf } from "../shared/bytes.ts";
 import { callOutside } from "./outside.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Where the deployment keeps a thread's agent sessions, by thread: deleted with the thread. */
 export const SESSIONS_PREFIX = "sessions/";
@@ -104,15 +105,24 @@ interface Manifest {
   deletes: Array<string>;
 }
 
+const objectsOf = (objects: object): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(objects).filter(
+      (entry: [string, unknown]): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+
 const readManifest = async (file: string): Promise<Manifest | undefined> => {
   try {
-    const parsed = JSON.parse(await readFile(file, "utf8")) as Partial<Manifest>;
-    if (typeof parsed.objects !== "object" || parsed.objects === null) return undefined;
+    const parsed = fieldsOf(JSON.parse(await readFile(file, "utf8")));
+    const objects = parsed.get("objects");
+    const deletes = parsed.get("deletes");
+    if (!Predicate.isObject(objects)) return undefined;
     return {
-      restored: parsed.restored === true,
-      objects: { ...parsed.objects },
-      deletes: Array.isArray(parsed.deletes)
-        ? parsed.deletes.filter((each) => typeof each === "string")
+      restored: parsed.get("restored") === true,
+      objects: objectsOf(objects),
+      deletes: Array.isArray(deletes)
+        ? deletes.filter((each: unknown): each is string => typeof each === "string")
         : [],
     };
   } catch {
@@ -325,7 +335,7 @@ const make = (service: OutsideService, dataDir: string, on: Effect.Effect<boolea
       const text = yield* Effect.promise(() => readCapped(response, LIST_MAX_BYTES));
       let keys: unknown;
       try {
-        keys = (JSON.parse(text?.toString("utf8") ?? "") as { readonly keys?: unknown }).keys;
+        keys = fieldsOf(JSON.parse(text?.toString("utf8") ?? "")).get("keys");
       } catch {
         keys = undefined;
       }

@@ -1,27 +1,28 @@
 import {
-  InvalidState,
-  NotFound,
-  ROUTINE_RUN_DETAIL_MAX,
   briefFooterOf,
+  fieldsOf,
+  InvalidState,
+  type ModelRef,
+  NotFound,
+  type ProjectId,
   ROUTINE_EVENT_COOLDOWN_MINUTES,
   ROUTINE_EVENTS_PENDING_MAX,
   ROUTINE_EVENTS_PER_RUN,
   ROUTINE_EVENTS_SEEN_MAX,
-  routineSlug,
-  routineWhenKey,
-  routineWhenText,
-  type ModelRef,
-  type ProjectId,
+  ROUTINE_RUN_DETAIL_MAX,
   type RoutineClaim,
   type RoutineEvent,
-  type RoutineId,
+  RoutineId,
   type RoutineRun,
   type RoutineSchedule,
+  routineSlug,
   type RoutineState,
   type RoutineStatus,
   type RoutineTrigger,
   type RoutineTriggerState,
   type RoutineWhen,
+  routineWhenKey,
+  routineWhenText,
   type Thread,
   type ThreadId,
   type WorkspaceId,
@@ -401,7 +402,7 @@ const unsettled = (phase: Phase) =>
 
 const charterRoutines = (state: WorkspaceState) =>
   (state.charter.routines ?? []).flatMap((routine) =>
-    routine.id === undefined ? [] : [routine as WorkspaceRoutine & { readonly id: RoutineId }],
+    routine.id === undefined ? [] : [{ ...routine, id: routine.id }],
   );
 
 const routineOf = (
@@ -531,9 +532,7 @@ export const RoutinesLive = Layer.effect(
         const spawned =
           thread !== undefined &&
           (yield* store.listOrchestrationEvents(workspaceId, thread.createdAt)).some(
-            (event) =>
-              event.kind === "spawn" &&
-              (event.data as { readonly threadId?: unknown } | null)?.threadId === thread.id,
+            (event) => event.kind === "spawn" && fieldsOf(event.data).get("threadId") === thread.id,
           );
         const closed =
           thread === undefined &&
@@ -1191,8 +1190,9 @@ export const RoutinesLive = Layer.effect(
                 Effect.gen(function* () {
                   const thread = event.thread;
                   const workspaceId = thread.workspaceId!;
-                  const id = thread.spawnedBy?.routine?.id as RoutineId | undefined;
-                  if (id === undefined) return;
+                  const named = thread.spawnedBy?.routine?.id;
+                  if (named === undefined) return;
+                  const id = RoutineId.make(named);
                   const updated = yield* orchestration.updateRoutineState(
                     workspaceId,
                     id,

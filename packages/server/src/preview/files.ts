@@ -14,6 +14,12 @@ import { ServerConfig } from "../config.ts";
 import * as Option from "effect/Option";
 import { isInside, realPath, tryRealPath } from "@gram/git";
 
+const listeningPort = (address: string | AddressInfo | null): number => {
+  if (typeof address !== "object" || address === null)
+    throw new Error("The preview server isn't listening on a port.");
+  return address.port;
+};
+
 const PREVIEW_FOLDERS_KEPT = 64;
 
 const PREVIEW_FILE_MAX_BYTES = 50 * 1024 * 1024;
@@ -276,7 +282,7 @@ export const fileListener = (handle: ReturnType<typeof handleFileRequest>) =>
         created.closeAllConnections();
         created.close(() => resume(Effect.void));
       }),
-  ).pipe(Effect.map((server) => (server.address() as AddressInfo).port));
+  ).pipe(Effect.map((server) => listeningPort(server.address())));
 
 /**
  * Grants `folder`, a resolved directory, a prefix under `folders`, and records which directory it

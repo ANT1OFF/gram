@@ -1,4 +1,4 @@
-import { AppToolError, effectiveCheckout, hostOf, type ThreadId } from "@gram/contracts";
+import { AppToolError, effectiveCheckout, hostOf, ThreadId } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -266,7 +266,7 @@ export const makeWorkerSandbox = ({
             return shared(machine);
           }
           const worker = yield* store
-            .getThread(named as ThreadId)
+            .getThread(ThreadId.make(named))
             .pipe(Effect.mapError(() => fail(`shareWith names no worker or machine: ${named}.`)));
           if (worker.spawnedBy?.threadId !== caller)
             return yield* fail(`${worker.title} is not one of your workers.`);

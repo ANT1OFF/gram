@@ -81,6 +81,7 @@
         "packages/agents/src/**",
         "packages/contracts/src/**",
         "packages/git/src/**",
+        "packages/server/src/**",
         "packages/shell/src/**",
         "packages/themes/src/**",
         "apps/desktop/src/**"
@@ -362,10 +363,36 @@
     },
     {
       "files": [
+        "packages/server/src/app-tools/**",
+        "packages/server/src/browser/**",
+        "packages/server/src/gateway/**",
+        "packages/server/src/git/**",
+        "packages/server/src/http/**",
+        "packages/server/src/orchestration/**",
+        "packages/server/src/persistence/**",
+        "packages/server/src/rpc/**",
+        "packages/server/src/runtime/**",
+        "packages/server/src/transfer/**",
+        "packages/server/src/usage/**"
+      ],
+      "rules": {
+        // Mid-migration: these folders' assertions are cleared in the change that follows.
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      "files": [
         "**/testing.ts",
         "**/testing/**",
+        "**/*.testing.ts",
         "**/test-utils.ts",
+        "**/test-harness.ts",
+        "**/test-kit.ts",
+        "**/*-service-kit.ts",
         "**/*-fixture.ts",
+        "**/*-test-fixtures.ts",
+        "**/*-fixtures.ts",
+        "**/*-harness.ts",
         "**/*-fake.ts"
       ],
       "rules": {

@@ -2,16 +2,17 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  ReasoningVariant,
   type GatewayModel,
   type GatewayProfile,
-  type ProfileId,
+  ProfileId,
+  ReasoningVariant,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { parse as parseToml } from "smol-toml";
+import * as Predicate from "effect/Predicate";
 
 const openCodeConfigPath = (home: string) => join(home, ".config", "opencode", "opencode.json");
 const openCodeAuthPath = (home: string) => join(home, ".local", "share", "opencode", "auth.json");
@@ -21,9 +22,7 @@ const readText = (path: string): Effect.Effect<string | undefined> =>
   Effect.promise(() => readFile(path, "utf8").catch(() => undefined));
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  Predicate.isObject(value) ? value : undefined;
 
 const string = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
@@ -54,7 +53,7 @@ export const profilesFromOpenCode = (config: unknown): Array<GatewayProfile> =>
     );
     return [
       {
-        id: `opencode-${name}` as ProfileId,
+        id: ProfileId.make(`opencode-${name}`),
         name: string(provider?.["name"]) ?? name,
         baseURL,
         keyRef: "",
@@ -73,7 +72,7 @@ export const profilesFromCodex = (config: unknown): Array<GatewayProfile> => {
     const model = root?.["model_provider"] === name ? string(root?.["model"]) : undefined;
     return [
       {
-        id: `codex-${name}` as ProfileId,
+        id: ProfileId.make(`codex-${name}`),
         name: string(provider?.["name"]) ?? name,
         baseURL,
         keyRef: "",

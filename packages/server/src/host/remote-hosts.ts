@@ -1,8 +1,8 @@
 import {
   type HostHello,
-  HostUnavailable,
-  type HostId,
+  HostId,
   type HostStatus,
+  HostUnavailable,
   type MachineProviderWord,
   type MachineState,
 } from "@gram/contracts";
@@ -282,7 +282,7 @@ export class RemoteHosts extends Context.Service<RemoteHosts, RemoteHostsShape>(
               Effect.map((read) =>
                 Object.fromEntries(
                   Object.entries({ ...read.machines, ...unknownOf(read.dropped) }).filter(
-                    ([id]) => machines.get(id as HostId) !== undefined,
+                    ([id]) => machines.get(HostId.make(id)) !== undefined,
                   ),
                 ),
               ),

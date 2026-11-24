@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import {
   CREDENTIAL_FOLDERS_IN_HOME,
+  errnoCode,
   type FolderEntry,
   type FolderListing,
   HostFailed,
@@ -95,7 +96,7 @@ const STRICTNESS: Readonly<Record<Protected["kind"], number>> = {
 };
 
 const absent = (error: unknown) => {
-  const code = (error as { readonly code?: unknown } | undefined)?.code;
+  const code = errnoCode(error);
   return code === "ENOENT" || code === "ENOTDIR";
 };
 

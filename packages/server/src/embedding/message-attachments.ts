@@ -1,5 +1,6 @@
 import {
   type Attachment,
+  errnoCode,
   InvalidState,
   MAX_ATTACHMENT_BYTES,
   THREAD_MESSAGE_ATTACHMENTS_BYTES_MAX,
@@ -11,6 +12,7 @@ import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sanitizeAttachmentName } from "../attachments/attachments.ts";
+import * as Predicate from "effect/Predicate";
 
 /** The largest body `/embed/v1/thread-messages` takes: its files as base64, and room for the rest. */
 export const THREAD_MESSAGE_BODY_MAX =
@@ -43,9 +45,8 @@ export const attachmentsOf = (value: unknown): ReadonlyArray<GivenAttachment> | 
   let total = 0;
   for (const [index, each] of value.entries()) {
     const at = `\`attachments[${index}]\``;
-    if (typeof each !== "object" || each === null || Array.isArray(each))
-      return `${at} is \`{ name, mediaType, data }\``;
-    const { name, mediaType, data, ...rest } = each as Record<string, unknown>;
+    if (!Predicate.isObject(each)) return `${at} is \`{ name, mediaType, data }\``;
+    const { name, mediaType, data, ...rest } = each;
     if (Object.keys(rest).length > 0)
       return `${at} takes only \`name\`, \`mediaType\` and \`data\``;
     if (
@@ -123,7 +124,7 @@ export const planMessageAttachments = (
               await mkdir(folder, { recursive: true });
               for (const { each, path } of files)
                 await writeFile(path, each.bytes, { flag: "wx" }).catch((error: unknown) => {
-                  if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+                  if (errnoCode(error) !== "EEXIST") throw error;
                 });
             },
             catch: () =>

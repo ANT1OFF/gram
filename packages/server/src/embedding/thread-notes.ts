@@ -3,7 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import type { SystemDeliveryFailure } from "../runtime/system-delivery.ts";
@@ -64,7 +64,7 @@ export const ThreadNotesInboundLive = Layer.effectDiscard(
             yield* Deferred.await(already).pipe(Effect.timeoutOption(THREAD_NOTE_WAIT)),
           );
 
-        const id = threadId as ThreadId;
+        const id = ThreadId.make(threadId);
         const thread = yield* store.getThread(id).pipe(Effect.option);
         if (Option.isNone(thread)) return refusal(404, "there is no such thread");
 

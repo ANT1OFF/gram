@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import * as SchemaGetter from "effect/SchemaGetter";
+import * as Predicate from "effect/Predicate";
 
 /**
  * Publish and decode equivalent spellings before resolution and approval. Different values for
@@ -54,16 +55,16 @@ export const inputLengthProblem = (
   input: unknown,
 ): string | undefined => {
   const visit = (schema: unknown, value: unknown, path: string): string | undefined => {
-    if (schema === null || typeof schema !== "object") return undefined;
-    const node = schema as Record<string, unknown>;
+    if (!Predicate.isObject(schema)) return undefined;
+    const node = schema;
     if (typeof node.$ref === "string" && node.$ref.startsWith("#/$defs/")) {
       return visit(document.definitions[node.$ref.slice(8)], value, path);
     }
     if (Array.isArray(node.anyOf)) {
       const type = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
       const branches = node.anyOf.filter((branch: unknown) => {
-        if (branch === null || typeof branch !== "object") return false;
-        const declared = (branch as Record<string, unknown>).type;
+        if (!Predicate.isObject(branch)) return false;
+        const declared = branch.type;
         return (
           declared === undefined ||
           declared === type ||
@@ -87,15 +88,11 @@ export const inputLengthProblem = (
         const problem = visit(node.items, value[i], `${path}[${i}]`);
         if (problem !== undefined) return problem;
       }
-    } else if (value !== null && typeof value === "object") {
+    } else if (Predicate.isObject(value)) {
       for (const [key, child] of Object.entries(
         (node.properties ?? {}) as Record<string, unknown>,
       )) {
-        const problem = visit(
-          child,
-          (value as Record<string, unknown>)[key],
-          path ? `${path}.${key}` : key,
-        );
+        const problem = visit(child, value[key], path ? `${path}.${key}` : key);
         if (problem !== undefined) return problem;
       }
     }

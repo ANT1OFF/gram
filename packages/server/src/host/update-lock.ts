@@ -1,3 +1,4 @@
+import { errnoCode, fieldsOf } from "@gram/contracts";
 import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -9,8 +10,10 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 let sqlite: typeof Database | undefined;
 const databaseSync = () =>
-  (sqlite ??= (createRequire(import.meta.url)("node:sqlite") as { DatabaseSync: typeof Database })
-    .DatabaseSync);
+  (sqlite ??=
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `require` is untyped; node:sqlite is the module its declarations describe
+    (createRequire(import.meta.url)("node:sqlite") as { DatabaseSync: typeof Database })
+      .DatabaseSync);
 
 /** What each lock guards: one supervisor at a time, and one move of the plan's phase at a time. */
 export type LockPurpose = "supervisor" | "plan";
@@ -44,7 +47,7 @@ export const lockableFolder = (home: string): boolean => folderOf(home) !== unde
 
 const busy = (error: unknown) =>
   /SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(
-    `${(error as { code?: unknown }).code ?? ""} ${(error as { errstr?: unknown }).errstr ?? ""} ${String(error)}`,
+    `${errnoCode(error) ?? ""} ${fieldsOf(error).get("errstr") ?? ""} ${String(error)}`,
   );
 
 const TAKE_WAIT_MS = 250;

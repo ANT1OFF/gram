@@ -17,6 +17,7 @@ const inElectronMain = () => (process as { type?: string }).type === "browser";
 export const prepareHostProcess = (): void => {
   process.argv = withoutHostSwitches(process.argv);
   if (!inElectronMain()) return;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `require` is untyped; in Electron's main process this is Electron itself
   const { app } = createRequire(import.meta.url)("electron") as { app: typeof ElectronApp };
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu");

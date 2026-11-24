@@ -32,6 +32,7 @@ import { hostSwitches, LINUX_HOST_SWITCHES } from "./launch.ts";
 import { LAUNCHD_LABEL, type ServiceCommand } from "./service.ts";
 import { setTimeout as wait } from "node:timers/promises";
 import { bytesOf } from "../shared/bytes.ts";
+import * as Predicate from "effect/Predicate";
 
 /** A release number as Gram tags them: `1.17.0`, or `1.17.0-beta.1`. */
 export const RELEASE = /^\d{1,4}\.\d{1,4}\.\d{1,4}(?:-[0-9A-Za-z.]{1,32})?$/;
@@ -130,6 +131,19 @@ export const appsFolder = (
 };
 
 /** What the host keeps across the restart, owner-only in its folder. */
+const isUpdatePlan = (value: unknown): value is UpdatePlan => {
+  if (!Predicate.isObject(value)) return false;
+  const { version, id, release, phase } = value;
+  return (
+    version === 1 &&
+    typeof id === "string" &&
+    PLAN_ID.test(id) &&
+    typeof release === "string" &&
+    RELEASE.test(release) &&
+    (phase === "switching" || phase === "confirmed" || phase === "rollingBack" || phase === "done")
+  );
+};
+
 export interface UpdatePlan {
   readonly version: 1;
   /** This update's own id: its supervisor, confirmation and outcome act on this plan only. */
@@ -171,19 +185,8 @@ const readPlan = (home: string): UpdatePlan | undefined => {
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > 64 * 1024 || stat.uid !== process.getuid?.())
       return undefined;
-    const value = JSON.parse(readFileSync(fd, "utf8")) as Partial<UpdatePlan> | null;
-    return value !== null &&
-      value.version === 1 &&
-      typeof value.id === "string" &&
-      PLAN_ID.test(value.id) &&
-      typeof value.release === "string" &&
-      RELEASE.test(value.release) &&
-      (value.phase === "switching" ||
-        value.phase === "confirmed" ||
-        value.phase === "rollingBack" ||
-        value.phase === "done")
-      ? (value as UpdatePlan)
-      : undefined;
+    const value: unknown = JSON.parse(readFileSync(fd, "utf8"));
+    return isUpdatePlan(value) ? value : undefined;
   } catch {
     return undefined;
   } finally {

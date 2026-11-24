@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,6 +6,7 @@ import { join } from "node:path";
 import type { UpdateChannel } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type { Logger as PinoLogger } from "pino";
+import * as Predicate from "effect/Predicate";
 
 export const PREFS_FILE = "prefs.json";
 export const PRERELEASE_KEY = "gram.updatePrerelease";
@@ -30,12 +32,12 @@ export async function writeUpdatePrefs(dataDir: string, updates: UpdatePrefs): P
   let prefs: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    if (!Predicate.isObject(parsed)) {
       throw new Error(`${path} is not a JSON object`);
     }
-    prefs = parsed as Record<string, unknown>;
+    prefs = parsed;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (errnoCode(error) !== "ENOENT") throw error;
   }
 
   if (updates.channel === "prerelease") prefs[PRERELEASE_KEY] = "1";
@@ -64,8 +66,7 @@ export async function writeUpdatePrefs(dataDir: string, updates: UpdatePrefs): P
 export async function readUpdatePrefs(dataDir: string): Promise<UpdatePrefs> {
   try {
     const parsed: unknown = JSON.parse(await readFile(join(dataDir, PREFS_FILE), "utf8"));
-    const prefs =
-      typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+    const prefs = Predicate.isObject(parsed) ? parsed : {};
     const channel = prefs[PRERELEASE_KEY] === "1" ? "prerelease" : "stable";
     const pin = prefs[PIN_KEY];
     return {

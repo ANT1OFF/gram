@@ -1,4 +1,9 @@
-import type { MessageId, ThreadId, ThreadSearchHit, ThreadSearchResult } from "@gram/contracts";
+import {
+  MessageId,
+  ThreadId,
+  type ThreadSearchHit,
+  type ThreadSearchResult,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { readOffLoop } from "../persistence/read-worker.ts";
 import type { SqlClient } from "../platform/unstable.ts";
@@ -54,8 +59,8 @@ interface HitRow {
 const toHit = (row: HitRow): ThreadSearchHit => {
   const { snippet, highlights } = parseSnippet(row.marked ?? "");
   return {
-    threadId: row.threadId as ThreadId,
-    ...(row.messageId == null ? {} : { messageId: row.messageId as MessageId }),
+    threadId: ThreadId.make(row.threadId),
+    ...(row.messageId == null ? {} : { messageId: MessageId.make(row.messageId) }),
     title: row.title ?? "",
     snippet,
     ...(highlights.length === 0 ? {} : { highlights }),
@@ -207,8 +212,8 @@ export const searchWorkspaceTranscripts = ({
       [match, workspaceId, ...(threadId === undefined ? [] : [threadId]), limit + 1],
     );
     const hits = rows.slice(0, limit).map((row): TranscriptSearchHit => ({
-      threadId: row.threadId as ThreadId,
-      messageId: row.messageId as MessageId,
+      threadId: ThreadId.make(row.threadId),
+      messageId: MessageId.make(row.messageId),
       title: row.title ?? "",
       part: row.role === "orchestrator" ? "orchestrator" : "worker",
       seq: row.seq,

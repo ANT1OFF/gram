@@ -1,4 +1,4 @@
-import { type GramRpcs } from "@gram/contracts";
+import { fieldsOf, type GramRpcs } from "@gram/contracts";
 import { GhCallEnv } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -28,7 +28,7 @@ const logDefect = (rpc: string, defect: unknown) =>
 /** The thread a request names by its `threadId`, if it names one. */
 export const requestThread = (payload: unknown): string | undefined => {
   if (typeof payload !== "object" || payload === null) return undefined;
-  const id = (payload as { readonly threadId?: unknown }).threadId;
+  const id = fieldsOf(payload).get("threadId");
   return typeof id === "string" && id.length > 0 ? id : undefined;
 };
 
