@@ -3,11 +3,11 @@ import type { FolderAccessDenial } from "@gram/contracts";
 /** The typed denial an `InvalidState` carries when the OS refused a read; `undefined` otherwise. */
 export function folderAccessDenial(error: unknown): FolderAccessDenial | undefined {
   if (typeof error !== "object" || error === null) return undefined;
-  if (Reflect.get(error, "_tag") !== "InvalidState") return undefined;
-  const access: unknown = Reflect.get(error, "access");
+  if (("_tag" in error ? error._tag : undefined) !== "InvalidState") return undefined;
+  const access: unknown = "access" in error ? error.access : undefined;
   if (typeof access !== "object" || access === null) return undefined;
-  const path: unknown = Reflect.get(access, "path");
-  const code: unknown = Reflect.get(access, "code");
+  const path: unknown = "path" in access ? access.path : undefined;
+  const code: unknown = "code" in access ? access.code : undefined;
   return typeof path === "string" && (code === "EACCES" || code === "EPERM")
     ? { path, code }
     : undefined;

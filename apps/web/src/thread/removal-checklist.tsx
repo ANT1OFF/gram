@@ -1,16 +1,14 @@
 import type { UseQueryResult } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { errorMessage } from "@/api/errors";
+import { errorMessage, tagOf } from "@/api/errors";
 import { Shimmer } from "@/motion";
-
-const field = (error: unknown, key: string): unknown =>
-  typeof error === "object" && error !== null ? Reflect.get(error, key) : undefined;
 
 /** The uncommitted change count from a `WorktreeDirty` rejection (0 when unknown); else `undefined`. */
 export function worktreeDirtyCount(error: unknown): number | undefined {
-  if (field(error, "_tag") !== "WorktreeDirty") return undefined;
-  const changed = field(error, "changedFiles");
+  if (tagOf(error) !== "WorktreeDirty" || typeof error !== "object" || error === null)
+    return undefined;
+  const changed = "changedFiles" in error ? error.changedFiles : undefined;
   return typeof changed === "number" ? changed : 0;
 }
 

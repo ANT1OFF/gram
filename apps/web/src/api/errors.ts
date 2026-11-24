@@ -17,18 +17,19 @@ export const isThreadNotFound = (error: unknown): boolean => tagOf(error) === "T
 export function errorMessage(error: unknown): string {
   if (isNotImplemented(error)) return "Not available yet";
   const message =
-    typeof error === "object" && error !== null ? Reflect.get(error, "message") : undefined;
+    typeof error === "object" && error !== null && "message" in error ? error.message : undefined;
   if (typeof message === "string" && message !== "") return message;
   return tagOf(error) ?? String(error);
 }
 
 /** Where a refusal says the person can put it right: an https page and its words, when it says. */
 export function errorHelp(error: unknown): { url: string; label: string } | undefined {
-  if (tagOf(error) !== "InvalidState") return undefined;
-  const help = Reflect.get(error as object, "help");
+  if (tagOf(error) !== "InvalidState" || typeof error !== "object" || error === null)
+    return undefined;
+  const help: unknown = "help" in error ? error.help : undefined;
   if (typeof help !== "object" || help === null) return undefined;
-  const url = Reflect.get(help, "url");
-  const label = Reflect.get(help, "label");
+  const url = "url" in help ? help.url : undefined;
+  const label = "label" in help ? help.label : undefined;
   if (typeof url !== "string" || typeof label !== "string" || !url.startsWith("https://"))
     return undefined;
   return { url, label };
@@ -38,7 +39,13 @@ export function errorHelp(error: unknown): { url: string; label: string } | unde
 export function folderProblem(error: unknown): string | undefined {
   const tag = tagOf(error);
   const message = errorMessage(error);
-  if (tag === "NotFound" && Reflect.get(error as object, "entity") === "project") {
+  if (
+    tag === "NotFound" &&
+    typeof error === "object" &&
+    error !== null &&
+    "entity" in error &&
+    error.entity === "project"
+  ) {
     return "This thread's folder doesn't exist.";
   }
   if (tag === "InvalidState" && message.startsWith("Not a folder")) {
@@ -53,8 +60,9 @@ export function folderProblem(error: unknown): string | undefined {
 
 /** The path a `CheckoutInUse` refusal names; `undefined` for any other error. */
 export function checkoutInUsePath(error: unknown): string | undefined {
-  if (tagOf(error) !== "CheckoutInUse") return undefined;
-  const path = Reflect.get(error as object, "path");
+  if (tagOf(error) !== "CheckoutInUse" || typeof error !== "object" || error === null)
+    return undefined;
+  const path = "path" in error ? error.path : undefined;
   return typeof path === "string" ? path : undefined;
 }
 

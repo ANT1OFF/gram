@@ -19,7 +19,7 @@ import {
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { useApi } from "@/api/context";
-import { errorMessage, folderProblem } from "@/api/errors";
+import { errorMessage, folderProblem, isNotFound } from "@/api/errors";
 import { Hint } from "@/components/hint";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { QueryError } from "@/components/not-available";
@@ -657,7 +657,7 @@ function DiffBody({
   if (query.isError) {
     const problem = folderProblem(query.error);
     if (problem) return <FolderMissing threadId={threadId} problem={problem} />;
-    if (Reflect.get(query.error ?? {}, "_tag") === "NotFound") {
+    if (isNotFound(query.error)) {
       return <PanelMessage>{errorMessage(query.error)}</PanelMessage>;
     }
     return <QueryError error={query.error} feature="The diff" />;

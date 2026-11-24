@@ -146,6 +146,7 @@ export function withFaults<T extends object>(api: T, options: FaultOptions): T {
 
   return new Proxy(api, {
     get(target, key) {
+      // oxlint-disable-next-line anti-slop/no-reflect-get -- a Proxy trap forwards through Reflect
       const value: unknown = Reflect.get(target, key, target);
       if (typeof value !== "function" || typeof key === "symbol") return value;
       if (!wrapped.has(key)) wrapped.set(key, wrap(key, value as (...args: unknown[]) => unknown));

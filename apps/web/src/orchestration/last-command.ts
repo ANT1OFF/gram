@@ -1,4 +1,4 @@
-import type { GramUIMessage } from "@gram/contracts";
+import { fieldsOf, type GramUIMessage } from "@gram/contracts";
 
 import { isToolPart, toolPhase, type AnyToolPart } from "@/thread/parts";
 import { toolInputField } from "@/thread/tool-group-model";
@@ -48,9 +48,9 @@ const commandOf = (part: AnyToolPart, command: string) => {
 };
 
 export const numberField = (output: unknown, keys: readonly string[]): number | null => {
-  if (typeof output !== "object" || output === null) return null;
+  const fields = fieldsOf(output);
   for (const key of keys) {
-    const value: unknown = Reflect.get(output, key);
+    const value = fields.get(key);
     if (typeof value === "number" && Number.isFinite(value)) return value;
   }
   return null;
@@ -67,10 +67,10 @@ export const rawOutput = (part: AnyToolPart): string => {
     ? output
     : typeof output === "object" && output !== null
       ? [
-          Reflect.get(output, "stdout"),
-          Reflect.get(output, "stderr"),
-          Reflect.get(output, "output"),
-          Reflect.get(output, "aggregated_output"),
+          "stdout" in output ? output.stdout : undefined,
+          "stderr" in output ? output.stderr : undefined,
+          "output" in output ? output.output : undefined,
+          "aggregated_output" in output ? output.aggregated_output : undefined,
         ]
           .filter((each): each is string => typeof each === "string" && each !== "")
           .join("\n")

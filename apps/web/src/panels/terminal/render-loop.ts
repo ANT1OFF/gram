@@ -95,7 +95,8 @@ export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoo
   if (typeof requestRender === "function") {
     selection!.requestRender = (...args: unknown[]) => {
       ask();
-      return requestRender.apply(selection, args);
+      const rendered: unknown = requestRender.apply(selection, args);
+      return rendered;
     };
   }
   const hoverLink = renderer.setHoveredHyperlinkId.bind(renderer);
