@@ -1224,12 +1224,21 @@ const waitingLines = (waiting: DigestWaiting): ReadonlyArray<string> => {
       .join(", ");
     const oldest =
       waiting.oldestMin === undefined ? "" : `; the oldest for ${ageText(waiting.oldestMin)}`;
+    const stale = waiting.stale ?? 0;
     lines.push(
-      `Waiting on the user: ${kinds}${oldest}. Mention it when it matters; don't repeat it every reply.`,
+      `Waiting on the user: ${kinds}${oldest}. Mention it when it matters; don't repeat it every reply.` +
+        (stale === 0
+          ? ""
+          : ` ${stale === 1 ? "1 is" : `${stale} are`} from an archived or merged thread, likely stale: withdraw with resolve_wait (its threadId) what no longer waits on the user, or keep it.`),
     );
     for (const item of waiting.items ?? []) {
+      const where =
+        item.thread === undefined
+          ? `[thread ${item.threadId}]`
+          : `in "${inline(item.thread)}" [thread ${item.threadId}]`;
       lines.push(
-        `- ${item.kind} "${inline(item.title)}" [thread ${item.threadId}] (${item.id}), ${ageText(item.ageMin)}`,
+        `- ${item.kind} "${inline(item.title)}" ${where} (${item.id}), ${ageText(item.ageMin)}` +
+          (item.stale === undefined ? "" : `, ${item.stale}: likely stale`),
       );
     }
     const unnamed = waiting.open - (waiting.items?.length ?? waiting.open);

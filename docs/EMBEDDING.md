@@ -689,6 +689,17 @@ An item of Waiting on you ends one of three ways, recorded on the item as `endin
 
 - **done**, by the user's Done (`thread.resolveWait`), or by the agent's `resolve_wait`;
 - **dismissed**, by the user's Dismiss: `thread.resolveWait` with `dismiss: true` and an optional `note`, for an item that no longer makes sense and wasn't done;
-- **withdrawn**, by the thread that added it (`resolve_wait` with `ending: "withdrawn"`) or by that thread's own orchestrator, which passes the worker's `threadId` and is named in `resolverThread`. Only the orchestrator that started the worker, in its workspace, may; any other thread is refused.
+- **withdrawn**, by the thread that added it (`resolve_wait` with `ending: "withdrawn"`) or by its workspace's orchestrator, which passes the item's `threadId` and is named in `resolverThread`.
 
-The `data-wait` chip keeps `state: "done"` for all three and adds `ending` for the other two, so a client that knows only `done` still draws it as resolved. The thread that added the item hears which with its next message, as it hears of Done; an orchestrator's digest lists what the user dismissed, and what a worker withdrew itself, apart from what they marked done. `list_waits` answers a resolved item's `state` as its ending, and an orchestrator may list a worker's with its `threadId`.
+The `data-wait` chip keeps `state: "done"` for all three and adds `ending` for the other two, so a client that knows only `done` still draws it as resolved. The thread that added the item hears which with its next message, as it hears of Done; an orchestrator's digest lists what the user dismissed, and what a worker withdrew itself, apart from what they marked done. `list_waits` answers a resolved item's `state` as its ending.
+
+`resolve_wait` with `ending: "deleted"` takes an item off every list: it is resolved as withdrawn if it was open, so its chip reads withdrawn, and kept only as the record of what it was, with `deletedAt` and a `deleted` entry in its `history`. `thread.listWaits`, the tray, the counts and the digest leave it out; `list_waits` with `state: "deleted"` reads it. Nothing is removed from `wait_items`.
+
+### An orchestrator's view of its workspace
+
+The orchestrator holding a workspace manages the Waiting on you of every thread in it (`workspaceId`): its workers, live or archived, those an earlier orchestrator spawned, threads that joined it, whoever added the item, the user included. A thread in another workspace, or in none, is refused, as is any thread that isn't that workspace's orchestrator naming another thread.
+
+- `list_waits` without `threadId` lists the whole workspace's items, each with the `threadId` and title of its thread and `archived` or `merged` when that thread is archived or its pull request merged, so the item is likely stale. With a `threadId` it lists that thread's, the orchestrator's own included. Reading a worker's items doesn't mark them heard for the worker.
+- `wait_on_user` with `threadId` and `id` edits another thread's open item in place: same id, same anchor, its chip restyled where it is. `resolve_wait` with `threadId` withdraws (the default), marks done or deletes one.
+- Every edit, by anyone, adds an `edited` entry to the item's `history` with who made it (`by`, and `thread` when another thread did) and what it said before (`from`); the last `WAIT_HISTORY_MAX` are kept. The item's own agent hears of an orchestrator's edit or deletion with its next message.
+- The digest counts every open item in the workspace. It names them all on a boot, and otherwise those of an archived or merged thread, flagged likely stale. `archive_thread` answers the open items the archived thread still has (`openWaits`).

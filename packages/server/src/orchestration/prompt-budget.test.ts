@@ -86,9 +86,14 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * `resolve_wait`'s and `list_waits`'s `threadId`, bound for the orchestrator alone, and
  * `resolve_wait`'s `ending`. Both descriptions and `wait_on_user`'s were cut first; measured then
  * at 65,748. The worker's held, down to 41,918.
+ * The orchestrator's raised on 2026-11-24, on purpose and at the user's word, for keeping the
+ * whole workspace's Waiting on you true: `list_waits` across every thread of the workspace,
+ * archived workers' among them, `wait_on_user`'s `threadId` to edit another thread's item, and
+ * `resolve_wait`'s `deleted` ending. The descriptions were cut first, `list_waits`'s field list
+ * among them; measured then at 65,947. The worker's held.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 65_760,
+  orchestrator: 65_960,
   worker: 41_990,
   plain: 23_650,
 };

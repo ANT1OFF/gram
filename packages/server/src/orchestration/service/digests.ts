@@ -64,7 +64,7 @@ import {
   userAwayMinutes,
   userWroteMinutesAgo,
 } from "../rules.ts";
-import { digestWaiting } from "../digest-waiting.ts";
+import { digestWaiting, waitsStaleIn } from "../digest-waiting.ts";
 import {
   DIGEST_KEY,
   IN_ERROR_DETAIL,
@@ -378,16 +378,21 @@ export const makeDigests = (kit: OrchestrationKit, deps: DigestsDeps) => {
       const annotated = new Map(
         excerpts.map((report, index) => [report, interfaces.reports[index]!]),
       );
-      const waitThreads = [
-        ...(state.workspace.orchestratorThreadId === undefined
-          ? []
-          : [state.workspace.orchestratorThreadId]),
-        ...features.flatMap((feature) => feature.workers.map((worker) => worker.threadId)),
-      ];
+      const waitThreads = (yield* store.listThreads).filter(
+        (thread) =>
+          thread.workspaceId === workspaceId || thread.id === state.workspace.orchestratorThreadId,
+      );
       const waiting = digestWaiting({
         variant,
-        threads: yield* Effect.forEach(waitThreads, (threadId) =>
-          store.listWaits(threadId, "all").pipe(Effect.map((items) => ({ threadId, items }))),
+        threads: yield* Effect.forEach(waitThreads, (thread) =>
+          store.listWaits(thread.id, "all").pipe(
+            Effect.map((items) => ({
+              threadId: thread.id,
+              items,
+              title: thread.title,
+              stale: waitsStaleIn(thread),
+            })),
+          ),
         ),
         now: readAt,
         since: outbox.lastDigestAt,

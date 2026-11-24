@@ -50,6 +50,34 @@ export type WaitResolver = typeof WaitResolver.Type;
 export const WaitEnding = Schema.Literals(["done", "dismissed", "withdrawn"]);
 export type WaitEnding = typeof WaitEnding.Type;
 
+/** What an item said before an edit: its content, as `WaitChange.from` keeps it. */
+export const WaitContent = Schema.Struct({
+  kind: WaitKind,
+  title: Schema.String,
+  body: Schema.optionalKey(Schema.String),
+  copy: Schema.optionalKey(Schema.String),
+  link: Schema.optionalKey(Schema.String),
+});
+export type WaitContent = typeof WaitContent.Type;
+
+/** The most changes an item keeps in `history`; past it the oldest are forgotten. */
+export const WAIT_HISTORY_MAX = 10;
+
+/**
+ * One change to an item after it was added: an edit in place, with what it said `from`, or its
+ * deletion. `thread` names the thread that made it when another than the item's own: its
+ * orchestrator. Stored.
+ */
+export const WaitChange = Schema.Struct({
+  /** Epoch ms. */
+  at: Schema.Number,
+  by: WaitResolver,
+  thread: Schema.optionalKey(ThreadId),
+  change: Schema.Literals(["edited", "deleted"]),
+  from: Schema.optionalKey(WaitContent),
+});
+export type WaitChange = typeof WaitChange.Type;
+
 /** One deliverable waiting on the user, as `wait_items` stores it. */
 export const WaitItem = Schema.Struct({
   id: WaitId,
@@ -98,8 +126,34 @@ export const WaitItem = Schema.Struct({
    * Never changed afterwards.
    */
   person: Schema.optionalKey(Schema.String),
+  /**
+   * Epoch ms it was deleted: resolved (`withdrawn` when it was still open) and kept only as the
+   * record of what it was, left out of every list. Absent on an item never deleted.
+   */
+  deletedAt: Schema.optionalKey(Schema.Number),
+  /** Its edits and its deletion, oldest first, the last `WAIT_HISTORY_MAX`; absent until one. */
+  history: Schema.optionalKey(Schema.Array(WaitChange)),
 });
 export type WaitItem = typeof WaitItem.Type;
+
+/** What `item` says now, as a `WaitChange.from` keeps it. */
+export const waitContentOf = (item: WaitItem): WaitContent => ({
+  kind: item.kind,
+  title: item.title,
+  ...(item.body === undefined ? {} : { body: item.body }),
+  ...(item.copy === undefined ? {} : { copy: item.copy }),
+  ...(item.link === undefined ? {} : { link: item.link }),
+});
+
+/** `history` with `change` after it, the last `WAIT_HISTORY_MAX` kept. */
+export const withWaitChange = (
+  history: ReadonlyArray<WaitChange> | undefined,
+  change: WaitChange,
+): ReadonlyArray<WaitChange> => [...(history ?? []), change].slice(-WAIT_HISTORY_MAX);
+
+/** The item's latest change, if it has one. */
+export const lastWaitChange = (item: Pick<WaitItem, "history">): WaitChange | undefined =>
+  item.history?.at(-1);
 
 /**
  * Whether `item` is on `reader`'s Waiting on you: their own, and the ones for anyone. A reader
@@ -289,11 +343,17 @@ const namedWhy = (items: ReadonlyArray<WaitItem>) =>
     )
     .join(", ");
 
+/** Whether another thread, its orchestrator, made the item's latest change, an edit. */
+const editedElsewhere = (item: WaitItem): boolean => {
+  const last = lastWaitChange(item);
+  return last?.change === "edited" && last.thread !== undefined;
+};
+
 /**
  * What Gram tells the agent of Waiting on you, with the user's
  * next message. `news` are the items whose state the agent hasn't heard: resolved by the user, the
- * helper or its orchestrator, each told by how it ended (`WaitEnding`), added or kept by the user,
- * or reopened after the agent was told they were done. The rest of `open` follows as still
+ * helper or its orchestrator, each told by how it ended (`WaitEnding`) or as deleted, edited by its
+ * orchestrator, added or kept by the user, or reopened after the agent was told they were done. The rest of `open` follows as still
  * waiting. `undefined` without news.
  */
 export const waitNoteText = (
@@ -307,10 +367,17 @@ export const waitNoteText = (
   const byUser = resolved.filter((item) => item.resolverThread === undefined);
   const done = byUser.filter((item) => waitEndingOf(item) === "done");
   const dismissed = byUser.filter((item) => waitEndingOf(item) === "dismissed");
-  const withdrawn = byOrchestrator.filter((item) => waitEndingOf(item) === "withdrawn");
-  const doneThere = byOrchestrator.filter((item) => waitEndingOf(item) !== "withdrawn");
-  const added = news.filter((item) => waitIsOpen(item) && item.source !== "agent");
-  const reopened = news.filter((item) => waitIsOpen(item) && item.source === "agent");
+  const deleted = byOrchestrator.filter((item) => item.deletedAt !== undefined);
+  const withdrawn = byOrchestrator.filter(
+    (item) => waitEndingOf(item) === "withdrawn" && item.deletedAt === undefined,
+  );
+  const doneThere = byOrchestrator.filter(
+    (item) => waitEndingOf(item) !== "withdrawn" && item.deletedAt === undefined,
+  );
+  const openNews = news.filter(waitIsOpen);
+  const editedThere = openNews.filter((item) => editedElsewhere(item));
+  const added = openNews.filter((item) => !editedElsewhere(item) && item.source !== "agent");
+  const reopened = openNews.filter((item) => !editedElsewhere(item) && item.source === "agent");
   const still = open.filter((item) => !fresh.has(item.id));
   const sentences = [
     done.length === 0 ? undefined : `The user marked done: ${named(done)}.`,
@@ -320,7 +387,13 @@ export const waitNoteText = (
     withdrawn.length === 0
       ? undefined
       : `Your orchestrator withdrew from the user's list: ${namedWhy(withdrawn)}.`,
+    deleted.length === 0
+      ? undefined
+      : `Your orchestrator deleted from the user's list: ${namedWhy(deleted)}.`,
     doneThere.length === 0 ? undefined : `Your orchestrator marked done: ${namedWhy(doneThere)}.`,
+    editedThere.length === 0
+      ? undefined
+      : `Your orchestrator edited, so it now reads: ${named(editedThere)}.`,
     added.length === 0
       ? undefined
       : `The user added to Waiting on you, to act on themselves: ${named(added)}.`,
@@ -340,6 +413,9 @@ export const WaitNoteDataSchema = Schema.Struct({
 });
 export type WaitNoteData = typeof WaitNoteDataSchema.Type;
 
-/** Which items a list answers: the open ones, or with `all` the resolved ones kept too. */
+/**
+ * Which items a list answers: the open ones, or with `all` the resolved ones kept too. Deleted
+ * ones (`WaitItem.deletedAt`) are in neither.
+ */
 export const WaitListState = Schema.Literals(["open", "all"]);
 export type WaitListState = typeof WaitListState.Type;

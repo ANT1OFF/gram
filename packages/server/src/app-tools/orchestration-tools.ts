@@ -12,6 +12,7 @@ import {
   type Thread,
   type ThreadId,
   type WorkspaceId,
+  waitIsKept,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -918,7 +919,21 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           }
           yield* runtimes.updateThread(target.thread.id, (t) => ({ ...t, parked: true }));
           yield* releaseWatchers;
-          return { threadId: target.thread.id, archived: true };
+          const open = (yield* store.listWaits(target.thread.id)).filter(waitIsKept);
+          return {
+            threadId: target.thread.id,
+            archived: true,
+            ...(open.length === 0
+              ? {}
+              : {
+                  openWaits: open.map((item) => ({
+                    id: item.id,
+                    kind: item.kind,
+                    title: item.title,
+                  })),
+                  note: `It still has ${open.length === 1 ? "1 item" : `${open.length} items`} on the user's Waiting on you. Withdraw with resolve_wait (this threadId) what no longer waits on them, or keep it.`,
+                }),
+          };
         }).pipe(Effect.mapError(toolError("archive_thread"))),
     });
 

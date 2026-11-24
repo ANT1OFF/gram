@@ -5,14 +5,25 @@ import { WaitId, WaitKind } from "./waits.ts";
 /** The most open items a digest names, and the most finished ones it names by title. */
 export const DIGEST_WAITING_LISTED = 12;
 
+/**
+ * Why an open item likely no longer waits on the user: the thread that added it is `archived`, or
+ * its pull request `merged`.
+ */
+export const DigestWaitingStale = Schema.Literals(["archived", "merged"]);
+export type DigestWaitingStale = typeof DigestWaitingStale.Type;
+
 /** An open item a digest names, so a fresh session knows what the user still has to do. */
 export const DigestWaitingItem = Schema.Struct({
   threadId: ThreadId,
+  /** The title of the thread it lives in. */
+  thread: Schema.optionalKey(Schema.String),
   id: WaitId,
   kind: WaitKind,
   title: Schema.String,
   /** Minutes it has waited when the digest was built. */
   ageMin: Schema.Int,
+  /** Set when its thread is archived or merged, so it is likely stale. */
+  stale: Schema.optionalKey(DigestWaitingStale),
 });
 export type DigestWaitingItem = typeof DigestWaitingItem.Type;
 
@@ -26,9 +37,9 @@ export const DigestWaitingEnded = Schema.Struct({
 export type DigestWaitingEnded = typeof DigestWaitingEnded.Type;
 
 /**
- * What waits on the user across the orchestrator and its workers: the
- * items of their Waiting on you, counted, so the orchestrator can say what is still owed without
- * repeating it every reply.
+ * What waits on the user across the orchestrator's workspace, every thread in it, its workers'
+ * live and archived among them: the items of their Waiting on you, counted, so the orchestrator
+ * can say what is still owed without repeating it every reply, and keep the list true.
  */
 export const DigestWaiting = Schema.Struct({
   /** Items still open. */
@@ -37,9 +48,11 @@ export const DigestWaiting = Schema.Struct({
   kinds: Schema.Array(Schema.Struct({ kind: WaitKind, count: Schema.Int })),
   /** Minutes the oldest open item has waited; absent with none open. */
   oldestMin: Schema.optionalKey(Schema.Int),
+  /** How many open items are from an archived or merged thread (`DigestWaitingStale`). */
+  stale: Schema.optionalKey(Schema.Int),
   /**
-   * The open items by name, at most `DIGEST_WAITING_LISTED`, on a boot: a session that starts
-   * fresh, a handoff's among them, remembers none of them.
+   * The open items by name, at most `DIGEST_WAITING_LISTED`: all of them on a boot, as a session
+   * that starts fresh, a handoff's among them, remembers none of them, and otherwise the stale ones.
    */
   items: Schema.optionalKey(Schema.Array(DigestWaitingItem)),
   /** Titles of what the user marked done since the last digest, at most `DIGEST_WAITING_LISTED`. */
