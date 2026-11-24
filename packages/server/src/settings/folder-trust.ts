@@ -1,6 +1,12 @@
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
-import { type FolderSettings, type Project, parseScriptsFile, SCRIPTS_FILE } from "@gram/contracts";
+import {
+  errnoCode,
+  type FolderSettings,
+  parseScriptsFile,
+  type Project,
+  SCRIPTS_FILE,
+} from "@gram/contracts";
 import { readInside, realRoot } from "@gram/git";
 
 const CLAUDE_SETTINGS = [".claude/settings.json", ".claude/settings.local.json"] as const;
@@ -36,7 +42,7 @@ const read = (root: string, rel: string): string | undefined | null => {
   try {
     return readInside(root, rel);
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : null;
+    return errnoCode(error) === "ENOENT" ? undefined : null;
   }
 };
 
@@ -53,7 +59,7 @@ const lstat = (path: string) => {
   try {
     return fs.lstatSync(path);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if (errnoCode(error) === "ENOENT") return undefined;
     throw error;
   }
 };

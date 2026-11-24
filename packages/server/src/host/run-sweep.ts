@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { execFile } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import * as Effect from "effect/Effect";
@@ -23,7 +24,7 @@ export type Scan =
 export type Scanner = (tokens: ReadonlyArray<string>) => Effect.Effect<Scan>;
 
 const gone = (error: unknown) => {
-  const code = (error as NodeJS.ErrnoException).code;
+  const code = errnoCode(error);
   return code === "ENOENT" || code === "ESRCH";
 };
 
@@ -62,7 +63,7 @@ export const procScan = (
       try {
         environ = readFileSync(`${proc}/${entry}/environ`, "utf8").split("\0");
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EACCES") throw error;
+        if (errnoCode(error) !== "EACCES") throw error;
       }
       const ours =
         environ === undefined

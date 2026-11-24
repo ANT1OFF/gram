@@ -1,4 +1,10 @@
-import { hostListing, type WorkerPacking, type WorkerPlacement } from "@gram/contracts";
+import {
+  errnoCode,
+  fieldsOf,
+  hostListing,
+  type WorkerPacking,
+  type WorkerPlacement,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash, randomBytes } from "node:crypto";
 import {
@@ -16,6 +22,7 @@ import {
   type WorkerSeats,
   type WorkerSeatsAsk,
 } from "./worker-seats.ts";
+import * as Predicate from "effect/Predicate";
 
 /** What an orchestrator asks of a worker's own machine. Short ids, as the provider offers them. */
 export interface WorkerMachineAsk {
@@ -96,8 +103,8 @@ const text = (value: unknown, max: number) =>
     : undefined;
 
 const resources = (value: unknown): Resources | undefined => {
-  if (typeof value !== "object" || value === null) return undefined;
-  const { cpu, memoryGb } = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return undefined;
+  const { cpu, memoryGb } = value;
   return typeof cpu === "number" &&
     Number.isFinite(cpu) &&
     cpu >= 0 &&
@@ -112,16 +119,15 @@ const resources = (value: unknown): Resources | undefined => {
 export const parseOverTotal = (
   value: unknown,
 ): Extract<WorkerMachineStart, { kind: "over-total" }> => {
-  const body =
-    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const body = Predicate.isObject(value) ? value : {};
   const asked = resources(body["asked"]);
   const inUse = resources(body["inUse"]);
   const total = resources(body["total"]);
   const listed = Array.isArray(body["machines"]) ? body["machines"].slice(0, 32) : [];
   const machines: WorkerMachineHeld[] = [];
   for (const raw of listed) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const entry = raw as Record<string, unknown>;
+    if (!Predicate.isObject(raw)) continue;
+    const entry = raw;
     const name = entry["name"];
     if (typeof name !== "string" || !NAME.test(name)) continue;
     const size = entry["size"];
@@ -247,50 +253,37 @@ export const askWorkerMachine = <R>(
       } as const;
     const { status, body } = answered;
     if (status === 409 && !codes) return parseOverTotal(body);
-    if (
-      status === 409 &&
-      typeof body === "object" &&
-      body !== null &&
-      (body as { code?: unknown }).code === "name_in_use"
-    )
+    if (status === 409 && Predicate.isObject(body) && errnoCode(body) === "name_in_use")
       return {
         kind: "refused",
         message: `The machine name ${ask.name} was a machine's that the server has since reclaimed, so it isn't used again. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`,
       } as const;
-    if (
-      status === 409 &&
-      typeof body === "object" &&
-      body !== null &&
-      (body as { code?: unknown }).code === "released"
-    )
+    if (status === 409 && Predicate.isObject(body) && errnoCode(body) === "released")
       return {
         kind: "refused",
         message: `${ask.name} is still held as released there, after it was told it is working again. Try again in a minute, or spawn with another clientRequestId.`,
       } as const;
-    const code =
-      typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
+    const code = Predicate.isObject(body) ? errnoCode(body) : undefined;
     if (status === 409 && (code === undefined || code === "over_total"))
       return parseOverTotal(body);
     if (status === 409)
       return {
         kind: "refused",
-        message:
-          text((body as { message?: unknown }).message, 300) ?? "The server refused that machine.",
+        message: text(fieldsOf(body).get("message"), 300) ?? "The server refused that machine.",
       } as const;
     if (status === 403 || status === 404)
       return {
         kind: "refused",
         message:
-          text((body as { message?: unknown } | undefined)?.message, 300) ??
+          text(fieldsOf(body).get("message"), 300) ??
           "Workers' own machines are off here: put the worker on your own machine.",
       } as const;
     if (status < 200 || status >= 300)
       return {
         kind: "refused",
         message:
-          (refusedRequest(status)
-            ? text((body as { message?: unknown } | undefined)?.message, 300)
-            : undefined) ?? `The machine couldn't be asked for: the server answered ${status}.`,
+          (refusedRequest(status) ? text(fieldsOf(body).get("message"), 300) : undefined) ??
+          `The machine couldn't be asked for: the server answered ${status}.`,
       } as const;
     return { kind: "started", name: ask.name } as const;
   });
@@ -364,20 +357,29 @@ export type WorkerMachineResize =
     }
   | { readonly kind: "refused"; readonly message: string };
 
-const RESIZE_STATES = new Set(["grown", "waiting", "releasing", "released", "infeasible"]);
+type ResizedState = Extract<WorkerMachineResize, { kind: "resized" }>["state"];
+const RESIZE_STATES: ReadonlyArray<ResizedState> = [
+  "grown",
+  "waiting",
+  "releasing",
+  "released",
+  "infeasible",
+];
+const isResizedState = (state: unknown): state is ResizedState =>
+  RESIZE_STATES.some((each) => each === state);
 
 /** A provider's answer to a resize, read field by field. */
 export const parseResizeAnswer = (status: number, body: unknown): WorkerMachineResize => {
-  const fields = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+  const fields = Predicate.isObject(body) ? body : {};
   const message = text(fields["message"], 300);
   const state = fields["state"];
-  if (status >= 200 && status < 300 && typeof state === "string" && RESIZE_STATES.has(state)) {
+  if (status >= 200 && status < 300 && isResizedState(state)) {
     const size = fields["size"];
     const start = fields["start"];
     const until = typeof fields["until"] === "string" ? Date.parse(fields["until"]) : Number.NaN;
     return {
       kind: "resized",
-      state: state as Extract<WorkerMachineResize, { kind: "resized" }>["state"],
+      state,
       ...(typeof size === "string" && SHORT.test(size) ? { size } : {}),
       ...(typeof start === "string" && SHORT.test(start) ? { start } : {}),
       ...(Number.isFinite(until) ? { until } : {}),
@@ -651,15 +653,12 @@ const MAX_MODELS = 32;
 
 /** The `models` of a provider's choices, read field by field. Undefined: it lists none. */
 export const parseOfferedModels = (value: unknown): ReadonlyArray<OfferedModel> | undefined => {
-  const listed =
-    typeof value === "object" && value !== null
-      ? (value as { models?: unknown }).models
-      : undefined;
+  const listed = Predicate.isObject(value) ? fieldsOf(value).get("models") : undefined;
   if (!Array.isArray(listed)) return undefined;
   const models: OfferedModel[] = [];
   for (const raw of listed.slice(0, MAX_MODELS)) {
-    if (typeof raw !== "object" || raw === null) continue;
-    const entry = raw as Record<string, unknown>;
+    if (!Predicate.isObject(raw)) continue;
+    const entry = raw;
     const agent = entry["agent"];
     const id = entry["id"];
     if (

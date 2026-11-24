@@ -5,6 +5,7 @@ import type { TerminalId, ThreadId } from "@gram/contracts";
 
 import { plainTail } from "./plain-text.ts";
 import { replayable } from "./scrollback.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * The line a kept terminal's fresh shell opens under, below the old screen. The old program is
@@ -49,8 +50,8 @@ export interface KeptTerminals {
 const FILE = /^[0-9a-f-]{36}\.json$/;
 
 const isKept = (value: unknown): value is KeptTerminal => {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
+  if (!Predicate.isObject(value)) return false;
+  const v = value;
   return (
     typeof v["terminalId"] === "string" &&
     typeof v["threadId"] === "string" &&
@@ -59,10 +60,12 @@ const isKept = (value: unknown): value is KeptTerminal => {
     typeof v["path"] === "string" &&
     typeof v["tail"] === "string" &&
     typeof v["cut"] === "boolean" &&
+    typeof v["cols"] === "number" &&
+    typeof v["rows"] === "number" &&
     Number.isInteger(v["cols"]) &&
     Number.isInteger(v["rows"]) &&
-    (v["cols"] as number) > 0 &&
-    (v["rows"] as number) > 0
+    v["cols"] > 0 &&
+    v["rows"] > 0
   );
 };
 

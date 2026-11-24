@@ -1,8 +1,10 @@
+import { errnoCode, fieldsOf } from "@gram/contracts";
 import { copyFileSync, existsSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import * as Schema from "effect/Schema";
 import { privateJsonFile } from "../http/remote-sessions.ts";
 import { MachineMarks, type MachineMarksByHost } from "./stop-marks.ts";
+import * as Predicate from "effect/Predicate";
 
 /** A store, made on first write: a Gram no machine joined never makes the file or its folder. */
 export const lazyFileStore = <R, W>(
@@ -49,17 +51,19 @@ export const fileAutomaticStore = (dataDir: string): AutomaticStore => {
         try {
           stat = lstatSync(path);
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+          if (errnoCode(error) === "ENOENT") return undefined;
           throw error;
         }
         if (folder ? !stat.isDirectory() : !stat.isFile())
           throw new Error(`${path} isn't a ${folder ? "folder" : "file"} of its own.`);
       }
-      const value = file().read() as { version?: unknown; automatic?: unknown } | undefined;
-      if (value === undefined) throw new Error(`${name} went away while it was read.`);
-      if (value.version !== 1 || typeof value.automatic !== "boolean")
+      const read: unknown = file().read();
+      if (read === undefined) throw new Error(`${name} went away while it was read.`);
+      const value = fieldsOf(read);
+      const automatic = value.get("automatic");
+      if (value.get("version") !== 1 || typeof automatic !== "boolean")
         throw new Error(`${name} isn't a machine updates file.`);
-      return value.automatic;
+      return automatic;
     },
     write: (on) => file().write({ version: 1, automatic: on }),
   };
@@ -97,21 +101,14 @@ export const fileMarksStore = (dataDir: string): MarksStore => {
     Buffer.byteLength(JSON.stringify(value), "utf8") <= MARKS_FILE_MOST_BYTES;
   return {
     read: () => {
-      const value = file.read() as { version?: unknown; machines?: unknown } | undefined;
+      const value: unknown = file.read();
       if (value === undefined) return { machines: {}, dropped: [] };
-      if (
-        value === null ||
-        typeof value !== "object" ||
-        Array.isArray(value) ||
-        value.version !== 1 ||
-        typeof value.machines !== "object" ||
-        value.machines === null ||
-        Array.isArray(value.machines)
-      )
+      const kept = Predicate.isObject(value) ? value["machines"] : undefined;
+      if (!Predicate.isObject(value) || value["version"] !== 1 || !Predicate.isObject(kept))
         throw new Error("machine-marks.json isn't a machine marks file.");
       const machines: Record<string, MachineMarks> = {};
       const dropped: Array<string> = [];
-      for (const [id, marks] of Object.entries(value.machines)) {
+      for (const [id, marks] of Object.entries(kept)) {
         const decoded = decode(marks);
         if (decoded._tag === "Some") machines[id] = decoded.value;
         else dropped.push(id);

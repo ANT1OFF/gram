@@ -1,9 +1,4 @@
-import {
-  type HostId,
-  InvalidState,
-  WORKSPACE_MACHINE_NOT_RUNNING,
-  type WorkspaceId,
-} from "@gram/contracts";
+import { HostId, InvalidState, WORKSPACE_MACHINE_NOT_RUNNING, WorkspaceId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { createHash } from "node:crypto";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -49,7 +44,7 @@ export const workspaceToStart = (
 ): Effect.Effect<WorkspaceToStart | undefined> =>
   store === undefined
     ? Effect.succeed(undefined)
-    : store.getWorkspace(id as WorkspaceId).pipe(
+    : store.getWorkspace(WorkspaceId.make(id)).pipe(
         Effect.map(({ workspace }) => ({
           id: workspace.id,
           name: workspace.name,
@@ -97,5 +92,5 @@ export const workspaceHost = (
           message: `${WORKSPACE_MACHINE_NOT_RUNNING}. Start it to open ${workspace.name}'s orchestrator.`,
         }),
       )
-    : Effect.succeed(machine.id as HostId);
+    : Effect.succeed(HostId.make(machine.id));
 };

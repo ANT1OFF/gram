@@ -1,7 +1,6 @@
 import { hostname } from "node:os";
 import { createInterface } from "node:readline";
-import type { HostId } from "@gram/contracts";
-import { HostId as HostIdSchema } from "@gram/contracts";
+import { fieldsOf, type HostId, HostId as HostIdSchema } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
@@ -184,7 +183,8 @@ const join = (args: ReadonlyArray<string>, home: string) =>
       return yield* fail(`The main Gram refused the join: ${text.slice(0, 200)}`);
     let hostId: string | undefined;
     try {
-      hostId = (JSON.parse(text) as { hostId?: unknown }).hostId as string | undefined;
+      const given = fieldsOf(JSON.parse(text)).get("hostId");
+      hostId = typeof given === "string" ? given : undefined;
     } catch {
       hostId = undefined;
     }

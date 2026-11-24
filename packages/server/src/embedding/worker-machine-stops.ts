@@ -1,7 +1,7 @@
 import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
-import { fieldsOf, WORKER_MACHINE_NAME } from "@gram/contracts";
+import { errnoCode, fieldsOf, WORKER_MACHINE_NAME } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -83,7 +83,7 @@ export const stopSettled = (
 
 /** A server's answer's `code`, where it gives one. */
 export const codeOf = (body: unknown): unknown =>
-  typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
+  typeof body === "object" && body !== null ? errnoCode(body) : undefined;
 
 /**
  * Whether an answer is a `404 { code: "not_found" }`, the one a server gives a name it doesn't

@@ -17,6 +17,7 @@ import * as Effect from "effect/Effect";
 import { redactText } from "../logging/redact.ts";
 import { fenceConversation } from "./material.ts";
 import { basisHash, type HelperScheduler } from "./scheduler.ts";
+import * as Predicate from "effect/Predicate";
 
 /** Bumped whenever the prompt or the output shape changes, so stored sentences are made again. */
 export const STUCK_PROMPT_VERSION = 1;
@@ -38,8 +39,8 @@ const capped = (text: string, max: number) =>
   text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 
 const field = (input: unknown, key: string): string | undefined => {
-  if (typeof input !== "object" || input === null) return undefined;
-  const value = (input as Record<string, unknown>)[key];
+  if (!Predicate.isObject(input)) return undefined;
+  const value = input[key];
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 };
 

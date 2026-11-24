@@ -8,6 +8,7 @@ import {
   refusedSignIn,
 } from "./npm-registry.ts";
 import type { Downloader } from "./transaction.ts";
+import { fieldsOf } from "@gram/contracts";
 
 const PACK_TIMEOUT_MS = 20 * 60_000;
 
@@ -52,11 +53,9 @@ export const npmPackDownloader = (proc: ProcShape): Downloader => ({
         try: () => JSON.parse(output.stdout) as unknown,
         catch: () => ({ message: `npm pack ${spec} didn't report what it fetched` }),
       });
-      const entry = Array.isArray(report)
-        ? (report[0] as Record<string, unknown> | undefined)
-        : undefined;
-      const filename = entry?.["filename"];
-      const integrity = entry?.["integrity"];
+      const entry = fieldsOf(Array.isArray(report) ? report[0] : undefined);
+      const filename = entry.get("filename");
+      const integrity = entry.get("integrity");
       if (
         typeof filename !== "string" ||
         typeof integrity !== "string" ||

@@ -1,12 +1,13 @@
 import {
+  errnoCode,
+  type FsEntry,
+  type FsFile,
+  type FsListing,
   InvalidState,
   isCredentialPath,
   languageFor,
   NotFound,
   writtenFileRefs,
-  type FsEntry,
-  type FsFile,
-  type FsListing,
 } from "@gram/contracts";
 import { git, isInside, physicalPathAsync, realPath, tryRealPath, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -30,7 +31,7 @@ const fileError = (
   path: string,
   platform: NodeJS.Platform = process.platform,
 ): NotFound | InvalidState => {
-  const code = (error as { code?: unknown } | undefined)?.code;
+  const code = errnoCode(error);
   switch (code) {
     case "ENOENT":
       return new NotFound({ entity: "file", id: path, message: `Not found: ${path}` });

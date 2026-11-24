@@ -16,6 +16,7 @@ import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import { selectableModels } from "../runtime/model-efforts.ts";
 import type { ServerApprovalAnswer } from "../runtime/server-approvals.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
+import * as Predicate from "effect/Predicate";
 
 export const fail = (tool: string, message: string) => new AppToolError({ tool, message });
 
@@ -155,8 +156,8 @@ export const canonicalRosterChanges = (
     const lists = new Map<string, ReadonlyArray<{ id: string; displayName: string }> | undefined>();
     const canonical = (item: unknown) =>
       Effect.gen(function* () {
-        if (typeof item !== "object" || item === null || Array.isArray(item)) return item;
-        const record = item as Record<string, unknown>;
+        if (!Predicate.isObject(item)) return item;
+        const record = item;
         const { agent, model } = record;
         if (
           typeof agent !== "string" ||
@@ -183,7 +184,8 @@ export const canonicalRosterChanges = (
       if (!ROSTER_KEYS.has(change.key)) {
         out.push(change);
       } else if (change.op === "add" || change.op === "update") {
-        out.push({ ...change, item: (yield* canonical(change.item)) as Record<string, unknown> });
+        const item = yield* canonical(change.item);
+        out.push({ ...change, item: Predicate.isObject(item) ? item : change.item });
       } else if (change.op === "set" && Array.isArray(change.value)) {
         const value: Array<unknown> = [];
         for (const each of change.value) value.push(yield* canonical(each));

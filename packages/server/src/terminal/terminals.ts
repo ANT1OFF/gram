@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 
 import {
+  type HostId,
   InvalidState,
   NotFound,
   type TerminalEvent,
-  type TerminalId,
+  TerminalId,
   type TerminalInfo,
   type TerminalOpened,
-  type HostId,
   type ThreadId,
   type ThreadNotFound,
 } from "@gram/contracts";
@@ -251,7 +251,7 @@ export const makeTerminals = (deps: TerminalsDeps): Effect.Effect<Terminals, nev
             new InvalidState({ message: `Can't start ${shell.file}: ${message(error)}` }),
         });
 
-        const terminalId = restore?.terminalId ?? (randomUUID() as TerminalId);
+        const terminalId = restore?.terminalId ?? TerminalId.make(randomUUID());
         const exited = Promise.withResolvers<void>();
         const terminal: Terminal = {
           info: {

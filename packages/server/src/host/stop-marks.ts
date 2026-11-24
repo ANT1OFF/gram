@@ -1,9 +1,9 @@
 import {
   effectiveCheckout,
   HostDiskId,
+  HostId,
   hostOf,
   LOCAL_HOST_ID,
-  type HostId,
   type SavedDiff,
   type Thread,
   ThreadId,
@@ -377,7 +377,7 @@ export const makeStopMarks = (
   };
   for (const [key, value] of Object.entries(persisted?.initial ?? {})) {
     records.set(
-      key as HostId,
+      HostId.make(key),
       value.owed === undefined ? value : { ...value, owed: { ...value.owed, progress: now() } },
     );
   }

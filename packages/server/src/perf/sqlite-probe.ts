@@ -24,6 +24,7 @@ export const sqliteProbe = () => {
   const observe = (statement: ObservedStatement) => {
     calls?.push({
       sql: statement.sql,
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the probe records whatever bindings node:sqlite was given
       bindings: statement.params as SQLInputValue[],
       ms: statement.ms,
     });
@@ -37,6 +38,7 @@ export const sqliteProbe = () => {
     } finally {
       calls?.push({
         sql: this.sourceSQL,
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the probe records whatever bindings node:sqlite was given
         bindings: bindings as SQLInputValue[],
         ms: performance.now() - start,
       });

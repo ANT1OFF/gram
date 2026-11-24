@@ -5,7 +5,7 @@ import {
   type LaunchChecks,
   type ModelRef,
   type SelectedHarnessSupport,
-  type ThreadId,
+  ThreadId,
   type ThreadIdentity,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
@@ -141,7 +141,7 @@ export const makeAgentSupport = (deps: {
               };
       const browserRegistered =
         deps.registry
-          ?.forThread(input.threadId ?? ("support-preview" as ThreadId), "plain")
+          ?.forThread(input.threadId ?? ThreadId.make("support-preview"), "plain")
           .some((entry) => entry.descriptor.name === "browser_navigate") === true;
       const browser: FeatureSupport =
         host._tag === "Some" && browserRegistered

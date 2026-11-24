@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 import { diskPath, isInside, physicalPath } from "@gram/git";
-import type { Thread, ThreadId } from "@gram/contracts";
+import { fieldsOf, type Thread, ThreadId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { currentCaller } from "../host/ownership.ts";
@@ -317,7 +317,7 @@ export const readableOnly = <A>(
 
 interface WorkspaceKey {
   readonly id: string;
-  readonly orchestratorThreadId?: string | undefined;
+  readonly orchestratorThreadId?: ThreadId | undefined;
 }
 
 /** Whether `reader` may see the workspace `workspace` (`privacyOfWorkspace`), at `level`. */
@@ -326,7 +326,7 @@ export const readerMayWorkspace = (
   workspace: WorkspaceKey,
   level: Level = "read",
 ): boolean => {
-  const orchestrator = workspace.orchestratorThreadId as ThreadId | undefined;
+  const orchestrator = workspace.orchestratorThreadId;
   return readerMay(
     reader,
     level === "read"
@@ -379,9 +379,9 @@ export const threadsMentioned = (payload: unknown): ReadonlyArray<ThreadId> => {
     }
     for (const [key, field] of Object.entries(value)) {
       if (typeof field === "string" && THREAD_KEY.test(key) && !NOT_THREAD_KEYS.has(key)) {
-        found.push(field as ThreadId);
+        found.push(ThreadId.make(field));
       } else if (key === "threadIds" && Array.isArray(field)) {
-        for (const id of field) if (typeof id === "string") found.push(id as ThreadId);
+        for (const id of field) if (typeof id === "string") found.push(ThreadId.make(id));
       } else {
         walk(field, depth + 1);
       }
@@ -557,7 +557,7 @@ export const withoutUnreadable = (
     if (Array.isArray(value))
       return value
         .filter((item) => {
-          const path = (item as { readonly path?: unknown } | null)?.path;
+          const path = fieldsOf(item).get("path");
           return !(typeof path === "string" && hidden(path));
         })
         .map((item) => scrub(item, depth + 1));

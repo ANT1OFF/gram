@@ -1,5 +1,7 @@
+import { fieldsOf } from "@gram/contracts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
-import type { MachineSharing } from "./worker-seats.ts";
+import { isMachineSharing, type MachineSharing } from "./worker-seats.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * Whose a worker machine is, kept with the machine and not read off whichever workers are on it:
@@ -54,7 +56,6 @@ const CLAIMS_FILE_MOST = 512 * 1024;
 const CLAIMS_KEPT_MOST = 1024;
 const PRUNE_AFTER_MS = 60 * 60_000;
 const OCCUPANTS_MOST = 64;
-const MODES: ReadonlySet<string> = new Set(["own", "exclusive", "shared"]);
 
 const claimsOver = (kept: Map<string, MachineClaim>, save: () => void): MachineClaims => ({
   get: (name) => kept.get(name),
@@ -86,29 +87,27 @@ const claimsOver = (kept: Map<string, MachineClaim>, save: () => void): MachineC
 export const memoryMachineClaims = (): MachineClaims => claimsOver(new Map(), () => undefined);
 
 const readClaim = (raw: unknown): MachineClaim | undefined => {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const { orchestrator, mode, picks, at, seat, seats, occupants } = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return undefined;
+  const { orchestrator, mode, picks, at, seat, seats, occupants } = raw;
   if (
     typeof orchestrator !== "string" ||
     orchestrator === "" ||
     orchestrator.length > 200 ||
-    typeof mode !== "string" ||
-    !MODES.has(mode) ||
+    !isMachineSharing(mode) ||
     typeof at !== "number" ||
     !Number.isSafeInteger(at)
   )
     return undefined;
-  const read =
-    typeof picks === "object" && picks !== null
-      ? Object.entries(picks as Record<string, unknown>)
-          .slice(0, 8)
-          .flatMap(([key, value]) =>
-            typeof value === "string" && value.length <= 64 ? [[key, value] as const] : [],
-          )
-      : [];
+  const read = Predicate.isObject(picks)
+    ? Object.entries(picks)
+        .slice(0, 8)
+        .flatMap(([key, value]) =>
+          typeof value === "string" && value.length <= 64 ? [[key, value] as const] : [],
+        )
+    : [];
   return {
     orchestrator,
-    mode: mode as MachineSharing,
+    mode,
     picks: Object.fromEntries(read),
     ...(typeof seat === "string" && seat.length <= 64 ? { seat } : {}),
     ...(seats === true ? { seats: true } : {}),
@@ -134,10 +133,11 @@ export const fileMachineClaims = (dataDir: string): MachineClaims => {
   let file: ReturnType<typeof privateJsonFile> | undefined;
   try {
     file = privateJsonFile(dataDir, CLAIMS_FILE, CLAIMS_FILE_MOST);
-    const read = file.read() as { version?: unknown; claims?: unknown } | undefined;
-    if (read?.version === 1 && Array.isArray(read.claims))
-      for (const each of read.claims.slice(0, CLAIMS_KEPT_MOST)) {
-        const name = (each as { name?: unknown } | null)?.name;
+    const read = fieldsOf(file.read());
+    const claims = read.get("claims");
+    if (read.get("version") === 1 && Array.isArray(claims))
+      for (const each of claims.slice(0, CLAIMS_KEPT_MOST)) {
+        const name = fieldsOf(each).get("name");
         const claim = readClaim(each);
         if (typeof name === "string" && claim !== undefined) kept.set(name, claim);
       }

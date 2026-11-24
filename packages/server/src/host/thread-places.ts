@@ -1,4 +1,5 @@
 import {
+  errnoCode,
   InvalidState,
   PROFILE_FILES_MAX,
   PROFILE_FILES_MAX_BYTES,
@@ -83,7 +84,7 @@ export const threadPlacesOnHost = (proc: ProcShape, clones: string): HostThreadP
           },
           catch: (cause) =>
             refuse(
-              (cause as { code?: unknown } | null)?.code === "EEXIST"
+              errnoCode(cause) === "EEXIST"
                 ? "This machine already has a folder for that thread."
                 : "This machine couldn't make the thread's folder.",
             ),

@@ -7,15 +7,15 @@ import {
   isCredentialPath,
   isLocalHost,
   LOCAL_HOST_ID,
-  OUTPUTS_PAGE,
-  OUTPUTS_PAGE_MAX,
+  OutputKind,
   outputKindOf,
   outputMediaType,
+  OUTPUTS_PAGE,
+  OUTPUTS_PAGE_MAX,
+  OutputSource,
   sessionHostOf,
-  type OutputKind,
-  type OutputSource,
   type Thread,
-  type ThreadId,
+  ThreadId,
   type WorkspaceId,
   type WorkspaceOutput,
   type WorkspaceOutputsPage,
@@ -42,6 +42,7 @@ import { ThreadStore } from "../persistence/thread-store.ts";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import type { ObservedOutput } from "./observed.ts";
+import * as Schema from "effect/Schema";
 
 const run = <A>(effect: Effect.Effect<A, SqlError>) =>
   effect.pipe(Effect.catch((error) => Effect.die(error)));
@@ -115,15 +116,21 @@ interface Row {
   readonly feature: string | null;
 }
 
-const toOutput = (row: Row): WorkspaceOutput => ({
+const isKind = Schema.is(OutputKind);
+const isSource = Schema.is(OutputSource);
+
+const toOutput = (row: Row): ReadonlyArray<WorkspaceOutput> =>
+  isKind(row.kind) && isSource(row.source) ? [outputOf(row, row.kind, row.source)] : [];
+
+const outputOf = (row: Row, kind: OutputKind, source: OutputSource): WorkspaceOutput => ({
   id: String(row.seq),
-  threadId: row.thread_id as ThreadId,
+  threadId: ThreadId.make(row.thread_id),
   threadTitle: row.title ?? "",
   orchestrator: row.role === "orchestrator",
   ...(row.feature === null ? {} : { feature: row.feature }),
   path: row.path,
-  kind: row.kind as OutputKind,
-  source: row.source as OutputSource,
+  kind,
+  source,
   mediaType: row.media_type,
   size: row.size,
   at: row.at,
@@ -354,7 +361,7 @@ export class WorkspaceOutputs extends Context.Service<WorkspaceOutputs, Workspac
           const page = rows.slice(0, limit);
           const last = page.at(-1);
           return {
-            outputs: page.map(toOutput),
+            outputs: page.flatMap(toOutput),
             ...(rows.length > limit && last !== undefined
               ? { next: cursorOf(last.at, last.seq) }
               : {}),

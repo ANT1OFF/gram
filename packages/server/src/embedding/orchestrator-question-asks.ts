@@ -1,4 +1,4 @@
-import type { MemoryQuestion, QuestionAnswer, WorkspaceId } from "@gram/contracts";
+import { type MemoryQuestion, type QuestionAnswer, WorkspaceId } from "@gram/contracts";
 import {
   ASK_OPTION_DESCRIPTION_MAX_CHARS,
   ASK_OPTION_LABEL_MAX_CHARS,
@@ -20,7 +20,7 @@ export const parseOrchestratorQuestionAskId = (
   const rest = id.slice(PREFIX.length);
   const at = rest.lastIndexOf(":");
   if (at <= 0 || at === rest.length - 1) return undefined;
-  return { workspaceId: rest.slice(0, at) as WorkspaceId, questionId: rest.slice(at + 1) };
+  return { workspaceId: WorkspaceId.make(rest.slice(0, at)), questionId: rest.slice(at + 1) };
 };
 
 /**

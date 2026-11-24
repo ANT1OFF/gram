@@ -13,7 +13,7 @@ import { createConnection, type Socket as NetSocket } from "node:net";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
-import { HostUnavailable, LOCAL_HOST_ID } from "@gram/contracts";
+import { errnoCode, HostUnavailable, LOCAL_HOST_ID } from "@gram/contracts";
 import { isStrictlyInside } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -463,7 +463,7 @@ const readCgroupProcs = (cgroup: string): string | undefined => {
   try {
     return readFileSync(join("/sys/fs/cgroup", cgroup, "cgroup.procs"), "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if (errnoCode(error) === "ENOENT") return undefined;
     throw error;
   }
 };
@@ -525,6 +525,7 @@ interface LockOwner {
 
 const lockOwner = (lock: string): LockOwner | undefined => {
   try {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the lock's owner file is one a Gram on this machine wrote; its identifying fields are checked next
     const owner = JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")) as LockOwner;
     return typeof owner.pid === "number" && typeof owner.nonce === "string" ? owner : undefined;
   } catch {
@@ -640,6 +641,7 @@ export const keptHostInstances = (registry: string): ReadonlyArray<KeptHostInsta
   for (const name of names) {
     if (!name.endsWith(".json")) continue;
     try {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the registry holds the files this module wrote; the fields it relies on are checked next
       const raw = JSON.parse(readFileSync(join(registry, name), "utf8")) as KeptHostInstance & {
         readonly runToken?: unknown;
       };

@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import {
   chmodSync,
   closeSync,
@@ -18,6 +19,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { isStrictlyInside } from "@gram/git";
 import { randomBytes } from "node:crypto";
+import * as Predicate from "effect/Predicate";
 
 /** What a joined machine keeps: where its main Gram is and who it is there. No secret. */
 export interface HostConfig {
@@ -151,7 +153,7 @@ const createPrivate = (home: string, name: string, text: string) => {
     try {
       linkSync(temporary, path);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (errnoCode(error) !== "EEXIST") throw error;
     }
     syncFolder(home);
   } finally {
@@ -165,7 +167,7 @@ const readPrivate = (home: string, name: string): string | undefined => {
   try {
     fd = openSync(join(home, name), constants.O_RDONLY | constants.O_NOFOLLOW);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if (errnoCode(error) === "ENOENT") return undefined;
     throw error;
   }
   try {
@@ -183,20 +185,20 @@ const readPrivate = (home: string, name: string): string | undefined => {
   }
 };
 
+const isHostConfig = (value: unknown): value is HostConfig =>
+  Predicate.isObject(value) &&
+  value["version"] === 1 &&
+  typeof value["origin"] === "string" &&
+  typeof value["hostId"] === "string" &&
+  typeof value["name"] === "string" &&
+  (value["provisioned"] === undefined || value["provisioned"] === true);
+
 export const readHostConfig = (home: string): HostConfig | undefined => {
   const text = readPrivate(home, CONFIG);
   if (text === undefined) return undefined;
-  const value = JSON.parse(text) as Partial<HostConfig> | null;
-  if (
-    value === null ||
-    value.version !== 1 ||
-    typeof value.origin !== "string" ||
-    typeof value.hostId !== "string" ||
-    typeof value.name !== "string" ||
-    (value.provisioned !== undefined && value.provisioned !== true)
-  )
-    throw new Error(`${join(home, CONFIG)} isn't a gram-host config.`);
-  return value as HostConfig;
+  const value: unknown = JSON.parse(text);
+  if (!isHostConfig(value)) throw new Error(`${join(home, CONFIG)} isn't a gram-host config.`);
+  return value;
 };
 
 export const readHostKey = (home: string): string | undefined => readPrivate(home, KEY);
@@ -280,7 +282,7 @@ const onOwnStorage = (home: string, repos: string): boolean => {
   try {
     return statSync(repos).dev !== statSync(home).dev;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== "ENOENT";
+    return errnoCode(error) !== "ENOENT";
   }
 };
 
@@ -316,7 +318,7 @@ const withLock = <A>(path: string, run: () => A): A => {
       mkdirSync(path, { mode: 0o700 });
       break;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (errnoCode(error) !== "EEXIST") throw error;
       let age = 0;
       try {
         age = Date.now() - lstatSync(path).mtimeMs;

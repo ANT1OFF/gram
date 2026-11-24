@@ -1,5 +1,6 @@
 import type { Diagnostics, Settings } from "@gram/contracts";
 import { redactSecrets, redactText } from "../logging/redact.ts";
+import * as Predicate from "effect/Predicate";
 
 export interface LogTail {
   /** `server` or `desktop`. */
@@ -62,8 +63,8 @@ export function formatLogLine(line: string): string {
   } catch {
     return redactText(line);
   }
-  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return redactText(line);
-  const record = entry as Record<string, unknown>;
+  if (!Predicate.isObject(entry)) return redactText(line);
+  const record = entry;
   const fields = Object.fromEntries(
     Object.entries(record).filter(([key]) => !STANDARD_FIELDS.has(key)),
   );

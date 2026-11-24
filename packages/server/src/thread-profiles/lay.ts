@@ -1,4 +1,4 @@
-import { InvalidState, type ProfileFile } from "@gram/contracts";
+import { errnoCode, InvalidState, type ProfileFile } from "@gram/contracts";
 import { git, Proc, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { appendFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -40,11 +40,7 @@ export const layProfileFiles = (
         }
       },
       catch: (cause) =>
-        refuse(
-          `The profile's files couldn't be written (${at}: ${
-            (cause as { code?: unknown } | null)?.code ?? "failed"
-          }).`,
-        ),
+        refuse(`The profile's files couldn't be written (${at}: ${errnoCode(cause) ?? "failed"}).`),
     });
     return laid;
   });

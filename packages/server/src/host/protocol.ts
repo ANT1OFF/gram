@@ -103,6 +103,7 @@ import type {
   Terminals,
   TerminalSnapshot,
 } from "../terminal/terminals.ts";
+import { defined } from "../defined.ts";
 
 /** A machine's worktrees, as a host serves them: the request's own options, all of them data. */
 export interface HostWorktrees {
@@ -257,15 +258,6 @@ const seenToWire = (seen: ConnectorsSeen) => ({
   whole: seen.whole,
   connectors: seen.connectors.map(connectorToWire),
 });
-
-type Defined<A> = {
-  [K in keyof A as undefined extends A[K] ? never : K]: A[K];
-} & {
-  [K in keyof A as undefined extends A[K] ? K : never]?: Exclude<A[K], undefined>;
-};
-
-const defined = <A extends object>(value: A): Defined<A> =>
-  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Defined<A>;
 
 const noFolders = new HostFailed({ message: "This host doesn't list its folders." });
 const noAppTools = new HostFailed({ message: "This host carries no app-tool calls." });
@@ -1325,7 +1317,8 @@ export const connectHost = (
           : stream.pipe(
               Stream.catch((error): Stream.Stream<never, Extract<E, NotFound> | HostUnavailable> =>
                 error instanceof NotFound
-                  ? Stream.fail(error as Extract<E, NotFound>)
+                  ? // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a NotFound from this stream is one of its own E's
+                    Stream.fail(error as Extract<E, NotFound>)
                   : Stream.fromEffect(
                       Effect.andThen(
                         markEnded(failureText(error)),
@@ -1568,6 +1561,7 @@ export const connectHost = (
           if (failure instanceof HostFailed)
             return Effect.fail(new HostFailed({ message: publicTokenRefusal(failure.message) }));
           if (cause.reasons.some(Cause.isInterruptReason) && failure === undefined)
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- an interruption with no failure carries no error to type
             return Effect.failCause(cause as Cause.Cause<never>);
           return Effect.logWarning("worker host: a token call wasn't answered").pipe(
             Effect.annotateLogs({
