@@ -37,7 +37,9 @@ import {
   usageHistoryEnabled,
   type Settings,
 } from "./settings.ts";
+import { MEMORY_UPDATE_KEYS, setMemoryUpdateCondition } from "./settings-chat-memory.ts";
 import {
+  memoryUpdateRuleOf,
   IdleCompactKind,
   idleCompactOf,
   autonomyOf,
@@ -45,12 +47,11 @@ import {
   WORKER_BRIEF_FOOTER_MAX,
   WORKER_MODEL_NOTE_MAX,
   WorkerBriefFooter,
-  workerPackingOf,
   type RosterModel,
   type WorkerModel,
   type WorkspaceState,
 } from "./workspaces.ts";
-import { decodeCharterScalar } from "./settings-chat-scalars.ts";
+import { decodeCharterScalar, PACKING_ROWS } from "./settings-chat-scalars.ts";
 import {
   ROUTINES_MAX,
   routineWhenText,
@@ -236,15 +237,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
     "Max concurrent workers",
     (w) => charterOf(w)?.maxConcurrentWorkers,
   ),
-  ws("workspace.workerPacking", "Where workers run by default", (w) =>
-    charterOf(w) === undefined ? undefined : workerPackingOf(charterOf(w)),
-  ),
-  ws(
-    "workspace.workersPerMachine",
-    "Most workers on one machine",
-    (w) => charterOf(w)?.workersPerMachine,
-    "what the machine's provider allows",
-  ),
+  ...PACKING_ROWS.map((row) => ws(row.key, row.label, (w) => row.read(charterOf(w)), row.unset)),
   ws(
     "workspace.pauseAtLimitPct",
     "Pause new workers at limit (%)",
@@ -254,11 +247,8 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
   ws("workspace.mergeReviewPolicy", "Merge review policy", (w) =>
     charterOf(w) === undefined ? undefined : (charterOf(w)?.mergeReviewPolicy ?? "bot"),
   ),
-  ws(
-    "workspace.automaticDreamThreshold",
-    "Automatic memory update after completions",
-    (w) => charterOf(w)?.automaticDreamThreshold,
-    "off",
+  ...Object.entries(MEMORY_UPDATE_KEYS).map(([key, { label, rule }]) =>
+    ws(key, label, (w) => memoryUpdateRuleOf(charterOf(w) ?? {})?.[rule], "off"),
   ),
   ws("workspace.idleAutoCompact", "Compact idle threads", (w) =>
     charterOf(w) === undefined ? undefined : idleCompactOf(charterOf(w)).enabled,
@@ -981,10 +971,15 @@ export const planSettingsChanges = (
         } else into[field] = [...new Set(decoded.success)];
         break;
       }
+      case "workspace.automaticDreamThreshold":
+      case "workspace.memoryUpdateEveryHours": {
+        const error = setMemoryUpdateCondition(into, key, value);
+        if (error !== undefined) errors.push(`${key}: ${error}`);
+        break;
+      }
       case "workspace.workerPacking":
       case "workspace.workersPerMachine":
-      case "workspace.pauseAtLimitPct":
-      case "workspace.automaticDreamThreshold": {
+      case "workspace.pauseAtLimitPct": {
         const decoded = decodeCharterScalar(key, value);
         if (!decoded.ok) errors.push(`${key}: ${decoded.expected}.`);
         else if (decoded.value === undefined) delete into[field];

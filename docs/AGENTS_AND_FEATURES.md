@@ -1458,11 +1458,21 @@ threads and imports stay.
 
 ### When it runs
 
-**Update now** on the Memory page runs one at once. `memoryUpdateEveryHours` (1 to 168; the page
-offers 1, 3, 6, 12 and 24) starts one that many hours after the last began, when something
-happened since and nothing holds it (a pause, a parked orchestrator, a worker the user is talking
-to, a run under way). In Review a draft waiting for review holds the schedule, so drafts don't pile
-up. The after-N-completed-threads trigger below still works and follows the workspace's mode.
+**Update now** on the Memory page runs one at once. An automatic update starts only when both
+conditions hold: at least `memoryUpdateEveryHours` (1 to 168, default 24) since the last update
+began, and at least `automaticDreamThreshold` (1 to 1000, default 50) new items since the last
+update's cursor. New items are what the update would read that is worth remembering: worker reports
+that say what they `learned`, merges, answered questions and finished threads. Progress reports
+without a lesson are left out: they are status, many to a thread, and the thread's finish and recap
+stand for them. Gram counts them from its own store, checking the time first, and calls no model to
+decide, so a workspace where little happens spends nothing on memory updates. Either field turns
+automatic updates on and the other takes its default (`memoryUpdateRuleOf`), so a charter saved
+with only the old schedule or only the old completed-thread threshold keeps running, now behind
+both; with neither, updates run when asked. Settings → Workspaces → Advanced edits both, the
+Memory page's Run picks the hours, and both show where each condition stands ("Next update after
+24 h and 50 new items: 7 h left, 38 of 50 so far"). A pause, a parked orchestrator, a worker the
+user is talking to, a run under way or an unavailable model holds it; in Review a draft waiting
+for review holds it too, so drafts don't pile up. The schedule is checked every 10 minutes.
 Source: [what it reads](../packages/server/src/orchestration/dream-recent.ts),
 [memory update service](../packages/server/src/orchestration/dreams.ts).
 
@@ -1497,24 +1507,9 @@ Source: [memory update support](../packages/agents/src/dream-support.ts),
 [support service](../packages/server/src/agent-support/service.ts),
 [memory update service](../packages/server/src/orchestration/dreams.ts).
 
-Automatic memory updates are off by default. Each workspace's settings page (Settings → Workspaces,
-then Advanced) can start a memory update after 1–1000 distinct completed worker or conversation threads (initial
-editable value 10). Completion means an agent/user completion mark or a merged PR;
-a reply ending or becoming idle does not count. Memory update and orchestrator threads and helper
-jobs do not contribute. Ordinary conversations follow the workspace's project inputs;
-workers belong to their owning workspace.
-
-Enabling or editing the threshold starts a fresh count without historical catch-up.
-Successful manual and automatic starts reset progress; failed or cancelled runs need
-fresh completed threads. Seen IDs survive restart and reopening while their live,
-closed or archived history is retained. A restart preserves recorded progress but does
-not count missed completions or replay a launch. Pauses, workers the user is talking to, running memory updates and
-unavailable selected models defer launch. Relevant external activity or settings changes
-recheck a deferred launch; no UI timer runs it. Progress and deferral appear beside the
-setting. Automatic launches take the workspace's memory update mode.
-Scheduling uses the memory update service's one start lock, with a durable claim before launch;
-exclusive coordination across independent server processes is not established.
-Source: [scheduler](../packages/server/src/orchestration/automatic-dream.ts).
+Automatic memory updates are off by default; turning them on in a workspace's settings starts
+with 24 hours and 50 new items. Source: [schedule](../packages/server/src/orchestration/dream-schedule.ts),
+[what it counts](../packages/server/src/orchestration/dream-recent-items.ts).
 
 ## Codex ownership and reopening
 

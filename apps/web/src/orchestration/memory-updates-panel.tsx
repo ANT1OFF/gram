@@ -3,6 +3,7 @@ import {
   type DreamId,
   type MemoryUpdateMode,
   memoryUpdateModeOf,
+  memoryUpdateRuleOf,
   type WorkspaceState,
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,8 +18,12 @@ import { cn } from "@/lib/utils";
 
 import { InlineConfirm } from "./inline-confirm";
 import { dreamWaitsForReview, lastRun, revertable } from "./memory-model";
+import { nextUpdateText } from "./memory-update-status";
 
-/** The schedules offered, in hours; absent runs none on a schedule. */
+/**
+ * The schedules offered, in hours; "when I ask" runs none by itself. Each also waits for enough new
+ * items, which Settings sets (`memoryUpdateRuleOf`).
+ */
 export const SCHEDULE_HOURS = [1, 3, 6, 12, 24] as const;
 
 const hoursText = (hours: number): string => (hours === 1 ? "hour" : `${hours} hours`);
@@ -56,7 +61,8 @@ export function MemoryUpdatesPanel({
   const ref = useRef<HTMLDivElement>(null);
   const now = useNow(true, ref, 30_000);
   const mode = memoryUpdateModeOf(state.charter);
-  const every = state.charter.memoryUpdateEveryHours;
+  const rule = memoryUpdateRuleOf(state.charter);
+  const every = rule?.everyHours;
   const [confirmAuto, setConfirmAuto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -65,6 +71,12 @@ export function MemoryUpdatesPanel({
   const [reverted, setReverted] = useState(false);
   const modeLabel = useId();
   const scheduleId = useId();
+  const automatic = useQuery({
+    queryKey: ["automaticDreamStatus", workspaceId],
+    queryFn: () => api.automaticDreamStatus(workspaceId),
+    enabled: rule !== undefined,
+    retry: false,
+  });
   const versions = useQuery({
     queryKey: ["memory", workspaceId, "versions"],
     queryFn: () => api.listMemoryVersions(workspaceId),
@@ -81,13 +93,18 @@ export function MemoryUpdatesPanel({
       queryClient.invalidateQueries({ queryKey: ["workspaces"] }),
       queryClient.invalidateQueries({ queryKey: ["dreams", workspaceId] }),
       queryClient.invalidateQueries({ queryKey: ["memory", workspaceId] }),
+      queryClient.invalidateQueries({ queryKey: ["automaticDreamStatus", workspaceId] }),
     ]);
 
-  const save = (change: Partial<WorkspaceState["charter"]>, drop?: "memoryUpdateEveryHours") => {
+  const save = (change: Partial<WorkspaceState["charter"]>, dropAutomaticRule = false) => {
     setSaving(true);
     setError(undefined);
-    const { memoryUpdateEveryHours: _every, ...rest } = state.charter;
-    const base = drop === undefined ? state.charter : rest;
+    const {
+      memoryUpdateEveryHours: _every,
+      automaticDreamThreshold: _items,
+      ...rest
+    } = state.charter;
+    const base = dropAutomaticRule ? rest : state.charter;
     api
       .setOrchestratorCharter(workspaceId, { ...base, ...change })
       .then(refresh)
@@ -180,12 +197,17 @@ export function MemoryUpdatesPanel({
             disabled={saving}
             onChange={(event) =>
               event.target.value === ""
-                ? save({}, "memoryUpdateEveryHours")
+                ? save({}, true)
                 : save({ memoryUpdateEveryHours: Number(event.target.value) })
             }
           >
             <option value="">when I ask</option>
-            {SCHEDULE_HOURS.map((hours) => (
+            {[
+              ...SCHEDULE_HOURS,
+              ...(every === undefined || (SCHEDULE_HOURS as readonly number[]).includes(every)
+                ? []
+                : [every]),
+            ].map((hours) => (
               <option key={hours} value={String(hours)}>
                 every {hoursText(hours)}
               </option>
@@ -206,10 +228,12 @@ export function MemoryUpdatesPanel({
       <p data-testid="memory-update-mode-note" className="text-meta text-description">
         {MODE_TEXT[mode].note} An update reads what happened since the last one: workers' reports,
         merges, answered questions and each finished thread's recap, never whole transcripts.
-        {every === undefined
-          ? ""
-          : ` It runs every ${hoursText(every)} when something happened since the last.`}
       </p>
+      {rule !== undefined && automatic.data !== undefined && (
+        <p data-testid="memory-update-next" className="text-meta text-muted-foreground">
+          {`${nextUpdateText(automatic.data, now) ?? ""} ${automatic.data.detail}`.trim()}
+        </p>
+      )}
       <InlineConfirm
         open={confirmAuto}
         label="Switch memory updates to Auto?"

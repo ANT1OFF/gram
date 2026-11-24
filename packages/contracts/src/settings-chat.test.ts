@@ -446,6 +446,24 @@ describe("settings by chat: applying", () => {
   ]);
   if (!limit.ok) throw new Error("expected a plan");
 
+  it("turns automatic memory updates off by clearing both of their conditions", () => {
+    const on: SettingsWorld = {
+      ...world,
+      workspace: {
+        ...workspace,
+        charter: { ...workspace.charter, memoryUpdateEveryHours: 24, automaticDreamThreshold: 50 },
+      },
+    };
+    for (const key of ["workspace.memoryUpdateEveryHours", "workspace.automaticDreamThreshold"]) {
+      const after = charterAfter(plan([{ op: "set", key, value: null }], on), on);
+      expect(after, key).not.toHaveProperty("memoryUpdateEveryHours");
+      expect(after, key).not.toHaveProperty("automaticDreamThreshold");
+    }
+    expect(
+      errorsOf([{ op: "set", key: "workspace.memoryUpdateEveryHours", value: 169 }]),
+    ).toContain("1 to 168");
+  });
+
   it("writes only the fields named, onto the charter as it stands now", () => {
     // Review P1: the user lowered autonomy while the card waited; the approved write keeps it.
     const now = {
@@ -895,9 +913,6 @@ describe("settings by chat: where workers run by default", () => {
   it("still clears and checks the keys that share their decoder", () => {
     expect(errorsOf([{ op: "set", key: "workspace.pauseAtLimitPct", value: 101 }])).toContain(
       "whole percent from 1 to 100",
-    );
-    expect(errorsOf([{ op: "set", key: "workspace.automaticDreamThreshold", value: 0 }])).toContain(
-      "from 1 to 1000",
     );
     const set = plan([{ op: "set", key: "workspace.pauseAtLimitPct", value: 80 }]);
     expect(charterAfter(set)?.pauseAtLimitPct).toBe(80);

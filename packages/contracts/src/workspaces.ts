@@ -317,10 +317,7 @@ export const narrowAllowlist = (
   ...new Set([...a.filter((entry) => coveredBy(b, entry)), ...b.filter((e) => coveredBy(a, e))]),
 ];
 
-/**
- * What the user lets an orchestrator do. The one limit is how many workers run at once: what an
- * orchestrator spends, and for how long, is bounded by the user's provider, not by Gram.
- */
+/** How many new items (see `memoryUpdateRuleOf`) an automatic memory update waits for. */
 export const AutomaticDreamThreshold = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: 1000 }),
 );
@@ -337,6 +334,39 @@ export type MemoryUpdateMode = typeof MemoryUpdateMode.Type;
 export const MemoryUpdateEveryHours = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: 168 }),
 );
+
+/** Hours between automatic memory updates when a charter sets only the item minimum. */
+export const DEFAULT_MEMORY_UPDATE_EVERY_HOURS = 24;
+
+/** New items an automatic memory update waits for when a charter sets only the hours. */
+export const DEFAULT_MEMORY_UPDATE_MIN_ITEMS = 50;
+
+/** When automatic memory updates run: both conditions must hold. */
+export interface MemoryUpdateRule {
+  /** At least this many hours since the last memory update began. */
+  readonly everyHours: number;
+  /**
+   * At least this many new items since the last update's cursor: worker reports that say what they
+   * learned, merges, answered questions and finished threads.
+   */
+  readonly minItems: number;
+}
+
+/**
+ * A charter's automatic memory update rule, or undefined when updates run only when asked. Either
+ * field turns them on and the other takes its default, so a charter saved with only the old
+ * completed-thread threshold or only the old schedule still runs updates, now behind both.
+ */
+export const memoryUpdateRuleOf = (charter: {
+  readonly memoryUpdateEveryHours?: number | undefined;
+  readonly automaticDreamThreshold?: number | undefined;
+}): MemoryUpdateRule | undefined =>
+  charter.memoryUpdateEveryHours === undefined && charter.automaticDreamThreshold === undefined
+    ? undefined
+    : {
+        everyHours: charter.memoryUpdateEveryHours ?? DEFAULT_MEMORY_UPDATE_EVERY_HOURS,
+        minItems: charter.automaticDreamThreshold ?? DEFAULT_MEMORY_UPDATE_MIN_ITEMS,
+      };
 
 /** A charter's memory update mode; absent is review. */
 export const memoryUpdateModeOf = (
@@ -370,14 +400,22 @@ export const WorkersPerMachine = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: WORKERS_PER_MACHINE_MAX }),
 );
 
+/**
+ * What the user lets an orchestrator do. The one limit is how many workers run at once: what an
+ * orchestrator spends, and for how long, is bounded by the user's provider, not by Gram.
+ */
 export const OrchestratorCharter = Schema.Struct({
-  /** Absent disables automatic launch. Every edit starts a fresh completion count. */
+  /**
+   * The new items (reports that say what they learned, merges, answered questions, finished
+   * threads) an automatic memory update waits for, alongside `memoryUpdateEveryHours`. Read both
+   * through `memoryUpdateRuleOf`; with both absent, updates run only when asked.
+   */
   automaticDreamThreshold: Schema.optionalKey(AutomaticDreamThreshold),
   /** How memory updates land; absent is review. Read it through `memoryUpdateModeOf`. */
   memoryUpdateMode: Schema.optionalKey(MemoryUpdateMode),
   /**
-   * Start a memory update this many hours after the last one began, when something new has been
-   * reported since. Absent runs none on a schedule.
+   * The hours an automatic memory update waits after the last began, alongside
+   * `automaticDreamThreshold`. Read both through `memoryUpdateRuleOf`.
    */
   memoryUpdateEveryHours: Schema.optionalKey(MemoryUpdateEveryHours),
   /** Spawning beyond this asks the user first. */

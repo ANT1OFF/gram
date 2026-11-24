@@ -618,7 +618,7 @@ test("Auto discards the waiting drafts once confirmed, runs on a schedule, and R
   await expect(dreams.getByTestId("dream-ready")).toHaveCount(0);
 
   await panel.getByTestId("memory-update-schedule").selectOption("6");
-  await expect(panel.getByTestId("memory-update-mode-note")).toContainText("every 6 hours");
+  await expect(panel.getByTestId("memory-update-next")).toContainText("after 6 h");
 
   // The last update applied itself; Revert takes memory back to the version before it.
   const last = panel.getByTestId("memory-update-last");

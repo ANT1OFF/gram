@@ -2,9 +2,10 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { WORKERS_PER_MACHINE_MAX } from "./worker-packing.ts";
 import {
-  AutomaticDreamThreshold,
+  type OrchestratorCharter,
   PauseAtLimitPct,
   WorkerPackingDefault,
+  workerPackingOf,
   WorkersPerMachine,
 } from "./workspaces.ts";
 
@@ -17,10 +18,6 @@ const SCALARS: Readonly<
   "workspace.pauseAtLimitPct": {
     schema: PauseAtLimitPct,
     expected: "expected a whole percent from 1 to 100, or null for never",
-  },
-  "workspace.automaticDreamThreshold": {
-    schema: AutomaticDreamThreshold,
-    expected: "expected a whole number from 1 to 1000, or null for off",
   },
   "workspace.workerPacking": {
     schema: WorkerPackingDefault,
@@ -55,3 +52,23 @@ export const decodeCharterScalar = (
     ? { ok: false, expected: scalar.expected }
     : { ok: true, value: decoded.success };
 };
+
+/** The catalogue rows for where a workspace's workers run: each key, its label and how it reads. */
+export const PACKING_ROWS: ReadonlyArray<{
+  readonly key: string;
+  readonly label: string;
+  readonly read: (charter: OrchestratorCharter | undefined) => unknown;
+  readonly unset?: string;
+}> = [
+  {
+    key: "workspace.workerPacking",
+    label: "Where workers run by default",
+    read: (charter) => (charter === undefined ? undefined : workerPackingOf(charter)),
+  },
+  {
+    key: "workspace.workersPerMachine",
+    label: "Most workers on one machine",
+    read: (charter) => charter?.workersPerMachine,
+    unset: "what the machine's provider allows",
+  },
+];

@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import {
   DEFAULT_CHARTER,
+  DEFAULT_MEMORY_UPDATE_EVERY_HOURS,
+  DEFAULT_MEMORY_UPDATE_MIN_ITEMS,
   DEFAULT_SETTINGS,
   type OrchestratorCharter,
   type ProjectId,
@@ -131,7 +133,7 @@ describe("a workspace charter save", () => {
     renderWithRouter(<WorkspaceSettingsPage workspaceId={workspace.workspace.id} />, {
       listWorkspaces: async () => [workspace],
       listProjects: async () => [],
-      automaticDreamStatus: async () => ({ threshold: 10, completed: 0, detail: "Waiting." }),
+      automaticDreamStatus: async () => ({ threshold: 50, completed: 0, detail: "Waiting." }),
       setOrchestratorCharter,
     });
     // Dream sits under More options on the workspace's own page.
@@ -141,13 +143,14 @@ describe("a workspace charter save", () => {
     fireEvent.click(await dream());
     expect(setOrchestratorCharter).toHaveBeenCalledWith("w1", {
       ...DEFAULT_CHARTER,
-      automaticDreamThreshold: 10,
+      memoryUpdateEveryHours: DEFAULT_MEMORY_UPDATE_EVERY_HOURS,
+      automaticDreamThreshold: DEFAULT_MEMORY_UPDATE_MIN_ITEMS,
     });
-    // Before the save answers, the switch and its threshold already show the choice.
+    // Before the save answers, the switch and its minimum already show the choice.
     expect((await dream()).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("spinbutton", { name: "Threads per memory update" })).toHaveProperty(
+    expect(screen.getByRole("spinbutton", { name: "New items per update" })).toHaveProperty(
       "value",
-      "10",
+      String(DEFAULT_MEMORY_UPDATE_MIN_ITEMS),
     );
 
     refuse?.(new Error("Charter refused."));
