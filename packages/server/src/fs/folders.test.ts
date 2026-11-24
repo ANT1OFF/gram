@@ -418,19 +418,21 @@ describe("cloneRepo", () => {
     }),
   );
 
-  it.effect("clones any other URL with git, after `--` and held to https and ssh", () =>
-    Effect.gen(function* () {
-      const root = yield* tempTree;
-      const calls: Array<Call> = [];
-      const url = "git@organization.example.invalid:team/tool.git";
-      yield* clone(fakeStore().store, fakeProc(calls), url, root);
-      expect(calls[0]).toMatchObject({
-        bin: "git",
-        args: ["clone", "--", url, expect.stringContaining(".tool.clone-")],
-        env: { GIT_ALLOW_PROTOCOL: "https:ssh" },
-      });
-      expect(readdirSync(join(root, "tool"))).toContain(".git");
-    }),
+  it.effect(
+    "clones any other URL with git, after `--end-of-options` and held to https and ssh",
+    () =>
+      Effect.gen(function* () {
+        const root = yield* tempTree;
+        const calls: Array<Call> = [];
+        const url = "git@organization.example.invalid:team/tool.git";
+        yield* clone(fakeStore().store, fakeProc(calls), url, root);
+        expect(calls[0]).toMatchObject({
+          bin: "git",
+          args: ["clone", "--end-of-options", url, expect.stringContaining(".tool.clone-")],
+          env: { GIT_ALLOW_PROTOCOL: "https:ssh" },
+        });
+        expect(readdirSync(join(root, "tool"))).toContain(".git");
+      }),
   );
 
   it.effect("adopts a clone of the same repository already there, however it was spelled", () =>
