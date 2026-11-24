@@ -85,7 +85,9 @@
    box in a padded box, under a band that holds the language and the copy and download buttons.
    Only the inner frame stays, the code's or the table's own; the band is gone, and the buttons
    float at the block's corner while the pointer or focus is in it, as a message's own actions do.
-   On touch, where nothing hovers, they stay in sight. Unlayered, so it wins over the utilities
+   A block a scroll slides under a resting pointer doesn't count as pointed at, so scrolling past
+   code and tables doesn't flash their buttons (lib/scroll-under-pointer.ts). On touch, where
+   nothing hovers, they stay in sight. Unlayered, so it wins over the utilities
    streamdown's markup carries. The table's full-screen view (`role="presentation"`) keeps its bar. */
 :is([data-streamdown="code-block"], [data-streamdown="table-wrapper"]:not([role="presentation"])) {
   position: relative;
@@ -114,8 +116,14 @@
     opacity: 0;
     transition: opacity var(--dur-fast);
   }
-  [data-streamdown="code-block"]:is(:hover, :focus-within) [data-streamdown="code-block-actions"],
-  [data-streamdown="table-wrapper"]:not([role="presentation"]):is(:hover, :focus-within)
+  :root:not([data-scrolled-under-pointer])
+    [data-streamdown="code-block"]:hover
+    [data-streamdown="code-block-actions"],
+  [data-streamdown="code-block"]:focus-within [data-streamdown="code-block-actions"],
+  :root:not([data-scrolled-under-pointer])
+    [data-streamdown="table-wrapper"]:not([role="presentation"]):hover
+    > div:first-child:not(:last-child),
+  [data-streamdown="table-wrapper"]:not([role="presentation"]):focus-within
     > div:first-child:not(:last-child) {
     opacity: 1;
   }
