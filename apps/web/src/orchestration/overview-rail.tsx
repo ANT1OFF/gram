@@ -12,7 +12,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Hint } from "@/components/hint";
 import { useWindowLights } from "@/desktop/window-lights";
 import { useHostAttention } from "@/embed/attention";
-import { EmbedRailNavigation, EmbedSwitcher, RAIL_TILE } from "@/embed/slots";
+import { EmbedRailAccount, EmbedRailNavigation, EmbedSwitcher, RAIL_TILE } from "@/embed/slots";
 import { useEmbedShell, useThreadsListed } from "@/embed/store";
 import { StripOpen, useStripOpen } from "@/embed/strip-open";
 import { useHistoryStore } from "@/history/history-view";
@@ -479,6 +479,7 @@ function StripFoot() {
         hintSide="top"
         className="flex-col [:where(&)_svg]:text-sidebar-icon"
       />
+      <EmbedRailAccount />
     </div>
   );
 }
