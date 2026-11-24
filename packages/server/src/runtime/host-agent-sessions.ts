@@ -67,6 +67,29 @@ export const machineReplacedEnded = (machine: string): AgentEvent => ({
   lostMachine: machine,
 });
 
+/**
+ * The event a joined machine's session ends with when the machine was being replaced and came back
+ * on the same disk without the session: the conversation carries on there, as after a restart.
+ */
+export const machineMovedEnded = (machine: string): AgentEvent => ({
+  type: "ended",
+  reason: `${machine} was replaced, and the agent stopped with it.`,
+  restartedMachine: machine,
+  moved: true,
+});
+
+/**
+ * The event a joined machine's session ends with when the machine was being replaced and didn't
+ * come back within the time a move is waited for.
+ */
+export const machineMoveTimedOutEnded = (machine: string, withinMs: number): AgentEvent => ({
+  type: "ended",
+  reason: `${machine} was being replaced and didn't come back within ${Math.round(
+    withinMs / 60_000,
+  )} minutes, so the agent stopped with it.`,
+  lostMachine: machine,
+});
+
 /** The event a joined machine's session ends with when the machine didn't come back in time. */
 export const machineAwayEnded = (machine: string): AgentEvent => ({
   type: "ended",
@@ -75,6 +98,9 @@ export const machineAwayEnded = (machine: string): AgentEvent => ({
   )} minutes, so the agent stopped with it.`,
   lostMachine: machine,
 });
+
+const awayEnded = (machine: string, moved: number | undefined): AgentEvent =>
+  moved === undefined ? machineAwayEnded(machine) : machineMoveTimedOutEnded(machine, moved);
 
 /**
  * Whether a session can open in the host process. What can't cross as data keeps it in the server:
@@ -300,6 +326,8 @@ const openOnHost = (
       host.events(handle, received).pipe(
         Stream.map((next) => {
           received = next.seq;
+          if (next.event.type === "machineMoving" && machine !== undefined)
+            return { ...next.event, machine };
           read += 1;
           if (keep !== undefined) {
             inTurn = turnStateAfter(next.event, inTurn);
@@ -316,8 +344,10 @@ const openOnHost = (
               : error._tag === "NotFound"
                 ? host.replaced?.(handle) === true
                   ? machineReplacedEnded(machine)
-                  : machineRestartedEnded(machine)
-                : machineAwayEnded(machine),
+                  : host.moved?.(handle) !== undefined
+                    ? machineMovedEnded(machine)
+                    : machineRestartedEnded(machine)
+                : awayEnded(machine, host.moved?.(handle)),
           ),
         ),
         Stream.ensuring(Deferred.succeed(over, undefined)),

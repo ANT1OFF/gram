@@ -45,6 +45,18 @@ export const MACHINES_STOP_RESUME_PATH = "/machines/stop/resume";
  * for its resume, as after a stop this Gram saw, so none opens before its folders are back.
  */
 export const MACHINES_STOP_EXPECT_PATH = "/machines/stop/expect";
+/**
+ * Says a machine is being replaced and is expected back on the same disk (its compute reclaimed or
+ * drained, a VM moved): `{ id, cause?, withinMs? }`. A session of it whose agent or connection goes
+ * waits up to `withinMs` (one minute to four hours; `GRAM_MACHINE_MOVE_MINUTES`, or 20 minutes, when
+ * left out) for it to come back, showing that it is moving, and carries on there by itself. Held
+ * until a host of it dials in again. Say it as soon as the loss is known, before or after the host
+ * went: a session that already gave up isn't brought back.
+ */
+export const MACHINES_STOP_MOVING_PATH = "/machines/stop/moving";
+/** The shortest and longest `withinMs` a move may be waited for. */
+export const MOVING_WITHIN_MIN_MS = 60_000;
+export const MOVING_WITHIN_MAX_MS = 4 * 60 * 60_000;
 
 /**
  * Starts a machine's resume as a job (`docs/design/long-steps-as-jobs.md`): the resume's body and
@@ -63,6 +75,7 @@ export const HOST_STOP_PATHS: ReadonlySet<string> = new Set([
   MACHINES_STOP_CANCEL_PATH,
   MACHINES_STOP_RESUME_PATH,
   MACHINES_STOP_EXPECT_PATH,
+  MACHINES_STOP_MOVING_PATH,
   MACHINES_STOP_RESUME_START_PATH,
   MACHINES_STOP_PREPARE_START_PATH,
   MACHINES_JOBS_GET_PATH,
@@ -158,7 +171,7 @@ const answerOf = (job: MachineJob | undefined) =>
  */
 export const hostStopRoute = (
   deps: StopResumeDeps & {
-    readonly hosts: Pick<RemoteHostsShape, "providerSaid">;
+    readonly hosts: Pick<RemoteHostsShape, "providerSaid" | "moves">;
     readonly settings: Pick<ThreadStore["Service"], "getSettings">;
     readonly jobs: MachineJobs;
   },
@@ -262,6 +275,22 @@ export const hostStopRoute = (
         }
         tellProviderCause("starting");
         return json({ ok: true });
+      case MACHINES_STOP_MOVING_PATH: {
+        const withinMs = body["withinMs"];
+        if (
+          withinMs !== undefined &&
+          (!Number.isSafeInteger(withinMs) ||
+            (withinMs as number) < MOVING_WITHIN_MIN_MS ||
+            (withinMs as number) > MOVING_WITHIN_MAX_MS)
+        )
+          return refuse("bad request", 400);
+        deps.hosts.moves.said(hostId, withinMs as number | undefined);
+        tellProviderCause("starting");
+        yield* Effect.logInfo("machines: a machine is being replaced, its sessions wait for it").pipe(
+          Effect.annotateLogs({ hostId, ...(cause === undefined ? {} : { cause }) }),
+        );
+        return json({ ok: true });
+      }
       case MACHINES_STOP_RESUME_PATH: {
         const kept = keptOfBody();
         const fromBranch = fromBranchOfBody();

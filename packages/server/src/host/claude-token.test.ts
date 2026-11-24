@@ -388,6 +388,7 @@ const fakeHosts = (
   const hosts: RemoteHostsShape = {
     machines,
     stops: makeStopMarks(),
+    moves: { said: () => {}, of: () => undefined },
     connection: (id) =>
       online.has(id)
         ? Effect.succeed({ claude } as unknown as HostConnection)

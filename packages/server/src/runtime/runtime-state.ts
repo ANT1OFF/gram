@@ -223,13 +223,21 @@ export interface Runtime {
   endedReason: string | undefined;
   /** The joined machine the session's `ended` said restarted under it (`EndedEvent.restartedMachine`). */
   restartedMachine: string | undefined;
+  /** With `restartedMachine`: the machine was replaced rather than restarted (`EndedEvent.moved`). */
+  machineMoved: boolean;
   /** The joined machine the session's `ended` said was lost under it (`EndedEvent.lostMachine`). */
   lostMachine: string | undefined;
   /**
    * The joined machine whose restart the next session to open resumes after, so it puts that in the
    * transcript; and whether a cut turn is continued or only the queue goes on.
    */
-  machineRestart: { readonly machine: string; readonly continued: "turn" | "queue" } | undefined;
+  machineRestart:
+    | {
+        readonly machine: string;
+        readonly continued: "turn" | "queue";
+        readonly moved?: true;
+      }
+    | undefined;
   /** The turn the user asked to stop, which a machine restart under it never continues. */
   stopAsked: TurnId | undefined;
   /**

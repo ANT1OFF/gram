@@ -24,6 +24,8 @@ import {
   type AfterMachineRestart,
   afterMachineRestart,
   MACHINE_RESTART_KEY,
+  machineMovedText,
+  machineMovedToolText,
   machineRestartText,
   machineRestartToolText,
 } from "./machine-restart.ts";
@@ -237,7 +239,9 @@ export const makeSessionLifecycle = ({
   ): Effect.Effect<AfterMachineRestart | undefined> =>
     Effect.gen(function* () {
       const machine = rt.restartedMachine;
+      const moved = rt.machineMoved;
       rt.restartedMachine = undefined;
+      rt.machineMoved = false;
       if (
         machine === undefined ||
         stopping !== undefined ||
@@ -253,6 +257,7 @@ export const makeSessionLifecycle = ({
         (yield* store.listRequests(rt.threadId)).length > 0;
       const { next, recent } = afterMachineRestart({
         machine,
+        moved,
         turnCut,
         turnOpen: turn !== undefined,
         stopAsked:
@@ -263,7 +268,11 @@ export const makeSessionLifecycle = ({
         now: yield* Clock.currentTimeMillis,
       });
       machineContinuations.set(rt.threadId, recent);
-      yield* Effect.logInfo("a joined machine restarted under a session").pipe(
+      yield* Effect.logInfo(
+        moved
+          ? "a joined machine was replaced under a session"
+          : "a joined machine restarted under a session",
+      ).pipe(
         Effect.annotateLogs({ threadId: rt.threadId, outcome: next.kind }),
       );
       return next;
@@ -328,6 +337,20 @@ export const makeSessionLifecycle = ({
     FiberMap.run(folderStops, rt.threadId, stopInMissing(rt), { onlyIfMissing: true }).pipe(
       Effect.asVoid,
     );
+
+  /** The session no longer waits for its machine to move: the move's notice goes. */
+  const endMachineMove = (rt: Runtime) =>
+    Effect.gen(function* () {
+      const thread = yield* store.getThread(rt.threadId).pipe(Effect.option);
+      if (Option.isNone(thread) || thread.value.machineMove === undefined) return;
+      const next = yield* store
+        .updateThread(rt.threadId, (current) => {
+          const { machineMove: _, ...rest } = current;
+          return rest;
+        })
+        .pipe(Effect.orDie);
+      yield* publishUpsert(next);
+    });
 
   const handleSessionExit = (rt: Runtime, exit: Exit.Exit<void, AgentUnavailable>) =>
     locked(
@@ -403,7 +426,9 @@ export const makeSessionLifecycle = ({
                   : inFlight.accumulator.unfinishedTools();
               const errorText =
                 restart !== undefined
-                  ? machineRestartToolText(restart.machine)
+                  ? restart.kind === "continue" && restart.moved === true
+                    ? machineMovedToolText(restart.machine)
+                    : machineRestartToolText(restart.machine)
                   : lostMachine !== undefined
                     ? machineLostToolText(lostMachine)
                     : "";
@@ -420,6 +445,7 @@ export const makeSessionLifecycle = ({
           }),
         );
         yield* setLapsedConnectors(rt, []);
+        yield* endMachineMove(rt);
         yield* setRetrying(rt, false);
         const turnId = rt.turn?.id;
         const endedMidTurn = stopping === undefined && turnId !== undefined;
@@ -493,13 +519,23 @@ export const makeSessionLifecycle = ({
                 const id = makeQueueItemId();
                 rt.queue.unshift({
                   id,
-                  input: { text: machineRestartText(restart.machine), author: "server" },
+                  input: {
+                    text:
+                      restart.moved === true
+                        ? machineMovedText(restart.machine)
+                        : machineRestartText(restart.machine),
+                    author: "server",
+                  },
                 });
                 rt.noticeKeys.set(id, MACHINE_RESTART_KEY);
                 rt.actors.set(id, "server");
                 yield* syncQueue(rt);
               }
-              rt.machineRestart = { machine: restart.machine, continued: restart.continued };
+              rt.machineRestart = {
+                machine: restart.machine,
+                continued: restart.continued,
+                ...(restart.moved === true ? { moved: true as const } : {}),
+              };
               yield* setStatus(rt, "starting");
               const ended = FiberMap.getUnsafe(sessions, rt.threadId);
               yield* FiberMap.run(recoveries, rt.threadId, resumeAfterRestart(rt, ended));

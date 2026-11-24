@@ -420,6 +420,7 @@ const make = Effect.gen(function* () {
             reserved: false,
             endedReason: undefined,
             restartedMachine: undefined,
+            machineMoved: false,
             lostMachine: undefined,
             machineRestart: undefined,
             stopAsked: undefined,
@@ -607,6 +608,22 @@ const make = Effect.gen(function* () {
     pumpDeliveries: (rt) => pumpDeliveries(rt),
     reopenWhenIdle: (rt) => reopenWhenIdle(rt),
   });
+
+  // A move's notice says a session waits for its machine; a session doesn't outlive this process,
+  // so one a restart of Gram cut off is gone. Its thread opens again with its next input.
+  yield* Effect.forEach(
+    (yield* store.listThreads.pipe(Effect.orElseSucceed(() => []))).filter(
+      (thread) => thread.machineMove !== undefined,
+    ),
+    (thread) =>
+      store
+        .updateThread(thread.id, (current) => {
+          const { machineMove: _, ...rest } = current;
+          return rest;
+        })
+        .pipe(Effect.ignore),
+    { discard: true },
+  );
 
   if (Option.isSome(limitReadings)) {
     yield* limitReadings.value.changes.pipe(
