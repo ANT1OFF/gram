@@ -83,7 +83,10 @@ export const TranscriptReadAppToolsLive = Layer.effectDiscard(
           (dream) =>
             dream.threadId === caller &&
             dream.status === "running" &&
-            dream.filesClosedAt === undefined,
+            dream.filesClosedAt === undefined &&
+            // One that reads what happened since the last update reads no transcript: its cost
+            // follows what is new, so the transcripts are closed to it.
+            dream.inputs.recent === undefined,
         );
         return running ? workspaceId : undefined;
       });

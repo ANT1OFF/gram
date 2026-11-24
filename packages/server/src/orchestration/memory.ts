@@ -51,7 +51,7 @@ export const MEMORY_DIFF_MAX_BYTES = 8 * 1024;
 const MEMORY_READ_MAX_BYTES = 256 * 1024;
 
 /** Adopted versions kept besides the current one; older ones are pruned at the next adoption. */
-export const MEMORY_VERSIONS_KEEP = 5;
+export const MEMORY_VERSIONS_KEEP = 20;
 
 const FIRST_VERSION = "0001";
 const HISTORY_DIR = ".history";
@@ -148,7 +148,54 @@ export interface MemoryVersion {
   readonly files: number;
   /** Whether `CURRENT` names it. */
   readonly current: boolean;
+  /** What made it, when a memory update did and said so (`MemoryVersionSource`). */
+  readonly source?: MemoryVersionSource | undefined;
+  /** The version it was made from. */
+  readonly basedOn?: string | undefined;
 }
+
+/** The memory update a version came from, kept beside it so History can say so. */
+export interface MemoryVersionSource {
+  readonly dreamId: string;
+  readonly mode: "review" | "auto";
+  /** Its one line on what it changed. */
+  readonly summary?: string | undefined;
+}
+
+const SOURCE_SUMMARY_MAX = 300;
+
+/** A version's `.adopted` note, as far as it can be read; nothing for a hand-edited one. */
+const adoptedNote = (
+  text: string,
+): { adoptedAt?: number; basedOn?: string; source?: MemoryVersionSource } => {
+  try {
+    const note = JSON.parse(text) as Record<string, unknown>;
+    const out: { adoptedAt?: number; basedOn?: string; source?: MemoryVersionSource } = {};
+    if (typeof note["adoptedAt"] === "number" && Number.isFinite(note["adoptedAt"]))
+      out.adoptedAt = note["adoptedAt"];
+    if (typeof note["basedOn"] === "string" && VERSION.test(note["basedOn"]))
+      out.basedOn = note["basedOn"];
+    const source = note["source"] as Record<string, unknown> | undefined;
+    if (
+      typeof source === "object" &&
+      source !== null &&
+      typeof source["dreamId"] === "string" &&
+      /^[A-Za-z0-9-]{8,64}$/.test(source["dreamId"]) &&
+      (source["mode"] === "review" || source["mode"] === "auto")
+    ) {
+      out.source = {
+        dreamId: source["dreamId"],
+        mode: source["mode"],
+        ...(typeof source["summary"] === "string"
+          ? { summary: redactText(source["summary"]).slice(0, SOURCE_SUMMARY_MAX) }
+          : {}),
+      };
+    }
+    return out;
+  } catch (_handEditedIntoSomethingElse) {
+    return {};
+  }
+};
 
 /** The current version by content hash, to tell later which files were written since. */
 export interface MemorySnapshot {
@@ -249,7 +296,12 @@ export interface OrchestrationMemoryShape {
   adopt(
     workspaceId: string,
     files: ReadonlyArray<MemorySetFile>,
-    options?: { readonly basedOn: string; readonly basedOnDigest?: string },
+    options?: {
+      readonly basedOn: string;
+      readonly basedOnDigest?: string;
+      /** The memory update it comes from, kept in the version's `.adopted` note. */
+      readonly source?: MemoryVersionSource;
+    },
   ): Effect.Effect<string, MemoryError>;
   /** Points `CURRENT` back at a kept version. Nothing is copied or deleted. */
   restore(workspaceId: string, version: string): Effect.Effect<void, MemoryError>;
@@ -1006,20 +1058,18 @@ const make = (root: string): OrchestrationMemoryShape => {
         .toSorted();
     });
 
-  const adoptedAtOf = (workspaceId: string, version: string) =>
+  const noteOf = (workspaceId: string, version: string) =>
     Effect.gen(function* () {
       const within = versionRel(version);
       const rel = `${within}/${ADOPTED_FILE}`;
-      const note = yield* resolveInTree(workspaceId, rel, within);
-      if (note.kind === "file") {
-        const text = yield* readText(workspaceId, rel, within, ADOPTED_FILE);
-        try {
-          const at: unknown = (JSON.parse(text) as { adoptedAt?: unknown }).adoptedAt;
-          if (typeof at === "number" && Number.isFinite(at)) return at;
-        } catch (_handEditedIntoSomethingElseTheFoldersOwnAge) {}
-      }
+      const file = yield* resolveInTree(workspaceId, rel, within);
+      const note =
+        file.kind === "file"
+          ? adoptedNote(yield* readText(workspaceId, rel, within, ADOPTED_FILE))
+          : {};
+      if (note.adoptedAt !== undefined) return { ...note, adoptedAt: note.adoptedAt };
       const dir = yield* resolveInTree(workspaceId, within, "");
-      return Math.round(dir.stats?.birthtimeMs || dir.stats?.mtimeMs || 0);
+      return { ...note, adoptedAt: Math.round(dir.stats?.birthtimeMs || dir.stats?.mtimeMs || 0) };
     });
 
   const requireVersion = (workspaceId: string, version: string) =>
@@ -1044,6 +1094,7 @@ const make = (root: string): OrchestrationMemoryShape => {
     files: ReadonlyArray<MemorySetFile>,
     basedOn: string | undefined,
     basedOnDigest: string | undefined,
+    source?: MemoryVersionSource,
   ): Effect.Effect<string, MemoryError> =>
     Effect.gen(function* () {
       const { ensureDir: ensureAdoptionDir, writeAtomic: writeAdoption, removeTree } = adoptionTree;
@@ -1101,7 +1152,20 @@ const make = (root: string): OrchestrationMemoryShape => {
         for (const file of files) {
           yield* writeAdoption(workspaceId, `${within}/${file.path}`, within, file.content);
         }
-        const note = { adoptedAt: now, ...(current === undefined ? {} : { basedOn: current }) };
+        const note = {
+          adoptedAt: now,
+          ...(current === undefined ? {} : { basedOn: current }),
+          ...(source === undefined
+            ? {}
+            : {
+                source: {
+                  ...source,
+                  ...(source.summary === undefined
+                    ? {}
+                    : { summary: redactText(source.summary).slice(0, SOURCE_SUMMARY_MAX) }),
+                },
+              }),
+        };
         yield* writeAdoption(
           workspaceId,
           `${within}/${ADOPTED_FILE}`,
@@ -1343,11 +1407,14 @@ const make = (root: string): OrchestrationMemoryShape => {
           const current = yield* adopted(workspaceId);
           const out: Array<MemoryVersion> = [];
           for (const version of yield* versionNames(workspaceId)) {
+            const note = yield* noteOf(workspaceId, version);
             out.push({
               version,
-              adoptedAt: yield* adoptedAtOf(workspaceId, version),
+              adoptedAt: note.adoptedAt,
               files: (yield* listVersion(workspaceId, version)).length,
               current: version === current,
+              ...(note.source === undefined ? {} : { source: note.source }),
+              ...(note.basedOn === undefined ? {} : { basedOn: note.basedOn }),
             });
           }
           return out;
@@ -1389,7 +1456,13 @@ const make = (root: string): OrchestrationMemoryShape => {
           return yield* locked(
             workspaceId,
             withAnchoredFiles(
-              adoptLocked(workspaceId, checked.files, options?.basedOn, options?.basedOnDigest),
+              adoptLocked(
+                workspaceId,
+                checked.files,
+                options?.basedOn,
+                options?.basedOnDigest,
+                options?.source,
+              ),
             ),
           );
         }),

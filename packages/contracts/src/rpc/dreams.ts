@@ -99,6 +99,14 @@ export const DreamRpcs = RpcGroup.make(
     success: Dream,
     error: errors(NotFound, InvalidState, FsError),
   }),
+  /**
+   * Undoes an adopted memory update: points memory back at the version it was made from, while
+   * memory is still at the version it made. Nothing is deleted; History keeps both.
+   */
+  Rpc.make("dream.revert", {
+    payload: { dreamId: DreamId },
+    error: errors(NotFound, InvalidState, FsError),
+  }),
   Rpc.make("dream.discard", {
     payload: { dreamId: DreamId },
     error: errors(NotFound, InvalidState, FsError),

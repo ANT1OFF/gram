@@ -324,6 +324,24 @@ export const AutomaticDreamThreshold = Schema.Int.check(
   Schema.isBetween({ minimum: 1, maximum: 1000 }),
 );
 
+/**
+ * How a workspace's memory updates land: `review` drafts each one for the user to adopt or
+ * discard; `auto` applies each valid one at once as a new memory version, which History keeps
+ * and Revert undoes.
+ */
+export const MemoryUpdateMode = Schema.Literals(["review", "auto"]);
+export type MemoryUpdateMode = typeof MemoryUpdateMode.Type;
+
+/** How often a scheduled memory update may run, in hours. */
+export const MemoryUpdateEveryHours = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: 168 }),
+);
+
+/** A charter's memory update mode; absent is review. */
+export const memoryUpdateModeOf = (
+  charter: { readonly memoryUpdateMode?: MemoryUpdateMode | undefined } | undefined,
+): MemoryUpdateMode => charter?.memoryUpdateMode ?? "review";
+
 /** The share of a subscription limit, as a whole percent, at which new workers pause. */
 export const PauseAtLimitPct = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }));
 
@@ -339,6 +357,13 @@ export type IdleCompactKind = typeof IdleCompactKind.Type;
 export const OrchestratorCharter = Schema.Struct({
   /** Absent disables automatic launch. Every edit starts a fresh completion count. */
   automaticDreamThreshold: Schema.optionalKey(AutomaticDreamThreshold),
+  /** How memory updates land; absent is review. Read it through `memoryUpdateModeOf`. */
+  memoryUpdateMode: Schema.optionalKey(MemoryUpdateMode),
+  /**
+   * Start a memory update this many hours after the last one began, when something new has been
+   * reported since. Absent runs none on a schedule.
+   */
+  memoryUpdateEveryHours: Schema.optionalKey(MemoryUpdateEveryHours),
   /** Spawning beyond this asks the user first. */
   maxConcurrentWorkers: AtLeastOne,
   /**

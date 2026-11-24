@@ -185,6 +185,7 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "dream.merge",
   "dream.preview",
   "dream.review",
+  "dream.revert",
   "dream.start",
   "fs.browse",
   "fs.files",

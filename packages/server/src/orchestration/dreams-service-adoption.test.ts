@@ -20,17 +20,46 @@ import {
 } from "./dreams-service-kit.ts";
 
 describe.skipIf(!hasGit)("dreams", () => {
-  it.effect("auto refuses changed memory even when CURRENT has not changed", () =>
+  it.effect("auto keeps a note written while it ran and applies the rest of its output", () =>
+    inDreams((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const memory = yield* OrchestrationMemory;
+        const { workspaceId } = yield* openOrchestrator(world);
+        const { dream, session } = yield* startDream(workspaceId, undefined, "auto");
+        writeOutput(dream, {
+          "MEMORY.md": "# Candidate\n\n- [[goals]]: goals\n",
+          "goals.md": "---\nname: goals\ndescription: what the user wants\ntype: goal\n---\n\n- Ship it (2026-11-24, thread t-1)\n",
+        });
+        const newer = "# Newer user edit, exact bytes\n\nPreserve me.\n";
+        yield* memory.write(workspaceId, "MEMORY.md", newer);
+        yield* completeTurn(session, "done");
+        const adopted = yield* waitReal(
+          "auto adopted",
+          store
+            .getDream(dream.id)
+            .pipe(Effect.map((row) => row.adoptedVersion !== undefined && row)),
+        );
+        expect(adopted.adoptionFailure).toBeUndefined();
+        expect(yield* memory.currentVersion(workspaceId)).toBe(adopted.adoptedVersion);
+        // The live write wins its file; the run's other change lands.
+        expect(yield* memory.index(workspaceId)).toBe(newer);
+        expect(yield* memory.read(workspaceId, "goals.md")).toContain("Ship it");
+      }),
+    ),
+  );
+
+  it.effect("auto refuses once memory was restored while it ran", () =>
     inDreams((world) =>
       Effect.gen(function* () {
         const dreams = yield* Dreams;
         const store = yield* ThreadStore;
         const memory = yield* OrchestrationMemory;
         const { workspaceId } = yield* openOrchestrator(world);
+        yield* memory.adopt(workspaceId, [{ path: "MEMORY.md", content: "# Second\n" }]);
         const { dream, session } = yield* startDream(workspaceId, undefined, "auto");
         writeOutput(dream, { "MEMORY.md": "# Candidate\n" });
-        const newer = "# Newer user edit, exact bytes\n\nPreserve me.\n";
-        yield* memory.write(workspaceId, "MEMORY.md", newer);
+        yield* memory.restore(workspaceId, "0001");
         yield* completeTurn(session, "done");
         const stopped = yield* waitReal(
           "auto stopped",
@@ -41,7 +70,6 @@ describe.skipIf(!hasGit)("dreams", () => {
         expect(stopped.adoptionFailure).toBe("refused");
         expect(stopped.adoptedVersion).toBeUndefined();
         expect(yield* memory.currentVersion(workspaceId)).toBe("0001");
-        expect(yield* memory.index(workspaceId)).toBe(newer);
         expect((yield* Effect.flip(dreams.adopt(dream.id))).message).toContain(
           "automatic adoption",
         );

@@ -12,6 +12,7 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import { canonicalizeOrOwned } from "@gram/git";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -246,10 +247,32 @@ export const writeOutput = (dream: Dream, files: Readonly<Record<string, string>
   }
 };
 
+/**
+ * A worker's report in `workspaceId`, so a memory update has something new to read: it reads what
+ * happened since the last one, and refuses to run on nothing.
+ */
+export const reportSomething = (
+  workspaceId: WorkspaceId,
+  summary = "Synthetic report: the build passes.",
+  extra: { readonly learned?: string; readonly threadId?: ThreadId } = {},
+) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const at = yield* Clock.currentTimeMillis;
+    return yield* store.addWorkerReport(workspaceId, {
+      threadId: extra.threadId ?? ("t-synthetic-worker" as ThreadId),
+      state: "done",
+      summary,
+      ...(extra.learned === undefined ? {} : { learned: extra.learned }),
+      at,
+    });
+  });
+
 /** Starts a consolidating dream and waits for its prompt to reach the agent. */
 export const startDream = (workspaceId: WorkspaceId, instructions?: string, mode?: DreamMode) =>
   Effect.gen(function* () {
     const dreams = yield* Dreams;
+    yield* reportSomething(workspaceId);
     const dream = yield* dreams.start({ workspaceId, kind: "dream", instructions, mode });
     return { dream, session: yield* waitSent(dream.threadId as ThreadId, 1) };
   });

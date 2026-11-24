@@ -1,5 +1,6 @@
 import type { StoredActor } from "../host/ownership.ts";
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
+import { DreamCursor, laterCursor } from "./dream-cursor.ts";
 import {
   type PrWakeFired,
   type PrWatchSeen,
@@ -1085,6 +1086,17 @@ export interface ThreadStoreShape {
     readonly cards: ReadonlyArray<FeatureCard>;
     readonly outbox: string | undefined;
   }): Effect.Effect<ReadonlyArray<Thread>, NotFound>;
+
+  /** The workspace's orchestration events past `afterSeq` of the `kinds` given, oldest first. */
+  listOrchestrationEventsAfter(
+    workspaceId: WorkspaceId,
+    afterSeq: number,
+    kinds: ReadonlyArray<string>,
+  ): Effect.Effect<ReadonlyArray<OrchestrationEventRecord>>;
+  /** Where the workspace's next memory update reads on from; absent: from its start. */
+  getDreamCursor(workspaceId: WorkspaceId): Effect.Effect<DreamCursor | undefined>;
+  /** Moves the cursor on to `cursor`, field by field; it never moves back. */
+  advanceDreamCursor(workspaceId: WorkspaceId, cursor: DreamCursor): Effect.Effect<void>;
 
   getAutomaticDreamState(workspaceId: WorkspaceId): Effect.Effect<AutomaticDreamState | undefined>;
   updateAutomaticDreamState(
@@ -3521,6 +3533,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 "dreams",
                 "automatic_dream",
                 "dream_watermarks",
+                "dream_cursors",
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE workspace_id = ${id}`;
               }
@@ -3761,6 +3774,47 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             ),
           ),
 
+        listOrchestrationEventsAfter: (workspaceId, afterSeq, kinds) =>
+          run(
+            sql<{ seq: number; at: number; kind: string; data: string }>`SELECT seq, at, kind, data
+              FROM orchestration_events
+              WHERE workspace_id = ${workspaceId} AND seq > ${afterSeq}
+                AND kind IN (SELECT value FROM json_each(${JSON.stringify(kinds)}))
+              ORDER BY seq`.pipe(
+              Effect.map((rows) =>
+                rows.map((r): OrchestrationEventRecord => ({
+                  seq: Number(r.seq),
+                  workspaceId,
+                  at: Number(r.at),
+                  kind: r.kind,
+                  data: JSON.parse(r.data) as unknown,
+                })),
+              ),
+            ),
+          ),
+        getDreamCursor: (id) =>
+          run(
+            sql<{ data: string }>`SELECT data FROM dream_cursors WHERE workspace_id = ${id}`.pipe(
+              Effect.map((rows) => {
+                if (rows[0] === undefined) return undefined;
+                const decoded = decodeStored(DreamCursor, rows[0].data);
+                return decoded.ok ? decoded.value : undefined;
+              }),
+            ),
+          ),
+        advanceDreamCursor: (id, cursor) =>
+          tx(
+            Effect.gen(function* () {
+              const rows = yield* sql<{
+                data: string;
+              }>`SELECT data FROM dream_cursors WHERE workspace_id = ${id}`;
+              const decoded = rows[0] === undefined ? undefined : decodeStored(DreamCursor, rows[0].data);
+              const next =
+                decoded?.ok === true ? laterCursor(decoded.value, cursor) : cursor;
+              yield* sql`INSERT INTO dream_cursors (workspace_id, data) VALUES (${id}, ${toJson(DreamCursor, next)})
+                ON CONFLICT (workspace_id) DO UPDATE SET data = excluded.data`;
+            }),
+          ),
         getAutomaticDreamState: (id) => run(readAutomaticDreamState(id)),
         updateAutomaticDreamState: (id, f) =>
           tx(

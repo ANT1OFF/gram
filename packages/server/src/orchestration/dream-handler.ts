@@ -15,6 +15,7 @@ import {
   type QuestionEdit,
   type UserInput,
   type WorkspaceId,
+  type DreamId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -265,6 +266,8 @@ export const dreamHandlers = Effect.gen(function* () {
       dreams.adopt(dreamId, { resolutions, basedOn, outputDigest }),
     "dream.merge": ({ dreamId, path }) => dreams.merge(dreamId, path),
     "dream.discard": ({ dreamId }) => dreams.discard(dreamId),
+    "dream.revert": ({ dreamId }) =>
+      dreams.revert(dreamId).pipe(Effect.tap((workspaceId) => changed(workspaceId)), Effect.asVoid),
 
     "memory.list": ({ workspaceId }) =>
       Effect.andThen(guard(workspaceId), memory.list(workspaceId)),
@@ -287,7 +290,21 @@ export const dreamHandlers = Effect.gen(function* () {
       ),
     "question.answer": (input) => answerQuestionAsUser(input),
     "memory.versions": ({ workspaceId }) =>
-      Effect.andThen(guard(workspaceId), memory.versions(workspaceId)),
+      Effect.andThen(guard(workspaceId), memory.versions(workspaceId)).pipe(
+        Effect.map((versions) =>
+          versions.map(({ source, basedOn, ...version }) => ({
+            ...version,
+            ...(basedOn === undefined ? {} : { basedOn }),
+            ...(source === undefined
+              ? {}
+              : {
+                  dreamId: source.dreamId as DreamId,
+                  mode: source.mode,
+                  ...(source.summary === undefined ? {} : { summary: source.summary }),
+                }),
+          })),
+        ),
+      ),
     "memory.restore": ({ workspaceId, version }) =>
       guard(workspaceId).pipe(
         Effect.andThen(memory.restore(workspaceId, version)),

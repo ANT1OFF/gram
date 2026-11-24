@@ -28,7 +28,9 @@ import {
 } from "./dreams-service-kit.ts";
 
 describe.skipIf(!hasGit)("dreams", () => {
-  for (const mode of ["auto", "review"] as const) {
+  // Auto takes memory as Gram reads it, as a reviewed adoption does: a note written while it ran
+  // keeps that write (`dreams-service-adoption.test.ts`).
+  for (const mode of ["review"] as const) {
     for (const timing of ["before adoption", "during awaited adoption"] as const) {
       it.effect(`${mode} refuses lossy UTF-8 edits ${timing}`, () =>
         inDreams((world) =>
@@ -102,33 +104,6 @@ describe.skipIf(!hasGit)("dreams", () => {
     }
   }
 
-  it.effect("auto detects raw hand edits even when their redacted read is unchanged", () =>
-    inDreams((world) =>
-      Effect.gen(function* () {
-        const store = yield* ThreadStore;
-        const memory = yield* OrchestrationMemory;
-        const { workspaceId } = yield* openOrchestrator(world);
-        yield* memory.write(workspaceId, "MEMORY.md", `# Key ${githubToken}\n`);
-        const before = yield* memory.index(workspaceId);
-        const { dream, session } = yield* startDream(workspaceId, undefined, "auto");
-        writeOutput(dream, { "MEMORY.md": "# Candidate\n" });
-        const newer = `# Key ${githubToken}\n`;
-        const path = nodePath.join(memoryRoot(world), workspaceId, "versions", "0001", "MEMORY.md");
-        fs.writeFileSync(path, newer);
-        expect(yield* memory.index(workspaceId)).toBe(before);
-        yield* completeTurn(session, "done");
-        const stopped = yield* waitReal(
-          "raw edit refused",
-          store.getDream(dream.id).pipe(Effect.map((d) => d.adoptionFailure !== undefined && d)),
-        );
-        expect(stopped.adoptionFailure).toBe("refused");
-        expect(stopped.adoptedVersion).toBeUndefined();
-        expect(fs.readFileSync(path, "utf8")).toBe(newer);
-        expect((yield* memory.versions(workspaceId)).length).toBe(1);
-      }),
-    ),
-  );
-
   it.effect("auto refuses a newer adopted version without overwriting it", () =>
     inDreams((world) =>
       Effect.gen(function* () {
@@ -173,8 +148,10 @@ describe.skipIf(!hasGit)("dreams", () => {
         expect(ended).toMatchObject({ status: "completed", adoptionFailure: "persistence_error" });
         expect(ended.adoptedVersion).toBeUndefined();
         expect(yield* memory.index(workspaceId)).toBe(before);
-        expect(titles(events)).toContain("Memory update automatic adoption stopped");
-        expect(titles(events)).not.toContain("Memory update automatically adopted");
+        expect(titles(events)).toContain(
+          "Memory update not applied automatically. It stays on the Memory page to look at.",
+        );
+        expect(titles(events).some((title) => title.startsWith("Memory updated"))).toBe(false);
         expect((yield* Effect.flip(dreams.adopt(dream.id))).message).toContain(
           "automatic adoption",
         );
@@ -208,7 +185,7 @@ describe.skipIf(!hasGit)("dreams", () => {
           expect(stopped.adoptedVersion).toBeUndefined();
           expect(yield* memory.currentVersion(workspaceId)).toBe("0002");
           expect(yield* memory.index(workspaceId)).toBe("# Written but not confirmed in SQLite\n");
-          expect(titles(events)).not.toContain("Memory update automatically adopted");
+          expect(titles(events).some((title) => title.startsWith("Memory updated"))).toBe(false);
           yield* completeTurn(session, "duplicate completion");
           yield* settle;
           expect((yield* memory.versions(workspaceId)).length).toBe(2);

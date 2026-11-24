@@ -922,26 +922,30 @@ describe("OrchestrationMemory: adoption", () => {
     ),
   );
 
-  it.effect("keeps the newest five besides the current, and restore points back at one", () =>
+  it.effect("keeps the newest few besides the current, and restore points back at one", () =>
     withMemory((f) =>
       Effect.gen(function* () {
+        const name = (n: number) => String(n).padStart(4, "0");
+        const range = (from: number, to: number) =>
+          Array.from({ length: to - from + 1 }, (_, i) => name(from + i));
+        const last = MEMORY_VERSIONS_KEEP + 3;
         yield* f.memory.init(WS);
-        for (let i = 2; i <= 8; i++) {
+        for (let i = 2; i <= last; i++) {
           yield* f.memory.adopt(WS, [{ path: "MEMORY.md", content: `# v${i}\n` }]);
         }
         const kept = () => Effect.map(f.memory.versions(WS), (all) => all.map((v) => v.version));
-        expect(yield* kept()).toEqual(["0003", "0004", "0005", "0006", "0007", "0008"]);
-        expect(yield* kept()).toHaveLength(MEMORY_VERSIONS_KEEP + 1);
+        const oldest = last - MEMORY_VERSIONS_KEEP;
+        expect(yield* kept()).toEqual(range(oldest, last));
 
-        yield* f.memory.restore(WS, "0003");
-        expect(yield* f.memory.currentVersion(WS)).toBe("0003");
-        expect(yield* f.memory.index(WS)).toBe("# v3\n");
+        yield* f.memory.restore(WS, name(oldest));
+        expect(yield* f.memory.currentVersion(WS)).toBe(name(oldest));
+        expect(yield* f.memory.index(WS)).toBe(`# v${oldest}\n`);
         // Nothing was copied or deleted, and the next number doesn't reuse a pruned or newer one.
         expect(yield* kept()).toHaveLength(MEMORY_VERSIONS_KEEP + 1);
-        expect(yield* f.memory.adopt(WS, [INDEX], { basedOn: "0003" })).toBe("0009");
-        // 0003 is no longer current and is the oldest of six others.
-        expect(yield* kept()).toEqual(["0004", "0005", "0006", "0007", "0008", "0009"]);
-        expect(yield* Effect.flip(f.memory.restore(WS, "0003"))).toMatchObject({
+        expect(yield* f.memory.adopt(WS, [INDEX], { basedOn: name(oldest) })).toBe(name(last + 1));
+        // The restored one is no longer current and is the oldest of the others.
+        expect(yield* kept()).toEqual(range(oldest + 1, last + 1));
+        expect(yield* Effect.flip(f.memory.restore(WS, name(oldest)))).toMatchObject({
           _tag: "NotFound",
         });
       }),

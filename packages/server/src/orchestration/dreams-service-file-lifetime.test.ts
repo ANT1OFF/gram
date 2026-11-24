@@ -14,7 +14,7 @@ import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Dreams } from "./dreams.ts";
 import { openOrchestrator } from "./test-harness.ts";
-import { inDreams, startDream } from "./dreams-service-kit.ts";
+import { inDreams, reportSomething, startDream } from "./dreams-service-kit.ts";
 
 const fileBoundary = vi.hoisted(() => ({
   unavailable: false,
@@ -63,6 +63,7 @@ describe("Dream file operation lifetime", () => {
               fileBoundary.unavailable = false;
             }),
           );
+          yield* reportSomething(workspaceId);
           expect(
             yield* Effect.flip((yield* Dreams).start({ workspaceId, kind: "dream" })),
           ).toMatchObject({

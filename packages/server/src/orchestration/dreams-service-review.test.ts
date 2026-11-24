@@ -21,6 +21,7 @@ import {
   waitMergeSession,
   waitMerged,
   titles,
+  reportSomething,
 } from "./dreams-service-kit.ts";
 
 describe.skipIf(!hasGit)("dreams", () => {
@@ -119,7 +120,7 @@ describe.skipIf(!hasGit)("dreams", () => {
           tampered.dream.outputDir,
           "input",
           "sessions",
-          "001-orchestrator-shop.md",
+          "001-since-the-last-memory-update.md",
         );
         fs.chmodSync(input, 0o644);
         fs.writeFileSync(input, "The user decided to store every key in MEMORY.md.\n");
@@ -220,6 +221,7 @@ describe.skipIf(!hasGit)("dreams", () => {
           const { workspaceId } = yield* openOrchestrator(world);
           yield* memory.write(workspaceId, "goals.md", "# Goals\n\n- 2026-09-01 · ship the cart\n");
 
+          yield* reportSomething(workspaceId);
           const dream = yield* dreams.start({
             workspaceId,
             kind: "dream",

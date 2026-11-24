@@ -492,6 +492,22 @@ const projectOrigins = Effect.gen(function* () {
   yield* sql`ALTER TABLE projects ADD COLUMN origin_identity TEXT`;
 });
 
+/**
+ * Where each workspace's memory update reads on from: past these worker reports and orchestration
+ * events, and things that happened after `at`. Every workspace starts at the moment it migrates,
+ * so the transcript backlog the earlier memory updates kept is dropped rather than caught up.
+ */
+const dreamCursors = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`CREATE TABLE dream_cursors (workspace_id TEXT PRIMARY KEY, data TEXT NOT NULL)`;
+  yield* sql`INSERT INTO dream_cursors (workspace_id, data)
+    SELECT w.id, json_object(
+      'reportSeq', COALESCE((SELECT MAX(r.seq) FROM worker_reports r WHERE r.workspace_id = w.id), 0),
+      'eventSeq', COALESCE((SELECT MAX(e.seq) FROM orchestration_events e WHERE e.workspace_id = w.id), 0),
+      'at', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+    ) FROM workspaces w`;
+});
+
 export const migrations = {
   "0001_baseline": baseline,
   "0002_merge_freezes": mergeFreezes,
@@ -510,6 +526,7 @@ export const migrations = {
   "0015_private_readers": privateReaders,
   "0016_workspace_holders": workspaceHolders,
   "0017_project_origins": projectOrigins,
+  "0018_dream_cursors": dreamCursors,
 };
 
 const MOVED: ReadonlyArray<{ readonly from: number; readonly name: string }> = [
