@@ -31,7 +31,7 @@ const unavailable = (threadId: string, detail: string) =>
   });
 const pidOf = (owner: Owner) => (owner.pid === undefined ? "unknown pid" : `pid ${owner.pid}`);
 const refuseLogged = (threadId: string, detail: string, blockers: ReadonlyArray<Owner>) =>
-  Effect.logWarning(
+  Effect.logInfo(
     `codex open refused: thread ${threadId}, ${detail}; held by app-server ${blockers.map(pidOf).join(", ") || "none"}`,
   ).pipe(Effect.andThen(Effect.fail(unavailable(threadId, detail))));
 const processKnownAlive = (pid: number | undefined) => {
@@ -139,16 +139,8 @@ export const makeThreadOwnership = (
     });
 
   return {
-    /**
-     * `pid` is the app-server's process; `dedicated` when it serves one Gram thread only (a
-     * worker's or orchestrator's own).
-     */
-    owner: (
-      home: string,
-      rpc: CodexRpc,
-      { pid, dedicated }: { readonly pid: number | undefined; readonly dedicated: boolean },
-      onClosing: () => void,
-    ) => {
+    /** `pid`: the owning app-server's process, named in refusals and cleared once it is gone. */
+    owner: (home: string, rpc: CodexRpc, pid: number | undefined, onClosing: () => void) => {
       const owner: Owner = {
         home,
         rpc,
@@ -198,10 +190,6 @@ export const makeThreadOwnership = (
       const retireUnaccounted = () => {
         owner.unknownOpen = true;
         owner.onClosing();
-      };
-      const holdsNothing = () => ![...threads.values()].some((lease) => lease.owner === owner);
-      const retireIfFailedAlone = () => {
-        if (dedicated && holdsNothing()) owner.onClosing();
       };
       return {
         waitForExit: (threadId: string, onWait: Effect.Effect<void>) =>
@@ -316,7 +304,7 @@ export const makeThreadOwnership = (
               );
             }
             return { started, lease };
-          }).pipe(Effect.onError(() => Effect.sync(retireIfFailedAlone)));
+          });
           return Effect.acquireRelease(
             resumeId === undefined ? acquire : serialized(keyFor(home, resumeId), acquire),
             ({ lease }) => close(lease),

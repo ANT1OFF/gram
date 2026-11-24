@@ -672,7 +672,7 @@ describe.skipIf(process.platform === "win32")("Codex provider thread ownership",
   );
 
   it.live(
-    "a worker's own app-server stops when its open fails or its session closes, blocking no other",
+    "a worker's own app-server stops when its open gets no answer or its session closes, blocking no other",
     () =>
       withHost((f) =>
         Effect.gen(function* () {
@@ -765,20 +765,10 @@ describe.skipIf(process.platform === "win32")(
           run(effect);
         });
         const child = standInChild();
-        const stale = ownership.owner(
-          "/invented/home",
-          quietRpc,
-          { pid: child.pid, dedicated: false },
-          () => {},
-        );
+        const stale = ownership.owner("/invented/home", quietRpc, child.pid, () => {});
         yield* stale.open("invented-thread", opened("invented-thread"));
         yield* endUnnoticed(child);
-        const next = ownership.owner(
-          "/invented/home",
-          quietRpc,
-          { pid: process.pid, dedicated: false },
-          () => {},
-        );
+        const next = ownership.owner("/invented/home", quietRpc, process.pid, () => {});
         const started = yield* next.open("invented-thread", opened("invented-thread"));
         expect(started.thread.id).toBe("invented-thread");
       }).pipe(Effect.scoped),
@@ -791,22 +781,12 @@ describe.skipIf(process.platform === "win32")(
           run(effect);
         });
         const child = standInChild();
-        const stale = ownership.owner(
-          "/invented/home",
-          quietRpc,
-          { pid: child.pid, dedicated: false },
-          () => {},
-        );
+        const stale = ownership.owner("/invented/home", quietRpc, child.pid, () => {});
         const unanswered = yield* stale
           .open(undefined, Effect.never as Effect.Effect<{ thread: { id: string } }>)
           .pipe(Effect.scoped, Effect.flip);
         expect(unanswered.message).toContain("provider open gave no answer");
-        const next = ownership.owner(
-          "/invented/home",
-          quietRpc,
-          { pid: process.pid, dedicated: false },
-          () => {},
-        );
+        const next = ownership.owner("/invented/home", quietRpc, process.pid, () => {});
         const fresh = yield* next.open(undefined, opened("invented-new")).pipe(Effect.scoped);
         expect(fresh.thread.id).toBe("invented-new");
         const fenced = yield* next
