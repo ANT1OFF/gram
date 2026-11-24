@@ -16,7 +16,7 @@ import {
   signedInSource,
   type WorkerMachinePortShape,
 } from "../embedding/signed-in-workers.ts";
-import { AppToolError, DEFAULT_CHARTER, HostId } from "@gram/contracts";
+import { AppToolError, DEFAULT_CHARTER, HostId, type Thread, type ThreadId } from "@gram/contracts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { makeStopMarks } from "../host/stop-marks.ts";
@@ -62,6 +62,19 @@ const fakePort = (
 };
 
 const signedIn = (service: SignedInWorkers["Service"]) => Layer.succeed(SignedInWorkers)(service);
+
+/** One of the orchestrator's workers, placed on a machine: what makes it its own to share. */
+const workerOn = (orchestrator: Thread, hostId: HostId) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const { role: _role, ...rest } = orchestrator;
+    yield* store.insertThread({
+      ...rest,
+      id: "t-on-its-machine" as ThreadId,
+      spawnedBy: { threadId: orchestrator.id, feature: "earlier" },
+      checkout: { ...orchestrator.checkout, hostId },
+    });
+  });
 
 describe("sandbox from a signed-in hosted server", () => {
   it.effect(
@@ -288,7 +301,8 @@ describe("sandbox from a signed-in hosted server", () => {
         ),
       );
       yield* Effect.gen(function* () {
-        const { session, workspaceId } = yield* openOrchestrator(world);
+        const { session, workspaceId, thread } = yield* openOrchestrator(world);
+        yield* workerOn(thread, machine.id);
         yield* (yield* Orchestration).setCharter(workspaceId, {
           ...DEFAULT_CHARTER,
           autonomy: "publish",
@@ -692,7 +706,8 @@ describe("sandbox from a signed-in hosted server", () => {
       );
       yield* Effect.gen(function* () {
         const readings = yield* UsageLimitReadings;
-        const { session, workspaceId } = yield* openOrchestrator(world);
+        const { session, workspaceId, thread } = yield* openOrchestrator(world);
+        yield* workerOn(thread, machine.id);
         yield* session.emit({
           type: "rateLimit",
           status: "rejected",
