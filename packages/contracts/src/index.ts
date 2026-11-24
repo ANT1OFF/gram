@@ -83,6 +83,7 @@ export * from "./checkout-use.ts";
 export * from "./hosts.ts";
 export * from "./machines.ts";
 export * from "./device.ts";
+export * from "./worker-machine-calls.ts";
 export * from "./worker-machine-relays.ts";
 export * from "./hosted-logo.ts";
 export * from "./diagnostics.ts";

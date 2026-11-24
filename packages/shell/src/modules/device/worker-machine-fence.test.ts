@@ -104,6 +104,22 @@ describe("a worker machine's stop, as the app sends it", () => {
     expect(sent).toEqual(["stop", "start"]);
   });
 
+  it("is a move too: a start of its name waits while the move is on its way", async () => {
+    let answer!: () => void;
+    const answered = new Promise<void>((done) => (answer = done));
+    const { machines, sent } = setup({ answer: answered });
+    // The provider ends the run a move names, as a stop does, and starts the next one itself.
+    const moving = machines.workerMachineCall(ORIGIN, "move", { name: NAME });
+    await waitFor(() => sent.includes("move"));
+    const starting = machines.workerMachineCall(ORIGIN, "start", { name: NAME });
+    for (let each = 0; each < 50; each += 1) await Promise.resolve();
+    expect(sent).toEqual(["move"]);
+    answer();
+    await moving;
+    await starting;
+    expect(sent).toEqual(["move", "start"]);
+  });
+
   it("holds a start of its name back after it was answered 503, which settles nothing", async () => {
     const { machines, sent } = setup({ stopStatus: 503 });
     expect(await machines.workerMachineCall(ORIGIN, "stop", { name: NAME })).toMatchObject({
