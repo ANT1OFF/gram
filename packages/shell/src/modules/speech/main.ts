@@ -27,12 +27,12 @@ const speechSender = (contents: WebContents): SpeechSender => ({
 
 const watchIdOf = (input: unknown): string | undefined => {
   const watchId: unknown =
-    typeof input === "object" && input !== null ? Reflect.get(input, "watchId") : undefined;
+    typeof input === "object" && input !== null && "watchId" in input ? input.watchId : undefined;
   return typeof watchId === "string" && /^[A-Za-z0-9-]{1,64}$/.test(watchId) ? watchId : undefined;
 };
 
 const modelOf = (input: unknown): unknown =>
-  typeof input === "object" && input !== null ? Reflect.get(input, "model") : undefined;
+  typeof input === "object" && input !== null && "model" in input ? input.model : undefined;
 
 type ModelAccess = Promise<SpeechModelStore> | (() => Promise<SpeechModelStore>);
 const currentModels = (models: ModelAccess) => (typeof models === "function" ? models() : models);

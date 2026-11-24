@@ -24,7 +24,7 @@ import { MarkdownPreview } from "./markdown-preview";
 import { isImagePath, isMarkdownPath } from "./relative-path";
 
 const errorTag = (error: unknown): unknown =>
-  typeof error === "object" && error !== null ? Reflect.get(error, "_tag") : undefined;
+  typeof error === "object" && error !== null && "_tag" in error ? error._tag : undefined;
 
 const writtenFileRead = (path: string, content: string): FsFile => ({
   path,

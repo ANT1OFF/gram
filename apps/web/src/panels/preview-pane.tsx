@@ -35,7 +35,7 @@ import { useLayoutStore } from "@/stores/layout";
 import { usePagePicksStore } from "@/stores/page-picks";
 import { useThreadsStore } from "@/stores/threads";
 
-import { errorMessage } from "@/api/errors";
+import { errorMessage, isNotFound } from "@/api/errors";
 
 import { FileQuickLook, useFileWrites } from "./files/file-quick-look";
 import { showFileAt } from "./files/files-store";
@@ -171,7 +171,7 @@ function ShellPreview({
   const [poppedOut, setPoppedOut] = useState(false);
   const written =
     file !== undefined && previewFileKind(file) === "markdown" ? writes.content : undefined;
-  const gone = filePreview.isError && Reflect.get(filePreview.error, "_tag") === "NotFound";
+  const gone = filePreview.isError && isNotFound(filePreview.error);
   const markdown = filePreview.data?.kind === "markdown" ? filePreview.data : undefined;
   const htmlWrites = filePreview.data?.kind === "html" ? writes.count : undefined;
   const firstHtmlWrites = useRef(htmlWrites);

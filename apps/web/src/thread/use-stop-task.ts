@@ -1,7 +1,7 @@
 import type { ThreadId } from "@gram/contracts";
 
 import { useApi } from "@/api/context";
-import { errorMessage } from "@/api/errors";
+import { errorMessage, isNotFound } from "@/api/errors";
 import { useThreadsStore } from "@/stores/threads";
 
 /**
@@ -12,7 +12,7 @@ export function useStopTask(threadId: ThreadId) {
   const api = useApi();
   return (taskId: string) =>
     api.stopTask(threadId, taskId).catch((error: unknown) => {
-      if (Reflect.get(error as object, "_tag") === "NotFound") return;
+      if (isNotFound(error)) return;
       useThreadsStore.getState().applyEvent({
         type: "notify",
         kind: "error",

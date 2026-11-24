@@ -21,6 +21,7 @@ const countBuilds = (body: () => void) => {
       },
       apply(constructor, self, args) {
         built[key]++;
+        // oxlint-disable-next-line anti-slop/no-reflect-apply -- a Proxy trap forwards through Reflect
         return Reflect.apply(constructor as (...a: unknown[]) => unknown, self, args);
       },
     });

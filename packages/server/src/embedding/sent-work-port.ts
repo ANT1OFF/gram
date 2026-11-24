@@ -103,20 +103,25 @@ const refusedOf = (result: SentWorkResult): Refused =>
 
 const isWaited = (waited: unknown): waited is HostedThreadWaited => {
   const thread =
-    typeof waited === "object" && waited !== null ? Reflect.get(waited, "thread") : undefined;
+    typeof waited === "object" && waited !== null && "thread" in waited ? waited.thread : undefined;
   return (
     typeof thread === "object" &&
     thread !== null &&
-    (HOSTED_THREAD_STATES as ReadonlyArray<unknown>).includes(Reflect.get(thread, "state"))
+    (HOSTED_THREAD_STATES as ReadonlyArray<unknown>).includes(
+      "state" in thread ? thread.state : undefined,
+    )
   );
 };
 
-const isTarget = (target: unknown): target is SentWorkTarget =>
-  typeof target === "object" &&
-  target !== null &&
-  ["origin", "server", "workspaceId", "workspace", "organisation"].every(
-    (name) => typeof Reflect.get(target, name) === "string",
-  );
+const isTarget: (target: unknown) => target is SentWorkTarget = Schema.is(
+  Schema.Struct({
+    origin: Schema.String,
+    server: Schema.String,
+    workspaceId: Schema.String,
+    workspace: Schema.String,
+    organisation: Schema.String,
+  }),
+);
 
 /** Requests over `port`, each answered by id, or failed after its time. */
 export const bridgeSentWork = (

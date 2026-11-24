@@ -63,12 +63,12 @@ const storedId = (value: unknown): ThreadId | undefined =>
 
 const storedDock = (persisted: unknown) => {
   const value = typeof persisted === "object" && persisted !== null ? persisted : {};
-  const worker = storedId(Reflect.get(value, "worker"));
-  const tab: unknown = Reflect.get(value, "tab");
-  const shown: unknown = Reflect.get(value, "shown");
+  const worker = storedId("worker" in value ? value.worker : undefined);
+  const tab: unknown = "tab" in value ? value.tab : undefined;
+  const shown: unknown = "shown" in value ? value.shown : undefined;
   return {
     worker,
-    last: storedId(Reflect.get(value, "last")),
+    last: storedId("last" in value ? value.last : undefined),
     tab: TABS.find((each) => each === tab) ?? "thread",
     shown: worker !== undefined && shown !== false,
     restored: worker !== undefined,

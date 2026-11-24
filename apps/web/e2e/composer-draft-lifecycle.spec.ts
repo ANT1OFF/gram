@@ -252,12 +252,16 @@ test("a real image object URL survives a sidebar remount and is revoked once on 
     .poll(() => chip.locator("img").evaluate((image) => (image as HTMLImageElement).naturalWidth))
     .toBe(1);
   await switchTo(page, "t-release");
-  expect(await page.evaluate(() => Reflect.get(window, "lifecycleRevoked"))).toEqual([]);
+  expect(
+    await page.evaluate(() => ("lifecycleRevoked" in window ? window.lifecycleRevoked : undefined)),
+  ).toEqual([]);
   await switchTo(page, "t-deps");
   await expect(chip.locator("img")).toHaveAttribute("src", original!);
   expect(await page.evaluate(async (url) => (await fetch(url!)).status, original)).toBe(200);
   await evidence(page, info, "image-owner-result");
   await chip.getByRole("button", { name: "Remove preview.png" }).click();
   await expect(chip).toHaveCount(0);
-  expect(await page.evaluate(() => Reflect.get(window, "lifecycleRevoked"))).toEqual([original]);
+  expect(
+    await page.evaluate(() => ("lifecycleRevoked" in window ? window.lifecycleRevoked : undefined)),
+  ).toEqual([original]);
 });

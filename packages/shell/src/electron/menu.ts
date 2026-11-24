@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import {
   MENU_SHORTCUT_IDS,
   type DesktopMenuAction,
@@ -70,9 +71,10 @@ const KEYS_STRING = /^[a-z0-9+,./\\[\]=?-]{1,40}$/;
 /** The menu shortcuts a renderer sent: known ids with a keys string or `null`, the rest dropped. */
 export function parseMenuShortcuts(input: unknown): MenuShortcuts {
   if (typeof input !== "object" || input === null) return {};
+  const given = fieldsOf(input);
   const parsed: Partial<Record<MenuShortcutId, string | null>> = {};
   for (const id of MENU_SHORTCUT_IDS) {
-    const value: unknown = Reflect.get(input, id);
+    const value = given.get(id);
     if (value === null || (typeof value === "string" && KEYS_STRING.test(value))) {
       parsed[id] = value;
     }

@@ -128,7 +128,7 @@ describe("FilesPanel", () => {
       ),
     );
     expect(document.querySelector("svg script")).toBeNull();
-    expect(Reflect.get(window, "__svgScriptRan")).toBeUndefined();
+    expect("__svgScriptRan" in window).toBe(false);
   });
 
   it("renders markdown with checkout links and images, and a Source toggle", async () => {

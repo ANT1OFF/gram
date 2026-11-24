@@ -41,6 +41,7 @@ describe("durable commit cleanup", () => {
           let failures = 0;
           const faulty = new Proxy(sql, {
             get(target, key, receiver) {
+              // oxlint-disable-next-line anti-slop/no-reflect-get -- a Proxy trap forwards through Reflect
               if (key !== "reserve") return Reflect.get(target, key, receiver);
               return target.reserve.pipe(
                 Effect.map(
@@ -48,6 +49,7 @@ describe("durable commit cleanup", () => {
                     new Proxy(conn, {
                       get(connection, method, connectionReceiver) {
                         if (method !== "executeUnprepared")
+                          // oxlint-disable-next-line anti-slop/no-reflect-get -- a Proxy trap forwards through Reflect
                           return Reflect.get(connection, method, connectionReceiver);
                         const execute: typeof conn.executeUnprepared = (
                           statement,

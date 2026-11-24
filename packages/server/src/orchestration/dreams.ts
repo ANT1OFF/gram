@@ -1574,7 +1574,9 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             model: dream.model,
             startedAt: yield* Clock.currentTimeMillis,
           };
-          const made = merges.get(dream.id) ?? new Map();
+          const made =
+            merges.get(dream.id) ??
+            new Map<string, { readonly sides: string; state: DreamMerge }>();
           made.set(path, { sides: conflictSides(file), state: started });
           merges.set(dream.id, made);
           yield* FiberMap.run(

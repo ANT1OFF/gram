@@ -158,7 +158,7 @@ export const makeServerLending = (
           origin: options.origin,
           workspace: id,
           personId: options.personId,
-          folders: () => lentNow(id)?.folders ?? new Map(),
+          folders: () => lentNow(id)?.folders ?? new Map<string, GateFolder>(),
           capabilities: () => (lendingHere() ? (lentNow(id)?.capabilities ?? []) : []),
           present: lendingHere,
           grants: options.grants,
@@ -176,10 +176,12 @@ export const makeServerLending = (
             deviceId: options.deviceId,
             platform: options.platform,
             capabilities: [...(workspace?.capabilities ?? [])],
-            folders: [...(workspace?.folders ?? new Map()).entries()].map(([folderId, folder]) => ({
-              id: folderId,
-              label: folder.label,
-            })),
+            folders: [...(workspace?.folders ?? new Map<string, GateFolder>()).entries()].map(
+              ([folderId, folder]) => ({
+                id: folderId,
+                label: folder.label,
+              }),
+            ),
           };
         };
         const expiry = Effect.gen(function* () {

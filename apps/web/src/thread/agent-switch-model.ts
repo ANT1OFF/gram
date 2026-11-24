@@ -147,11 +147,13 @@ export const unlistedReason = (to: AgentKind, error: unknown): string => {
   const name = AGENT_NAMES[to];
   if (error === undefined || error === null)
     return `${name} lists no models here. Check ${name} in Settings → Agents.`;
-  const tag = typeof error === "object" ? Reflect.get(error, "_tag") : undefined;
-  const reason = typeof error === "object" ? Reflect.get(error, "reason") : undefined;
+  const tag = typeof error === "object" ? ("_tag" in error ? error._tag : undefined) : undefined;
+  const reason =
+    typeof error === "object" ? ("reason" in error ? error.reason : undefined) : undefined;
   if (tag === "AgentUnavailable" && reason === undefined)
     return `${name} isn't available here, so this thread can't move to it.`;
-  const message = typeof error === "object" ? Reflect.get(error, "message") : undefined;
+  const message =
+    typeof error === "object" ? ("message" in error ? error.message : undefined) : undefined;
   return typeof message === "string" && message !== ""
     ? `${name}'s models couldn't be listed: ${message}`
     : `${name}'s models couldn't be listed. Check ${name} in Settings → Agents.`;

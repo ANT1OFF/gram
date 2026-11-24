@@ -233,7 +233,7 @@ test("completes shutdown when a request arrives during service teardown", async 
     event: string | symbol,
     ...args: unknown[]
   ) {
-    if (event === "request" && Reflect.get(args[0] as object, "url") === "/shutdown-probe")
+    if (event === "request" && (args[0] as { url?: string }).url === "/shutdown-probe")
       received.resolve();
     return originalEmit.call(this, event, ...args);
   });

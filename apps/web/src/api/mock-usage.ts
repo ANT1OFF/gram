@@ -103,7 +103,10 @@ function mockBreakdown(
         ]),
       ) as unknown as UsageTotals;
       for (const key of Object.keys(left) as (keyof UsageTotals)[]) left[key] -= part[key];
-      const tally = tallies.get(bucket) ?? { totals: empty(), models: new Map() };
+      const tally = tallies.get(bucket) ?? {
+        totals: empty(),
+        models: new Map<string, UsageModelShare>(),
+      };
       for (const key of Object.keys(part) as (keyof UsageTotals)[]) tally.totals[key] += part[key];
       const modelKey = JSON.stringify([row.provider, row.model]);
       const previous = tally.models.get(modelKey)?.totalTokens ?? 0;
@@ -129,7 +132,7 @@ function mockBreakdown(
   const groups = new Map<string | null, { tally: Tally; threads: number }>();
   for (const { bucket, tally } of threads) {
     const group = groups.get(bucket.workspaceId) ?? {
-      tally: { totals: empty(), models: new Map() },
+      tally: { totals: empty(), models: new Map<string, UsageModelShare>() },
       threads: 0,
     };
     group.threads++;

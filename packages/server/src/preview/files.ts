@@ -381,18 +381,23 @@ export function filesWrittenBy(message: { readonly parts: ReadonlyArray<unknown>
   const out: Array<string> = [];
   for (const part of message.parts) {
     if (typeof part !== "object" || part === null) continue;
-    const type: unknown = Reflect.get(part, "type");
+    const type: unknown = "type" in part ? part.type : undefined;
     if (typeof type !== "string" || !FILE_WRITERS.has(type)) continue;
-    if (Reflect.get(part, "state") !== "output-available") continue;
-    const input: unknown = Reflect.get(part, "input");
+    if (("state" in part ? part.state : undefined) !== "output-available") continue;
+    const input: unknown = "input" in part ? part.input : undefined;
     if (typeof input !== "object" || input === null) continue;
-    const path: unknown = Reflect.get(input, "file_path") ?? Reflect.get(input, "notebook_path");
+    const path: unknown =
+      ("file_path" in input ? input.file_path : undefined) ??
+      ("notebook_path" in input ? input.notebook_path : undefined);
     if (typeof path === "string") out.push(path);
-    const changes: unknown = Reflect.get(input, "changes");
+    const changes: unknown = "changes" in input ? input.changes : undefined;
     if (Array.isArray(changes)) {
-      for (const change of changes) {
+      const listed: ReadonlyArray<unknown> = changes;
+      for (const change of listed) {
         const changed: unknown =
-          typeof change === "object" && change !== null ? Reflect.get(change, "path") : undefined;
+          typeof change === "object" && change !== null && "path" in change
+            ? change.path
+            : undefined;
         if (typeof changed === "string") out.push(changed);
       }
     }

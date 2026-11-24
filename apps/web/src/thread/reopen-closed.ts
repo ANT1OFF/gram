@@ -5,7 +5,7 @@ import type { Api } from "@/api/types";
 import { flushServerEvents, useThreadsStore } from "@/stores/threads";
 
 const tagOf = (error: unknown): unknown =>
-  typeof error === "object" && error !== null ? Reflect.get(error, "_tag") : undefined;
+  typeof error === "object" && error !== null && "_tag" in error ? error._tag : undefined;
 
 /** Why a closed thread couldn't come back, in the user's terms. */
 export function reopenProblem(thread: Thread, error: unknown): string {

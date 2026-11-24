@@ -95,7 +95,8 @@ export function commandSnapshot({
     part?.state === "output-available" &&
     typeof part.output === "object" &&
     part.output !== null &&
-    Reflect.get(part.output, "interrupted") === true;
+    "interrupted" in part.output &&
+    part.output.interrupted === true;
   const state: CommandState = running
     ? "running"
     : ended === "stopped" || phase === "cancelled" || interrupted

@@ -1,28 +1,32 @@
 import type { SentWorkResult, SentWorkTarget } from "@gram/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import type { HostedDevice } from "./hosted-device.ts";
 import {
   hostedThreadIdOf,
   repositoriesToCheckOf,
-  workMessageOf,
+  workMessageFrom,
   workToSendOf,
-  workWaitOf,
+  workWaitFrom,
 } from "./work-input.ts";
 
 const NONE: SentWorkResult = { ok: false, why: "Hosted features are off in this app." };
 const MALFORMED: SentWorkResult = { ok: false, why: "The request isn't one the app sends." };
 
-const isRequest = (message: unknown): message is { type: "work.request"; id: string } =>
-  typeof message === "object" &&
-  message !== null &&
-  Reflect.get(message, "type") === "work.request" &&
-  typeof Reflect.get(message, "id") === "string" &&
-  (Reflect.get(message, "id") as string).length <= 64;
+const isRequest = Schema.is(
+  Schema.Struct({
+    type: Schema.Literal("work.request"),
+    id: Schema.String.check(Schema.isMaxLength(64)),
+    op: Schema.optional(Schema.Unknown),
+  }),
+);
 
-const textOf = (message: object, name: string, most: number): string | undefined => {
-  const value = Reflect.get(message, name);
-  return typeof value === "string" && value.length > 0 && value.length <= most ? value : undefined;
-};
+const Text = (most: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(most));
+
+const decodeWhere = Schema.decodeUnknownOption(
+  Schema.Struct({ origin: Text(512), workspaceId: Text(128) }),
+);
 
 /** Where work may go now: each listed workspace of a server signed in to, not paused, that runs it. */
 export const sentWorkTargets = (device: HostedDevice): ReadonlyArray<SentWorkTarget> =>
@@ -51,18 +55,20 @@ export const answerSentWork = async (
     result,
   });
   if (device === undefined) return respond(NONE);
-  const op = Reflect.get(message, "op");
+  const { op } = message;
   if (op === "targets") return respond({ ok: true, targets: sentWorkTargets(device) });
-  const origin = textOf(message, "origin", 512);
-  const workspace = textOf(message, "workspaceId", 128);
-  if (origin === undefined || workspace === undefined) return respond(MALFORMED);
+  const where = decodeWhere(message);
+  if (Option.isNone(where)) return respond(MALFORMED);
+  const { origin, workspaceId: workspace } = where.value;
   if (op === "check") {
-    const repositories = repositoriesToCheckOf(Reflect.get(message, "repositories"));
+    const repositories = repositoriesToCheckOf(
+      "repositories" in message ? message.repositories : undefined,
+    );
     if (repositories === undefined) return respond(MALFORMED);
     return respond(await device.checkWork(origin, workspace, repositories));
   }
   if (op === "machine") {
-    const action = Reflect.get(message, "action");
+    const action = "action" in message ? message.action : undefined;
     if (action !== "get" && action !== "start") return respond(MALFORMED);
     return respond(await device.machineWork(origin, workspace, action));
   }
@@ -74,24 +80,12 @@ export const answerSentWork = async (
   const threadId = hostedThreadIdOf(message);
   if (threadId === undefined) return respond(MALFORMED);
   if (op === "wait") {
-    const wait = workWaitOf({
-      wait: {
-        after: Reflect.get(message, "after"),
-        until: Reflect.get(message, "until"),
-        timeoutSeconds: Reflect.get(message, "timeoutSeconds"),
-      },
-    });
+    const wait = workWaitFrom(message);
     if (wait === undefined) return respond(MALFORMED);
     return respond(await device.waitWork(origin, workspace, threadId, wait));
   }
   if (op === "message") {
-    const said = workMessageOf({
-      message: {
-        text: Reflect.get(message, "text"),
-        clientKey: Reflect.get(message, "clientKey"),
-        mode: Reflect.get(message, "mode"),
-      },
-    });
+    const said = workMessageFrom(message);
     if (said === undefined) return respond(MALFORMED);
     return respond(await device.messageWork(origin, workspace, threadId, said));
   }
@@ -109,7 +103,7 @@ export const serveSentWorkMessage = (
   void answerSentWork(message, device)
     .catch(() => ({
       type: "work.response" as const,
-      id: (message as { id: string }).id,
+      id: message.id,
       result: { ok: false as const, why: "The app couldn't make the call." },
     }))
     .then((response) => {

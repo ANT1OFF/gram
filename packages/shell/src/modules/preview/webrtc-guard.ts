@@ -38,10 +38,10 @@ interface AttachedTarget {
 
 const attachedTarget = (params: unknown): AttachedTarget | undefined => {
   if (typeof params !== "object" || params === null) return undefined;
-  const sessionId: unknown = Reflect.get(params, "sessionId");
-  const info: unknown = Reflect.get(params, "targetInfo");
+  const sessionId: unknown = "sessionId" in params ? params.sessionId : undefined;
+  const info: unknown = "targetInfo" in params ? params.targetInfo : undefined;
   const type: unknown =
-    typeof info === "object" && info !== null ? Reflect.get(info, "type") : undefined;
+    typeof info === "object" && info !== null && "type" in info ? info.type : undefined;
   return typeof sessionId === "string" && typeof type === "string"
     ? { sessionId, targetInfo: { type } }
     : undefined;

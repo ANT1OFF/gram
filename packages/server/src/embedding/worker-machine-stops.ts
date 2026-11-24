@@ -1,8 +1,10 @@
 import { existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
 
-import { WORKER_MACHINE_NAME } from "@gram/contracts";
+import { fieldsOf, WORKER_MACHINE_NAME } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import type { KeyedLock } from "../git/keyed-lock.ts";
 import { privateJsonFile } from "../http/remote-sessions.ts";
 import { fenceRefusalOf } from "./signed-in-fences.ts";
@@ -319,19 +321,43 @@ export const STOPS_FILE_MOST = 512 * 1024;
 const STOPS_FILE_READ_MOST = 16 * 1024 * 1024;
 
 /** `memoryOwedStops` kept in `<dataDir>/remote-access/worker-machine-stops.json`. */
+const SafeInteger = Schema.Number.check(Schema.makeFilter(Number.isSafeInteger));
+
+const decodeStopHold = Schema.decodeUnknownOption(
+  Schema.Struct({
+    id: Schema.String,
+    origin: Schema.String,
+    name: Schema.String,
+    until: SafeInteger,
+  }),
+);
+
+const decodeOwedEntry = Schema.decodeUnknownOption(
+  Schema.Struct({
+    origin: Schema.String,
+    name: Schema.String.check(Schema.isPattern(WORKER_MACHINE_NAME)),
+    since: SafeInteger,
+    unsettled: Schema.optional(Schema.Unknown),
+    start: Schema.optional(Schema.Unknown),
+    attempt: Schema.optional(Schema.Unknown),
+    account: Schema.optional(Schema.Unknown),
+    legacy: Schema.optional(Schema.Unknown),
+    noAccount: Schema.optional(Schema.Unknown),
+  }),
+);
+
+const listed = (value: unknown): ReadonlyArray<unknown> => (Array.isArray(value) ? value : []);
+
 export const fileOwedStops = (dataDir: string, now: () => number = Date.now): OwedStops => {
   const file = privateJsonFile(dataDir, "worker-machine-stops.json", STOPS_FILE_MOST);
-  let read: { version?: unknown; owed?: unknown; holds?: unknown } | undefined;
+  let read: ReadonlyMap<string, unknown> = new Map();
   let keepFile = false;
   let remarkUnsaved = false;
   try {
-    read = privateJsonFile(
-      dataDir,
-      "worker-machine-stops.json",
-      STOPS_FILE_READ_MOST,
-    ).read() as typeof read;
+    read = fieldsOf(
+      privateJsonFile(dataDir, "worker-machine-stops.json", STOPS_FILE_READ_MOST).read(),
+    );
   } catch {
-    read = undefined;
     const path = join(dataDir, "remote-access", "worker-machine-stops.json");
     try {
       if (existsSync(path)) renameSync(path, `${path}.unreadable-${Date.now()}`);
@@ -340,51 +366,34 @@ export const fileOwedStops = (dataDir: string, now: () => number = Date.now): Ow
     }
   }
   const readAt = now();
-  const keptHolds = (Array.isArray(read?.holds) ? (read.holds as unknown[]) : []).flatMap(
-    (each): StopHold[] =>
-      typeof each === "object" &&
-      each !== null &&
-      typeof (each as StopHold).id === "string" &&
-      typeof (each as StopHold).origin === "string" &&
-      typeof (each as StopHold).name === "string" &&
-      Number.isSafeInteger((each as StopHold).until)
-        ? [
-            {
-              ...(each as StopHold),
-              until: Math.min((each as StopHold).until, readAt + STOP_HOLD_MS),
-            },
-          ]
-        : [],
+  const keptHolds = listed(read.get("holds")).flatMap((each): StopHold[] =>
+    Option.match(decodeStopHold(each), {
+      onNone: () => [],
+      onSome: (hold) => [{ ...hold, until: Math.min(hold.until, readAt + STOP_HOLD_MS) }],
+    }),
   );
   const owed = memoryOwedStops(keptHolds, () => save(), now);
   try {
-    const kept = read;
-    if (kept?.version === 1 && Array.isArray(kept.owed))
-      for (const each of kept.owed)
-        if (
-          typeof each === "object" &&
-          each !== null &&
-          typeof each.origin === "string" &&
-          typeof each.name === "string" &&
-          WORKER_MACHINE_NAME.test(each.name) &&
-          Number.isSafeInteger(each.since)
-        )
-          owed.add({
-            origin: each.origin,
-            name: each.name,
-            since: each.since,
-            ...(each.unsettled === true ? { unsettled: true as const } : {}),
-            ...(each.start === true ? { start: true as const } : {}),
-            ...(typeof each.attempt === "string" && each.attempt.length <= 64
-              ? { attempt: each.attempt }
-              : {}),
-            ...(typeof each.account === "string" && each.account.length <= 64
-              ? { account: each.account }
-              : {}),
-            ...(each.legacy === true || (each.account === undefined && each.noAccount !== true)
-              ? { legacy: true as const }
-              : {}),
-          });
+    if (read.get("version") === 1)
+      for (const each of listed(read.get("owed")).flatMap((entry) =>
+        Option.toArray(decodeOwedEntry(entry)),
+      ))
+        owed.add({
+          origin: each.origin,
+          name: each.name,
+          since: each.since,
+          ...(each.unsettled === true ? { unsettled: true as const } : {}),
+          ...(each.start === true ? { start: true as const } : {}),
+          ...(typeof each.attempt === "string" && each.attempt.length <= 64
+            ? { attempt: each.attempt }
+            : {}),
+          ...(typeof each.account === "string" && each.account.length <= 64
+            ? { account: each.account }
+            : {}),
+          ...(each.legacy === true || (each.account === undefined && each.noAccount !== true)
+            ? { legacy: true as const }
+            : {}),
+        });
   } catch (_anOwingThatCantBeReadIsLeftOut) {}
   function save() {
     if (keepFile) return false;

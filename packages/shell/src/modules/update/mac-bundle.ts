@@ -2,8 +2,43 @@ import { macFs, macFsPromises } from "./mac-fs.ts";
 import { createHash } from "node:crypto";
 
 import { join, relative, sep } from "node:path";
+import { finished } from "node:stream/promises";
+
+import { fieldsOf } from "@gram/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { MAX_BUNDLE_BYTES, MAX_ENTRIES, safeLink, safeRelative } from "./mac-archive.ts";
+
+const decodeAsarHeader = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      files: Schema.optional(
+        Schema.Struct({
+          "package.json": Schema.optional(
+            Schema.Struct({
+              size: Schema.optional(Schema.Unknown),
+              offset: Schema.optional(Schema.Unknown),
+              unpacked: Schema.optional(Schema.Unknown),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+);
+
+const decodeBuildInfo = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown));
+
+const BundleInventoryEntry = Schema.Struct({
+  path: Schema.String,
+  type: Schema.Literals(["file", "directory", "symlink"]),
+  mode: Schema.String.check(Schema.isPattern(/^0o[0-7]{3}$/)),
+  target: Schema.optional(Schema.Unknown),
+  bytes: Schema.optional(Schema.Unknown),
+});
+type BundleInventoryEntry = typeof BundleInventoryEntry.Type;
+const decodeBundleInventoryEntry = Schema.decodeUnknownOption(BundleInventoryEntry);
 
 export const MAC_MANIFESTS = [
   "BUILD-INFO.json",
@@ -14,7 +49,9 @@ export const MAC_MANIFESTS = [
 
 export async function sha256(path: string): Promise<string> {
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  const stream = createReadStream(path);
+  stream.on("data", (chunk) => hash.update(chunk));
+  await finished(stream);
   return hash.digest("hex");
 }
 
@@ -88,25 +125,29 @@ export async function verifyBundleIdentity(bundle: string, version: string): Pro
       throw new Error("Invalid app.asar header");
     const json = Buffer.alloc(jsonSize);
     await asar.read(json, 0, jsonSize, 16);
-    const info = JSON.parse(json.toString("utf8")).files?.["package.json"] as
-      | { size?: number; offset?: string; unpacked?: boolean }
-      | undefined;
+    const header = decodeAsarHeader(json.toString("utf8"));
+    const info = Option.isSome(header) ? header.value.files?.["package.json"] : undefined;
     const offset = Number(info?.offset);
     if (
       !info ||
       info.unpacked ||
+      typeof info.size !== "number" ||
       !Number.isSafeInteger(info.size) ||
-      info.size! < 1 ||
-      info.size! > 65536 ||
+      info.size < 1 ||
+      info.size > 65536 ||
       !Number.isSafeInteger(offset) ||
       offset < 0 ||
-      offset + info.size! + 8 + headerSize > (await asar.stat()).size
+      offset + info.size + 8 + headerSize > (await asar.stat()).size
     )
       throw new Error("Invalid packaged app metadata");
-    const data = Buffer.alloc(info.size!);
+    const data = Buffer.alloc(info.size);
     await asar.read(data, 0, data.length, 8 + headerSize + offset);
-    const pkg = JSON.parse(data.toString("utf8"));
-    if (pkg.name !== "@gram/desktop" || pkg.productName !== "Gram" || pkg.version !== version)
+    const pkg = fieldsOf(JSON.parse(data.toString("utf8")));
+    if (
+      pkg.get("name") !== "@gram/desktop" ||
+      pkg.get("productName") !== "Gram" ||
+      pkg.get("version") !== version
+    )
       throw new Error("Unexpected packaged Gram product/version");
   } finally {
     await asar.close();
@@ -175,7 +216,10 @@ export async function verifyMacBundleForMethod(
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink())
     throw new Error("Expected a regular app bundle directory");
   bundle = await realpath(bundle);
-  const build = JSON.parse(await boundedText(join(manifests, "BUILD-INFO.json")));
+  const parsedBuild: unknown = JSON.parse(await boundedText(join(manifests, "BUILD-INFO.json")));
+  const decodedBuild = decodeBuildInfo(parsedBuild);
+  if (Option.isNone(decodedBuild)) throw new Error("Unexpected build metadata");
+  const build = decodedBuild.value;
   if (
     build.version !== version ||
     build.tag !== `v${version}` ||
@@ -200,23 +244,19 @@ export async function verifyMacBundleForMethod(
   );
   if (!Array.isArray(inventory) || inventory.length > MAX_ENTRIES)
     throw new Error("Invalid bundle inventory");
-  const records = new Map<
-    string,
-    { type: string; mode: string; target?: string; bytes?: number }
-  >();
+  const items: ReadonlyArray<unknown> = inventory;
+  const records = new Map<string, BundleInventoryEntry>();
   const folded = new Set<string>();
-  for (const item of inventory) {
-    const path: unknown = item?.path;
+  for (const item of items) {
+    const entry = decodeBundleInventoryEntry(item);
     if (
-      typeof path !== "string" ||
-      !safeRelative(path) ||
-      folded.has(path.normalize("NFD").toLowerCase()) ||
-      !["file", "directory", "symlink"].includes(item.type) ||
-      !/^0o[0-7]{3}$/.test(item.mode)
+      Option.isNone(entry) ||
+      !safeRelative(entry.value.path) ||
+      folded.has(entry.value.path.normalize("NFD").toLowerCase())
     )
       throw new Error("Unsafe bundle inventory");
-    folded.add(path.normalize("NFD").toLowerCase());
-    records.set(path, item);
+    folded.add(entry.value.path.normalize("NFD").toLowerCase());
+    records.set(entry.value.path, entry.value);
   }
   let count = 0,
     bytes = 0;
@@ -278,7 +318,7 @@ export async function verifyMacBundleForMethod(
   await walk(bundle);
   if (
     seen.size !== records.size ||
-    sums.size !== inventory.filter((i) => i.type === "file").length ||
+    sums.size !== [...records.values()].filter((entry) => entry.type === "file").length ||
     [...sums.keys()].some((p) => records.get(p)?.type !== "file") ||
     [...web.keys()].some(
       (p) => !p.startsWith("Contents/Resources/web/") || sums.get(p) !== web.get(p),

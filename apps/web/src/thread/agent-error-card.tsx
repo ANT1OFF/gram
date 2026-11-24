@@ -63,7 +63,8 @@ const REFUSED_BEFORE_SENDING: ReadonlySet<string> = new Set([
 ]);
 
 const retryFailure = (error: unknown): string => {
-  const tag = typeof error === "object" && error !== null ? Reflect.get(error, "_tag") : undefined;
+  const tag =
+    typeof error === "object" && error !== null && "_tag" in error ? error._tag : undefined;
   return typeof tag === "string" && REFUSED_BEFORE_SENDING.has(tag)
     ? `The retry was refused, so nothing was sent: ${errorMessage(error)}`
     : `Couldn't confirm the retry reached the agent: ${errorMessage(error)}. Check the transcript before trying again.`;

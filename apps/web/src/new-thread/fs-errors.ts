@@ -1,4 +1,6 @@
 import type { FolderAccessDenial } from "@gram/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { errorMessage, isNotImplemented } from "@/api/errors";
 import { folderAccessDenial } from "@/api/folder-access";
@@ -17,11 +19,17 @@ export interface FolderProblem {
   access?: FolderAccessDenial;
 }
 
-const field = (error: unknown, key: string): string | undefined => {
-  if (typeof error !== "object" || error === null) return undefined;
-  const value = Reflect.get(error, key);
-  return typeof value === "string" ? value : undefined;
-};
+const stringOf = (value: unknown): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+const decodeNotFound = Schema.decodeUnknownOption(
+  Schema.Struct({
+    _tag: Schema.Literal("NotFound"),
+    entity: Schema.optional(Schema.Unknown),
+    id: Schema.optional(Schema.Unknown),
+    message: Schema.optional(Schema.Unknown),
+  }),
+);
 
 /**
  * A rejected `fs.browse` or `thread.create` for a folder, in the user's terms. The server's own
@@ -31,10 +39,11 @@ export function folderProblem(error: unknown): FolderProblem {
   if (isNotImplemented(error)) {
     return { kind: "unavailable", message: "Folder browsing isn't available yet" };
   }
-  if (field(error, "_tag") === "NotFound" && (field(error, "entity") ?? "project") === "project") {
-    const id = field(error, "id");
+  const notFound = Option.getOrUndefined(decodeNotFound(error));
+  if (notFound !== undefined && (stringOf(notFound.entity) ?? "project") === "project") {
+    const id = stringOf(notFound.id);
     const fallback = id ? `Folder not found: ${id}` : "Folder not found";
-    return { kind: "notFound", message: field(error, "message") || fallback };
+    return { kind: "notFound", message: stringOf(notFound.message) || fallback };
   }
   const text = errorMessage(error);
   const access = folderAccessDenial(error);
