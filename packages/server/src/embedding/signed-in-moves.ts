@@ -58,13 +58,42 @@ export type MoveOutcome =
   | "given-up"
   | "already-done";
 
-/** What a pass keeps between looks: the runs settled, and the tries of those that aren't. */
+/**
+ * What a pass keeps between looks: the runs settled, the tries of those that aren't, and what was
+ * last said of each machine and of the pass, so a skip or a failure is logged once as it starts,
+ * not at every look.
+ */
 export interface MoveMemory {
   readonly done: Set<string>;
   readonly tries: Map<string, number>;
+  readonly said: Map<string, string>;
 }
 
-export const makeMoveMemory = (): MoveMemory => ({ done: new Set(), tries: new Map() });
+export const makeMoveMemory = (): MoveMemory => ({
+  done: new Set(),
+  tries: new Map(),
+  said: new Map(),
+});
+
+/** Logs `message` for `key` only when what is said of it changed since the last look. */
+const sayOnce = (
+  memory: MoveMemory,
+  key: string,
+  level: "info" | "warn",
+  message: string,
+  annotations: Readonly<Record<string, unknown>>,
+) =>
+  Effect.suspend(() => {
+    const said = JSON.stringify([message, annotations]);
+    if (memory.said.get(key) === said) return Effect.void;
+    memory.said.delete(key);
+    memory.said.set(key, said);
+    return (level === "warn" ? Effect.logWarning : Effect.logInfo)(message).pipe(
+      Effect.annotateLogs(annotations),
+    );
+  });
+
+const PASS_KEY = "\0pass";
 
 /**
  * One look at the running hosted worker machines: for each its machine provider asks to move
@@ -81,31 +110,48 @@ export const makeMoveMemory = (): MoveMemory => ({ done: new Set(), tries: new M
  * the stop is then taken back for good, so a machine is never held off work for longer.
  */
 export const moveAskedMachines = (deps: MoveDeps, memory: MoveMemory, now = Date.now) =>
-  Effect.forEach(
-    deps
+  // The machines are read at each look, never once for all: a server starts before its hosted
+  // machines dial in, and a look over the list it started with would never see one of them.
+  Effect.suspend(() => {
+    const hosted = deps
       .machines()
-      .filter(
-        (machine) =>
-          machine.via !== undefined &&
-          machine.onDemand === "worker" &&
-          machine.onlineSince !== undefined,
-      ),
-    (machine) =>
-      moveOne(deps, machine, memory, now).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("a worker machine its provider asked to move wasn't moved").pipe(
-            Effect.annotateLogs({
-              machine: machine.name,
-              reason: Cause.pretty(cause).slice(0, 300),
-            }),
-            Effect.as<MoveOutcome>("unanswered"),
-          ),
+      .filter((machine) => machine.via !== undefined && machine.onDemand === "worker");
+    const online = hosted.filter((machine) => machine.onlineSince !== undefined);
+    return sayOnce(
+      memory,
+      PASS_KEY,
+      "info",
+      "hosted worker machines are looked at for their provider's asks to move them",
+      { online: online.length, offline: hosted.length - online.length },
+    ).pipe(
+      Effect.andThen(
+        Effect.forEach(
+          online,
+          (machine) =>
+            moveOne(deps, machine, memory, now).pipe(
+              Effect.catchCause((cause) =>
+                sayOnce(
+                  memory,
+                  machine.name,
+                  "warn",
+                  "a worker machine its provider asked to move wasn't moved",
+                  { machine: machine.name, reason: Cause.pretty(cause).slice(0, 300) },
+                ).pipe(Effect.as<MoveOutcome>("unanswered")),
+              ),
+            ),
+          { concurrency: MOVES_AT_ONCE },
         ),
       ),
-    { concurrency: MOVES_AT_ONCE },
-  );
+    );
+  });
 
 const PROVIDER_ANSWER = new Set(["not_found", "not_movable", "superseded", "expired"]);
+
+const codeOf = (body: unknown): { code?: string } => {
+  const code =
+    typeof body === "object" && body !== null ? (body as { code?: unknown }).code : undefined;
+  return typeof code === "string" ? { code: code.slice(0, 40) } : {};
+};
 
 const providerCantMoveNow = (status: number, code: unknown) =>
   status >= 500 ||
@@ -122,10 +168,31 @@ const moveOne = (
     const via = machine.via!;
     const account = machine.viaAccount;
     const asked = yield* deps.port.call(via, "status", { name: machine.name }, { account });
-    if (!asked.ok || asked.status !== 200) return "not-asked";
-    if (parseMachineStatus(asked.body).moveRequested === undefined) return "not-asked";
+    const skip = (level: "info" | "warn", message: string, why: Record<string, unknown> = {}) =>
+      sayOnce(memory, machine.name, level, message, { machine: machine.name, ...why }).pipe(
+        Effect.as<MoveOutcome>("not-asked"),
+      );
+    if (!asked.ok)
+      return yield* skip(
+        "warn",
+        "a worker machine's provider couldn't be asked whether to move it",
+        {
+          reason: asked.why.slice(0, 200),
+        },
+      );
+    if (asked.status !== 200)
+      return yield* skip("warn", "a worker machine's provider didn't say whether to move it", {
+        status: asked.status,
+        ...codeOf(asked.body),
+      });
+    if (parseMachineStatus(asked.body).moveRequested === undefined)
+      return yield* skip("info", "a worker machine's provider doesn't ask to move it");
     const run = runOf(asked.body);
-    if (run === undefined) return "not-asked";
+    if (run === undefined)
+      return yield* skip(
+        "warn",
+        "a worker machine's provider asks to move it but names no run of it; not moved",
+      );
     const key = JSON.stringify([via, machine.name, run.sandboxId, run.generation]);
     if (memory.done.has(key)) return "already-done";
     const id = HostId.make(machine.id);
@@ -144,6 +211,7 @@ const moveOne = (
       return yield* settle("given-up");
     }
     memory.tries.set(key, tried);
+    memory.said.delete(machine.name);
     yield* Effect.logInfo("the machine provider asks to move a worker machine; readying it").pipe(
       Effect.annotateLogs({ machine: machine.name, try: tried }),
     );
@@ -207,9 +275,15 @@ export const startMovingAsked = (deps: MoveDeps) => {
           memory.done.delete(memory.done.values().next().value!);
         while (memory.tries.size > REMEMBERED_MOST)
           memory.tries.delete(memory.tries.keys().next().value!);
+        while (memory.said.size > REMEMBERED_MOST)
+          memory.said.delete(memory.said.keys().next().value!);
       }),
     ),
-    Effect.catchCause((cause) => Effect.logWarning("the worker machine move pass failed", cause)),
+    Effect.catchCause((cause) =>
+      sayOnce(memory, PASS_KEY, "warn", "the worker machine move pass failed", {
+        reason: Cause.pretty(cause).slice(0, 300),
+      }),
+    ),
     Effect.repeat(Schedule.spaced(MOVE_LOOK_EVERY)),
     Effect.forkScoped,
   );
