@@ -19,7 +19,7 @@ import { answeredCards } from "./overview-model";
 
 const NO_CARDS: readonly FeatureCard[] = [];
 
-const featureCardsKey = (workspaceId: WorkspaceId) => ["featureCards", workspaceId] as const;
+const featureCardsKey = (workspaceId: string) => ["featureCards", workspaceId] as const;
 
 const watches = new WeakMap<Api, LedgerWatch>();
 
@@ -47,7 +47,7 @@ export function useFeatureCards(workspaceId: WorkspaceId | undefined): readonly 
     return watchFor(api, queryClient).retain(workspaceId);
   }, [api, queryClient, workspaceId]);
   const { data } = useQuery({
-    queryKey: featureCardsKey(workspaceId ?? ("" as WorkspaceId)),
+    queryKey: featureCardsKey(workspaceId ?? ""),
     queryFn: async () => {
       const next = await api.featureCards(workspaceId!);
       return mergeFeatureCards(

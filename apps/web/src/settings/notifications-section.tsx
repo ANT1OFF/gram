@@ -1,4 +1,4 @@
-import { chimeOf, type ChimeSound, type SettingsPatch } from "@gram/contracts";
+import { ChimeSound, chimeOf, type SettingsPatch } from "@gram/contracts";
 import { Check } from "lucide-react";
 import { useRef, useState, type KeyboardEvent } from "react";
 
@@ -26,8 +26,7 @@ import { useSaveSettings } from "./use-save-settings";
 
 const DEFAULT_PLACEMENT = "sidebar";
 
-const SOUNDS = Object.keys(CHIME_SOUNDS) as ChimeSound[];
-const CHOICES: readonly (ChimeSound | undefined)[] = [undefined, ...SOUNDS];
+const CHOICES: readonly (ChimeSound | undefined)[] = [undefined, ...ChimeSound.literals];
 
 type NotificationsKey = keyof typeof NOTIFICATIONS_DEFAULTS;
 type NotificationsPatch = NonNullable<SettingsPatch["notifications"]>;

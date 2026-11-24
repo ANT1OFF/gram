@@ -1,3 +1,5 @@
+import { fieldsOf } from "@gram/contracts";
+
 import { serverUrl } from "@/api/server-base";
 import { withOriginKey } from "../api/origin-key";
 
@@ -79,33 +81,30 @@ const STEPS: ReadonlySet<unknown> = new Set([
 ]);
 
 const isUpdate = (value: unknown): value is MachineUpdate => {
-  if (typeof value !== "object" || value === null) return false;
-  const u = value as Record<string, unknown>;
-  if (typeof u["release"] !== "string") return false;
-  switch (u["phase"]) {
+  const u = fieldsOf(value);
+  if (typeof u.get("release") !== "string") return false;
+  switch (u.get("phase")) {
     case "waiting": {
-      const busy = u["busy"] as Record<string, unknown> | null | undefined;
+      const busy = fieldsOf(u.get("busy"));
       return (
-        typeof busy === "object" &&
-        busy !== null &&
-        typeof busy["turns"] === "number" &&
-        typeof busy["terminals"] === "number" &&
-        typeof busy["clones"] === "number" &&
-        typeof busy["checks"] === "number"
+        typeof busy.get("turns") === "number" &&
+        typeof busy.get("terminals") === "number" &&
+        typeof busy.get("clones") === "number" &&
+        typeof busy.get("checks") === "number"
       );
     }
     case "downloading":
       return (
-        typeof u["received"] === "number" &&
-        (u["total"] === undefined || typeof u["total"] === "number")
+        typeof u.get("received") === "number" &&
+        (u.get("total") === undefined || typeof u.get("total") === "number")
       );
     case "updated":
-      return typeof u["at"] === "number";
+      return typeof u.get("at") === "number";
     case "failed":
     case "rolledBack":
-      return typeof u["at"] === "number" && typeof u["message"] === "string";
+      return typeof u.get("at") === "number" && typeof u.get("message") === "string";
     default:
-      return STEPS.has(u["phase"]);
+      return STEPS.has(u.get("phase"));
   }
 };
 
@@ -252,35 +251,38 @@ const refusal = async (response: Response, fallback: string): Promise<MachinesEr
 };
 
 const isTool = (value: unknown): value is MachineTool => {
-  if (typeof value !== "object" || value === null) return false;
-  const t = value as Record<string, unknown>;
+  const t = fieldsOf(value);
   return (
-    (t["tool"] === "claude" || t["tool"] === "git") &&
-    typeof t["found"] === "boolean" &&
-    (t["version"] === undefined || typeof t["version"] === "string")
+    (t.get("tool") === "claude" || t.get("tool") === "git") &&
+    typeof t.get("found") === "boolean" &&
+    (t.get("version") === undefined || typeof t.get("version") === "string")
   );
 };
 
+const isNumber = (field: unknown) => typeof field === "number";
+const isString = (field: unknown) => typeof field === "string";
+
 const isMachine = (value: unknown): value is JoinedMachine => {
-  if (typeof value !== "object" || value === null) return false;
-  const m = value as Record<string, unknown>;
+  const m = fieldsOf(value);
+  const optional = (key: string, is: (field: unknown) => boolean) =>
+    m.get(key) === undefined || is(m.get(key));
   return (
-    typeof m["id"] === "string" &&
-    typeof m["name"] === "string" &&
-    typeof m["platform"] === "string" &&
-    typeof m["fingerprint"] === "string" &&
-    typeof m["joinedAt"] === "number" &&
-    typeof m["confirmed"] === "boolean" &&
-    (m["onlineSince"] === undefined || typeof m["onlineSince"] === "number") &&
-    (m["claudeTokenSetAt"] === undefined || typeof m["claudeTokenSetAt"] === "number") &&
-    (m["claudeSignIn"] === undefined || SIGN_INS.has(m["claudeSignIn"])) &&
-    (m["claudeSignInCheckedAt"] === undefined || typeof m["claudeSignInCheckedAt"] === "number") &&
-    (m["tools"] === undefined || (Array.isArray(m["tools"]) && m["tools"].every(isTool))) &&
-    (m["offline"] === undefined || isOffline(m["offline"])) &&
-    (m["release"] === undefined || typeof m["release"] === "string") &&
-    (m["sshTarget"] === undefined || typeof m["sshTarget"] === "string") &&
-    (m["selfUpdate"] === undefined || typeof m["selfUpdate"] === "boolean") &&
-    (m["update"] === undefined || isUpdate(m["update"]))
+    typeof m.get("id") === "string" &&
+    typeof m.get("name") === "string" &&
+    typeof m.get("platform") === "string" &&
+    typeof m.get("fingerprint") === "string" &&
+    typeof m.get("joinedAt") === "number" &&
+    typeof m.get("confirmed") === "boolean" &&
+    optional("onlineSince", isNumber) &&
+    optional("claudeTokenSetAt", isNumber) &&
+    optional("claudeSignIn", (field) => SIGN_INS.has(field)) &&
+    optional("claudeSignInCheckedAt", isNumber) &&
+    optional("tools", (field) => Array.isArray(field) && field.every(isTool)) &&
+    optional("offline", isOffline) &&
+    optional("release", isString) &&
+    optional("sshTarget", isString) &&
+    optional("selfUpdate", (field) => typeof field === "boolean") &&
+    optional("update", isUpdate)
   );
 };
 
@@ -300,48 +302,46 @@ const REASONS = new Set([
 const DOWN_CAUSES = new Set(["missing", "signed-out", "stopped", "no-https", "error", "serve"]);
 
 const isOffline = (value: unknown): value is OfflineReason => {
-  if (typeof value !== "object" || value === null) return false;
-  const r = value as Record<string, unknown>;
-  if (typeof r["kind"] !== "string" || !REASONS.has(r["kind"])) return false;
-  if (r["kind"] === "never" || r["kind"] === "tailscale-off") return true;
-  if (r["kind"] === "tailscale-down")
-    return typeof r["cause"] === "string" && DOWN_CAUSES.has(r["cause"]);
-  if (typeof r["at"] !== "number") return false;
-  if (r["kind"] === "clock") return typeof r["skewMs"] === "number";
-  if (r["kind"] === "mismatch")
+  const r = fieldsOf(value);
+  const kind = r.get("kind");
+  if (typeof kind !== "string" || !REASONS.has(kind)) return false;
+  if (kind === "never" || kind === "tailscale-off") return true;
+  if (kind === "tailscale-down") {
+    const cause = r.get("cause");
+    return typeof cause === "string" && DOWN_CAUSES.has(cause);
+  }
+  if (typeof r.get("at") !== "number") return false;
+  if (kind === "clock") return typeof r.get("skewMs") === "number";
+  if (kind === "mismatch") {
+    const missing = r.get("missing");
     return (
-      typeof r["protocol"] === "number" &&
-      (r["release"] === undefined || typeof r["release"] === "string") &&
-      (r["missing"] === undefined ||
-        (Array.isArray(r["missing"]) && r["missing"].every((m) => typeof m === "string")))
+      typeof r.get("protocol") === "number" &&
+      (r.get("release") === undefined || typeof r.get("release") === "string") &&
+      (missing === undefined ||
+        (Array.isArray(missing) && missing.every((m) => typeof m === "string")))
     );
+  }
   return true;
 };
 
 const status = async (response: Response, fallback: string): Promise<MachinesStatus> => {
   if (!response.ok) throw await refusal(response, fallback);
-  const value = (await response.json()) as {
-    machines?: unknown;
-    joinLink?: unknown;
-    tokenLeft?: unknown;
-    release?: unknown;
-    protocol?: unknown;
-    updateCommand?: unknown;
-    automaticUpdates?: unknown;
-  };
-  if (!Array.isArray(value.machines) || !value.machines.every(isMachine))
-    throw new MachinesError(fallback);
-  const link = value.joinLink as { expiresAt?: unknown } | undefined;
+  const value = fieldsOf(await response.json());
+  const machines = value.get("machines");
+  if (!Array.isArray(machines) || !machines.every(isMachine)) throw new MachinesError(fallback);
+  const expiresAt = fieldsOf(value.get("joinLink")).get("expiresAt");
+  const release = value.get("release");
+  const protocol = value.get("protocol");
+  const updateCommand = value.get("updateCommand");
+  const automaticUpdates = value.get("automaticUpdates");
   return {
-    machines: value.machines,
-    ...(typeof link?.expiresAt === "number" ? { joinLink: { expiresAt: link.expiresAt } } : {}),
-    ...(value.tokenLeft === true ? { tokenLeft: true } : {}),
-    ...(typeof value.release === "string" ? { release: value.release } : {}),
-    ...(typeof value.protocol === "number" ? { protocol: value.protocol } : {}),
-    ...(typeof value.updateCommand === "string" ? { updateCommand: value.updateCommand } : {}),
-    ...(typeof value.automaticUpdates === "boolean"
-      ? { automaticUpdates: value.automaticUpdates }
-      : {}),
+    machines,
+    ...(typeof expiresAt === "number" ? { joinLink: { expiresAt } } : {}),
+    ...(value.get("tokenLeft") === true ? { tokenLeft: true } : {}),
+    ...(typeof release === "string" ? { release } : {}),
+    ...(typeof protocol === "number" ? { protocol } : {}),
+    ...(typeof updateCommand === "string" ? { updateCommand } : {}),
+    ...(typeof automaticUpdates === "boolean" ? { automaticUpdates } : {}),
   };
 };
 
@@ -367,35 +367,45 @@ export type TokenRun =
   | { readonly state: "cancelled" };
 
 const isTokenRun = (value: unknown): value is TokenRun => {
-  if (typeof value !== "object" || value === null) return false;
-  const run = value as Record<string, unknown>;
-  switch (run["state"]) {
-    case "waiting":
+  const run = fieldsOf(value);
+  switch (run.get("state")) {
+    case "waiting": {
+      const link = run.get("signInLink");
       return (
-        typeof run["asksForCode"] === "boolean" &&
-        (run["signInLink"] === undefined ||
-          (typeof run["signInLink"] === "string" && run["signInLink"].startsWith("https://")))
+        typeof run.get("asksForCode") === "boolean" &&
+        (link === undefined || (typeof link === "string" && link.startsWith("https://")))
       );
+    }
     case "sending":
     case "cancelled":
       return true;
     case "failed":
-      return typeof run["message"] === "string";
-    case "done":
+      return typeof run.get("message") === "string";
+    case "done": {
+      const results = run.get("results");
       return (
-        Array.isArray(run["results"]) &&
-        run["results"].every(
-          (result: unknown) =>
-            typeof result === "object" &&
-            result !== null &&
-            typeof (result as TokenSent).id === "string" &&
-            typeof (result as TokenSent).ok === "boolean",
-        )
+        Array.isArray(results) &&
+        results.every((result: unknown) => {
+          const sent = fieldsOf(result);
+          return typeof sent.get("id") === "string" && typeof sent.get("ok") === "boolean";
+        })
       );
+    }
     default:
       return false;
   }
 };
+
+const jsonFields = (text: string): ReadonlyMap<string, unknown> => {
+  try {
+    return fieldsOf(JSON.parse(text));
+  } catch (_plainText) {
+    return new Map();
+  }
+};
+
+const stringOr = (value: unknown, fallback: string): string =>
+  typeof value === "string" ? value : fallback;
 
 /** The query the Machines page and the new-thread machine picker share. */
 export const MACHINES_KEY = ["machines.status"] as const;
@@ -417,10 +427,12 @@ export const machinesApi = {
         ? "ssh-running"
         : "tailscale-off";
     if (!response.ok) throw await refusal(response, "Couldn't make a join link");
-    const value = (await response.json()) as { url?: unknown; expiresAt?: unknown };
-    if (typeof value.url !== "string" || typeof value.expiresAt !== "number")
+    const value = fieldsOf(await response.json());
+    const url = value.get("url");
+    const expiresAt = value.get("expiresAt");
+    if (typeof url !== "string" || typeof expiresAt !== "number")
       throw new MachinesError("Couldn't make a join link");
-    return { url: value.url, expiresAt: value.expiresAt };
+    return { url, expiresAt };
   },
   /**
    * The Claude token from `claude setup-token` on this machine, for joined machines the person
@@ -433,10 +445,10 @@ export const machinesApi = {
         consent: TOKEN_CONSENT,
       });
       if (!response.ok) throw await refusal(response, "Couldn't start claude setup-token");
-      const value = (await response.json()) as { captureId?: unknown };
-      if (typeof value.captureId !== "string")
+      const captureId = fieldsOf(await response.json()).get("captureId");
+      if (typeof captureId !== "string")
         throw new MachinesError("Couldn't start claude setup-token");
-      return value.captureId;
+      return captureId;
     },
     status: async (captureId: string): Promise<TokenRun> => {
       const response = await post("/machines/claude-token/status", { captureId });
@@ -477,30 +489,27 @@ export const machinesApi = {
   ): Promise<MachinesStatus & { readonly output: string; readonly started?: boolean }> => {
     const response = await post("/machines/update", { id });
     const text = await response.text().catch(() => "");
-    let value: { message?: unknown; output?: unknown; reason?: unknown; started?: unknown } = {};
-    try {
-      value = JSON.parse(text) as typeof value;
-    } catch (_plainText) {}
-    const output = typeof value.output === "string" ? value.output : "";
+    const value = jsonFields(text);
+    const output = stringOr(value.get("output"), "");
     if (!response.ok)
       throw new SshJoinError(
-        typeof value.message === "string" ? value.message : "Couldn't update the machine",
+        stringOr(value.get("message"), "Couldn't update the machine"),
         output,
-        value.reason === "ssh-running",
+        value.get("reason") === "ssh-running",
       );
     return {
       ...(await status(new Response(text, { status: 200 }), "Couldn't update the machine")),
       output,
-      ...(value.started === true ? { started: true } : {}),
+      ...(value.get("started") === true ? { started: true } : {}),
     };
   },
   /** The hosts in this computer's SSH config, for the Add over SSH picker. */
   sshHosts: async (): Promise<ReadonlyArray<string>> => {
     const response = await post("/machines/ssh-hosts");
     if (!response.ok) return [];
-    const value = (await response.json()) as { hosts?: unknown };
-    return Array.isArray(value.hosts)
-      ? value.hosts.filter((host): host is string => typeof host === "string")
+    const hosts = fieldsOf(await response.json()).get("hosts");
+    return Array.isArray(hosts)
+      ? hosts.filter((host): host is string => typeof host === "string")
       : [];
   },
   /**
@@ -520,28 +529,20 @@ export const machinesApi = {
   > => {
     const response = await post("/machines/ssh-join", { target });
     const text = await response.text().catch(() => "");
-    let value: {
-      message?: unknown;
-      output?: unknown;
-      joined?: unknown;
-      problem?: unknown;
-      reason?: unknown;
-    } = {};
-    try {
-      value = JSON.parse(text) as typeof value;
-    } catch (_plainText) {}
-    const output = typeof value.output === "string" ? value.output : "";
+    const value = jsonFields(text);
+    const output = stringOr(value.get("output"), "");
     if (!response.ok)
       throw new SshJoinError(
-        typeof value.message === "string" ? value.message : "Couldn't add the machine over SSH",
+        stringOr(value.get("message"), "Couldn't add the machine over SSH"),
         output,
-        value.reason === "ssh-running",
+        value.get("reason") === "ssh-running",
       );
     const parsed = await status(new Response(text, { status: 200 }), "Couldn't add the machine");
+    const problem = value.get("problem");
     return {
       ...parsed,
-      joined: typeof value.joined === "string" ? value.joined : "",
-      ...(typeof value.problem === "string" ? { problem: value.problem } : {}),
+      joined: stringOr(value.get("joined"), ""),
+      ...(typeof problem === "string" ? { problem } : {}),
       output,
     };
   },

@@ -369,7 +369,7 @@ function usePlaceKept(
       if (all.length > 0) return all[Math.min(restore ? (place?.index ?? 0) : 0, all.length - 1)]!;
       return box.querySelector<HTMLElement>("button");
     }, 30).then(() => {
-      (document.activeElement as HTMLElement | null)?.scrollIntoView?.({ block: "nearest" });
+      document.activeElement?.scrollIntoView?.({ block: "nearest" });
     });
   }, [restore, focus, scroller, current, listed]);
 }
@@ -661,7 +661,8 @@ function Group({
 const KEYED_ROWS = '[data-testid="workers-panel-row"], [data-testid="doc-row"]';
 
 function rowKeys(event: KeyboardEvent<HTMLElement>) {
-  const from = (event.target as HTMLElement).closest<HTMLElement>(KEYED_ROWS);
+  const from =
+    event.target instanceof Element ? event.target.closest<HTMLElement>(KEYED_ROWS) : null;
   if (from === null) return;
   const rows = [...event.currentTarget.querySelectorAll<HTMLElement>(KEYED_ROWS)].filter(
     (row) => row.closest("[hidden]") === null,

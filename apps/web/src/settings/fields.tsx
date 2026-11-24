@@ -431,9 +431,6 @@ function useRovingRadios<T extends string>(
 
 /** An on/off setting: a row with a switch on the right. */
 export function Toggle({
-  label,
-  labelText,
-  description,
   keywords,
   checked,
   onChange,
@@ -445,6 +442,7 @@ export function Toggle({
   learnMore,
   nested = false,
   testId,
+  ...name
 }: RichLabel & {
   /** Extra words Settings search finds this by. */
   keywords?: readonly string[];
@@ -465,7 +463,6 @@ export function Toggle({
   learnMore?: ReactNode;
 }) {
   const id = useId();
-  const name = { label, labelText, description } as RichLabel;
   return (
     <SettingRow
       {...name}

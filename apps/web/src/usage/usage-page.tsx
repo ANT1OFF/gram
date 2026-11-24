@@ -18,11 +18,10 @@ import {
   cacheShare,
   compactTokens,
   dayLabel,
-  FAMILIES,
   familiesIn,
+  familyTotalsOver,
   usageDays,
   wholeTokens,
-  type Family,
 } from "./usage-model";
 import { UsageSourcesSection } from "./usage-sources";
 
@@ -32,6 +31,10 @@ const PERIODS = [
   { value: "30", label: "30 d" },
   { value: "90", label: "90 d" },
 ] as const;
+const PERIOD_DAYS = { "1": 1, "7": 7, "30": 30, "90": 90 } as const satisfies Record<
+  (typeof PERIODS)[number]["value"],
+  UsagePeriod
+>;
 const PROVIDERS = [
   { value: "all", label: "All" },
   { value: "claude", label: "Claude" },
@@ -78,8 +81,8 @@ export function UsagePage() {
             <OptionGroup
               label="Period"
               options={PERIODS}
-              value={String(days) as (typeof PERIODS)[number]["value"]}
-              onChange={(value) => setDays(Number(value) as UsagePeriod)}
+              value={`${days}` as const}
+              onChange={(value) => setDays(PERIOD_DAYS[value])}
             />
             <OptionGroup
               label="Provider"
@@ -148,9 +151,7 @@ function UsageSnapshot({ data }: { data: UsageOverview }) {
       0 && !incompleteSources;
   const days = usageDays(data);
   const families = familiesIn(days);
-  const byFamily = Object.fromEntries(
-    FAMILIES.map((f) => [f, days.reduce((n, d) => n + d.families[f], 0)]),
-  ) as Record<Family, number>;
+  const byFamily = familyTotalsOver(days);
   const busiest = days.reduce<(typeof days)[number] | undefined>(
     (best, d) => (d.total > (best?.total ?? 0) ? d : best),
     undefined,

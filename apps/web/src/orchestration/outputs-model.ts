@@ -54,10 +54,8 @@ const dayKey = (at: number, timeZone: string | undefined) =>
     ...(timeZone === undefined ? {} : { timeZone }),
   }).format(at);
 
-const dayBefore = (key: string): string => {
-  const [year, month, day] = key.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
-};
+const dayBefore = (key: string): string =>
+  new Date(Date.parse(key) - 86_400_000).toISOString().slice(0, 10);
 
 /**
  * `Today`, `Yesterday`, else the date (`14 Oct`, `formatDay`), in the viewer's zone (or `timeZone`,

@@ -9,7 +9,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { worktreeMissing } from "@/components/worktree-missing";
 import { prTargetOf } from "@/panels/pr-identity";
 import { passedCount } from "@/panels/proof-panel";
 
@@ -71,7 +70,7 @@ export const liveTools = ({
   verify,
 }: ToolFacts): readonly Tool[] => {
   const outside = git !== undefined && !git.repo;
-  const missing = worktreeMissing(git as GitState | undefined);
+  const missing = git?.missing === true;
   const pr = prTargetOf(git, boundPr)?.number;
   const changed = finished && prFiles !== undefined ? prFiles : (git?.changedFiles ?? 0);
   const noCheckout = missing ? FOLDER_MISSING : finished ? FINISHED : undefined;

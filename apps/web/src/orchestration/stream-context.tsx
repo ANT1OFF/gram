@@ -1,4 +1,5 @@
-import type { FeatureCard, GramUIMessage, Thread, ThreadId } from "@gram/contracts";
+import { ThreadId, type FeatureCard, type GramUIMessage, type Thread } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import { createContext, use, useMemo, type ReactNode } from "react";
 
 import { useAllActivity } from "@/stores/all-activity";
@@ -9,6 +10,8 @@ import { useRailFacts } from "./feature-sheet";
 import { cardRows, planRuns, planStream, quietCard, type StreamPlan } from "./stream-model";
 import { UpdateBlock, UpdateRun } from "./update-block";
 import { useFeatureCards } from "./use-feature-cards";
+
+const isThreadId = Schema.is(ThreadId);
 
 interface WorkerName {
   readonly threadId: ThreadId;
@@ -65,9 +68,12 @@ export function useOrchestratorStream(
         ? []
         : namesKey
             .split("\n")
-            .map((entry) => {
-              const [threadId, title] = entry.split("\u0000") as [ThreadId, string];
-              return { threadId, title };
+            .flatMap((entry) => {
+              const cut = entry.indexOf("\u0000");
+              const threadId = entry.slice(0, cut);
+              return cut > 0 && isThreadId(threadId)
+                ? [{ threadId, title: entry.slice(cut + 1) }]
+                : [];
             })
             .toSorted((a, b) => b.title.length - a.title.length),
     [namesKey],

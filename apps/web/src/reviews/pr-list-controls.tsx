@@ -7,6 +7,8 @@ import { Hint } from "@/components/hint";
 import { spin } from "@/motion";
 import {
   DEFAULT_PR_OPTIONS,
+  PR_FILTERS,
+  PR_SORTS,
   selectPrs,
   type PrFilter,
   type PrInformation,
@@ -14,8 +16,12 @@ import {
   type PrSort,
 } from "./pr-list-model";
 
-const sortLabels = { recent: "Recent activity", oldest: "Oldest activity", size: "Largest change" };
-const filterLabels = {
+const sortLabels: Readonly<Record<PrSort, string>> = {
+  recent: "Recent activity",
+  oldest: "Oldest activity",
+  size: "Largest change",
+};
+const filterLabels: Readonly<Record<PrFilter, string>> = {
   all: "All PRs",
   draft: "Drafts",
   ready: "Non-drafts",
@@ -84,7 +90,10 @@ export function PrListControls({
           <select
             aria-label={`Sort ${label}`}
             value={options.sort}
-            onChange={(e) => setOptions({ ...options, sort: e.target.value as PrSort })}
+            onChange={(e) => {
+              const sort = PR_SORTS.find((known) => known === e.target.value);
+              if (sort !== undefined) setOptions({ ...options, sort });
+            }}
             className="absolute inset-0 w-full cursor-pointer opacity-0"
           >
             <option value="recent">Recent activity</option>
@@ -103,7 +112,10 @@ export function PrListControls({
           <select
             aria-label={`Filter ${label}`}
             value={options.filter}
-            onChange={(e) => setOptions({ ...options, filter: e.target.value as PrFilter })}
+            onChange={(e) => {
+              const filter = PR_FILTERS.find((known) => known === e.target.value);
+              if (filter !== undefined) setOptions({ ...options, filter });
+            }}
             className="absolute inset-0 w-full cursor-pointer opacity-0"
           >
             <option value="all">All displayed PRs</option>

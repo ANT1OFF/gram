@@ -23,8 +23,18 @@ export type PrInformation = Pick<
   | "reviewDecision"
   | "bot"
 > & { readonly isDraft?: boolean };
-export type PrSort = "recent" | "oldest" | "size";
-export type PrFilter = "all" | "draft" | "ready" | "failing" | "pending" | "unknown" | "none";
+export const PR_SORTS = ["recent", "oldest", "size"] as const;
+export type PrSort = (typeof PR_SORTS)[number];
+export const PR_FILTERS = [
+  "all",
+  "draft",
+  "ready",
+  "failing",
+  "pending",
+  "unknown",
+  "none",
+] as const;
+export type PrFilter = (typeof PR_FILTERS)[number];
 export interface PrListOptions {
   search: string;
   sort: PrSort;

@@ -3,6 +3,8 @@ import type { HeldBrief, LimitForecast } from "@gram/contracts";
 import { agentLabel } from "@/agents/agent-label";
 import { formatStamp } from "@/lib/time";
 import {
+  LIMIT_PROVIDERS,
+  LIMIT_WINDOWS,
   limitSpent,
   limitWarns,
   limitWindowOf,
@@ -21,8 +23,10 @@ export const PROVIDER_SHORT: Readonly<Record<LimitProvider, string>> = {
   grok: "Grok",
 };
 
-const shortName = (agent: string): string =>
-  Object.hasOwn(PROVIDER_SHORT, agent) ? PROVIDER_SHORT[agent as LimitProvider] : agentLabel(agent);
+const shortName = (agent: string): string => {
+  const provider = LIMIT_PROVIDERS.find((known) => known === agent);
+  return provider === undefined ? agentLabel(agent) : PROVIDER_SHORT[provider];
+};
 
 /** Each window's one name, as a heading; `windowWord` is the same name mid-sentence. */
 export const WINDOW_LABEL: Readonly<Record<LimitWindow, string>> = {
@@ -37,7 +41,8 @@ export const WINDOW_LABEL: Readonly<Record<LimitWindow, string>> = {
  * underscores as spaces.
  */
 export const windowWord = (window: string): string => {
-  if (Object.hasOwn(WINDOW_LABEL, window)) return WINDOW_LABEL[window as LimitWindow].toLowerCase();
+  const own = LIMIT_WINDOWS.find((known) => known === window);
+  if (own !== undefined) return WINDOW_LABEL[own].toLowerCase();
   const [base = ""] = /^(five_hour|seven_day)/.exec(window) ?? [];
   const known = limitWindowOf(base);
   const named = known === undefined ? window : `${windowWord(known)}${window.slice(base.length)}`;

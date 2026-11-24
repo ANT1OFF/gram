@@ -4,7 +4,7 @@ import {
   NO_KEYRING_MESSAGE,
   OPENROUTER_BASE_URL,
   type GatewayProfile,
-  type ProfileId,
+  ProfileId,
   type SetKeyResult,
   type VaultInfo,
 } from "@gram/contracts";
@@ -53,7 +53,7 @@ export function profileIdFor(name: string, taken: ReadonlySet<string>): ProfileI
       .replaceAll(/^-+|-+$/g, "") || "gateway";
   let id = base;
   for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
-  return id as ProfileId;
+  return ProfileId.make(id);
 }
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -197,7 +197,7 @@ function AddOpenRouter({
       const result = await api.finishOpenRouterSignIn(started.attemptId);
       if (mine !== attempt.current) return undefined;
       const { profileId, ...rest } = result;
-      return { profileId: profileId as ProfileId, result: rest };
+      return { profileId: ProfileId.make(profileId), result: rest };
     },
     onSuccess: async (outcome) => {
       await invalidate();

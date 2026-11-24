@@ -169,21 +169,16 @@ export function useNeedsYouIn(scope: NeedsYouScope): {
   readonly elsewhere: readonly NeedsYouItem[];
 } {
   const { groups } = useNeedsYouList();
-  const kind = typeof scope === "string" ? scope : "workspace";
+  const named = typeof scope === "string" ? scope : undefined;
   const workspaceId = typeof scope === "string" ? undefined : scope.workspaceId;
   return useMemo(() => {
-    const here = needsYouIn(
-      groups,
-      kind === "workspace" && workspaceId !== undefined
-        ? { workspaceId }
-        : (kind as "all" | "solo"),
-    );
+    const here = needsYouIn(groups, workspaceId === undefined ? (named ?? "all") : { workspaceId });
     const mine = new Set(here.map((item) => item.key));
     return {
       here,
       elsewhere: needsYouIn(groups, "all").filter((item) => !mine.has(item.key)),
     };
-  }, [groups, kind, workspaceId]);
+  }, [groups, named, workspaceId]);
 }
 
 /**

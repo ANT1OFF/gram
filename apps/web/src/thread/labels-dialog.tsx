@@ -1,4 +1,4 @@
-import type { Label, LabelId } from "@gram/contracts";
+import { LabelId, type Label } from "@gram/contracts";
 import { DEFAULT_PALETTE_ID, PRESET_PALETTES, resolvePalette } from "@gram/themes";
 import { useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
@@ -63,7 +63,7 @@ export function LabelsDialog({ onClose }: { onClose: () => void }) {
   const add = () =>
     run(() =>
       api.upsertLabel({
-        id: crypto.randomUUID() as LabelId,
+        id: LabelId.make(crypto.randomUUID()),
         name: `label ${labels.length + 1}`,
         color: swatches[labels.length % swatches.length]!.color,
       }),

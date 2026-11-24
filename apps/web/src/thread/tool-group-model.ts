@@ -1,10 +1,12 @@
 import {
   FILE_EDIT_VERB,
+  fieldsOf,
   visibleText,
   type FileEdit,
   type GramUIMessage,
   type ToolImageData,
 } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 import { formatSize } from "@/panels/files/format";
 
@@ -104,8 +106,8 @@ export function toolImagesOf(
  * stored copy is named by content hash, which tells a reader nothing.
  */
 export const toolImageName = (part: AnyToolPart, index: number, count: number): string => {
-  const input = (part.input ?? {}) as Record<string, unknown>;
-  const path = input["file_path"] ?? input["path"];
+  const input = fieldsOf(part.input);
+  const path = input.get("file_path") ?? input.get("path");
   const name =
     typeof path === "string" && basename(path) !== ""
       ? basename(path)
@@ -214,8 +216,7 @@ const visibleLabel = (text: string | undefined) => {
 };
 
 export const toolInputField = (input: unknown, key: string): string | undefined => {
-  if (typeof input !== "object" || input === null) return undefined;
-  const value = (input as Record<string, unknown>)[key];
+  const value = Predicate.hasProperty(input, key) ? input[key] : undefined;
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 };
 
@@ -224,7 +225,7 @@ export function toolDetail(part: AnyToolPart): string | undefined {
   const { input } = part;
   const field = (key: string) => toolInputField(input, key);
   const path = field("file_path") ?? field("notebook_path") ?? field("filePath") ?? field("path");
-  const queries = (input as { queries?: unknown } | undefined)?.queries;
+  const queries = Predicate.hasProperty(input, "queries") ? input.queries : undefined;
   return (
     (toolNameOf(part).includes("browser_") ? visibleLabel(field("actionSummary")) : undefined) ??
     field("description") ??

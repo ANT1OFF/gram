@@ -1,5 +1,6 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { MessagesSquare } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 
@@ -8,6 +9,8 @@ import { useBesideLink } from "@/orchestration/beside-link";
 import { useThreadsStore } from "@/stores/threads";
 
 import { THREAD_REF_TAG, resolveThreadRef, splitThreadLinks } from "./thread-refs";
+
+const isThreadId = Schema.is(ThreadId);
 
 const CHIP =
   "inline-flex max-w-[28ch] items-center gap-1 rounded-sm border px-1 align-baseline text-code leading-snug font-medium";
@@ -24,7 +27,7 @@ function ThreadRefChip({
   const title = useThreadsStore((s) => s.byId[id]?.thread.title);
   const ready = useThreadsStore((s) => s.ready);
   const target = resolveThreadRef(id, () => title, ready);
-  const beside = useBesideLink(id as ThreadId);
+  const beside = useBesideLink(isThreadId(id) ? id : undefined);
   if (target.kind === "none") return <>{fallback}</>;
   if (target.kind === "gone") {
     return (

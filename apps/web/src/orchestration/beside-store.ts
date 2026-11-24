@@ -1,4 +1,5 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -58,8 +59,8 @@ const TABS: readonly BesideTab[] = ["thread", "changes", "pr", "proof", "termina
 /** The least a worker's conversation and composer open at, as wide as the read-only dock was. */
 export const BESIDE_WIDTH = 480;
 
-const storedId = (value: unknown): ThreadId | undefined =>
-  typeof value === "string" && value !== "" ? (value as ThreadId) : undefined;
+const isThreadId = Schema.is(ThreadId);
+const storedId = (value: unknown): ThreadId | undefined => (isThreadId(value) ? value : undefined);
 
 const storedDock = (persisted: unknown) => {
   const value = typeof persisted === "object" && persisted !== null ? persisted : {};
@@ -142,7 +143,7 @@ export const useBesideStore = create<BesideState>()(
       name: typeof window === "undefined" ? "gram.beside" : `gram.beside.${currentWindow().id}`,
       version: 2,
       storage: createJSONStorage(besideStorage),
-      migrate: (persisted) => persisted as BesideState,
+      migrate: storedDock,
       partialize: ({ worker, last, tab, shown }) => ({ worker, last, tab, shown }),
       merge: (persisted, current) => ({ ...current, ...storedDock(persisted) }),
     },

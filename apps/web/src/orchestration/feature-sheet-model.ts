@@ -51,9 +51,14 @@ export const featureSheet = (card: FeatureCard, facts: RailFacts): FeatureSheet 
   const [row] = railRows([card], facts, "unarchived");
   if (row === undefined) return undefined;
   const workers = lineWorkers(row);
-  const counts = Object.fromEntries(
-    FEATURE_STATIONS.map((station) => [station, row.cells[station].length]),
-  ) as Record<FeatureStation, number>;
+  const { cells } = row;
+  const counts: Record<FeatureStation, number> = {
+    briefed: cells.briefed.length,
+    working: cells.working.length,
+    checks: cells.checks.length,
+    review: cells.review.length,
+    merged: cells.merged.length,
+  };
   return {
     row,
     counts,

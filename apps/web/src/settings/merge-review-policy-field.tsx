@@ -2,7 +2,7 @@ import {
   MergePolicyRepo,
   mergeReviewPolicyOf,
   reviewBotsOf,
-  type MergeReviewPolicy,
+  MergeReviewPolicy,
   type OrchestratorCharter,
 } from "@gram/contracts";
 import * as Schema from "effect/Schema";
@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { Field, inputCls, OptionGroup } from "./fields";
+
+const isPolicy = Schema.is(MergeReviewPolicy);
 
 const OPTIONS = [
   { value: "automatic", label: "Automatic" },
@@ -121,18 +123,18 @@ export function MergeReviewPolicyField({
                   className={SELECT}
                   value={override.policy}
                   disabled={disabled}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    if (!isPolicy(next)) return;
                     onChange(
                       withOverrides(
                         charter,
                         overrides.map((each, i) =>
-                          i === index
-                            ? { ...each, policy: event.target.value as MergeReviewPolicy }
-                            : each,
+                          i === index ? { ...each, policy: next } : each,
                         ),
                       ),
-                    )
-                  }
+                    );
+                  }}
                 >
                   {OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -223,7 +225,10 @@ function AddOverride({
           className={SELECT}
           value={policy}
           disabled={disabled}
-          onChange={(event) => setPolicy(event.target.value as MergeReviewPolicy)}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (isPolicy(next)) setPolicy(next);
+          }}
         >
           {OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>

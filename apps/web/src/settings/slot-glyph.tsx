@@ -1,21 +1,17 @@
-import {
-  isPinned,
-  recommendedSetupOn,
-  TIERS,
-  tierName,
-  type ModelSlot,
-  type Tier,
-} from "@gram/contracts";
+import { isPinned, recommendedSetupOn, TIERS, tierName, type ModelSlot } from "@gram/contracts";
 import { Pin, RotateCcw, Sparkles } from "lucide-react";
 
 import { Hint } from "@/components/hint";
 import { Button } from "@/components/ui/button";
+import { oneOf } from "@/lib/one-of";
 import { cn } from "@/lib/utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 /** The words behind a following slot's glyph: "Recommended · Lead tier · updates with Gram". */
-export const followsWords = (tier: string): string =>
-  `Recommended · ${(TIERS as readonly string[]).includes(tier) ? tierName(tier as Tier) : tier} tier · updates with Gram`;
+export const followsWords = (tier: string): string => {
+  const known = oneOf(TIERS, tier);
+  return `Recommended · ${known === undefined ? tier : tierName(known)} tier · updates with Gram`;
+};
 
 /** The words behind a pinned slot's glyph. */
 export const YOURS_WORDS = "Your choice · updates leave it alone";

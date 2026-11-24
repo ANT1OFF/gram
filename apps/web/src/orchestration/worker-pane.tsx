@@ -184,13 +184,15 @@ export function WorkerPane({
     if (!toolKeys) return;
     useBesideStore.setState({ toolKeys: false });
     void focusWhenRendered(() => {
-      if (heldInPane(root.current)) return document.activeElement as HTMLElement;
+      const active = document.activeElement;
+      if (heldInPane(root.current)) return active instanceof HTMLElement ? active : null;
       return root.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? null;
     });
   }, [toolKeys]);
   useEffect(() => {
     const away = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node | null)) setFocused(false);
+      const { target } = event;
+      if (!(target instanceof Node) || !root.current?.contains(target)) setFocused(false);
     };
     document.addEventListener("pointerdown", away, true);
     return () => {
@@ -487,7 +489,7 @@ function ToolRow({
   const row = useRef<HTMLDivElement>(null);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const all = [...(row.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
-    const at = all.indexOf(event.target as HTMLElement);
+    const at = all.findIndex((tab) => tab === event.target);
     if (at === -1) return;
     const next =
       event.key === "ArrowRight"

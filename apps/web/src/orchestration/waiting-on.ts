@@ -126,10 +126,6 @@ export interface WaitingOn {
   readonly hint: string;
 }
 
-const RANK: Readonly<Record<WaitKind, number>> = Object.fromEntries(
-  WAIT_KINDS.map((kind, i) => [kind, i]),
-) as Record<WaitKind, number>;
-
 const WORD: Readonly<Partial<Record<WaitKind, string>>> = {
   limit: "Paused",
   held: "Under your control",
@@ -158,7 +154,7 @@ const PR_WAIT_WORDS: Readonly<Partial<Record<WaitKind, string>>> = {
 export const waitingOf = (reasons: readonly WaitReason[]): WaitingOn | undefined => {
   const sorted = reasons.toSorted(
     (a, b) =>
-      RANK[a.kind] - RANK[b.kind] ||
+      WAIT_KINDS.indexOf(a.kind) - WAIT_KINDS.indexOf(b.kind) ||
       (a.at ?? Number.MAX_SAFE_INTEGER) - (b.at ?? Number.MAX_SAFE_INTEGER),
   );
   const [first] = sorted;

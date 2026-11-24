@@ -199,7 +199,7 @@ export function ConversationRail({
         if (!["Home", "End", "ArrowUp", "ArrowDown"].includes(event.key)) return;
         const rail = event.currentTarget;
         const buttons = [...rail.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-        const from = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        const from = buttons.findIndex((button) => button === document.activeElement);
         if (from === -1) return;
         const next =
           event.key === "Home"

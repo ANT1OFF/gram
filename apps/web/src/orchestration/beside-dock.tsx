@@ -1,7 +1,6 @@
-import type { ThreadId } from "@gram/contracts";
-import { useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
+import { useRouteThreadId } from "@/shell/route-params";
 import { fitShell, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -26,7 +25,7 @@ export function useBesideSync() {
     }
   }, [paneShown]);
   const ready = useThreadsStore((s) => s.ready);
-  const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const route = useRouteThreadId();
   useEffect(() => {
     if (ready && restored) checkRestored(route);
   }, [ready, restored, route]);

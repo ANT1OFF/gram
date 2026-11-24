@@ -144,7 +144,7 @@ export function EnvironmentField({
 function ManageLink({ manage }: { manage: NonNullable<ShellEnvironmentList["manage"]> }) {
   return (
     <Link
-      {...({ to: manage.to } as unknown as { to: "/" })}
+      to={manage.to}
       className="rounded-sm text-foreground underline underline-offset-2 outline-none hover:text-foreground/80 focus-visible:focus-ring"
     >
       {manage.label}
