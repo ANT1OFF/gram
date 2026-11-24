@@ -1,12 +1,16 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { HostId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Logger from "effect/Logger";
+import * as TestClock from "effect/testing/TestClock";
 import {
   makeMoveMemory,
   MOVE_ACTS_WITHIN_MS,
+  MOVE_LOOK_EVERY,
   MOVE_TRIES,
   moveAskedMachines,
   type MoveDeps,
+  startMovingAsked,
 } from "./signed-in-moves.ts";
 import { fencedCalls } from "./signed-in-fences.ts";
 import type { WorkerMachinePortShape } from "./signed-in-port.ts";
@@ -188,6 +192,60 @@ describe("a hosted worker machine its provider asks to move", () => {
         call: "move",
         body: { name: "worker-0123abcd", notAfter: NOW + MOVE_ACTS_WITHIN_MS, ...RUN },
       });
+    }),
+  );
+
+  it.effect("is moved when it dials in after the looks began", () =>
+    Effect.gen(function* () {
+      const { deps, prepared } = provider({});
+      // A server starts before its hosted machines dial in: none is online at the first look.
+      let online = false;
+      yield* startMovingAsked({ ...deps, machines: () => (online ? [worker()] : []) });
+      yield* TestClock.adjust(MOVE_LOOK_EVERY);
+      expect(prepared).toEqual([]);
+      online = true;
+      // Before this change each look went over the machines read once, at the start: none.
+      yield* TestClock.adjust(MOVE_LOOK_EVERY);
+      expect(prepared).toEqual(["m-worker"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("warns once when its provider can't be asked, and again when that changes", () =>
+    Effect.gen(function* () {
+      const warned: Array<string> = [];
+      const logger = Logger.make(({ message, logLevel }) => {
+        if (logLevel === "Warn") warned.push(String(message));
+      });
+      const { deps } = provider({});
+      let answer: "refused" | 500 | "fine" = "refused";
+      const flaky: MoveDeps = {
+        ...deps,
+        port: {
+          call: (origin, call, body, callOptions) =>
+            call !== "status" || answer === "fine"
+              ? deps.port.call(origin, call, body, callOptions)
+              : Effect.succeed(
+                  answer === "refused"
+                    ? { ok: false as const, why: "The desktop app didn't answer." }
+                    : { ok: true as const, status: 500, body: { code: "unavailable" } },
+                ),
+        },
+      };
+      const memory = makeMoveMemory();
+      const look = moveAskedMachines(flaky, memory, () => NOW).pipe(
+        Effect.provide(Logger.layer([logger])),
+      );
+      // Before this change a failed status was answered "not-asked" with nothing logged.
+      expect(yield* look).toEqual(["not-asked"]);
+      yield* look;
+      expect(warned).toHaveLength(1);
+      answer = 500;
+      yield* look;
+      yield* look;
+      expect(warned).toHaveLength(2);
+      answer = "fine";
+      expect(yield* look).toEqual(["moved"]);
+      expect(warned).toHaveLength(2);
     }),
   );
 });
