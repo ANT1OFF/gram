@@ -434,8 +434,11 @@ a minute, and a reviewer placed beside its author can read the author's worktree
   the seats of spawns under way. A named machine with no room is refused with who is on it.
 - **`shareWith` checks its picks.** A size, architecture, isolation or environment named with it
   that differs from what the machine was started with is refused; naming none takes the machine
-  as it is. A machine started `exclusive` is never shared, and a worker placed exclusive is never
-  moved onto a machine it would share.
+  as it is. A machine started `exclusive` is never shared.
+- **No way round.** Naming a workers' machine with `spawn_worker`'s `machine` is the same as
+  `shareWith`: the same ownership, picks, cap and seat. A named machine must have an open worker
+  of the calling orchestrator on it. The cap is checked again as the spawn goes ahead, after any
+  approval card, against the workspace's setting and the workers there then.
 - **The ledger.** `list_workers` gives each worker on a machine its `packing` (`own`,
   `exclusive`, `shared`, `named`) and the other unfinished workers there (`sharesWith`), and each
   machine its `workers`. `worker_machines` gives each machine's cap, room, size and who is on it,
@@ -487,29 +490,6 @@ follows, and this Gram's own cap is all that bounds a machine.
 
 A hosted server the desktop is signed in to takes the same as `…/workers` and `…/machines`, with
 no `kind` or `owner`.
-
-### Moving a worker
-
-`place_worker` moves a worker to another hosted machine, with `to` in `sandbox`'s shape. An
-orchestrator moves its own workers. A worker may only ask `{own: true}` for itself: packing
-workers together is its orchestrator's decision, since a worker that could put itself beside
-another could reach that worker's files.
-
-A turn can't be carried: its processes, its terminals and the agent's own session file stay on
-the machine. So a worker moves between turns. One at rest (cold, idle or failed) moves at once.
-One in a turn is queued and moves when it next rests, looked at every half minute for a day;
-`cancel: true` drops it. Queued moves are kept in memory and are lost when this Gram restarts.
-
-The move uses what a machine's stop does (`orchestration/worker-moves.ts`): the worker's folders
-are kept at the remote on its hidden ref (`host.stop.keep`), the machine it goes to makes them
-again from the remote and that ref (`host.stop.restore`, a host that names `wip-restore-ref`),
-and only then is the thread pointed there. Its next session opens on the new machine and reads
-the recent turns, as after a machine came back on another disk. A step that fails leaves the
-worker where it was. The folder it leaves is removed only when nothing in it is uncommitted.
-Folders it was only let read on the old machine (`readAlso`) are let go.
-
-Not moved: a worker to or from its orchestrator's own machine or this one, a worker in a
-worktree it made itself, and one whose folder wasn't made from a clone its machine keeps.
 
 ### Workers' own machines for a desktop orchestrator
 

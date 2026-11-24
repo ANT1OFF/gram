@@ -591,8 +591,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
 
     const dependsOn = yield* makeDependsOn;
     const sandbox = { orchestration, store, onDemand, signedIn, workerHosts, joined };
-    const planner = workerSandbox;
-    const machineTools = yield* makeWorkerMachineTools({ sandbox, planner, runtimes, remoteHosts });
+    const machineTools = yield* makeWorkerMachineTools({ sandbox, runtimes });
 
     const setStage = defineAppTool({
       descriptor: {
