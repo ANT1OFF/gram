@@ -13,6 +13,9 @@ const APP_TOOLS_SERVER = "gram";
  * What the hook is asked about `request`: each outward thing its command line does, or the
  * connector call it is. Empty for anything else, which stays an ordinary card. A push that
  * rewrites or deletes what the remote holds carries `force: true`, so a force-push rule applies.
+ * Only the command line is read (`isForcePush`): a push that a remote's `push` refspec or `mirror`,
+ * set beforehand, makes a rewrite goes as an ordinary push. The remote's own check of the update is
+ * what holds that; Gram's Push button always names its destination, so config can't force it.
  */
 export const requestActions = (
   request: Pick<ApprovalRequest, "toolName" | "input">,
