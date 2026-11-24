@@ -55,15 +55,15 @@ describe("digestWaiting's endings", () => {
   });
 });
 
-describe("digestWaiting's stale items", () => {
-  const open = (id: string, createdAt: number): WaitItem => ({
-    id: id as WaitId,
-    kind: "action",
-    title: `Item ${id}`,
-    source: "agent",
-    createdAt,
-  });
+const open = (id: string, createdAt: number): WaitItem => ({
+  id: id as WaitId,
+  kind: "action",
+  title: `Item ${id}`,
+  source: "agent",
+  createdAt,
+});
 
+describe("digestWaiting's stale items", () => {
   it("counts every thread's open items and names the archived or merged threads' between boots", () => {
     const threads = [
       { threadId: ORCH, items: [open("w-1", 10 * MIN)], title: "Orchestrator" },

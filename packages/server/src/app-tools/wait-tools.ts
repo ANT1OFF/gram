@@ -59,11 +59,6 @@ const listedChange = (change: WaitChange, now: number) => ({
   ...(change.from === undefined ? {} : { from: change.from }),
 });
 
-/** Where a listed item lives, when an orchestrator lists its workspace's. */
-interface WaitHome {
-  readonly thread: Thread;
-}
-
 const homeOf = (thread: Thread) => {
   const stale = waitsStaleIn(thread);
   return {
@@ -74,9 +69,9 @@ const homeOf = (thread: Thread) => {
   };
 };
 
-const listedWait = (item: WaitItem, now: number, home?: WaitHome) => ({
+const listedWait = (item: WaitItem, now: number, home?: Thread) => ({
   id: item.id,
-  ...(home === undefined ? {} : homeOf(home.thread)),
+  ...(home === undefined ? {} : homeOf(home)),
   kind: item.kind,
   title: item.title,
   state: item.deletedAt !== undefined ? "deleted" : (waitEndingOf(item) ?? "open"),
@@ -117,10 +112,6 @@ export const managesWaitsOf = (
     );
   }).pipe(Effect.orElseSucceed(() => false));
 
-/**
- * The threads of the workspace `caller` orchestrates, itself first: those whose items its
- * `list_waits` answers.
- */
 const workspaceThreadsOf = (
   threads: Pick<ThreadStoreShape, "getThread" | "listThreads">,
   caller: ThreadId,
@@ -309,7 +300,7 @@ export const waitAppTools = (
       descriptor: {
         name: "list_waits",
         class: "read",
-        description: `List the user's Waiting on you items ${orchestrator ? "across your workspace, each with its thread, \`archived\` or \`merged\` if likely stale, or one thread's by \`threadId\`" : "in this thread"}: the open ones, with \`state: "all"\` those resolved in the last 30 days too, or \`"deleted"\`; each with its \`state\`, resolver, age and edits. Read it after a compaction or a fresh session rather than guess.`,
+        description: `List the user's Waiting on you items ${orchestrator ? "across your workspace, each with its thread, `archived` or `merged` if likely stale, or one thread's by `threadId`" : "in this thread"}: the open ones, with \`state: "all"\` those resolved in the last 30 days too, or \`"deleted"\`; each with its \`state\`, resolver, age and edits. Read it after a compaction or a fresh session rather than guess.`,
       },
       audience: orchestrator ? ["orchestrator"] : ["plain", "worker"],
       rejectExcessProperties: true,
@@ -337,7 +328,7 @@ export const waitAppTools = (
             waits: rows
               .flat()
               .toSorted((a, b) => a.item.createdAt - b.item.createdAt)
-              .map(({ item, thread }) => listedWait(item, now, { thread })),
+              .map(({ item, thread }) => listedWait(item, now, thread)),
           };
         }),
     }),

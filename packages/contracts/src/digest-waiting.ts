@@ -65,3 +65,25 @@ export const DigestWaiting = Schema.Struct({
   withdrawn: Schema.optionalKey(Schema.Array(DigestWaitingEnded)),
 });
 export type DigestWaiting = typeof DigestWaiting.Type;
+
+/** How long an item has waited, as a digest says it: "42m", "3 h", "2 d". */
+export const waitAgeText = (minutes: number): string =>
+  minutes < 60
+    ? `${minutes}m`
+    : minutes < 48 * 60
+      ? `${Math.floor(minutes / 60)} h`
+      : `${Math.floor(minutes / (24 * 60))} d`;
+
+/** The sentence after the digest's "Waiting on the user" line on `stale` items; "" with none. */
+export const staleWaitsText = (stale: number | undefined): string =>
+  stale === undefined || stale === 0
+    ? ""
+    : ` ${stale === 1 ? "1 is" : `${stale} are`} from an archived or merged thread, likely stale: withdraw with resolve_wait (its threadId) what no longer waits on the user, or keep it.`;
+
+/** A named item's line in the digest, its text made one line by `inline`. */
+export const digestWaitingItemText = (
+  item: DigestWaitingItem,
+  inline: (text: string) => string,
+): string =>
+  `- ${item.kind} "${inline(item.title)}" ${item.thread === undefined ? "" : `in "${inline(item.thread)}" `}[thread ${item.threadId}] (${item.id}), ${waitAgeText(item.ageMin)}` +
+  (item.stale === undefined ? "" : `, ${item.stale}: likely stale`);

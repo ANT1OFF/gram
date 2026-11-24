@@ -343,8 +343,7 @@ const namedWhy = (items: ReadonlyArray<WaitItem>) =>
     )
     .join(", ");
 
-/** Whether another thread, its orchestrator, made the item's latest change, an edit. */
-const editedElsewhere = (item: WaitItem): boolean => {
+const editedByOrchestrator = (item: WaitItem): boolean => {
   const last = lastWaitChange(item);
   return last?.change === "edited" && last.thread !== undefined;
 };
@@ -375,9 +374,11 @@ export const waitNoteText = (
     (item) => waitEndingOf(item) !== "withdrawn" && item.deletedAt === undefined,
   );
   const openNews = news.filter(waitIsOpen);
-  const editedThere = openNews.filter((item) => editedElsewhere(item));
-  const added = openNews.filter((item) => !editedElsewhere(item) && item.source !== "agent");
-  const reopened = openNews.filter((item) => !editedElsewhere(item) && item.source === "agent");
+  const editedThere = openNews.filter((item) => editedByOrchestrator(item));
+  const added = openNews.filter((item) => !editedByOrchestrator(item) && item.source !== "agent");
+  const reopened = openNews.filter(
+    (item) => !editedByOrchestrator(item) && item.source === "agent",
+  );
   const still = open.filter((item) => !fresh.has(item.id));
   const sentences = [
     done.length === 0 ? undefined : `The user marked done: ${named(done)}.`,

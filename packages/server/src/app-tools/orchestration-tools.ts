@@ -7,19 +7,15 @@ import {
   ReasoningVariant,
   type AgentKind,
   type MessageOrigin,
-  type PrStatus,
   type GramUIMessage,
-  type Thread,
   type ThreadId,
   type WorkspaceId,
-  waitIsKept,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { isBadgeOf } from "../git/extra-prs.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
 import { restoreThreadWorktree } from "../git/restore-worktree.ts";
 import { isLiveWorker } from "../orchestration/ledger.ts";
@@ -43,6 +39,7 @@ import { defineAppTool } from "./definition.ts";
 import { inputAliases } from "./input.ts";
 import { checkSend } from "./loop-guard.ts";
 import { AppToolRegistry } from "./registry.ts";
+import { archiveHold, waitsLeftBy } from "./archive-leaves.ts";
 
 const CARD_TEXT_CAP = 400;
 
@@ -119,53 +116,6 @@ interface ParentRoute {
   readonly threadId: ThreadId;
   readonly workspaceId: WorkspaceId;
 }
-
-type Badge = Pick<PrStatus, "number" | "url" | "state">;
-
-/**
- * Why archiving `thread` now would cut it off from what it waits on, or `undefined`. An archived
- * thread isn't woken by its checks or its review (the publisher leaves parked threads out), so a
- * worker archived with a pull request open, or a monitor on, waits forever. That holds for each PR
- * it follows: its main one (`badge`, the publisher's for the PR it acts on) and every extra
- * (`extraBadges`). A badge counts only for the PR it names, since a rebind can leave the previous
- * binding's for a moment and numbers are local to a repository; a monitored PR whose state isn't
- * known is held, and one known to be merged or closed waits on nothing.
- */
-export const archiveHold = (
-  thread: Pick<Thread, "boundPr" | "extraPrs" | "babysit">,
-  badge: Badge | undefined,
-  extraBadges: ReadonlyArray<Badge> = [],
-): string | undefined => {
-  if (thread.babysit?.phase === "watching") return "it is babysitting its pull request";
-  const bound = thread.boundPr;
-  const followed = [
-    ...(bound === undefined
-      ? badge === undefined
-        ? []
-        : [{ label: `#${badge.number}`, badge, monitored: false }]
-      : [
-          {
-            label: `${bound.repo}#${bound.number}`,
-            badge: badge !== undefined && isBadgeOf(badge, bound) ? badge : undefined,
-            monitored: bound.monitor || bound.reviewMonitor === true,
-          },
-        ]),
-    ...(thread.extraPrs ?? []).map((extra) => ({
-      label: `${extra.repo}#${extra.number}`,
-      badge: extraBadges.find((each) => isBadgeOf(each, extra)),
-      monitored: extra.monitor,
-    })),
-  ];
-  for (const pr of followed) {
-    if (pr.badge?.state === "OPEN") return `its pull request ${pr.label} is open`;
-  }
-  for (const pr of followed) {
-    if (pr.monitored && pr.badge?.state !== "MERGED" && pr.badge?.state !== "CLOSED") {
-      return `it is monitoring pull request ${pr.label}`;
-    }
-  }
-  return undefined;
-};
 
 const waited = (ms: number) => {
   const minutes = Math.floor(ms / 60_000);
@@ -919,20 +869,10 @@ export const OrchestrationAppToolsLive = Layer.effectDiscard(
           }
           yield* runtimes.updateThread(target.thread.id, (t) => ({ ...t, parked: true }));
           yield* releaseWatchers;
-          const open = (yield* store.listWaits(target.thread.id)).filter(waitIsKept);
           return {
             threadId: target.thread.id,
             archived: true,
-            ...(open.length === 0
-              ? {}
-              : {
-                  openWaits: open.map((item) => ({
-                    id: item.id,
-                    kind: item.kind,
-                    title: item.title,
-                  })),
-                  note: `It still has ${open.length === 1 ? "1 item" : `${open.length} items`} on the user's Waiting on you. Withdraw with resolve_wait (this threadId) what no longer waits on them, or keep it.`,
-                }),
+            ...(yield* waitsLeftBy(store, target.thread.id)),
           };
         }).pipe(Effect.mapError(toolError("archive_thread"))),
     });
