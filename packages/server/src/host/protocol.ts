@@ -755,6 +755,13 @@ export interface HostSessionsConnection {
    * host, and false when either host didn't say its disk.
    */
   readonly replaced?: (handle: string) => boolean;
+  /**
+   * How long the session waited for its machine to come back because it was being replaced
+   * (`followingSessions`' `moving`), once it has: a session the host no longer has then ended
+   * with the move, and one whose machine isn't back ended when that ran out. Absent on a
+   * connection to one host, and undefined for a session that never waited for a move.
+   */
+  readonly moved?: (handle: string) => number | undefined;
 }
 
 /**

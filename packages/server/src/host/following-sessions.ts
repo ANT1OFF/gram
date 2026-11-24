@@ -1,12 +1,14 @@
-import type { ConnectorsSeen } from "@gram/agents";
+import type { ConnectorsSeen, SequencedEvent } from "@gram/agents";
 import { HostFailed, type HostSessionOpen, type HostUnavailable } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Result from "effect/Result";
 import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import type { HostConnection, HostSessionsConnection } from "./protocol.ts";
+import { GOING_WITHIN_MS } from "./term-hold.ts";
 
 /**
  * How long a session on a joined machine waits for the machine to dial in again after its
@@ -26,6 +28,24 @@ export const STOPPED_REATTACH_MS = 15 * 60_000;
  */
 export const CALL_WAIT_MS = 15_000;
 const LOOK_EVERY = "500 millis";
+/**
+ * How long a session waits for its machine to come back while the machine is being replaced (a
+ * cloud machine reclaimed, a VM moved) and is expected back on the same disk, unless whoever runs it
+ * says otherwise (`POST /machines/stop/moving`) or `GRAM_MACHINE_MOVE_MINUTES` does.
+ */
+export const MOVE_WITHIN_MS = 20 * 60_000;
+/**
+ * How long an agent's end that its host passed on is held to see whether the host is going with it:
+ * a host stopped with its whole process group (a service restart, a machine shutting down) can
+ * pass on its agent's end, killed by the same signal, before its own connection closes.
+ */
+export const ENDED_SETTLE_MS = 2_000;
+/**
+ * As `ENDED_SETTLE_MS`, for a machine being replaced: its host holds its exit while this Gram keeps
+ * its work (`GOING_WITHIN_MS`), and its agents end as it then shuts down.
+ */
+export const MOVE_GONE_WITHIN_MS = GOING_WITHIN_MS + 30_000;
+const GONE_LOOK = "100 millis";
 
 /** The machine's connection once it is back, or `HostUnavailable` when it isn't within `ms`. */
 export const awaitConnection = (
@@ -58,6 +78,13 @@ export const followingSessions = (
      * it was then; a machine that came back on another disk meanwhile owes a resume first.
      */
     readonly admit?: (request: HostSessionOpen) => string | undefined;
+    /**
+     * Read at each wait: how long a session waits for the machine because it is being replaced and
+     * is expected back (its host said it was going, this Gram readied it to stop, or whoever runs it
+     * said it was moving), or undefined when it isn't. A session that waits for a move says so with
+     * a `machineMoving` event, and `moved` then answers for it.
+     */
+    readonly moving?: () => number | undefined;
   } = {},
 ): HostSessionsConnection => {
   const reattach = timing.reattachMs ?? REATTACH_WITHIN_MS;
@@ -103,6 +130,7 @@ export const followingSessions = (
       Effect.asVoid,
     );
   const disks = new Map<string, { opened?: string | undefined; seen?: string | undefined }>();
+  const moves = new Map<string, number>();
   return {
     open: (request) =>
       awaitConnection(current, callMs).pipe(
@@ -124,8 +152,12 @@ export const followingSessions = (
       const disk = disks.get(handle);
       return disk?.opened !== undefined && disk.seen !== undefined && disk.opened !== disk.seen;
     },
+    moved: (handle) => moves.get(handle),
     events: (handle, afterSeq) => {
       let seen = afterSeq;
+      /** An agent end was held once already: one the same host gives again is passed on. */
+      let held = false;
+      type Next = { readonly lost: false; readonly next: SequencedEvent } | { readonly lost: true };
       const follow = (
         connection: Effect.Effect<HostConnection, HostUnavailable>,
       ): ReturnType<HostSessionsConnection["events"]> =>
@@ -134,27 +166,78 @@ export const followingSessions = (
             const disk = disks.get(handle);
             if (disk !== undefined) disk.seen = live.hello.diskId;
             return live.sessions.events(handle, seen).pipe(
-              Stream.tap((next) =>
-                Effect.sync(() => {
+              Stream.takeUntil((next) => next.event.type === "ended"),
+              Stream.map((next): Next => ({ lost: false, next })),
+              Stream.catchTag("HostUnavailable", () => Stream.make({ lost: true } as Next)),
+              Stream.flatMap((item) => {
+                if (item.lost) return lost();
+                const { next } = item;
+                if (next.event.type === "ended" && !held) return holdEnded(live, next);
+                return Stream.sync(() => {
                   seen = next.seq;
-                }),
-              ),
-              Stream.catchTag("HostUnavailable", () =>
-                Stream.unwrap(
-                  Effect.logInfo("worker host: a session waits for its machine to dial in").pipe(
-                    Effect.as(
-                      follow(
-                        awaitConnection(current, reattachOf()).pipe(
-                          Effect.tap(() =>
-                            Effect.logInfo("worker host: a session picked up after a redial"),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+                  return next;
+                });
+              }),
             );
+          }),
+        );
+      const lost = () =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            yield* Effect.logInfo("worker host: a session waits for its machine to dial in");
+            return waitBack(yield* Clock.currentTimeMillis);
+          }),
+        );
+      // The agent ended as its host went (killed with it, or by it as it shut down): the machine
+      // restarted or is being replaced, not the agent failed, so the session waits for the machine
+      // as if only its connection had dropped. Passed on as it came when the host stays.
+      const holdEnded = (live: HostConnection, next: SequencedEvent) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            held = true;
+            const within =
+              timing.moving?.() === undefined ? ENDED_SETTLE_MS : MOVE_GONE_WITHIN_MS;
+            const since = yield* Clock.currentTimeMillis;
+            while (!live.gone() && (yield* Clock.currentTimeMillis) - since < within)
+              yield* Effect.sleep(GONE_LOOK);
+            if (!live.gone()) {
+              seen = next.seq;
+              return Stream.make(next);
+            }
+            yield* Effect.logInfo(
+              "worker host: a session's agent ended as its machine went; it waits for the machine",
+            );
+            return waitBack(yield* Clock.currentTimeMillis);
+          }),
+        );
+      const waitBack = (since: number): ReturnType<HostSessionsConnection["events"]> =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            for (;;) {
+              const back = yield* Effect.result(current);
+              if (Result.isSuccess(back))
+                return Stream.unwrap(
+                  Effect.logInfo("worker host: a session picked up after a redial").pipe(
+                    Effect.as(follow(Effect.succeed(back.success))),
+                  ),
+                );
+              const moving = moves.get(handle) ?? timing.moving?.();
+              if (moving !== undefined && !moves.has(handle)) {
+                moves.set(handle, moving);
+                yield* Effect.logInfo("worker host: a session waits for its machine to move");
+                return Stream.concat(
+                  Stream.make<[SequencedEvent]>({
+                    seq: seen,
+                    event: { type: "machineMoving", until: since + moving },
+                  }),
+                  waitBack(since),
+                );
+              }
+              const now = yield* Clock.currentTimeMillis;
+              if (now - since >= (moving ?? reattachOf()))
+                return Stream.fail(back.failure);
+              yield* Effect.sleep(LOOK_EVERY);
+            }
           }),
         );
       return follow(awaitConnection(current, callMs));
@@ -198,7 +281,14 @@ export const followingSessions = (
       authenticate: (handle, name) => call((s) => s.connectors.authenticate(handle, name)),
     },
     close: (handle) =>
-      quiet((s) => s.close(handle)).pipe(Effect.ensuring(Effect.sync(() => disks.delete(handle)))),
+      quiet((s) => s.close(handle)).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            disks.delete(handle);
+            moves.delete(handle);
+          }),
+        ),
+      ),
     accountScope: (agent) => call((s) => s.accountScope?.(agent) ?? Effect.succeed(undefined)),
     reload: (agent, reload) => quiet((s) => s.reload(agent, reload)),
   };

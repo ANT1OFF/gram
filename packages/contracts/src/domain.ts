@@ -3,6 +3,7 @@ import {
   LimitCleared,
   LimitWait,
   MachineIncident,
+  MachineMove,
   THREAD_ERROR_TEXT_MAX,
   ThreadError,
 } from "./agent-failure.ts";
@@ -931,6 +932,11 @@ export const Thread = Schema.Struct({
    * which a later failure replaces; cleared by a turn that completes, or a resume after it.
    */
   machineIncident: Schema.optionalKey(MachineIncident),
+  /**
+   * Its joined machine is being replaced and its session waits to carry on there (`MachineMove`):
+   * shown as a notice, not a failure. Cleared when the session ends.
+   */
+  machineMove: Schema.optionalKey(MachineMove),
   /**
    * The last save of its work on a joined machine that reached the remote (`wip-keeper.ts`): when,
    * and the files it held. What a lost machine gives back.

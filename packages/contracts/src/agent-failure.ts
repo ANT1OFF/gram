@@ -171,3 +171,19 @@ export const MachineIncident = Schema.Struct({
   during: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(MACHINE_LOST_DURING_MAX))),
 });
 export type MachineIncident = typeof MachineIncident.Type;
+
+/**
+ * `Thread.machineMove`: the joined machine the thread runs on is being replaced under it (a cloud
+ * machine reclaimed, a VM moved), and its session waits for the machine to come back on the same
+ * disk, to carry on by itself. Not a failure: set when the session starts waiting, cleared when it
+ * ends, by the resume or by the move giving up, which then fails as a lost machine does.
+ */
+export const MachineMove = Schema.Struct({
+  /** The machine's name. */
+  machine: Schema.String,
+  /** Epoch ms the session started waiting. */
+  at: Schema.Number,
+  /** Epoch ms past which it gives up waiting. */
+  until: Schema.Number,
+});
+export type MachineMove = typeof MachineMove.Type;
