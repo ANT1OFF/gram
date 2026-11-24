@@ -878,3 +878,43 @@ describe("settings by chat: idle compaction", () => {
     ).toContain("workspace.idleAutoCompactKinds");
   });
 });
+
+describe("settings by chat: where workers run by default", () => {
+  it("sets the default packing and the cap, and clears each back to how it was", () => {
+    const set = plan([
+      { op: "set", key: "workspace.workerPacking", value: "shared" },
+      { op: "set", key: "workspace.workersPerMachine", value: 2 },
+    ]);
+    expect(charterAfter(set)).toMatchObject({ workerPacking: "shared", workersPerMachine: 2 });
+    const packed = { ...world, workspace: { ...workspace, charter: charterAfter(set)! } };
+    // The orchestrator's own machine is what no setting means: it is stored as none.
+    for (const value of [null, "orchestrator"])
+      expect(
+        charterAfter(plan([{ op: "set", key: "workspace.workerPacking", value }], packed), packed),
+      ).not.toHaveProperty("workerPacking");
+    expect(
+      charterAfter(
+        plan([{ op: "set", key: "workspace.workersPerMachine", value: null }], packed),
+        packed,
+      ),
+    ).not.toHaveProperty("workersPerMachine");
+  });
+
+  it("refuses a packing there isn't, and a cap outside what a machine may carry", () => {
+    expect(errorsOf([{ op: "set", key: "workspace.workerPacking", value: "tight" }])).toContain(
+      "expected one of orchestrator, shared, own",
+    );
+    for (const value of [0, 9, 2.5, "4"])
+      expect(errorsOf([{ op: "set", key: "workspace.workersPerMachine", value }])).toContain(
+        "from 1 to 8",
+      );
+  });
+
+  it("still clears and checks the keys that share their decoder", () => {
+    expect(errorsOf([{ op: "set", key: "workspace.pauseAtLimitPct", value: 101 }])).toContain(
+      "whole percent from 1 to 100",
+    );
+    const set = plan([{ op: "set", key: "workspace.pauseAtLimitPct", value: 80 }]);
+    expect(charterAfter(set)?.pauseAtLimitPct).toBe(80);
+  });
+});

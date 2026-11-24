@@ -1,7 +1,8 @@
 import { HostId, type WorkerLedgerEntry } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 import { compactWorkerRow } from "../ledger.ts";
-import { machinesForOrchestrator, withMachines } from "./workers.ts";
+import { compactSharedRow } from "../worker-packing.ts";
+import { machineSharers, machinesForOrchestrator, withMachines } from "./workers.ts";
 
 const ATLAS = HostId.make("m-0123456789abcdef01234567");
 const STUDIO = HostId.make("m-89abcdef0123456701234567");
@@ -51,6 +52,79 @@ describe("list_workers' machine on a worker's row", () => {
       machines,
     );
     expect(compactWorkerRow(worker!).machine).toEqual({ name: "studio", online: false });
+  });
+});
+
+const row = (threadId: string, hostId: HostId | undefined, state = "working") =>
+  ({
+    threadId,
+    title: threadId,
+    state,
+    status: state === "merged" ? "ended" : "idle",
+    project: "api",
+    ...(hostId === undefined ? {} : { hostId }),
+    pendingRequests: [],
+    overlapsWith: [],
+    changedFiles: 0,
+    userIntervened: false,
+    messagesFromOrchestrator: 0,
+  }) as unknown as WorkerLedgerEntry;
+
+describe("who shares a machine, as list_workers says it", () => {
+  const rows = [
+    row("t-a", ATLAS),
+    row("t-b", ATLAS),
+    row("t-done", ATLAS, "merged"),
+    row("t-alone", STUDIO),
+    row("t-here", undefined),
+  ];
+  const threads = [
+    {
+      id: "t-a",
+      spawnedBy: {
+        threadId: "t-o",
+        feature: "f",
+        placement: { machine: "atlas", packing: "shared" },
+      },
+    },
+    {
+      id: "t-b",
+      spawnedBy: {
+        threadId: "t-o",
+        feature: "f",
+        placement: { machine: "atlas", packing: "named" },
+      },
+    },
+    {
+      id: "t-alone",
+      spawnedBy: {
+        threadId: "t-o",
+        feature: "f",
+        placement: { machine: "studio", packing: "exclusive" },
+      },
+    },
+    { id: "t-here", spawnedBy: { threadId: "t-o", feature: "f" } },
+  ] as never;
+
+  it("names the unfinished workers on a worker's machine, and how each was packed there", () => {
+    const sharers = machineSharers(rows, threads);
+    // A filter left `t-b` out of what is listed: it still shares the machine with `t-a`.
+    const listed = withMachines([rows[0]!, rows[3]!, rows[4]!], machines, sharers);
+    expect(listed[0]).toMatchObject({ packing: "shared", sharesWith: ["t-b"] });
+    expect(listed[1]).toMatchObject({ packing: "exclusive" });
+    expect(listed[1]).not.toHaveProperty("sharesWith");
+    expect(listed[2]).not.toHaveProperty("packing");
+    expect(sharers.on(ATLAS)).toEqual(["t-a", "t-b"]);
+  });
+
+  it("is kept on the compact row an orchestrator reads by default", () => {
+    const [worker] = withMachines([rows[0]!], machines, machineSharers(rows, threads));
+    expect(compactSharedRow(worker as WorkerLedgerEntry)).toMatchObject({
+      machine: { name: "atlas", online: true },
+      packing: "shared",
+      sharesWith: ["t-b"],
+    });
+    expect(compactSharedRow(rows[4]!)).not.toHaveProperty("sharesWith");
   });
 });
 

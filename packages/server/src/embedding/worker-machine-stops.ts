@@ -104,7 +104,8 @@ export const RECLAIMED_AFTER_MISSES = 3;
  * never taken as no such machine); there was no such machine (a 2xx saying
  * `stopped: false`, as a server answers a name it holds nothing for, under its person's lock);
  * `missing`, a `404 not_found`, which says so only once it comes a few passes in a row
- * (`isNotFound`); or nothing clear.
+ * (`isNotFound`); or nothing clear. A server that kept the machine because workers still have
+ * seats on it (`code: "occupied"`) is `fenced` too: nothing was done, and the machine is there.
  */
 export const stopOutcome = (
   answered:
@@ -115,6 +116,7 @@ export const stopOutcome = (
   if (isNotFound(answered)) return "missing";
   if (answered.status >= 300) return "failed";
   if (fenceRefusalOf(answered) !== undefined) return "fenced";
+  if (codeOf(answered.body) === "occupied") return "fenced";
   const said =
     typeof answered.body === "object" && answered.body !== null
       ? (answered.body as { stopped?: unknown }).stopped

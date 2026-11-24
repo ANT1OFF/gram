@@ -4,7 +4,6 @@ import {
   AgentUnavailable,
   AgentModel,
   ModelList,
-  ProfileId,
   RequestId,
   ThreadId,
   type AgentEvent,
@@ -32,14 +31,7 @@ import { startupDiagnostic } from "./startup-diagnostic.ts";
 import { confinedConfig, leftOutConfig, unconfinedServers } from "./thread-config.ts";
 import { codexFixture, serverMessages } from "./testing.ts";
 import { toCodexTranscript } from "./transcript.ts";
-
-const profile = {
-  id: ProfileId.make("litellm"),
-  name: "LiteLLM",
-  baseURL: "https://llm.example/v1",
-  keyRef: "ref",
-  models: [{ id: "gpt-5.5", name: "GPT-5.5", variants: ["low", "high"] as const }],
-};
+import { gatewayModel, profile } from "./session-fixtures.ts";
 
 const thread = (id: string, cwd: string, extra: Record<string, unknown> = {}) => ({
   id,
@@ -426,13 +418,6 @@ const openSession = (overrides: Partial<OpenSessionOptions> = {}) =>
 const take = (session: AgentSession, n: number) =>
   Stream.runCollect(Stream.take(session.events, n));
 
-const gatewayModel = {
-  agent: "codex" as const,
-  model: "gpt-5.5",
-  profileId: profile.id,
-  variant: "high" as const,
-};
-
 /** Opens a session on a fresh harness: the homes it acquired and its identity event. */
 const openOnHomes = (options: Partial<OpenSessionOptions>) =>
   Effect.gen(function* () {
@@ -499,6 +484,23 @@ describe("CodexHost.open", () => {
         },
         { type: "status", status: "idle" },
       ]);
+    }),
+  );
+
+  it.effect("gives the commands a thread runs the thread's own temp folder, where it has one", () =>
+    Effect.gen(function* () {
+      // Codex serves every session from one process, so the folder is set on what each command
+      // of this thread gets, not on the process: two workers on one machine share no temp path.
+      const own = harness();
+      yield* openSession({ tmpDir: "/tmp/gram-tmp-t1" }).pipe(Effect.provide(own.layer));
+      const started = own.calls[0]?.[1] as { config?: Record<string, unknown> };
+      expect(started.config?.["shell_environment_policy"]).toEqual({
+        set: { TMPDIR: "/tmp/gram-tmp-t1" },
+      });
+      const none = harness();
+      yield* openSession().pipe(Effect.provide(none.layer));
+      const plain = none.calls[0]?.[1] as { config?: Record<string, unknown> };
+      expect(plain.config?.["shell_environment_policy"]).toBeUndefined();
     }),
   );
 

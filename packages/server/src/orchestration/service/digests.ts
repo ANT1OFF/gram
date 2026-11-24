@@ -65,6 +65,7 @@ import {
   userWroteMinutesAgo,
 } from "../rules.ts";
 import { digestWaiting, waitsStaleIn } from "../digest-waiting.ts";
+import { packingLine } from "../worker-packing.ts";
 import {
   DIGEST_KEY,
   IN_ERROR_DETAIL,
@@ -123,6 +124,7 @@ const charterLines = (
     ({ repo, policy }) => `merge review policy for ${repo}: ${policy}`,
   ),
   ...(charter.routeAtLimit === true ? [ROUTE_AT_LIMIT_LINE] : []),
+  ...(packingLine(charter) === undefined ? [] : [packingLine(charter)!]),
   ...(charter.watchDefaultBranch === true ? [WATCH_DEFAULT_BRANCH_LINE] : []),
   ...(briefFooterOf(charter) === undefined ? [] : [footerLine(briefFooterOf(charter)!)]),
   ...routineLines(charter),

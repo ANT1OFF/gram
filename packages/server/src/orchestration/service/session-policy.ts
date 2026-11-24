@@ -120,7 +120,13 @@ export const makeSessionPolicy = (kit: OrchestrationKit) => {
               (machine) =>
                 machine.onDemand === "worker" && machine.id === hostOf(effectiveCheckout(thread)),
             )
-              ? { ownMachine: true }
+              ? {
+                  ownMachine: true,
+                  ...(thread.spawnedBy.placement?.packing === "shared" ||
+                  thread.spawnedBy.placement?.packing === "named"
+                    ? { sharedMachine: true }
+                    : {}),
+                }
               : {}),
             ...(extras.length === 0
               ? {}

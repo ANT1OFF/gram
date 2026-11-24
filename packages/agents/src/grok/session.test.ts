@@ -407,6 +407,26 @@ describe("Grok Build host", () => {
     ]);
   });
 
+  it("starts each thread's agent with the thread's own temp folder, where it has one", async () => {
+    const agent = fakeAgent();
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const host = yield* hostWith(agent);
+          yield* host.open({ threadId: ThreadId.make("a"), cwd: "/work/a", tmpDir: "/tmp/a" });
+          yield* host.open({ threadId: ThreadId.make("b"), cwd: "/work/b", tmpDir: "/tmp/b" });
+          yield* host.open({ threadId: ThreadId.make("c"), cwd: "/work/c" });
+        }),
+      ),
+    );
+    // Two workers on one machine never meet in a temp file: each agent's `TMPDIR` is its own.
+    expect(agent.started.map((each) => each.env["TMPDIR"])).toEqual([
+      "/tmp/a",
+      "/tmp/b",
+      undefined,
+    ]);
+  });
+
   it("resumes the thread's own session rather than starting another", async () => {
     const agent = fakeAgent();
     await Effect.runPromise(

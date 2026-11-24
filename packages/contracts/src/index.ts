@@ -108,6 +108,7 @@ export * from "./folder-access.ts";
 export * from "./shared-folder.ts";
 export * from "./settings.ts";
 export * from "./settings-chat.ts";
+export * from "./worker-packing.ts";
 export * from "./workspace-chat.ts";
 export * from "./mcp-propose.ts";
 export * from "./shell-check.ts";
