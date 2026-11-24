@@ -103,6 +103,7 @@ export function createSpeechHost(options: SpeechHostOptions) {
   };
 
   const onMessage = (message: unknown) => {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the speech process is Gram's own, and posts only protocol.ts's messages
     const data = message as Partial<SpeechProcessMessage> | null;
     if (data?.type === "ended" && typeof data.sessionId === "string") {
       sessions.delete(data.sessionId);

@@ -20,7 +20,7 @@ const SEMVER = new RegExp(
 export function parseVersion(input: string): Version | null {
   const m = SEMVER.exec(input);
   if (!m) return null;
-  const [major, minor, patch] = [m[1], m[2], m[3]].map(Number) as [number, number, number];
+  const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])] as const;
   if (![major, minor, patch].every(Number.isSafeInteger)) return null;
   const pre =
     m[4] === undefined ? [] : m[4].split(".").map((id) => (/^\d+$/.test(id) ? Number(id) : id));

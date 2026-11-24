@@ -14,14 +14,15 @@ export interface GifOptions {
 
 const key15 = (r: number, g: number, b: number) => ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
 
-const channels = (order: "rgba" | "bgra") => (order === "rgba" ? [0, 1, 2] : [2, 1, 0]);
+const channels = (order: "rgba" | "bgra"): readonly [number, number, number] =>
+  order === "rgba" ? [0, 1, 2] : [2, 1, 0];
 
 /** The 256 most frequent colours across `frames`, sampled, as RGB triples. */
 export function paletteOf(
   frames: readonly GifFrame[],
   order: "rgba" | "bgra" = "rgba",
 ): Uint8Array {
-  const [ri, gi, bi] = channels(order) as [number, number, number];
+  const [ri, gi, bi] = channels(order);
   const counts = new Uint32Array(1 << 15);
   for (const frame of frames) {
     const pixels = frame.width * frame.height;
@@ -131,7 +132,7 @@ export function* gifParts(
   options: GifOptions = {},
 ): Generator<Uint8Array> {
   const order = options.order ?? "rgba";
-  const [ri, gi, bi] = channels(order) as [number, number, number];
+  const [ri, gi, bi] = channels(order);
   const width = Math.max(1, ...frames.map((f) => f.width));
   const height = Math.max(1, ...frames.map((f) => f.height));
   const palette = paletteOf(frames, order);

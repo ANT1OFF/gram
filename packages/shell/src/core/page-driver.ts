@@ -20,6 +20,7 @@ import {
 } from "@gram/contracts/link-trust";
 import type { BrowseContext } from "./browse-rules.ts";
 import { browserObservations, jpegDimensions } from "./browser-observations.ts";
+import * as Predicate from "effect/Predicate";
 export { consoleText } from "./browser-observations.ts";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -524,7 +525,11 @@ const keyEvent = (key: string, modifiers: number) => {
 };
 
 const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  Predicate.isObject(value) ? value : {};
+
+const isFiniteNumber = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+const isAxNode = (node: unknown): node is AxNode =>
+  Predicate.isObject(node) && typeof node["nodeId"] === "string";
 
 const asSubmit = (value: unknown): PageSubmit | undefined => {
   const found = record(value);
@@ -745,8 +750,8 @@ export async function createPageDriver(
     )
       throw new Error("Frame-local target geometry is unavailable.");
     const quads = record(await read("DOM.getContentQuads", { backendNodeId }))["quads"];
-    const q = Array.isArray(quads) ? (quads[0] as number[] | undefined) : undefined;
-    if (q === undefined || q.length !== 8 || !q.every(Number.isFinite))
+    const q: unknown = Array.isArray(quads) ? quads[0] : undefined;
+    if (!Array.isArray(q) || q.length !== 8 || !q.every(isFiniteNumber))
       throw new Error("Target geometry unavailable.");
     const xs = [q[0]!, q[2]!, q[4]!, q[6]!];
     const ys = [q[1]!, q[3]!, q[5]!, q[7]!];
@@ -767,8 +772,9 @@ export async function createPageDriver(
       checkDispatch();
       await read("DOM.scrollIntoViewIfNeeded", { backendNodeId });
       const quads = record(await read("DOM.getContentQuads", { backendNodeId }))["quads"];
-      const quad = Array.isArray(quads) ? (quads[0] as number[] | undefined) : undefined;
-      if (quad === undefined || quad.length < 8) throw new Error("not on screen");
+      const quad: unknown = Array.isArray(quads) ? quads[0] : undefined;
+      if (!Array.isArray(quad) || quad.length < 8 || !quad.every(isFiniteNumber))
+        throw new Error("not on screen");
       const xs = [quad[0]!, quad[2]!, quad[4]!, quad[6]!];
       const ys = [quad[1]!, quad[3]!, quad[5]!, quad[7]!];
       return [xs.reduce((a, b) => a + b) / 4, ys.reduce((a, b) => a + b) / 4];
@@ -883,7 +889,8 @@ export async function createPageDriver(
   const outline = async (options: SnapshotOptions = {}) => {
     const subtree = options.ref === undefined ? undefined : nodeOf(options.ref);
     const tree = record(await read("Accessibility.getFullAXTree"));
-    const nodes = Array.isArray(tree["nodes"]) ? (tree["nodes"] as AxNode[]) : [];
+    const listed: unknown = tree["nodes"];
+    const nodes = Array.isArray(listed) ? listed.filter(isAxNode) : [];
     const rootId =
       subtree === undefined
         ? undefined

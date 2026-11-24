@@ -27,11 +27,12 @@ export function pageGuard(): void {
       if (typeof command !== "string") return false;
       const name = apply<string, [], string>(lower, command, []);
       if (name === "copy" || name === "cut" || name === "paste") return false;
-      return apply(exec, this, [
+      const done: unknown = apply(exec, this, [
         command,
         showUI === undefined ? false : showUI,
         value === undefined ? "" : value,
-      ]) as boolean;
+      ]);
+      return done === true;
     },
   );
   const replaces = () => {
@@ -59,8 +60,8 @@ export function pageGuard(): void {
     const ctrl = apply(ctrlOf, event, []) === true;
     const meta = apply(metaOf, event, []) === true;
     if (apply(altOf, event, []) === true) return false;
-    const key = apply(keyOf, event, []) as string;
-    const code = apply(codeOf, event, []) as string;
+    const key: unknown = apply(keyOf, event, []);
+    const code: unknown = apply(codeOf, event, []);
     if ((ctrl || meta) && (code === "KeyC" || key === "c" || key === "C")) return true;
     return ctrl && key === "Insert";
   };

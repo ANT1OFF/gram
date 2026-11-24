@@ -105,6 +105,7 @@ export type OpenRelaySocket = (url: string, headers: Record<string, string>) => 
 
 /** Node's own WebSocket, handed the headers as its options (the browser's can't take them). */
 export const nodeRelaySocket: OpenRelaySocket = (url, headers) =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Node's WebSocket takes an options object here; the DOM type only names protocols
   new globalThis.WebSocket(url, { headers } as unknown as string[]) as unknown as RelaySocket;
 
 export interface WorkerMachineRelays {

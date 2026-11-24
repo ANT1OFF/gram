@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
 import * as fs from "node:fs/promises";
-import type { DeviceRefusalReason } from "@gram/contracts";
+import { type DeviceRefusalReason, errnoCode } from "@gram/contracts";
 
 /**
  * The person's own record of what a lent machine was asked: one line per request, in a file in
@@ -82,19 +82,21 @@ const parseLines = (
     } catch {
       return { entries, macs, goodBytes, clean: false };
     }
+    const claimed: unknown = Array.isArray(parsed) ? parsed[0] : undefined;
+    const body: unknown = Array.isArray(parsed) ? parsed[1] : undefined;
     if (
       !Array.isArray(parsed) ||
       parsed.length !== 2 ||
-      typeof parsed[0] !== "string" ||
-      typeof parsed[1] !== "string" ||
+      typeof claimed !== "string" ||
+      typeof body !== "string" ||
       JSON.stringify(parsed) !== line
     )
       return { entries, macs, goodBytes, clean: false };
-    const [claimed, body] = parsed as [string, string];
     if (!same(macOf(key, macs.at(-1) ?? START, body), claimed))
       return { entries, macs, goodBytes, clean: false };
     let entry: DeviceLogEntry;
     try {
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the MAC just checked proves this line is one the device wrote itself
       entry = JSON.parse(body) as DeviceLogEntry;
     } catch {
       return { entries, macs, goodBytes, clean: false };
@@ -137,7 +139,7 @@ export const readDeviceLog = async (
       await handle.close();
     }
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (errnoCode(error) !== "ENOENT") throw error;
     text = "";
   }
   return judge(text, key, expected);

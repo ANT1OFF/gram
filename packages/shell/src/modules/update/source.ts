@@ -1,4 +1,5 @@
 import type { ProcessResult, RunGh } from "./updater.ts";
+import { fieldsOf } from "@gram/contracts";
 
 /** One release as a source reports it: its tag, whether it is a draft, and its assets' names. */
 export interface SourceRelease {
@@ -105,14 +106,14 @@ export function ghReleaseSource(options: {
         return undefined;
       }
       try {
-        const view = JSON.parse(out.stdout.trim()) as Record<string, unknown> | null;
-        const assets: unknown = view?.["assets"];
+        const view = fieldsOf(JSON.parse(out.stdout.trim()));
+        const assets = view.get("assets");
         if (!Array.isArray(assets)) throw new Error("no assets list");
         return {
-          tagName: view?.["tagName"],
-          isDraft: view?.["isDraft"],
+          tagName: view.get("tagName"),
+          isDraft: view.get("isDraft"),
           assets: assets.flatMap((asset: unknown) => {
-            const name: unknown = (asset as { name?: unknown } | null)?.name;
+            const name = fieldsOf(asset).get("name");
             return typeof name === "string" ? [name] : [];
           }),
         };
@@ -126,7 +127,7 @@ export function ghReleaseSource(options: {
       const out = await run(["release", "view", tag, "--repo", repo, "--json", "url"]);
       if (out.status !== 0) return "";
       try {
-        const url: unknown = (JSON.parse(out.stdout.trim()) as { url?: unknown }).url;
+        const url = fieldsOf(JSON.parse(out.stdout.trim())).get("url");
         return typeof url === "string" ? url : "";
       } catch {
         return "";

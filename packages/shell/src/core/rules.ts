@@ -57,6 +57,7 @@ export function parseGridLayout(input: unknown): GridLayout | null {
   const panes: unknown = "panes" in input ? input.panes : undefined;
   if (typeof preset !== "string" || !Array.isArray(panes) || panes.length > 6) return null;
   if (!panes.every((pane) => pane === null || isThreadIdArg(pane))) return null;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- checked loosely on purpose: the renderer owns the layout's other fields
   return input as GridLayout;
 }
 

@@ -81,6 +81,7 @@
         "packages/agents/src/**",
         "packages/contracts/src/**",
         "packages/git/src/**",
+        "packages/shell/src/**",
         "packages/themes/src/**",
         "apps/desktop/src/**"
       ],
@@ -360,7 +361,13 @@
       }
     },
     {
-      "files": ["**/testing.ts", "**/testing/**", "**/test-utils.ts", "**/*-fixture.ts"],
+      "files": [
+        "**/testing.ts",
+        "**/testing/**",
+        "**/test-utils.ts",
+        "**/*-fixture.ts",
+        "**/*-fake.ts"
+      ],
       "rules": {
         // Fixture loaders and fakes for tests read recordings as the types they were recorded as.
         "typescript/no-unsafe-type-assertion": "off"

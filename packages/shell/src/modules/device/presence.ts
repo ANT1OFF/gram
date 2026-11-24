@@ -9,13 +9,16 @@ import type { DeviceSecrets, Presence } from "./hosted-device.ts";
  * can be had, presence isn't known and lending is unavailable.
  */
 
-export type PresenceEvent =
-  | "suspend"
-  | "resume"
-  | "lock-screen"
-  | "unlock-screen"
-  | "user-did-resign-active"
-  | "user-did-become-active";
+const PRESENCE_EVENTS = [
+  "suspend",
+  "resume",
+  "lock-screen",
+  "unlock-screen",
+  "user-did-resign-active",
+  "user-did-become-active",
+] as const;
+
+export type PresenceEvent = (typeof PRESENCE_EVENTS)[number];
 
 /** The slice of Electron's `powerMonitor` this reads. */
 export interface PresenceMonitor {
@@ -85,8 +88,7 @@ export const watchPresence = (
       publish();
     },
   };
-  for (const [event, handler] of Object.entries(handlers))
-    monitor.on(event as PresenceEvent, handler);
+  for (const event of PRESENCE_EVENTS) monitor.on(event, handlers[event]);
   const stopPolling = timers.every(PRESENCE_POLL_MS, () => {
     idle = monitor.getSystemIdleState(PRESENCE_IDLE_SECONDS);
     publish();
@@ -100,8 +102,7 @@ export const watchPresence = (
     },
     stop: () => {
       stopPolling();
-      for (const [event, handler] of Object.entries(handlers))
-        monitor.off(event as PresenceEvent, handler);
+      for (const event of PRESENCE_EVENTS) monitor.off(event, handlers[event]);
       listeners.clear();
     },
   };

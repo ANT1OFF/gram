@@ -12,14 +12,21 @@ export interface MediaAccess {
   askForMediaAccess?(mediaType: "microphone"): Promise<boolean>;
 }
 
-const ACCESS: ReadonlySet<string> = new Set(["granted", "denied", "restricted", "not-determined"]);
+const ACCESS: ReadonlyArray<MicrophoneAccess> = [
+  "granted",
+  "denied",
+  "restricted",
+  "not-determined",
+];
+const isAccess = (status: string): status is MicrophoneAccess =>
+  ACCESS.some((each) => each === status);
 
 /** The microphone permission now; `unknown` where the OS doesn't say (Linux) or says something new. */
 export function microphoneAccess(media: MediaAccess, platform: NodeJS.Platform): MicrophoneAccess {
   if (platform !== "darwin" && platform !== "win32") return "unknown";
   try {
     const status = media.getMediaAccessStatus("microphone");
-    return ACCESS.has(status) ? (status as MicrophoneAccess) : "unknown";
+    return isAccess(status) ? status : "unknown";
   } catch {
     return "unknown";
   }

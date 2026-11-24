@@ -17,7 +17,6 @@ import {
   type PaneBlocked,
   type PaneDriver,
   type PanePage,
-  type PanePoint,
   type PaneRequest,
   type PaneResult,
 } from "@gram/contracts/link-trust";
@@ -46,8 +45,8 @@ import {
   UserControlError,
   type Cdp,
   type PageDriver,
-  type PageTarget,
 } from "../../core/page-driver.ts";
+import { targetOf } from "./page-target.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { releasePage } from "./release.ts";
 
@@ -255,9 +254,6 @@ const block = (): Promise<"block"> => Promise.resolve("block");
 
 const LOCAL_ONLY =
   "That runs only on local pages (localhost, 127.0.0.1): a public page's code and responses aren't the agent's to read or run.";
-
-const targetOf = (point: PanePoint): PageTarget =>
-  point.ref !== undefined ? { ref: point.ref } : { coordinate: point.coordinate };
 
 const settled = (contents: PaneContents, stop: () => boolean = () => false) =>
   new Promise<void>((resolve) => {
@@ -910,9 +906,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
           { page: pageOf(page) },
         );
       }
-      const { confirmToken, ...unsigned } = command as typeof command & {
-        readonly confirmToken?: string;
-      };
+      const { confirmToken, ...unsigned } = { confirmToken: undefined, ...command };
       const held = page.held;
       if (held !== undefined && confirmToken === held.token && held.document === page.document) {
         answerHeld(page, true);
@@ -934,7 +928,7 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
         grant !== undefined &&
         grant.action === submission.action &&
         grant.control === submission.control;
-      const summary = (command as { readonly actionSummary?: string }).actionSummary;
+      const summary = "actionSummary" in command ? command.actionSummary : undefined;
       if (summary !== undefined) {
         page.lastAction = { summary, at: Date.now() };
         options.driverChanged?.(threadId, page.driving);
@@ -1015,13 +1009,13 @@ export function createAgentPanes(options: AgentPanesOptions): AgentPanes {
           return act(page, grant?.action, press);
         }
         case "hover":
-          return act(page, undefined, () => driver.hover(targetOf(command as PanePoint)));
+          return act(page, undefined, () => driver.hover(targetOf(command)));
         case "scroll":
           return act(page, undefined, () =>
             driver.scroll(
               command.ref === undefined && command.coordinate === undefined
                 ? undefined
-                : targetOf(command as PanePoint),
+                : targetOf(command),
               command.direction,
               command.amount ?? 3,
             ),
