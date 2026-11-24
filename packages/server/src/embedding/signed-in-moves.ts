@@ -52,17 +52,22 @@ export type MoveOutcome =
  */
 export const moveAskedMachines = (deps: MoveDeps, done: Set<string>, now = Date.now) =>
   Effect.forEach(
-    deps.machines().filter(
-      (machine) =>
-        machine.via !== undefined &&
-        machine.onDemand === "worker" &&
-        machine.onlineSince !== undefined,
-    ),
+    deps
+      .machines()
+      .filter(
+        (machine) =>
+          machine.via !== undefined &&
+          machine.onDemand === "worker" &&
+          machine.onlineSince !== undefined,
+      ),
     (machine) =>
       moveOne(deps, machine, done, now).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("a worker machine its provider asked to move wasn't moved").pipe(
-            Effect.annotateLogs({ machine: machine.name, reason: Cause.pretty(cause).slice(0, 300) }),
+            Effect.annotateLogs({
+              machine: machine.name,
+              reason: Cause.pretty(cause).slice(0, 300),
+            }),
             Effect.as<MoveOutcome>("unanswered"),
           ),
         ),

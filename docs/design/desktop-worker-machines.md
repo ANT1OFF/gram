@@ -72,14 +72,14 @@ signed in before the server offered it is told to sign in again; nothing is aske
 
 The calls, each `POST` with a DPoP-bound `machines:workers` token, the person taken from it:
 
-| Call        | Body                                   | Answer                                                                                                 |
-| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `…/choices` | `{}`                                   | The provider's choices, as `/hosts/choices` answers them (size, architecture, isolation, environment). |
-| `…/start`   | `{name, title, orchestrator, choices}` | 202 `{name}`; 409 over the person's total (the body `/hosts/start` gives); 403/404 off.                |
-| `…/status`  | `{name}`                               | `{phase, message?, publicKey?, platform?, moveRequested?}`: the host's public key once it has made one. |
-| `…/release` | `{name, released, reason}`             | As `/hosts/release`.                                                                                   |
-| `…/stop`    | `{name}`                               | The machine is stopped and reclaimed; used when it never joins.                                        |
-| `…/move`    | `{name, sandboxId, generation, notAfter}` | `{moved: true}`, or `{moved: false, code}`: `superseded`, `expired` or `not_movable`.                  |
+| Call        | Body                                      | Answer                                                                                                  |
+| ----------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `…/choices` | `{}`                                      | The provider's choices, as `/hosts/choices` answers them (size, architecture, isolation, environment).  |
+| `…/start`   | `{name, title, orchestrator, choices}`    | 202 `{name}`; 409 over the person's total (the body `/hosts/start` gives); 403/404 off.                 |
+| `…/status`  | `{name}`                                  | `{phase, message?, publicKey?, platform?, moveRequested?}`: the host's public key once it has made one. |
+| `…/release` | `{name, released, reason}`                | As `/hosts/release`.                                                                                    |
+| `…/stop`    | `{name}`                                  | The machine is stopped and reclaimed; used when it never joins.                                         |
+| `…/move`    | `{name, sandboxId, generation, notAfter}` | `{moved: true}`, or `{moved: false, code}`: `superseded`, `expired` or `not_movable`.                   |
 
 Which of the person's workspaces there the machine is started under, and so whose limits and
 choices apply, is the server's to decide from the sign-in; `…/choices` says which (`workspace:

@@ -53,7 +53,10 @@ const provider = (options: {
             : { ok: true as const, ...moved };
         }),
     },
-    machines: () => [worker(), worker({ id: "m-away", name: "worker-89abcdef", onlineSince: undefined })],
+    machines: () => [
+      worker(),
+      worker({ id: "m-away", name: "worker-89abcdef", onlineSince: undefined }),
+    ],
     prepare: (id) => Effect.sync(() => void prepared.push(id)),
     readied: () => options.readied ?? true,
     takeBack: (id) => Effect.sync(() => void takenBack.push(id)),
