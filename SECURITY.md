@@ -22,5 +22,6 @@ Fixes ship in a new release, not as patches to older ones.
 - How it handles the user's local Claude Code and Codex CLIs: their logins, credentials,
   permissions, approvals and helper context consent.
 
-Bugs in Claude Code, Codex, GitHub or other upstream projects belong with those projects. The
-boundaries Gram means to keep are in [local trust boundaries](docs/ARCHITECTURE.md#local-trust-boundaries).
+Bugs in Claude Code, Codex, GitHub or other upstream projects belong with those projects. Who Gram
+trusts for what, the limits it accepts and how a report is weighed are in the
+[security model](docs/SECURITY_MODEL.md).
