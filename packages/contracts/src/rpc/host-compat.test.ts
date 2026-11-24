@@ -111,8 +111,12 @@ const GROK_ONLY_BREAKS: ReadonlyArray<readonly [call: string, at: string]> = [
 const MADE_BY_THE_CONTROL_PLANE =
   "No host sends it: the control plane makes it itself while a session waits for its machine to come back from a move (host/following-sessions.ts), so it never crosses the wire.";
 
+/** The first release whose protocol already carries `machineMoving`. */
+const FIRST_WITH_MACHINE_MOVING = "1.40.0";
+
 const ACCEPTED = (released: Released): ReadonlyArray<Accepted> => [
-  ...("host.sessions.events" in released.calls
+  ...("host.sessions.events" in released.calls &&
+  byRelease(released.release, FIRST_WITH_MACHINE_MOVING) < 0
     ? [
         {
           at: "host.sessions.events success.event",
