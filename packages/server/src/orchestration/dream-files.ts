@@ -190,7 +190,7 @@ export const reviewDream = (input: {
   return paths.flatMap((path): ReadonlyArray<DreamFileDiff> => {
     const before = baseline.get(path);
     const now = current.get(path);
-    const after = path === DECISIONS_FILE ? now : output.get(path);
+    const after = path.toLowerCase() === DECISIONS_FILE ? now : output.get(path);
     const dreamt = after !== before;
     const live = now !== before;
     if (dreamt && live && after !== now) {

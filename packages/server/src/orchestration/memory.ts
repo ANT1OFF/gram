@@ -27,6 +27,10 @@ import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
 
 export { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
+export { MEMORY_INDEX_TEMPLATE } from "./memory-template.ts";
+export type { MemoryVersionSource } from "./memory-versions.ts";
+import { MEMORY_INDEX_TEMPLATE } from "./memory-template.ts";
+import { adoptedNote, adoptionNote, type MemoryVersionSource } from "./memory-versions.ts";
 
 /** The index every orchestrator session starts from. */
 export const MEMORY_INDEX = "MEMORY.md";
@@ -51,47 +55,13 @@ export const MEMORY_DIFF_MAX_BYTES = 8 * 1024;
 const MEMORY_READ_MAX_BYTES = 256 * 1024;
 
 /** Adopted versions kept besides the current one; older ones are pruned at the next adoption. */
-export const MEMORY_VERSIONS_KEEP = 5;
+export const MEMORY_VERSIONS_KEEP = 20;
 
 const FIRST_VERSION = "0001";
 const HISTORY_DIR = ".history";
 const ADOPTED_FILE = ".adopted";
 const VERSION = /^\d{4}$/;
 const SEGMENT_MAX_LENGTH = 100;
-
-/** What a new workspace's `MEMORY.md` starts as. */
-export const MEMORY_INDEX_TEMPLATE = `# Memory index
-
-Memory is a folder of short notes, one per subject, and this index, which every session starts
-from. Keep this file under 8 KB: one line per note, as \`- [[name]]: what it holds\`, plus the few
-facts worth having in every session.
-
-The orchestrator and its workers all read and write memory; the orchestrator keeps it tidy. Read a
-note before you change it and keep what you aren't changing. Add an entry with \`memory_append\`,
-change one with \`memory_edit\`, and rewrite a whole note with \`memory_write\` and the
-\`revision\` its read gave you.
-
-A note starts with front matter: \`name\` (the note's file name without \`.md\`), \`description\`
-(one line, what decides whether it is worth reading) and \`type\` (\`goal\`, \`decision\`,
-\`repo\`, \`project\`, \`feedback\` or \`reference\`). Date every entry and name its source (a
-feature, a PR, a thread): an undated fact can't be judged stale. Nothing derivable belongs here:
-worker states, PRs and budgets come from \`list_workers\`, and what a repo's CLAUDE.md already says
-stays there. Link related notes with \`[[name]]\`.
-
-New workspaces start with only this index. The names below are suggestions, not an inventory.
-Use \`memory_list\` to see which notes exist. Make a note only when there is something to record,
-then add it here; a missing suggested note has no recorded content yet.
-
-## Suggested notes (made only when needed)
-
-- goals.md: what the user wants from this workspace, in priority order, dated
-- decisions.md: what was decided, why, and which feature or PR it came from
-- standing-decisions.md: the user's rulings that hold until they say otherwise, in their words
-- map.md: how the repos relate: who calls whom, where contracts live, merge and deploy order
-- questions.md: open questions for the user; each has an id and is closed, not deleted
-- repos/<name>.md: what was learned about working in one repo that its CLAUDE.md doesn't say
-- one note per other subject, such as a system, a trap or how the user likes something done
-`;
 
 const byPath = (a: { readonly path: string }, b: { readonly path: string }) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
@@ -148,6 +118,10 @@ export interface MemoryVersion {
   readonly files: number;
   /** Whether `CURRENT` names it. */
   readonly current: boolean;
+  /** What made it, when a memory update did and said so (`MemoryVersionSource`). */
+  readonly source?: MemoryVersionSource | undefined;
+  /** The version it was made from. */
+  readonly basedOn?: string | undefined;
 }
 
 /** The current version by content hash, to tell later which files were written since. */
@@ -249,7 +223,12 @@ export interface OrchestrationMemoryShape {
   adopt(
     workspaceId: string,
     files: ReadonlyArray<MemorySetFile>,
-    options?: { readonly basedOn: string; readonly basedOnDigest?: string },
+    options?: {
+      readonly basedOn: string;
+      readonly basedOnDigest?: string;
+      /** The memory update it comes from, kept in the version's `.adopted` note. */
+      readonly source?: MemoryVersionSource;
+    },
   ): Effect.Effect<string, MemoryError>;
   /** Points `CURRENT` back at a kept version. Nothing is copied or deleted. */
   restore(workspaceId: string, version: string): Effect.Effect<void, MemoryError>;
@@ -1006,20 +985,18 @@ const make = (root: string): OrchestrationMemoryShape => {
         .toSorted();
     });
 
-  const adoptedAtOf = (workspaceId: string, version: string) =>
+  const noteOf = (workspaceId: string, version: string) =>
     Effect.gen(function* () {
       const within = versionRel(version);
       const rel = `${within}/${ADOPTED_FILE}`;
-      const note = yield* resolveInTree(workspaceId, rel, within);
-      if (note.kind === "file") {
-        const text = yield* readText(workspaceId, rel, within, ADOPTED_FILE);
-        try {
-          const at: unknown = (JSON.parse(text) as { adoptedAt?: unknown }).adoptedAt;
-          if (typeof at === "number" && Number.isFinite(at)) return at;
-        } catch (_handEditedIntoSomethingElseTheFoldersOwnAge) {}
-      }
+      const file = yield* resolveInTree(workspaceId, rel, within);
+      const note =
+        file.kind === "file"
+          ? adoptedNote(yield* readText(workspaceId, rel, within, ADOPTED_FILE))
+          : {};
+      if (note.adoptedAt !== undefined) return { ...note, adoptedAt: note.adoptedAt };
       const dir = yield* resolveInTree(workspaceId, within, "");
-      return Math.round(dir.stats?.birthtimeMs || dir.stats?.mtimeMs || 0);
+      return { ...note, adoptedAt: Math.round(dir.stats?.birthtimeMs || dir.stats?.mtimeMs || 0) };
     });
 
   const requireVersion = (workspaceId: string, version: string) =>
@@ -1044,6 +1021,7 @@ const make = (root: string): OrchestrationMemoryShape => {
     files: ReadonlyArray<MemorySetFile>,
     basedOn: string | undefined,
     basedOnDigest: string | undefined,
+    source?: MemoryVersionSource,
   ): Effect.Effect<string, MemoryError> =>
     Effect.gen(function* () {
       const { ensureDir: ensureAdoptionDir, writeAtomic: writeAdoption, removeTree } = adoptionTree;
@@ -1101,7 +1079,7 @@ const make = (root: string): OrchestrationMemoryShape => {
         for (const file of files) {
           yield* writeAdoption(workspaceId, `${within}/${file.path}`, within, file.content);
         }
-        const note = { adoptedAt: now, ...(current === undefined ? {} : { basedOn: current }) };
+        const note = adoptionNote(now, current, source);
         yield* writeAdoption(
           workspaceId,
           `${within}/${ADOPTED_FILE}`,
@@ -1343,12 +1321,9 @@ const make = (root: string): OrchestrationMemoryShape => {
           const current = yield* adopted(workspaceId);
           const out: Array<MemoryVersion> = [];
           for (const version of yield* versionNames(workspaceId)) {
-            out.push({
-              version,
-              adoptedAt: yield* adoptedAtOf(workspaceId, version),
-              files: (yield* listVersion(workspaceId, version)).length,
-              current: version === current,
-            });
+            const files = (yield* listVersion(workspaceId, version)).length;
+            const note = yield* noteOf(workspaceId, version);
+            out.push({ version, files, current: version === current, ...note });
           }
           return out;
         }),
@@ -1389,7 +1364,13 @@ const make = (root: string): OrchestrationMemoryShape => {
           return yield* locked(
             workspaceId,
             withAnchoredFiles(
-              adoptLocked(workspaceId, checked.files, options?.basedOn, options?.basedOnDigest),
+              adoptLocked(
+                workspaceId,
+                checked.files,
+                options?.basedOn,
+                options?.basedOnDigest,
+                options?.source,
+              ),
             ),
           );
         }),

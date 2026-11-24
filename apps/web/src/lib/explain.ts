@@ -6,7 +6,7 @@
 export const EXPLAIN = {
   solo: "Single agent chats outside any workspace: you direct one agent in one folder, with no orchestrator.",
   dreams:
-    "Gram rereads finished threads and drafts an update to this workspace's memory, with a source for each change. Memory changes once the draft is adopted.",
+    "Gram reads what happened since the last update (workers' reports, merges, answers and recaps) and files what lasts in this workspace's memory, with a source for each change. In Review you adopt each draft; in Auto it applies itself and Revert undoes it.",
   tidyUp:
     "The orchestrator archives what's done, fixes groups, stages and plans, closes settled questions and refreshes its memory, then says what it changed.",
   discover:

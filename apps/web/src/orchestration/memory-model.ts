@@ -1,7 +1,4 @@
 import {
-  DREAM_BUDGET_TOKENS_DEFAULT,
-  DREAM_BUDGET_TOKENS_MAX,
-  DREAM_BUDGET_TOKENS_MIN,
   type Dream,
   type DreamFailure,
   type DreamReport,
@@ -140,19 +137,22 @@ export const dreamAgentErrorText = (
     ? threadError.text.trim()
     : undefined;
 
-/** The same update again, for Try again on a failed one: its kind, mode, model, budget and inputs. */
+/** The same update again, for Try again on a failed one: its kind, mode, model and inputs. */
 export const dreamRetryInput = (dream: Dream): StartDreamInput => ({
   kind: dream.kind,
   mode: dream.mode,
   model: dream.model,
-  ...(dream.budgetTokens === undefined ? {} : { budgetTokens: dream.budgetTokens }),
   ...(dream.instructions === undefined ? {} : { instructions: dream.instructions }),
   ...(dream.inputs.threadIds.length === 0 ? {} : { threadIds: dream.inputs.threadIds }),
   ...(dream.inputs.agentSessions.length === 0 ? {} : { agentSessions: dream.inputs.agentSessions }),
 });
 
-export const dreamKindLabel = (dream: Pick<Dream, "kind">): string =>
-  dream.kind === "import" ? "From past sessions" : "From recent threads";
+export const dreamKindLabel = (dream: Pick<Dream, "kind" | "inputs">): string =>
+  dream.kind === "import"
+    ? "From past sessions"
+    : dream.inputs.recent !== undefined
+      ? "Since the last update"
+      : "From recent threads";
 
 const dreamRunning = (dream: Pick<Dream, "status">): boolean =>
   dream.status === "running" || dream.status === "pending";
@@ -404,64 +404,52 @@ export const perRepoOf = (raw: string): number | undefined => {
   return Number.isInteger(value) && value >= 1 && value <= PER_REPO_MAX ? value : undefined;
 };
 
-/** A dream's budget as the start screen offers it, in thousands of tokens. */
-export const BUDGET_K_DEFAULT = DREAM_BUDGET_TOKENS_DEFAULT / 1000;
-
-/** A typed budget in thousands of tokens as the tokens to send; `undefined` for one out of range. */
-export const budgetOf = (raw: string): number | undefined => {
-  const value = Number(raw) * 1000;
-  return Number.isInteger(value) &&
-    value >= DREAM_BUDGET_TOKENS_MIN &&
-    value <= DREAM_BUDGET_TOKENS_MAX
-    ? value
-    : undefined;
-};
-
-const threadsText = (threads: number, tokens: number): string =>
-  threads === 0
-    ? "nothing"
-    : `${threads} ${threads === 1 ? "thread" : "threads"} (${tokensText(tokens)})`;
+const counted = (count: number, one: string, many = `${one}s`): string =>
+  `${count} ${count === 1 ? one : many}`;
 
 /**
- * What a dream's plan says on its start screen, as two sentences: what it reads and from where,
- * and what waits for the next dream. Plain words for the numbers the server counted.
+ * What a memory update would read, as its start screen says it: what happened since the last
+ * update, counted, in plain words. It reads no transcript, so this is the whole of its input
+ * besides memory itself.
  */
-export const planLines = (
-  plan: DreamPlan,
-): { readonly reads: string; readonly backlog: string } => {
-  const since = plan.fromStart
-    ? "No update has been adopted into this memory yet, so this one reads every thread from its start"
-    : `Since the update you last adopted (memory ${plan.memoryVersion})`;
-  const what =
-    plan.threads === 0
-      ? "there is nothing new to read; the update tidies memory alone"
-      : `${plan.threads} ${plan.threads === 1 ? "thread" : "threads"}, ${plan.messages} new ${
-          plan.messages === 1 ? "message" : "messages"
-        }, ${tokensText(plan.estimatedTokens)}`;
+export const planLines = (plan: DreamPlan): { readonly reads: string; readonly more?: string } => {
+  const things = [
+    plan.reports > 0 ? counted(plan.reports, "worker report") : undefined,
+    plan.merges > 0 ? counted(plan.merges, "merge") : undefined,
+    plan.questions > 0 ? counted(plan.questions, "answered question") : undefined,
+    plan.threads > 0 ? counted(plan.threads, "finished thread") : undefined,
+  ].filter((thing): thing is string => thing !== undefined);
+  const since = plan.sinceAt > 0 ? "Since the last update" : "Since this workspace began";
   return {
-    reads: `${since}: ${what}.`,
-    backlog:
-      plan.backlog.threads === 0
-        ? `Backlog: nothing; everything new fits the budget of ${tokensText(plan.budgetTokens)}.`
-        : `Backlog: ${threadsText(plan.backlog.threads, plan.backlog.estimatedTokens)} past the budget of ${tokensText(plan.budgetTokens)}, left for the next update.`,
+    reads:
+      things.length === 0
+        ? `${since}: nothing new to file. An update needs a report, a merge, an answer or a finished thread.`
+        : `${since}: ${things.join(", ")}, ${tokensText(plan.estimatedTokens)}.`,
+    ...(plan.more === true
+      ? { more: "More happened than one update reads; the next one reads on from where it stops." }
+      : {}),
   };
 };
 
 /**
- * The suggestion under a workspace's newest adopted dream, when what was past its budget is waiting
- * and nothing runs: `undefined` otherwise. Older dreams' backlogs were read by the ones after.
+ * The run the Memory page reports as the last: the newest memory update that has ended, imports
+ * and runs that never finished left out.
  */
-export const backlogSuggestion = (dreams: readonly Dream[]): string | undefined => {
-  if (dreams.some((dream) => dream.status === "running" || dream.status === "pending")) {
-    return undefined;
-  }
-  const newest = dreams.find((dream) => dream.adoptedVersion !== undefined);
-  const backlog = newest?.backlog;
-  if (backlog === undefined || backlog.threads === 0) return undefined;
-  return `${threadsText(backlog.threads, backlog.estimatedTokens)} ${
-    backlog.threads === 1 ? "was" : "were"
-  } past the last update's budget and wait for the next one.`;
-};
+export const lastRun = (dreams: readonly Dream[]): Dream | undefined =>
+  dreams.find((dream) => dream.kind === "dream" && dream.status === "completed");
+
+/**
+ * Whether Revert can undo `dream` now: it made a version, nobody reverted it, and memory is still
+ * at that version (`current`). Otherwise History's Restore is the way back.
+ */
+export const revertable = (
+  dream: Pick<Dream, "adoptedVersion" | "revertedAt" | "inputs">,
+  current: string | undefined,
+): boolean =>
+  dream.adoptedVersion !== undefined &&
+  dream.revertedAt === undefined &&
+  dream.inputs.memoryVersion !== "" &&
+  current === dream.adoptedVersion;
 
 /** A preview as it is held: beside the scope it was counted for, so the two can't come apart. */
 export interface ScopedPreview {

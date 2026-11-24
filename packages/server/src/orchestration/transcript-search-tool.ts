@@ -46,7 +46,8 @@ export const TranscriptSearchAppToolsLive = Layer.effectDiscard(
           (dream) =>
             dream.threadId === caller &&
             dream.status === "running" &&
-            dream.filesClosedAt === undefined,
+            dream.filesClosedAt === undefined &&
+            dream.inputs.recent === undefined,
         );
         return running ? (workspaceId as string) : undefined;
       });

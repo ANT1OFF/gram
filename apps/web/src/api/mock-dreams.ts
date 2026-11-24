@@ -1,5 +1,4 @@
 import {
-  DREAM_BUDGET_TOKENS_DEFAULT,
   type Dream,
   type DreamFileDiff,
   type DreamId,
@@ -23,9 +22,17 @@ import {
   type UsageSummary,
   type WorkspaceId,
   type WorkspaceState,
+  memoryUpdateModeOf,
 } from "@gram/contracts";
 
 import { failDreamSoon } from "./mock-dream-fails";
+import {
+  DECISIONS_BEFORE,
+  DECISIONS_DREAM,
+  DECISIONS_LIVE,
+  revertedVersion,
+  seedFiles,
+} from "./mock-dream-seed";
 import { mockMerge, sidesOf } from "./mock-dream-merge";
 import { MockInvalidState } from "./mock-fs";
 import type { AdoptDreamInput, ApiServerEvent, DreamPreviewInput, StartDreamInput } from "./types";
@@ -56,15 +63,16 @@ const FILE_MAX_BYTES = 32 * 1024;
 const MAX_FILES = 40;
 const VERSIONS_KEEP = 6;
 
-interface MockFile {
+export interface MockFile {
   readonly content: string;
   readonly modifiedAt: number;
 }
 
-interface MockVersion {
+export interface MockVersion {
   readonly version: string;
   readonly adoptedAt: number;
   readonly files: Map<string, MockFile>;
+  readonly source?: Pick<MemoryVersionInfo, "dreamId" | "mode" | "summary" | "basedOn">;
 }
 
 interface MockMemory {
@@ -78,19 +86,15 @@ interface MockOutput {
   readonly digest: string;
 }
 
-interface MockUnread {
-  readonly tokens: number;
-  readonly messages: number;
+interface MockRecent {
+  readonly reports: number;
+  readonly merges: number;
+  readonly questions: number;
+  readonly threads: number;
 }
 
-const MOCK_UNREAD: readonly MockUnread[] = [
-  { tokens: 48_000, messages: 60 },
-  { tokens: 31_000, messages: 40 },
-  { tokens: 22_000, messages: 30 },
-  { tokens: 64_000, messages: 32 },
-  { tokens: 40_000, messages: 20 },
-  { tokens: 31_000, messages: 10 },
-];
+const MOCK_RECENT: MockRecent = { reports: 7, merges: 3, questions: 2, threads: 5 };
+const TOKENS_PER_ITEM = 320;
 
 const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
 
@@ -112,84 +116,6 @@ const pathProblem = (path: string): string | undefined => {
   return undefined;
 };
 
-const QUESTIONS = `# Questions for the user
-
-## Q1 · open · 2026-09-21
-Should the mail trigger retry when the provider answers 429, or drop the mail and report it?
-Source: mail-trigger, thread "Mail trigger queue worker".
-Options (pick one):
-1. Retry with backoff — five tries, then report it (recommended)
-2. Drop and report — the sender resends
-3. Park it — hold the mail until someone looks
-
-## Q3 · open · 2026-09-23
-The docs repo has no preview deploy. Is a merged PR enough for "preview deployed" there?
-
-## Q2 · answered 2026-09-19
-Which repo owns the registry schema?
-Answer: web owns it; api reads a generated copy.
-
-## Q4 · decided 2026-09-22
-Merge api before web?
-Decided: yes. The web client is generated from the api schema, so api lands first. Source: PR api#212.
-`;
-
-const DECISIONS_BEFORE = `# Decisions
-
-- 2026-09-17 · One branch name per feature in every repo (feat/<slug>). Source: mail-trigger.
-- 2026-09-18 · The api merges before web, and docs last. Source: PR api#212.
-`;
-
-const DECISIONS_LIVE = `${DECISIONS_BEFORE}- 2026-09-23 · Queue consumers retry with backoff, five times at most. Source: mail-trigger.
-`;
-
-const DECISIONS_DREAM = `# Decisions
-
-- 2026-09-17 · One branch name per feature in every repo (feat/<slug>). Source: mail-trigger.
-- 2026-09-18 · Merge order is api, then web, then docs. Source: PR api#212.
-- 2026-09-20 · Contracts are agreed in api before web builds against them. Source: registry-paging.
-`;
-
-const seedFiles = (now: number): Map<string, MockFile> => {
-  const day = 24 * 60 * 60_000;
-  return new Map<string, MockFile>([
-    [
-      INDEX,
-      {
-        content:
-          "# Memory index\n\n- goals.md: what this workspace is for, in priority order\n- decisions.md: what was decided and why\n- map.md: how api, web and docs relate\n- questions.md: open questions for the user\n- repos/api.md: what working in api taught us\n",
-        modifiedAt: now - 6 * day,
-      },
-    ],
-    [
-      "goals.md",
-      {
-        content:
-          "# Goals\n\n1. 2026-09-16 · Ship the mail trigger across api, web and docs this quarter.\n2. 2026-09-18 · Page the registry list before it outgrows one response.\n",
-        modifiedAt: now - 5 * day,
-      },
-    ],
-    ["decisions.md", { content: DECISIONS_LIVE, modifiedAt: now - 3 * 60 * 60_000 }],
-    [
-      "map.md",
-      {
-        content:
-          "# Map\n\n- api: the HTTP service; contracts live in api/contracts\n- web: the front end; builds against api's generated client\n- docs: the how-to site; merged last\n",
-        modifiedAt: now - 4 * day,
-      },
-    ],
-    ["questions.md", { content: QUESTIONS, modifiedAt: now - day }],
-    [
-      "repos/api.md",
-      {
-        content:
-          "# api\n\n- 2026-09-19 · `uv run pytest tests/queue` needs Redis on 6380, not the default port.\n",
-        modifiedAt: now - 2 * day,
-      },
-    ],
-  ]);
-};
-
 const MERGE_MS = 2000;
 
 const currentOf = (memory: MockMemory): MockVersion =>
@@ -200,8 +126,9 @@ export function createMockDreams(host: MockDreamsHost) {
   const memories = new Map<WorkspaceId, MockMemory>();
   let dreams: Dream[] = [];
   const outputs = new Map<DreamId, MockOutput>();
-  const unread = new Map<WorkspaceId, readonly MockUnread[]>();
-  const readBy = new Map<DreamId, readonly number[]>();
+  const recent = new Map<WorkspaceId, MockRecent>();
+  const lastAdopted = new Map<WorkspaceId, number>();
+  const modes = new Map<WorkspaceId, "review" | "auto">();
   const merges = new Map<DreamId, Map<string, { sides: string; state: DreamMerge }>>();
 
   const requireWorkspace = (workspaceId: WorkspaceId): WorkspaceState => {
@@ -248,57 +175,27 @@ export function createMockDreams(host: MockDreamsHost) {
     parts,
   });
 
-  const planOf = (workspaceId: WorkspaceId, budgetTokens: number) => {
-    const items = unread.get(workspaceId) ?? MOCK_UNREAD;
-    const taken: number[] = [];
-    let used = 0;
-    for (const [index, item] of items.entries()) {
-      if (used + item.tokens > budgetTokens) continue;
-      taken.push(index);
-      used += item.tokens;
-    }
-    const left = items.filter((_, index) => !taken.includes(index));
-    const plan: DreamPlan = {
+  const planOf = (workspaceId: WorkspaceId): DreamPlan => {
+    const since = recent.get(workspaceId) ?? MOCK_RECENT;
+    const items = since.reports + since.merges + since.questions + since.threads;
+    return {
       memoryVersion: memoryOf(workspaceId).current,
-      fromStart: !dreams.some(
-        (dream) => dream.workspaceId === workspaceId && dream.adoptedVersion !== undefined,
-      ),
-      threads: taken.length,
-      messages: taken.reduce((sum, index) => sum + items[index]!.messages, 0),
-      estimatedTokens: used,
-      budgetTokens,
-      backlog: {
-        threads: left.length,
-        messages: left.reduce((sum, item) => sum + item.messages, 0),
-        estimatedTokens: left.reduce((sum, item) => sum + item.tokens, 0),
-      },
+      sinceAt: lastAdopted.get(workspaceId) ?? Date.now() - 6 * 60 * 60_000,
+      ...since,
+      estimatedTokens: 300 + items * TOKENS_PER_ITEM,
     };
-    const notes =
-      left.length === 0
-        ? []
-        : [
-            `${left.length} ${left.length === 1 ? "thread" : "threads"} left for the next memory update, past this one's budget. Their watermarks stay where they are, so the next memory update reads them.`,
-          ];
-    return { plan, taken, notes };
   };
 
   const preview = (state: WorkspaceState, input: DreamPreviewInput): ImportPreview => {
     if (input.kind === "dream") {
-      const { plan, notes } = planOf(
-        state.workspace.id,
-        input.budgetTokens ?? DREAM_BUDGET_TOKENS_DEFAULT,
-      );
       return {
         sources: [],
         worktreesCovered: 0,
         worktreesTotal: 0,
         closedThreadsKept: 3,
         archivedThreads: 11,
-        notes: [
-          ...notes,
-          "Transcripts are redacted, stay on this machine, and are read only by the model the memory update runs on.",
-        ],
-        dream: plan,
+        notes: [],
+        dream: planOf(state.workspace.id),
       };
     }
     const perRepo = input.perRepo ?? 30;
@@ -417,6 +314,7 @@ export function createMockDreams(host: MockDreamsHost) {
         adoptedAt: version.adoptedAt,
         files: version.files.size,
         current: version.version === memory.current,
+        ...version.source,
       }));
     },
 
@@ -459,41 +357,69 @@ export function createMockDreams(host: MockDreamsHost) {
       const memory = memoryOf(workspaceId);
       const empty = currentOf(memory).files.size === 0;
       const id = dreamId();
-      const planned =
-        input.kind === "dream"
-          ? planOf(workspaceId, input.budgetTokens ?? DREAM_BUDGET_TOKENS_DEFAULT)
-          : undefined;
-      if (planned !== undefined) readBy.set(id, planned.taken);
+      const plan =
+        input.kind === "dream" && input.threadIds === undefined ? planOf(workspaceId) : undefined;
+      if (plan !== undefined && plan.reports + plan.merges + plan.questions + plan.threads === 0) {
+        throw new MockInvalidState(
+          "Nothing new since the last memory update: no worker report, merge, answered question or finished thread.",
+        );
+      }
       const started = putDream({
         id,
         workspaceId,
         kind: input.kind,
-        mode: input.mode ?? "review",
+        mode: input.mode ?? (input.kind === "dream" ? memoryUpdateModeOf(state.charter) : "review"),
         status: "running",
         inputs: {
           memoryVersion: empty ? "" : memory.current,
           threadIds: [...(input.threadIds ?? [])],
           agentSessions: [...(input.agentSessions ?? [])],
+          ...(plan === undefined
+            ? {}
+            : {
+                recent: {
+                  throughReportSeq: plan.reports,
+                  throughEventSeq: plan.merges,
+                  throughAt: Date.now(),
+                  sinceAt: plan.sinceAt,
+                  reports: plan.reports,
+                  merges: plan.merges,
+                  questions: plan.questions,
+                  threads: plan.threads,
+                  estimatedTokens: plan.estimatedTokens,
+                },
+              }),
         },
         ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
         model,
         threadId: thread.id,
         outputDir: `/mock/orchestration/${workspaceId}/dreams/${thread.id}`,
         createdAt: Date.now(),
-        ...(planned === undefined
-          ? {}
-          : {
-              budgetTokens: planned.plan.budgetTokens,
-              backlog: planned.plan.backlog,
-              ...(planned.notes.length === 0 ? {} : { notes: planned.notes }),
-            }),
       });
       failDreamSoon(host, thread, started, putDream);
       return started;
     },
 
     async listDreams(workspaceId: WorkspaceId): Promise<readonly Dream[]> {
-      requireWorkspace(workspaceId);
+      const state = requireWorkspace(workspaceId);
+      const mode = memoryUpdateModeOf(state.charter);
+      const was = modes.get(workspaceId);
+      modes.set(workspaceId, mode);
+      if (was !== undefined && was !== mode && mode === "auto") {
+        const waiting = dreams.filter(
+          (dream) =>
+            dream.workspaceId === workspaceId &&
+            dream.status === "completed" &&
+            dream.mode === "review" &&
+            dream.adoptedVersion === undefined &&
+            dream.inputs.recent !== undefined,
+        );
+        for (const dream of waiting) {
+          if (dream.threadId !== undefined) await host.closeThread(dream.threadId);
+          outputs.delete(dream.id);
+        }
+        dreams = dreams.filter((dream) => !waiting.includes(dream));
+      }
       return dreams
         .filter((dream) => dream.workspaceId === workspaceId)
         .toSorted((a, b) => b.createdAt - a.createdAt);
@@ -590,18 +516,26 @@ export function createMockDreams(host: MockDreamsHost) {
       const next = String(
         Math.max(...memory.versions.map((version) => Number(version.version))) + 1,
       ).padStart(4, "0");
-      memory.versions = [...memory.versions, { version: next, adoptedAt: now, files }].slice(
-        -VERSIONS_KEEP,
-      );
+      const based = memory.current;
+      memory.versions = [
+        ...memory.versions,
+        {
+          version: next,
+          adoptedAt: now,
+          files,
+          source: {
+            dreamId: dream.id,
+            mode: dream.mode,
+            basedOn: based,
+            ...(dream.summary === undefined ? {} : { summary: dream.summary }),
+          },
+        },
+      ].slice(-VERSIONS_KEEP);
       memory.current = next;
       merges.delete(id);
-      const read = readBy.get(id);
-      if (read !== undefined) {
-        const items = unread.get(dream.workspaceId) ?? MOCK_UNREAD;
-        unread.set(
-          dream.workspaceId,
-          items.filter((_, index) => !read.includes(index)),
-        );
+      if (dream.inputs.recent !== undefined) {
+        recent.set(dream.workspaceId, { reports: 0, merges: 0, questions: 0, threads: 0 });
+        lastAdopted.set(dream.workspaceId, now);
       }
       return putDream({ ...dream, adoptedVersion: next });
     },
@@ -640,6 +574,24 @@ export function createMockDreams(host: MockDreamsHost) {
       return started;
     },
 
+    async revert(id: DreamId): Promise<void> {
+      const dream = findDream(id);
+      const memory = memoryOf(dream.workspaceId);
+      if (dream.adoptedVersion === undefined) {
+        throw new MockInvalidState(
+          "That memory update made no memory version, so there is nothing to revert.",
+        );
+      }
+      if (memory.current !== dream.adoptedVersion) {
+        throw new MockInvalidState(
+          `Memory is at version ${memory.current} now, not the ${dream.adoptedVersion} this update made. Restore a version from History instead.`,
+        );
+      }
+      memory.versions = [...memory.versions, revertedVersion(memory, dream)].slice(-VERSIONS_KEEP);
+      memory.current = memory.versions.at(-1)!.version;
+      putDream({ ...dream, revertedAt: Date.now() });
+    },
+
     async discard(id: DreamId): Promise<void> {
       const dream = findDream(id);
       if (dream.status === "running" || dream.status === "pending") {
@@ -666,12 +618,31 @@ export function createMockDreams(host: MockDreamsHost) {
       const first = new Map(
         [...files].filter(([path]) => path === INDEX || path === "goals.md" || path === "map.md"),
       );
+      const autoId = dreamId();
+      const autoSummary =
+        "Filed the api-before-web merge order and the Redis port for queue tests (2 notes changed, 3 notes added)";
       memories.set(workspaceId, {
         versions: [
           { version: "0001", adoptedAt: now - 8 * day, files: first },
-          { version: "0002", adoptedAt: now - 3 * day, files },
+          {
+            version: "0002",
+            adoptedAt: now - 3 * day,
+            files,
+            source: { dreamId: autoId, mode: "auto", basedOn: "0001", summary: autoSummary },
+          },
         ],
         current: "0002",
+      });
+      lastAdopted.set(workspaceId, now - 3 * day);
+      const recentRead = (counts: MockRecent) => ({
+        throughReportSeq: counts.reports,
+        throughEventSeq: counts.merges,
+        throughAt: now,
+        sinceAt: now - 4 * day,
+        ...counts,
+        estimatedTokens:
+          300 +
+          (counts.reports + counts.merges + counts.questions + counts.threads) * TOKENS_PER_ITEM,
       });
       const home = host.projects().find((p) => p.id === state.workspace.homeProjectId);
       if (home === undefined) throw notFound("project", state.workspace.homeProjectId);
@@ -764,11 +735,36 @@ export function createMockDreams(host: MockDreamsHost) {
           id: completedId,
           kind: "dream",
           status: "completed",
+          inputs: {
+            memoryVersion: "0002",
+            threadIds: [],
+            agentSessions: [],
+            recent: recentRead({ reports: 7, merges: 3, questions: 2, threads: 5 }),
+          },
           model: { agent: "claude", model: "opus" },
           threadId: finished.id,
           usage: { tokens: { inputTokens: 412_000, outputTokens: 9_800 }, costUsd: 2.35 },
           createdAt: now - 5 * 60 * 60_000,
           endedAt: now - 5 * 60 * 60_000 + 11 * 60_000,
+        },
+        {
+          ...base,
+          id: autoId,
+          kind: "dream",
+          mode: "auto",
+          status: "completed",
+          adoptedVersion: "0002",
+          summary: autoSummary,
+          inputs: {
+            memoryVersion: "0001",
+            threadIds: [],
+            agentSessions: [],
+            recent: recentRead({ reports: 9, merges: 4, questions: 1, threads: 6 }),
+          },
+          model: { agent: "claude", model: "claude-sonnet-5-5" },
+          usage: { tokens: { inputTokens: 31_000, outputTokens: 2_400 }, costUsd: 0.12 },
+          createdAt: now - 3 * day - 3 * 60_000,
+          endedAt: now - 3 * day,
         },
         {
           ...base,

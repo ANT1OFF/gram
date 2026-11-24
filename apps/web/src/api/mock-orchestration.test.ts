@@ -576,6 +576,7 @@ describe("MockApi orchestration", () => {
       ["import", "running"],
       ["dream", "completed"],
       ["dream", "failed"],
+      ["dream", "completed"],
     ]);
     const completed = dreams[1]!;
     await expect(api.startDream(id, { kind: "dream" })).rejects.toMatchObject({

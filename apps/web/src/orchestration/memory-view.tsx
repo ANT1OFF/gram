@@ -490,6 +490,11 @@ function VersionRow({
         <span className="text-muted-foreground tabular-nums">
           {version.files} {version.files === 1 ? "file" : "files"}
         </span>
+        {version.mode !== undefined && (
+          <span data-testid="memory-version-source" className="text-muted-foreground">
+            {version.mode === "auto" ? "applied by a memory update" : "adopted memory update"}
+          </span>
+        )}
         <Swap swapKey={version.current ? "current" : "kept"} className="ml-auto items-center">
           {version.current ? (
             <span
@@ -510,6 +515,11 @@ function VersionRow({
           )}
         </Swap>
       </div>
+      {version.summary !== undefined && (
+        <p data-testid="memory-version-summary" className="text-meta text-description">
+          {version.summary}
+        </p>
+      )}
       <InlineConfirm
         open={confirming && !version.current}
         label={`Restore version ${version.version}?`}
@@ -555,8 +565,8 @@ function Versions({ workspaceId }: { workspaceId: WorkspaceId }) {
     <section ref={ref} aria-label="Versions" data-testid="memory-versions" className={SECTION}>
       <h2 className="sr-only">Versions</h2>
       <p className={LEAD}>
-        Each adopted update makes a new version of memory. The last few are kept, so an update you
-        regret is one Restore away.
+        Each adopted or automatic update makes a new version of memory, and says what made it. The
+        last twenty are kept, so an update you regret is one Restore away.
       </p>
       {versions.error ? (
         <QueryError error={versions.error} feature="Memory versions" />
@@ -740,7 +750,7 @@ export function MemoryView({
             }}
             render={<TabsTrigger value="update" data-testid="memory-tab-update" />}
           >
-            <Term term="dreams">Draft memory update</Term>
+            <Term term="dreams">Memory updates</Term>
             <UpdateTabMark workspaceId={workspaceId} />
           </Hint>
         </TabsList>

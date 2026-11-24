@@ -99,6 +99,10 @@ export const DreamRpcs = RpcGroup.make(
     success: Dream,
     error: errors(NotFound, InvalidState, FsError),
   }),
+  Rpc.make("dream.revert", {
+    payload: { dreamId: DreamId },
+    error: errors(NotFound, InvalidState, FsError),
+  }),
   Rpc.make("dream.discard", {
     payload: { dreamId: DreamId },
     error: errors(NotFound, InvalidState, FsError),

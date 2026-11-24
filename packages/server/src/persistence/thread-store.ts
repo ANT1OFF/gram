@@ -1,6 +1,12 @@
 import type { StoredActor } from "../host/ownership.ts";
 import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
 import {
+  advanceDreamCursor,
+  type DreamCursor,
+  eventsAfter,
+  readDreamCursor,
+} from "./dream-cursor.ts";
+import {
   type PrWakeFired,
   type PrWatchSeen,
   type WakeConditionFired,
@@ -1085,6 +1091,17 @@ export interface ThreadStoreShape {
     readonly cards: ReadonlyArray<FeatureCard>;
     readonly outbox: string | undefined;
   }): Effect.Effect<ReadonlyArray<Thread>, NotFound>;
+
+  /** The workspace's orchestration events past `afterSeq` of the `kinds` given, oldest first. */
+  listOrchestrationEventsAfter(
+    workspaceId: WorkspaceId,
+    afterSeq: number,
+    kinds: ReadonlyArray<string>,
+  ): Effect.Effect<ReadonlyArray<OrchestrationEventRecord>>;
+  /** Where the workspace's next memory update reads on from; absent: from its start. */
+  getDreamCursor(workspaceId: WorkspaceId): Effect.Effect<DreamCursor | undefined>;
+  /** Moves the cursor on to `cursor`, field by field; it never moves back. */
+  advanceDreamCursor(workspaceId: WorkspaceId, cursor: DreamCursor): Effect.Effect<void>;
 
   getAutomaticDreamState(workspaceId: WorkspaceId): Effect.Effect<AutomaticDreamState | undefined>;
   updateAutomaticDreamState(
@@ -3521,6 +3538,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 "dreams",
                 "automatic_dream",
                 "dream_watermarks",
+                "dream_cursors",
               ]) {
                 yield* sql`DELETE FROM ${sql(table)} WHERE workspace_id = ${id}`;
               }
@@ -3761,6 +3779,10 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             ),
           ),
 
+        listOrchestrationEventsAfter: (workspaceId, afterSeq, kinds) =>
+          run(eventsAfter(sql, workspaceId, afterSeq, kinds)),
+        getDreamCursor: (id) => run(readDreamCursor(sql, id)),
+        advanceDreamCursor: (id, cursor) => tx(advanceDreamCursor(sql, id, cursor)),
         getAutomaticDreamState: (id) => run(readAutomaticDreamState(id)),
         updateAutomaticDreamState: (id, f) =>
           tx(

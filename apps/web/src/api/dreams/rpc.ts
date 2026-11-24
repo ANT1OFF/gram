@@ -2,11 +2,10 @@ import { run, type RpcContext } from "../rpc-client";
 import type { DreamPreviewInput } from "../types";
 import type { DreamsApi } from "./types";
 
-const dreamScope = ({ projectIds, perRepo, includeMemory, budgetTokens }: DreamPreviewInput) => ({
+const dreamScope = ({ projectIds, perRepo, includeMemory }: DreamPreviewInput) => ({
   ...(projectIds === undefined ? {} : { projectIds: [...projectIds] }),
   ...(perRepo === undefined ? {} : { perRepo }),
   ...(includeMemory === undefined ? {} : { includeMemory }),
-  ...(budgetTokens === undefined ? {} : { budgetTokens }),
 });
 
 /** `DreamsApi` over the RPC client. */
@@ -56,4 +55,5 @@ export const dreamsRpc = ({ client }: RpcContext): DreamsApi => ({
     ),
   mergeDreamConflict: (dreamId, path) => run(client["dream.merge"]({ dreamId, path })),
   discardDream: (dreamId) => run(client["dream.discard"]({ dreamId })),
+  revertDream: (dreamId) => run(client["dream.revert"]({ dreamId })),
 });
