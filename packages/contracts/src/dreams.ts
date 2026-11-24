@@ -207,6 +207,15 @@ export const Dream = Schema.Struct({
   budgetTokens: Schema.optionalKey(Schema.Int),
   /** Kept on runs made before memory updates read only what happened since: never written now. */
   backlog: Schema.optionalKey(DreamBacklog),
+  /**
+   * The notes an adopted update changed, each with the SHA-256 of the text it left (absent for one
+   * it removed): what `dream.revert` puts back while nobody has written the note since.
+   */
+  changed: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ path: Schema.String, sha256: Schema.optionalKey(Schema.String) })),
+  ),
+  /** An automatic run that changed nothing: settled, with no version to make. */
+  unchanged: Schema.optionalKey(Schema.Boolean),
   /** Epoch ms the user reverted the version it made (`dream.revert`). */
   revertedAt: Schema.optionalKey(Schema.Number),
   /** One line on what a completed run changed, for its notice, the Memory page and History. */

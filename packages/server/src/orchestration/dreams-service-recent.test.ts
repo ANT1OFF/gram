@@ -12,7 +12,14 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Dreams } from "./dreams.ts";
 import { DECISIONS_FILE, MEMORY_FILE_MAX_BYTES, OrchestrationMemory } from "./memory.ts";
 import { Orchestration } from "./service.ts";
-import { completeTurn, openOrchestrator, settle, waitReal, waitSent } from "./test-harness.ts";
+import {
+  completeTurn,
+  makeWorld,
+  openOrchestrator,
+  settle,
+  waitReal,
+  waitSent,
+} from "./test-harness.ts";
 import {
   adoptDream,
   finishDream,
@@ -21,6 +28,7 @@ import {
   reportSomething,
   sessionsOf,
   startDream,
+  withDreams,
   writeOutput,
 } from "./dreams-service-kit.ts";
 
@@ -67,7 +75,7 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
         const read = sessionsOf(first.dream);
         expect(Object.keys(read)).toEqual([SINCE]);
         expect(read[SINCE]).toContain("Moved the deploy to Fridays.");
-        expect(read[SINCE]).toContain("Learned: The deploy script needs DEPLOY_ENV set.");
+        expect(read[SINCE]).toContain("Learned:\n> The deploy script needs DEPLOY_ENV set.");
         expect(read[SINCE]).not.toContain("transcript-only");
         expect(first.dream.inputs.recent).toMatchObject({ reports: 2 });
         expect(first.dream.inputs.recent!.estimatedTokens).toBeLessThan(2_000);
@@ -168,7 +176,7 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
     ),
   );
 
-  it.effect("Revert points memory back at the version a run was made from, once", () =>
+  it.effect("Revert puts back what a run changed and keeps every note written since", () =>
     inDreams((world) =>
       Effect.gen(function* () {
         const dreams = yield* Dreams;
@@ -176,19 +184,34 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
         const { workspaceId } = yield* openOrchestrator(world);
         const before = yield* memory.index(workspaceId);
         const { dream, session } = yield* startDream(workspaceId, undefined, "auto");
-        writeOutput(dream, { "MEMORY.md": "# Applied by itself\n" });
+        writeOutput(dream, {
+          "MEMORY.md": "# Applied by itself\n",
+          "goals.md": "# Goals\n\n- Ship the cart (2026-11-24, thread t-1)\n",
+          "map.md": "# Map\n\n- api, then web\n",
+        });
         const ended = yield* finishAuto(dream, session);
         expect(yield* memory.index(workspaceId)).toBe("# Applied by itself\n");
+        // Written after the run applied itself: a ruling, a note it made, and one it never touched.
+        const ruling = "# Standing decisions\n\n- Visual PRs merge when green.\n";
+        yield* memory.write(workspaceId, DECISIONS_FILE, ruling);
+        yield* memory.write(workspaceId, "map.md", "# Map\n\n- api, then web, then docs\n");
+        yield* memory.write(workspaceId, "repos/shop.md", "# shop\n\n- Tests need Redis.\n");
 
         expect(yield* dreams.revert(dream.id)).toBe(workspaceId);
-        expect(yield* memory.currentVersion(workspaceId)).toBe("0001");
+        const versions = yield* memory.versions(workspaceId);
+        expect(versions.map((v) => v.version)).toEqual(["0001", ended.adoptedVersion!, "0003"]);
+        expect(versions.at(-1)?.current).toBe(true);
+        expect(versions.at(-1)?.source?.summary).toContain("kept map.md");
+        // What the run changed and nobody touched since is as it was before the run.
         expect(yield* memory.index(workspaceId)).toBe(before);
+        expect(yield* Effect.flip(memory.read(workspaceId, "goals.md"))).toMatchObject({
+          _tag: "NotFound",
+        });
+        // What was written since stays.
+        expect(yield* memory.read(workspaceId, DECISIONS_FILE)).toBe(ruling);
+        expect(yield* memory.read(workspaceId, "map.md")).toContain("then docs");
+        expect(yield* memory.read(workspaceId, "repos/shop.md")).toContain("Redis");
         expect((yield* dreams.list(workspaceId))[0]?.revertedAt).toBeDefined();
-        // Both versions stay in History; a second revert has nothing to undo.
-        expect((yield* memory.versions(workspaceId)).map((v) => v.version)).toEqual([
-          "0001",
-          ended.adoptedVersion!,
-        ]);
         expect((yield* Effect.flip(dreams.revert(dream.id))).message).toContain(
           "Restore a version from History",
         );
@@ -200,23 +223,39 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
     ),
   );
 
-  it.effect("in Auto, a run that changes nothing makes no version and spends what it read", () =>
-    inDreams((world) =>
+  it.effect(
+    "in Auto, a run that changes nothing makes no version, spends what it read, and a restart leaves it be",
+    () =>
       Effect.gen(function* () {
-        const store = yield* ThreadStore;
-        const memory = yield* OrchestrationMemory;
-        const { workspaceId } = yield* openOrchestrator(world);
-        const { dream, session } = yield* startDream(workspaceId, undefined, "auto");
-        writeOutput(dream, { "REPORT.md": "Nothing to file.\n" });
-        const ended = yield* finishAuto(dream, session);
-        expect(ended.adoptedVersion).toBeUndefined();
-        expect(ended.summary).toBe("Nothing to file (nothing changed)");
-        expect((yield* memory.versions(workspaceId)).map((v) => v.version)).toEqual(["0001"]);
-        expect((yield* store.getDreamCursor(workspaceId))?.reportSeq).toBe(
-          ended.inputs.recent?.throughReportSeq,
+        const world = yield* makeWorld;
+        const settled = yield* withDreams(
+          world,
+          Effect.gen(function* () {
+            const store = yield* ThreadStore;
+            const memory = yield* OrchestrationMemory;
+            const { workspaceId } = yield* openOrchestrator(world);
+            const { dream, session } = yield* startDream(workspaceId, undefined, "auto");
+            writeOutput(dream, { "REPORT.md": "Nothing to file.\n" });
+            const ended = yield* finishAuto(dream, session);
+            expect(ended.adoptedVersion).toBeUndefined();
+            expect(ended.summary).toBe("Nothing to file (nothing changed)");
+            expect((yield* memory.versions(workspaceId)).map((v) => v.version)).toEqual(["0001"]);
+            expect((yield* store.getDreamCursor(workspaceId))?.reportSeq).toBe(
+              ended.inputs.recent?.throughReportSeq,
+            );
+            return ended;
+          }),
+        );
+        yield* withDreams(
+          world,
+          Effect.gen(function* () {
+            yield* settle;
+            const row = yield* (yield* ThreadStore).getDream(settled.id);
+            expect(row.unchanged).toBe(true);
+            expect(row.adoptionFailure).toBeUndefined();
+          }),
         );
       }),
-    ),
   );
 
   it.effect("switching to Auto discards the drafts waiting for review", () =>
@@ -225,20 +264,26 @@ describe.skipIf(!hasGit)("memory updates that read what happened since the last"
         const store = yield* ThreadStore;
         const dreams = yield* Dreams;
         const orchestration = yield* Orchestration;
-        const { workspaceId } = yield* openOrchestrator(world);
+        const { workspaceId, thread } = yield* openOrchestrator(world);
+        // A draft of threads picked by hand read transcripts: the next update won't, so it stays.
+        const picked = yield* dreams.start({ workspaceId, kind: "dream", threadIds: [thread.id] });
+        const pickedSession = yield* waitSent(picked.threadId as ThreadId, 1);
+        writeOutput(picked, { "MEMORY.md": "# Picked\n" });
+        yield* finishDream(picked, pickedSession, "completed");
         const { dream, session } = yield* startDream(workspaceId);
         writeOutput(dream, { "MEMORY.md": "# Draft\n" });
         yield* finishDream(dream, session, "completed");
-        expect((yield* dreams.list(workspaceId)).map((d) => d.id)).toEqual([dream.id]);
+        expect((yield* dreams.list(workspaceId)).map((d) => d.id)).toEqual([dream.id, picked.id]);
         yield* orchestration.setCharter(workspaceId, {
           ...(yield* store.getWorkspace(workspaceId)).charter,
           memoryUpdateMode: "auto",
         });
         yield* waitReal(
           "draft discarded",
-          dreams.list(workspaceId).pipe(Effect.map((rows) => rows.length === 0)),
+          dreams.list(workspaceId).pipe(Effect.map((rows) => rows.length === 1)),
         );
         expect(fs.existsSync(nodePath.join(dream.outputDir))).toBe(false);
+        expect((yield* dreams.list(workspaceId)).map((d) => d.id)).toEqual([picked.id]);
       }),
     ),
   );

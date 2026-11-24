@@ -80,14 +80,21 @@ export const makePlanRecent = (store: ThreadStoreShape, memory: OrchestrationMem
       const reader = {
         subject: readableByOfWorkspace(workspaceId, state.workspace.orchestratorThreadId),
       };
-      for (const thread of open) {
+      const live = new Set<string>(open.map((thread) => thread.id));
+      for (const thread of [...open, ...closed.filter((one) => !live.has(one.id))]) {
         if (
           !eligibleCompletion(thread, state) ||
           thread.completedAt! <= cursor.at ||
           !readerMay(reader, thread.readableBy)
         )
           continue;
-        const recap = latestRecap(yield* store.lastMessages(thread.id, RECAP_LOOKBACK_MESSAGES));
+        const recap = live.has(thread.id)
+          ? latestRecap(yield* store.lastMessages(thread.id, RECAP_LOOKBACK_MESSAGES))
+          : latestRecap(
+              (yield* store.listMessagesFrom(thread.id, 0, true))
+                .slice(-RECAP_LOOKBACK_MESSAGES)
+                .map((row) => row.message),
+            );
         items.push({
           kind: "thread",
           at: thread.completedAt!,

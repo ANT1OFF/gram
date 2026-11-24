@@ -628,16 +628,23 @@ test("Auto discards the waiting drafts once confirmed, runs on a schedule, and R
   );
   await shot(page, { path: test.info().outputPath("memory-updates-auto.png") });
   await panel.getByTestId("memory-update-revert").click();
-  await expect(panel.getByTestId("memory-update-reverted")).toContainText("back at version 0001");
+  await expect(panel.getByTestId("memory-update-reverted")).toContainText(
+    "put back as a new version",
+  );
   await expect(panel.getByTestId("memory-update-revert")).toHaveCount(0);
 
   await memoryTab(page, "History");
   const versions = page.getByTestId("memory-versions");
   await expect(
     versions
-      .locator('[data-testid="memory-version"][data-version="0001"]')
+      .locator('[data-testid="memory-version"][data-version="0003"]')
       .getByTestId("memory-version-current"),
   ).toBeVisible();
+  await expect(
+    versions
+      .locator('[data-testid="memory-version"][data-version="0003"]')
+      .getByTestId("memory-version-summary"),
+  ).toContainText("Reverted what 0002 changed");
   const made = versions.locator('[data-testid="memory-version"][data-version="0002"]');
   await expect(made.getByTestId("memory-version-source")).toContainText("memory update");
   await expect(made.getByTestId("memory-version-summary")).toContainText("merge order");
@@ -1094,7 +1101,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
   const inspection = page.getByTestId("dream-review");
   await expect(inspection).toHaveAttribute("aria-label", "Update inspection");
   await expect(
-    inspection.getByRole("heading", { name: "Inspect · From recent threads" }),
+    inspection.getByRole("heading", { name: "Inspect · Since the last update" }),
   ).toBeVisible();
   await expect(inspection.getByTestId("dream-adopt")).toHaveCount(0);
   await expect(inspection.getByTestId("dream-discard")).toBeVisible();

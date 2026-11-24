@@ -26,7 +26,13 @@ import {
 } from "@gram/contracts";
 
 import { failDreamSoon } from "./mock-dream-fails";
-import { DECISIONS_BEFORE, DECISIONS_DREAM, DECISIONS_LIVE, seedFiles } from "./mock-dream-seed";
+import {
+  DECISIONS_BEFORE,
+  DECISIONS_DREAM,
+  DECISIONS_LIVE,
+  revertedVersion,
+  seedFiles,
+} from "./mock-dream-seed";
 import { mockMerge, sidesOf } from "./mock-dream-merge";
 import { MockInvalidState } from "./mock-fs";
 import type { AdoptDreamInput, ApiServerEvent, DreamPreviewInput, StartDreamInput } from "./types";
@@ -62,7 +68,7 @@ export interface MockFile {
   readonly modifiedAt: number;
 }
 
-interface MockVersion {
+export interface MockVersion {
   readonly version: string;
   readonly adoptedAt: number;
   readonly files: Map<string, MockFile>;
@@ -405,7 +411,8 @@ export function createMockDreams(host: MockDreamsHost) {
             dream.workspaceId === workspaceId &&
             dream.status === "completed" &&
             dream.mode === "review" &&
-            dream.adoptedVersion === undefined,
+            dream.adoptedVersion === undefined &&
+            dream.inputs.recent !== undefined,
         );
         for (const dream of waiting) {
           if (dream.threadId !== undefined) await host.closeThread(dream.threadId);
@@ -580,7 +587,8 @@ export function createMockDreams(host: MockDreamsHost) {
           `Memory is at version ${memory.current} now, not the ${dream.adoptedVersion} this update made. Restore a version from History instead.`,
         );
       }
-      memory.current = dream.inputs.memoryVersion;
+      memory.versions = [...memory.versions, revertedVersion(memory, dream)].slice(-VERSIONS_KEEP);
+      memory.current = memory.versions.at(-1)!.version;
       putDream({ ...dream, revertedAt: Date.now() });
     },
 
@@ -727,6 +735,12 @@ export function createMockDreams(host: MockDreamsHost) {
           id: completedId,
           kind: "dream",
           status: "completed",
+          inputs: {
+            memoryVersion: "0002",
+            threadIds: [],
+            agentSessions: [],
+            recent: recentRead({ reports: 7, merges: 3, questions: 2, threads: 5 }),
+          },
           model: { agent: "claude", model: "opus" },
           threadId: finished.id,
           usage: { tokens: { inputTokens: 412_000, outputTokens: 9_800 }, costUsd: 2.35 },

@@ -8,6 +8,8 @@ import type {
 import { dreamSessionFileName } from "./dream-files.ts";
 import { plural, tokensText } from "./dream-sessions.ts";
 import type { DreamCursor } from "../persistence/dream-cursor.ts";
+import { createHash } from "node:crypto";
+import { DECISIONS_FILE } from "./memory.ts";
 
 /**
  * What a memory update reads instead of transcripts: what the workspace already distilled since the
@@ -72,6 +74,20 @@ const when = (at: number): string =>
 
 const quoted = (title: string) => `“${title.replace(/\s+/g, " ").slice(0, 120)}”`;
 
+const LINK_MAX = 300;
+
+const oneLine = (text: string, max: number) => cut(text.replace(/\s+/g, " "), max);
+
+/**
+ * Words someone else wrote, under a label: every line quoted, so none of it can read as an entry
+ * of its own, whatever headings or blank lines it holds.
+ */
+export const quote = (label: string, text: string, max = Number.POSITIVE_INFINITY): string =>
+  `${label}:\n${cut(text, max)
+    .split(/\r?\n/)
+    .map((line) => `> ${line}`)
+    .join("\n")}`;
+
 /** One item as the update reads it: a heading with its date and source, then its words. */
 export const renderItem = (item: RecentItem): string => {
   switch (item.kind) {
@@ -79,32 +95,34 @@ export const renderItem = (item: RecentItem): string => {
       const r = item.report;
       return [
         `## ${when(item.at)} · worker report · ${r.state} · ${quoted(item.title)} (thread ${r.threadId})`,
-        `Summary: ${r.summary.trim()}`,
-        ...(r.learned === undefined ? [] : [`Learned: ${r.learned.trim()}`]),
-        ...(r.prUrl === undefined ? [] : [`PR: ${r.prUrl}`]),
-        ...(r.evidence?.pr === undefined || r.prUrl !== undefined ? [] : [`PR: ${r.evidence.pr}`]),
-        ...(r.interface === undefined ? [] : [`Interface: ${cut(r.interface, INTERFACE_MAX)}`]),
+        quote("Summary", r.summary),
+        ...(r.learned === undefined ? [] : [quote("Learned", r.learned)]),
+        ...(r.prUrl === undefined ? [] : [`PR: ${oneLine(r.prUrl, LINK_MAX)}`]),
+        ...(r.evidence?.pr === undefined || r.prUrl !== undefined
+          ? []
+          : [`PR: ${oneLine(r.evidence.pr, LINK_MAX)}`]),
+        ...(r.interface === undefined ? [] : [quote("Interface", r.interface, INTERFACE_MAX)]),
       ].join("\n");
     }
     case "merge":
-      return `## ${when(item.at)} · merged · ${item.pr}${
+      return `## ${when(item.at)} · merged · ${oneLine(item.pr, LINK_MAX)}${
         item.title === undefined ? "" : ` · ${quoted(item.title)}`
       }${item.threadId === undefined ? "" : ` (thread ${item.threadId})`}`;
     case "question":
       return [
-        `## ${when(item.at)} · question ${item.id} answered by ${
+        `## ${when(item.at)} · question ${oneLine(item.id, 40)} answered by ${
           item.by === "user" ? "the user" : "the orchestrator"
         } · ${quoted(item.title)} (thread ${item.threadId})`,
-        `Question: ${cut(item.question, QA_MAX)}`,
-        `Answer: ${cut(item.answer, QA_MAX)}`,
+        quote("Question", item.question, QA_MAX),
+        quote("Answer", item.answer, QA_MAX),
       ].join("\n");
     case "thread":
       return [
-        `## ${when(item.at)} · thread finished (${item.reason}) · ${quoted(item.title)} (thread ${item.threadId})`,
-        ...(item.recap === undefined ? [] : [`Recap: ${item.recap.trim()}`]),
+        `## ${when(item.at)} · ${item.reason === "prMerged" ? "pull request merged, thread finished" : `thread finished (${item.reason})`} · ${quoted(item.title)} (thread ${item.threadId})`,
+        ...(item.recap === undefined ? [] : [quote("Recap", item.recap)]),
       ].join("\n");
     case "memory":
-      return `## ${when(item.at)} · memory note written · ${item.path} (read it in input/memory/)`;
+      return `## ${when(item.at)} · memory note written · ${oneLine(item.path, 120)} (read it in input/memory/)`;
   }
 };
 
@@ -214,6 +232,8 @@ export const ADOPTION_SLACK_MS = 5_000;
 /** Completed automatic runs kept to look at; older ones are discarded as new ones finish. */
 export const AUTOMATIC_RUNS_KEPT = 10;
 
+export const UNCHANGED_RUNS_KEPT = 3;
+
 /** Whether a reviewed file is a change adoption would make. */
 export const changes = (file: DreamFileDiff): boolean =>
   file.status === "added" ||
@@ -293,3 +313,43 @@ export const recentIndex = (read: DreamRecentRead, notes: ReadonlyArray<string> 
       : ["", "## Not in this snapshot", "", ...notes.map((n) => `- ${n}`)]),
     "",
   ].join("\n");
+
+/** The SHA-256 of a note's text, as an adoption records what it left. */
+export const textSha = (text: string): string =>
+  createHash("sha256").update(text, "utf8").digest("hex");
+
+/**
+ * The memory a revert adopts: each note the run changed goes back to what it was before the run,
+ * unless it was written since (its text no longer what the run left), which keeps that write;
+ * every other note stays as memory holds it now. `standing-decisions.md` is never touched.
+ */
+export const revertSet = (input: {
+  readonly changed: ReadonlyArray<{ readonly path: string; readonly sha256?: string | undefined }>;
+  readonly before: ReadonlyMap<string, string>;
+  readonly current: ReadonlyArray<{ readonly path: string; readonly content: string }>;
+}): {
+  readonly files: ReadonlyArray<{ readonly path: string; readonly content: string }>;
+  readonly undone: ReadonlyArray<string>;
+  readonly kept: ReadonlyArray<string>;
+} => {
+  const now = new Map(input.current.map((file) => [file.path, file.content]));
+  const undone: Array<string> = [];
+  const kept: Array<string> = [];
+  for (const { path, sha256 } of input.changed) {
+    if (path.toLowerCase() === DECISIONS_FILE) continue;
+    const text = now.get(path);
+    if ((text === undefined ? undefined : textSha(text)) !== sha256) {
+      kept.push(path);
+      continue;
+    }
+    const before = input.before.get(path);
+    if (before === undefined) now.delete(path);
+    else now.set(path, before);
+    undone.push(path);
+  }
+  return {
+    files: [...now].map(([path, content]) => ({ path, content })),
+    undone,
+    kept,
+  };
+};

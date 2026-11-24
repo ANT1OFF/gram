@@ -62,7 +62,7 @@ export function MemoryUpdatesPanel({
   const [starting, setStarting] = useState(false);
   const [reverting, setReverting] = useState(false);
   const [error, setError] = useState<string>();
-  const [reverted, setReverted] = useState<string>();
+  const [reverted, setReverted] = useState(false);
   const modeLabel = useId();
   const scheduleId = useId();
   const versions = useQuery({
@@ -71,7 +71,9 @@ export function MemoryUpdatesPanel({
     retry: false,
   });
   const current = versions.data?.find((version) => version.current)?.version;
-  const waiting = dreams.filter(dreamWaitsForReview).filter((dream) => dream.mode === "review");
+  const waiting = dreams
+    .filter(dreamWaitsForReview)
+    .filter((dream) => dream.mode === "review" && dream.inputs.recent !== undefined);
   const last = lastRun(dreams);
 
   const refresh = () =>
@@ -119,7 +121,7 @@ export function MemoryUpdatesPanel({
     api
       .revertDream(dream.id)
       .then(async () => {
-        setReverted(dream.inputs.memoryVersion);
+        setReverted(true);
         await refresh();
       })
       .catch((e: unknown) => setError(errorMessage(e)))
@@ -267,13 +269,14 @@ export function MemoryUpdatesPanel({
           </div>
         </div>
       )}
-      {reverted !== undefined && (
+      {reverted && (
         <p
           role="status"
           data-testid="memory-update-reverted"
           className="text-meta text-description"
         >
-          Reverted: memory is back at version {reverted}. History keeps the version it undid.
+          Reverted: what the update changed is put back as a new version, and notes written since
+          are kept. History has both.
         </p>
       )}
       {error !== undefined && (

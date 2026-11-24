@@ -41,7 +41,6 @@ import {
   type WorkspaceId,
   type WorkspaceState,
   memoryUpdateModeOf,
-  type MemoryUpdateMode,
 } from "@gram/contracts";
 import { Worktrees } from "@gram/git";
 import * as Cause from "effect/Cause";
@@ -82,14 +81,17 @@ import {
   AUTOMATIC_RUNS_KEPT,
   changes,
   cursorAfter,
-  dreamWaitsForReview,
   RECENT_FILE_NAME,
   RECENT_MORE_NOTE,
   recentCount,
   recentIndex,
+  revertSet,
   summaryOf,
+  textSha,
+  UNCHANGED_RUNS_KEPT,
 } from "./dream-recent.ts";
 import { makePlanRecent } from "./dream-recent-items.ts";
+import { makeMemoryUpdateSchedule } from "./dream-schedule.ts";
 import {
   archiveHeader,
   gatheredOf,
@@ -201,7 +203,6 @@ type Signal =
   | { readonly type: "hub"; readonly event: ServerEvent };
 
 const refuse = (message: string) => new InvalidState({ message });
-const HOUR_MS = 3_600_000;
 const SCHEDULE_CHECK_EVERY = "10 minutes";
 
 const refuseOrDefer = (automatic: boolean, message: string) =>
@@ -769,7 +770,9 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
           if (dream.inputs.recent !== undefined) {
             yield* store.advanceDreamCursor(dream.workspaceId, cursorAfter(dream.inputs.recent));
           }
-          return dream;
+          const settled: Dream = { ...dream, unchanged: true };
+          yield* store.putDream(settled);
+          return settled;
         });
 
       const pruneAutomatic = (workspaceId: WorkspaceId) =>
@@ -782,7 +785,12 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 dream.adoptionFailure === undefined,
             )
             .toSorted((a, b) => b.createdAt - a.createdAt);
-          for (const old of spent.slice(AUTOMATIC_RUNS_KEPT)) {
+          const applied = spent.filter((dream) => dream.unchanged !== true);
+          const idle = spent.filter((dream) => dream.unchanged === true);
+          for (const old of [
+            ...applied.slice(AUTOMATIC_RUNS_KEPT),
+            ...idle.slice(UNCHANGED_RUNS_KEPT),
+          ]) {
             yield* discard(old.id).pipe(Effect.ignore);
           }
         });
@@ -1422,9 +1430,27 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                         live.has(mark.threadId),
                       ),
                     );
+                    const changedPaths = found.files
+                      .filter(
+                        (file) =>
+                          file.status === "added" ||
+                          file.status === "changed" ||
+                          file.status === "removed" ||
+                          (file.status === "conflict" &&
+                            sides[file.path] !== undefined &&
+                            sides[file.path] !== "current"),
+                      )
+                      .map((file) => file.path);
+                    const changed = yield* Effect.forEach(changedPaths, (path) =>
+                      memory.readVersion(dream.workspaceId, made, path).pipe(
+                        Effect.map((text) => ({ path, sha256: textSha(text) })),
+                        Effect.orElseSucceed(() => ({ path })),
+                      ),
+                    );
                     const saved: Dream = {
                       ...(yield* store.getDream(dream.id)),
                       adoptedVersion: made,
+                      changed,
                     };
                     yield* store.putDream(saved);
                     return saved;
@@ -1618,6 +1644,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               );
             }
             const before = dream.inputs.memoryVersion;
+            let revertedTo = "";
             if (before === "") {
               return yield* refuse(
                 "That memory update made the first memory version; there is none before it to go back to.",
@@ -1627,13 +1654,50 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
               orchestration.whileWorkspaceStays(
                 dream.workspaceId,
                 Effect.gen(function* () {
-                  const current = yield* memory.currentVersion(dream.workspaceId);
-                  if (current !== made) {
+                  const current = yield* currentMemory(dream.workspaceId);
+                  if (current.version !== made) {
                     return yield* refuse(
-                      `Memory is at version ${current} now, not the ${made} this update made. Restore a version from History instead.`,
+                      `Memory is at version ${current.version} now, not the ${made} this update made. Restore a version from History instead.`,
                     );
                   }
-                  yield* memory.restore(dream.workspaceId, before);
+                  const changed = dream.changed;
+                  if (changed === undefined) {
+                    return yield* refuse(
+                      "This update doesn't say which notes it changed. Restore a version from History instead.",
+                    );
+                  }
+                  const readOf = (version: string) =>
+                    Effect.forEach(changed, ({ path }) =>
+                      memory.readVersion(dream.workspaceId, version, path).pipe(
+                        Effect.map((text) => [path, text] as const),
+                        Effect.catchTag("NotFound", () => Effect.succeed(undefined)),
+                      ),
+                    ).pipe(
+                      Effect.map((pairs) => new Map(pairs.filter((pair) => pair !== undefined))),
+                    );
+                  const set = revertSet({
+                    changed,
+                    before: yield* readOf(before),
+                    current: current.files,
+                  });
+                  if (set.undone.length === 0) {
+                    return yield* refuse(
+                      `Every note this update changed was written again since (${set.kept.join(", ")}), so there is nothing of it left to revert.`,
+                    );
+                  }
+                  revertedTo = yield* memory.adopt(dream.workspaceId, set.files, {
+                    basedOn: current.version,
+                    basedOnDigest: current.digest,
+                    source: {
+                      dreamId: dream.id,
+                      mode: "review",
+                      summary: `Reverted ${set.undone.join(", ")}${
+                        set.kept.length === 0
+                          ? ""
+                          : `; kept ${set.kept.join(", ")}, written again since`
+                      }`,
+                    },
+                  });
                   yield* store.putDream({
                     ...(yield* store.getDream(dreamId)),
                     revertedAt: yield* Clock.currentTimeMillis,
@@ -1646,78 +1710,33 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
                 dreamId,
                 workspaceId: dream.workspaceId,
                 from: made,
-                to: before,
+                to: revertedTo,
               }),
             );
             yield* orchestration.addNote(
               dream.workspaceId,
-              `The user reverted a memory update: memory is back at version ${before}, as it was before version ${made}. Re-read MEMORY.md before relying on what you remember of it.`,
+              `The user reverted a memory update: version ${revertedTo} puts back what version ${made} changed, keeping notes written since. Re-read MEMORY.md before relying on what you remember of it.`,
             );
             yield* dreamsChanged(dream.workspaceId);
             return dream.workspaceId;
           }),
         );
 
-      const modes = new Map<WorkspaceId, MemoryUpdateMode>();
-      const onModeChanges = Effect.gen(function* () {
-        for (const state of yield* store.listWorkspaces) {
-          const id = state.workspace.id;
-          const mode = memoryUpdateModeOf(state.charter);
-          const was = modes.get(id);
-          modes.set(id, mode);
-          if (was === undefined || was === mode || mode !== "auto") continue;
-          for (const dream of yield* store.listDreams(id)) {
-            if (dreamWaitsForReview(dream)) {
-              yield* discard(dream.id).pipe(
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("draft not discarded on switching to auto").pipe(
-                    Effect.annotateLogs({ dreamId: dream.id, cause: Cause.pretty(cause) }),
-                  ),
-                ),
-              );
-            }
-          }
-        }
-      });
-
-      const tried = new Map<WorkspaceId, number>();
-      const scheduledPass = Effect.gen(function* () {
-        const now = yield* Clock.currentTimeMillis;
-        for (const state of yield* store.listWorkspaces) {
-          const id = state.workspace.id;
-          const hours = state.charter.memoryUpdateEveryHours;
-          if (hours === undefined) continue;
-          const dreams = yield* store.listDreams(id);
-          if (dreams.some((dream) => dream.status === "running" || dream.status === "pending"))
-            continue;
-          if (
-            memoryUpdateModeOf(state.charter) === "review" &&
-            dreams.some((dream) => dreamWaitsForReview(dream) && dream.inputs.recent !== undefined)
-          )
-            continue;
-          const last = Math.max(
-            tried.get(id) ?? 0,
-            ...dreams.filter((dream) => dream.kind === "dream").map((dream) => dream.createdAt),
-          );
-          if (now - last < hours * HOUR_MS) continue;
-          if ((yield* automaticDream.gate(state)) !== undefined) continue;
-          yield* startLock
+      const { onModeChanges, scheduledPass, seeModes } = makeMemoryUpdateSchedule({
+        store,
+        discard,
+        gate: automaticDream.gate,
+        start: (state) =>
+          startLock
             .withPermits(1)(
-              startUnlocked({ workspaceId: id, kind: "dream" }, undefined, undefined, true),
-            )
-            .pipe(
-              asWorkspaceOwner(state),
-              Effect.tap(() => Effect.sync(() => tried.set(id, now))),
-              Effect.catch((error) =>
-                Effect.gen(function* () {
-                  if (!(error instanceof AutomaticDreamDeferred)) tried.set(id, now);
-                  yield* Effect.logDebug("scheduled memory update not started").pipe(
-                    Effect.annotateLogs({ workspaceId: id, why: error.message ?? error._tag }),
-                  );
-                }),
+              startUnlocked(
+                { workspaceId: state.workspace.id, kind: "dream" },
+                undefined,
+                undefined,
+                true,
               ),
-            );
-        }
+            )
+            .pipe(asWorkspaceOwner(state)),
       });
 
       const threads = new Set((yield* store.listThreads).map((thread) => thread.id));
@@ -1739,7 +1758,8 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
             dream.mode === "auto" &&
             dream.status === "completed" &&
             dream.adoptedVersion === undefined &&
-            dream.adoptionFailure === undefined
+            dream.adoptionFailure === undefined &&
+            dream.unchanged !== true
           ) {
             const interrupted: Dream = { ...dream, adoptionFailure: "interrupted" };
             yield* store.putDream(interrupted);
@@ -1753,9 +1773,7 @@ export const makeDreamsLive = (options: DreamsOptions = {}) =>
 
       yield* automaticDream.recover;
 
-      for (const state of yield* store.listWorkspaces) {
-        modes.set(state.workspace.id, memoryUpdateModeOf(state.charter));
-      }
+      yield* seeModes;
       yield* scheduledPass.pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("scheduled memory updates not checked").pipe(

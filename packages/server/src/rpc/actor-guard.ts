@@ -616,12 +616,25 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
       const machines = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts))?.machines;
       const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
       const ownerOf = ownersOf(machines);
+      const dreamWorkspaceOf = (payload: unknown) => {
+        const dreamId =
+          typeof payload === "object" && payload !== null
+            ? (payload as Record<string, unknown>)["dreamId"]
+            : undefined;
+        return typeof dreamId !== "string"
+          ? Effect.succeed([])
+          : store.getDream(dreamId as DreamId).pipe(
+              Effect.map((dream) => [dream.workspaceId]),
+              Effect.orElseSucceed(() => []),
+            );
+      };
       const onAnothersMachine = (person: string | undefined, payload: unknown) =>
         Effect.gen(function* () {
           if (machines?.list().some((machine) => holderOf(machine) !== undefined) !== true)
             return false;
           const threads = [...threadsNamed(payload)];
-          for (const workspaceId of workspacesNamed(payload)) {
+          const dreamWorkspaces = yield* dreamWorkspaceOf(payload);
+          for (const workspaceId of [...workspacesNamed(payload), ...dreamWorkspaces]) {
             const state = yield* store.getWorkspace(workspaceId).pipe(Effect.option);
             const holder =
               state._tag === "Some" ? state.value.workspace.orchestratorThreadId : undefined;
@@ -637,15 +650,7 @@ export class ActorGuard extends RpcMiddleware.Service<ActorGuard>()("@gram/serve
           for (const threadId of threadsMentioned(payload))
             if (!readerMay(reader, level === "read" ? privacyOf(threadId) : readableByOf(threadId)))
               return true;
-          const dreamWorkspaces: Array<string> = [];
-          const dreamId =
-            typeof payload === "object" && payload !== null
-              ? (payload as Record<string, unknown>)["dreamId"]
-              : undefined;
-          if (typeof dreamId === "string") {
-            const dream = yield* store.getDream(dreamId as DreamId).pipe(Effect.option);
-            if (dream._tag === "Some") dreamWorkspaces.push(dream.value.workspaceId);
-          }
+          const dreamWorkspaces = yield* dreamWorkspaceOf(payload);
           for (const workspaceId of new Set([
             ...workspacesNamed(payload),
             ...workspacesMentioned(payload),

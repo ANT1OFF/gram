@@ -1408,9 +1408,10 @@ for memory updates while ordinary sessions stay available.
 A memory update reads what happened since the last adopted one, never a whole transcript. Gram
 writes one file, `input/sessions/001-since-the-last-memory-update.md`, oldest first, each entry
 dated and naming its source: workers' reports (summary, what each says it `learned`, its PR),
-merges, worker questions the user or the orchestrator answered with their answers, the `wrap_up`
-recap of each thread that finished (no model call is made for it), and the memory notes written
-since. Memory itself, `standing-decisions.md` and `questions.md` included, is in `input/memory/`.
+merges Gram recorded, worker questions the user or the orchestrator answered with their answers,
+each thread that finished (a merged pull request included) with its last `wrap_up` recap, open or
+closed (no model call is made for it), and the memory notes written since. What others wrote is
+quoted line by line, so a report can't pass for an entry of its own. Memory itself, `standing-decisions.md` and `questions.md` included, is in `input/memory/`.
 `search_transcripts` and `read_transcript` are refused to such a run. What it costs follows what
 happened since the last update, not how long the conversations were: one run reads at most
 160,000 characters (about 40k tokens), and the next reads on from where it stopped. An update with
@@ -1434,21 +1435,26 @@ In Auto a run that passes validation is adopted without review, as a new version
 `.adopted` note names the run, its mode and its one-line summary (History shows them). Its
 guard rails:
 
-- `standing-decisions.md` is never the run's: memory's text is carried as it is, so the user's
-  rulings change only by their word.
+- `standing-decisions.md` (whatever its case) is never the run's: memory's text is carried as it
+  is, so the user's rulings change only by their word.
 - Its output is held to memory's path rules and caps; anything past them fails the run and
   nothing is applied.
 - Every file is scrubbed on the way in, as any memory write is.
 - A note the orchestrator or a worker wrote while the run went keeps that write; the run's other
   changes land. Memory adopted or restored to another version meanwhile stops the run, which stays
   on the Memory page to look at.
-- A run that changes nothing makes no version, and what it read is spent.
+- A run that changes nothing makes no version, and what it read is spent. The last three such
+  runs and the last ten applied ones are kept to look at.
 
 The user is told in one line (`Memory updated (0008): …`), never with a review card, and the run's
-thread is closed. **Revert** on the Memory page (`dream.revert`) points memory back at the
-version the run was made from while memory is still at the version it made; both stay in History,
-which keeps twenty versions. Switching a workspace to Auto discards the drafts waiting for review,
-after asking; what they read is read by the next update.
+thread is closed. **Revert** on the Memory page (`dream.revert`), while memory is still at the
+version the run made, adopts a new version that puts back each note the run changed as it was
+before the run, and keeps every note written since: a note the run changed and someone wrote again
+keeps that write, and `standing-decisions.md` is never touched. All three versions stay in
+History, which keeps twenty. What the reverted run read stays read, so the next update doesn't
+apply it again. Switching a workspace to Auto discards the drafts of earlier updates of this kind
+waiting for review, after asking; what they read is read by the next update. Drafts of picked
+threads and imports stay.
 
 ### When it runs
 

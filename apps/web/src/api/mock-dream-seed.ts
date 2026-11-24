@@ -1,4 +1,6 @@
-import type { MockFile } from "./mock-dreams";
+import type { Dream } from "@gram/contracts";
+
+import type { MockFile, MockVersion } from "./mock-dreams";
 
 const INDEX = "MEMORY.md";
 
@@ -78,4 +80,33 @@ export const seedFiles = (now: number): Map<string, MockFile> => {
       },
     ],
   ]);
+};
+
+/** What `dream.revert` adopts in the mock: the version the update was made from, as a new one. */
+export const revertedVersion = (
+  memory: { readonly versions: readonly MockVersion[]; readonly current: string },
+  dream: Dream,
+): MockVersion => {
+  const before = memory.versions.find((kept) => kept.version === dream.inputs.memoryVersion);
+  if (before === undefined) {
+    throw Object.assign(new Error("That memory version no longer exists."), {
+      _tag: "NotFound",
+      entity: "memory version",
+      id: dream.inputs.memoryVersion,
+    });
+  }
+  const next = String(
+    Math.max(...memory.versions.map((version) => Number(version.version))) + 1,
+  ).padStart(4, "0");
+  return {
+    version: next,
+    adoptedAt: Date.now(),
+    files: new Map(before.files),
+    source: {
+      dreamId: dream.id,
+      mode: "review",
+      basedOn: memory.current,
+      summary: `Reverted what ${dream.adoptedVersion ?? "it"} changed`,
+    },
+  };
 };
