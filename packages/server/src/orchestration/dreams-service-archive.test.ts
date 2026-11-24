@@ -1,26 +1,15 @@
 // Archived threads, which a memory update given threads to read reads too.
 import { describe, expect, it } from "@effect/vitest";
-import { type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { hasGit } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { renderClosedThread, ThreadArchive } from "./archive.ts";
+import { ThreadArchive } from "./archive.ts";
 import { Dreams } from "./dreams.ts";
 import { completeTurn, openOrchestrator, waitReal, waitSent } from "./test-harness.ts";
-import {
-  githubToken,
-  memoryRoot,
-  inDreams,
-  startDream,
-  filesUnder,
-  sessionsOf,
-  exchange,
-  adoptDream,
-  dropDream,
-} from "./dreams-service-kit.ts";
+import { githubToken, memoryRoot, inDreams, filesUnder } from "./dreams-service-kit.ts";
 
 describe.skipIf(!hasGit)("dreams", () => {
   it.effect("a closed workspace thread is archived, scrubbed, and read by the next dream", () =>

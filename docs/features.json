@@ -328,9 +328,10 @@
     },
     {
       "name": "Workspace memory and memory updates",
-      "purpose": "The orchestrator's file-based memory of goals, decisions and rulings, and the dream run that consolidates it for review.",
+      "purpose": "The orchestrator's file-based memory of goals, decisions and rulings, and the memory updates that file what happened since the last one, drafted for review or applied in Auto with Revert.",
       "code": [
         "packages/server/src/orchestration/{memory,dream,dreams}*",
+        "packages/server/src/persistence/dream-cursor.ts",
         "apps/web/src/orchestration/{memory,dream}*",
         "apps/web/src/routes/w/$workspaceId.memory.tsx"
       ],

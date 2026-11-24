@@ -502,7 +502,7 @@ describe.skipIf(!hasGit)("dreams", { timeout: 90_000 }, () => {
         const store = yield* ThreadStore;
         const dreams = yield* Dreams;
         const events = yield* collectEvents(["dreams.changed"]);
-        const { workspaceId, project, thread } = yield* openOrchestrator(world);
+        const { workspaceId, project } = yield* openOrchestrator(world);
 
         const { dream, session } = yield* startDream(workspaceId, "Focus on deploys.");
         expect(dream).toMatchObject({

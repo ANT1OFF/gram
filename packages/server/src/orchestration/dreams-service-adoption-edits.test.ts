@@ -17,7 +17,6 @@ import {
   waitReal,
 } from "./test-harness.ts";
 import {
-  githubToken,
   memoryRoot,
   withDreams,
   inDreams,

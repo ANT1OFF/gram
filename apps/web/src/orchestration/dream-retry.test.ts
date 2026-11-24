@@ -12,19 +12,17 @@ const failed: Dream = {
   failure: "agent_error",
   inputs: { memoryVersion: "0002", threadIds: ["t-1" as ThreadId], agentSessions: [] },
   model: { agent: "claude", model: "opus" },
-  budgetTokens: 200_000,
   instructions: "Focus on deploys.",
   outputDir: "/d",
   createdAt: 0,
 };
 
 describe("a failed memory update", () => {
-  it("tries again with the same kind, mode, model, budget, steering and inputs", () => {
+  it("tries again with the same kind, mode, model, steering and inputs", () => {
     expect(dreamRetryInput(failed)).toEqual({
       kind: "dream",
       mode: "review",
       model: { agent: "claude", model: "opus" },
-      budgetTokens: 200_000,
       instructions: "Focus on deploys.",
       threadIds: ["t-1"],
     });

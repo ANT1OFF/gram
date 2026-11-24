@@ -35,7 +35,7 @@ export const discardWarning = () =>
   );
 
 /**
- * One memory update in the Draft memory update tab: its state, what it ran on, why it failed and
+ * One memory update in the Memory updates tab: its state, what it ran on, why it failed and
  * the next step, and its actions; `children` is its review while open.
  */
 export function DreamRow({

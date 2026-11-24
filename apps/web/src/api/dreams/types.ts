@@ -56,4 +56,9 @@ export interface DreamsApi {
   mergeDreamConflict(dreamId: DreamId, path: string): Promise<DreamMerge>;
   /** Deletes the dream's folder and row. Rejects with `InvalidState` while it runs. */
   discardDream(dreamId: DreamId): Promise<void>;
+  /**
+   * Points memory back at the version an adopted update was made from. Rejects with `InvalidState`
+   * once memory has moved past the version it made; History's Restore is the way then.
+   */
+  revertDream(dreamId: DreamId): Promise<void>;
 }

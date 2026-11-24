@@ -42,7 +42,7 @@ const openMemory = async (page: Page) => {
 /** Opens one of the Memory view's tabs. */
 const memoryTab = (
   page: Page,
-  name: "Current memory" | "Files" | "Decisions" | "History" | "Draft memory update",
+  name: "Current memory" | "Files" | "Decisions" | "History" | "Memory updates",
 ) =>
   page
     .getByTestId("memory-tabs")
@@ -109,7 +109,7 @@ const openMemoryWithDreamHarness = async (page: Page) => {
       return observation;
     };
   }, CLAUDE_DREAM_POLICY);
-  await memoryTab(page, "Draft memory update");
+  await memoryTab(page, "Memory updates");
   return made;
 };
 
@@ -386,7 +386,7 @@ for (const selected of [false, true]) {
         return start(...args);
       };
     });
-    await memoryTab(page, "Draft memory update");
+    await memoryTab(page, "Memory updates");
     const dreams = page.getByTestId("dreams");
     await dreams
       .locator('[data-testid="dream-row"][data-status="running"]')
@@ -612,7 +612,7 @@ test("a dream is adopted only once its conflict has a side, and a moved memory m
   page,
 }) => {
   const made = await openMemory(page);
-  await memoryTab(page, "Draft memory update");
+  await memoryTab(page, "Memory updates");
   // Its own thread says where it ended, and Review there lands on the review here.
   const completed = page.locator('[data-testid="dream-row"][data-status="completed"]');
   await expect(completed.getByTestId("dream-status")).toHaveText("Ready to review");
@@ -788,7 +788,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
       };
     };
   }, made.workspaceId);
-  await memoryTab(page, "Draft memory update");
+  await memoryTab(page, "Memory updates");
   await page
     .locator('[data-testid="dream-row"][data-status="completed"]')
     .first()
@@ -1031,7 +1031,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
   await expect(memory).toHaveCSS("overflow-y", "auto");
   await expect(memory).not.toHaveClass(/overscroll-contain/);
   await expect(memory).not.toHaveClass(/contain-paint/);
-  // Draft memory update alone is shorter than the old all-in-one page: a lower window still overflows it.
+  // Memory updates alone is shorter than the old all-in-one page: a lower window still overflows it.
   await page.setViewportSize({ width: 1280, height: 400 });
   await memory.evaluate((element) => {
     element.scrollTop = element.scrollHeight;
@@ -1076,7 +1076,7 @@ test("a long synthetic dream review stays within the application viewport", asyn
 
 test("a failed dream says why in words and can only be discarded", async ({ page }) => {
   await openMemory(page);
-  await memoryTab(page, "Draft memory update");
+  await memoryTab(page, "Memory updates");
   const rows = page.getByTestId("dream-row");
   await expect(rows).toHaveCount(3);
   const failed = page.locator('[data-testid="dream-row"][data-status="failed"]');
@@ -1114,7 +1114,7 @@ test("a conflict's two sides are merged by a model, reviewed, and adopted as the
   page,
 }) => {
   const made = await openMemory(page);
-  await memoryTab(page, "Draft memory update");
+  await memoryTab(page, "Memory updates");
   await page
     .locator('[data-testid="dream-row"][data-status="completed"]')
     .getByTestId("dream-review-open")
