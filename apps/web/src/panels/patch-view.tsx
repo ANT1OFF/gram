@@ -198,7 +198,8 @@ export function PatchView({
       {hunks.map((hunk, index) =>
         starts[index]! < budget ? (
           <Rows
-            key={hunk.header}
+            // oxlint-disable-next-line react/no-array-index-key -- a hunk streaming in grows its header's counts, not its place: keyed by header it remounted on every chunk
+            key={index}
             index={hunkOffset + index}
             hunk={hunk}
             current={index === current}

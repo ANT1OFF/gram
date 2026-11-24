@@ -26,6 +26,7 @@ import { mockEditMessages } from "./mock-edits";
 import { MOCK_TOOL_IMAGE } from "./mock-files";
 import { MOCK_DEPS_TURN } from "./mock-git";
 import { mockPlans } from "./mock-plans";
+import { chartWidgetStep, streamedWriteSteps } from "./mock-echo-extras";
 
 /** One scripted beat of a mock agent turn. `wait` durations are scaled by the api's speed. */
 export type Step =
@@ -802,18 +803,6 @@ export const docsScript: Script = (_input, ids) => {
   ];
 };
 
-const MOCK_CHART = [
-  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="480" height="240">',
-  '<rect width="240" height="120" rx="6" fill="var(--surface)" stroke="var(--border)"/>',
-  '<text x="12" y="20" font-family="var(--font)" font-size="10" fill="var(--fg)">p95 latency, ms</text>',
-  ...[38, 64, 51, 82].map(
-    (value, i) =>
-      `<rect x="${20 + i * 54}" y="${104 - value}" width="36" height="${value}" rx="3" fill="var(--${i === 3 ? "warning" : "accent"})"/>`,
-  ),
-  '<line x1="12" y1="104" x2="228" y2="104" stroke="var(--fg-muted)"/>',
-  "</svg>",
-].join("");
-
 const MOCK_ISSUE = {
   repo: GRAM_REPO,
   labels: ["bug", "web"],
@@ -1039,6 +1028,7 @@ export const echoScript: Script = (input, ids) => {
   const settingsId = /\bchange\b.*\bsettings\b/i.test(input.text) ? ids() : "";
   const workspaceMatch = /\b(create|change)\b.*\bworkspace\b/i.exec(input.text);
   const workspaceId = workspaceMatch === null ? "" : ids();
+  const longWriteId = /\bwrite\b.*\blong file\b/i.test(input.text) ? ids() : "";
   const { base64: _, ...stored } = MOCK_TOOL_IMAGE;
   return [
     status("running", "Thinking…"),
@@ -1056,20 +1046,13 @@ export const echoScript: Script = (input, ids) => {
         ]
       : []),
     ...text(m, "t1", `On it: “${input.text}”. (Mock reply.)`),
+    ...(longWriteId === "" ? [] : streamedWriteSteps(m, longWriteId)),
     ...(issueId === "" ? [] : reportIssueSteps(m, issueId)),
     ...(settingsId === "" ? [] : settingsChangeSteps(m, settingsId)),
     ...(workspaceId === ""
       ? []
       : workspaceSteps(m, workspaceId, workspaceMatch?.[1]?.toLowerCase() === "create")),
-    ...(chart
-      ? [
-          chunk(m, {
-            type: "data-widget",
-            id: "w-latency",
-            data: { id: "w-latency", title: "p95 latency by region", svg: MOCK_CHART },
-          }),
-        ]
-      : []),
+    ...(chart ? [chartWidgetStep(m)] : []),
     ...finish(m),
   ];
 };
