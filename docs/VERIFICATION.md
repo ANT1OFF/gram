@@ -184,7 +184,7 @@ These synthetic runs qualify browser UI paths only.
 | `bun run check:scaffold`       | Known private identifiers/credential signatures, scaffold/release boundaries; required by AGENTS.md  |
 | `bun run check:docs`           | Tracked authored Markdown local links/anchors, known text boundaries and documented Bun script names |
 | `bun run fmt:check`            | Repository formatting                                                                                |
-| `bun run lint`                 | Exact dependency pins, the design-token drift check and warning-free lint                            |
+| `bun run lint`                 | Exact dependency pins, the design-token drift check and warning-free, type-aware lint (tsrs)         |
 | `bun run typecheck`            | All TypeScript project references, with `bun check -b`; writes nothing                               |
 | `bun run build:packages`       | `tsc -b`: the same check, and writes each package's `dist` for `packages:pack`                       |
 | `bun run check:static`         | Pins/lint/format/types without Vitest                                                                |
