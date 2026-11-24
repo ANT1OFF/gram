@@ -811,8 +811,8 @@ applyGramTheme(houseTheme);
 `@gram/web/kit-lite.css` carries Gram's tokens and every palette, its base styles, the Glass look's
 fonts (Inter and JetBrains Mono) and the styles of the light kit's controls; your own markup takes
 the theme's names from `theme.css` as below. Neither loads any of Gram's app: the light kit is
-about 200 kB of code before compression (60 kB after), React aside, and the build fails past its
-budget (`kitLiteKb` in `apps/web/bundle-budgets.json`). Once Gram mounts, its own stylesheet and
+about 200 kB of code before compression (60 kB after), React aside, and the build and every
+check fail past its budget (`kitLiteKb` in `apps/web/bundle-budgets.json`). Once Gram mounts, its own stylesheet and
 kit take over; a page that mounts Gram needs only those.
 
 For your own markup, `@gram/web/theme.css` gives a Tailwind 4 build of yours the names of Gram's

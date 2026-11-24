@@ -209,6 +209,7 @@ if (results.every((result) => result.ok) && only !== "tests") {
     run("lint", "bun", ["run", "lint"]),
     run("format", "bun", ["run", "fmt:check"]),
     run("types", "bun", ["run", "typecheck"]),
+    run("kit budget", "bun", ["run", "--filter", "@gram/web", "check:kit-lite"]),
   ]);
   for (const result of quick) report(result);
   results.push(...quick);
