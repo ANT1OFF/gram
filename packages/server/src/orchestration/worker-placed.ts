@@ -1,7 +1,10 @@
-import { AppToolError, type ThreadId } from "@gram/contracts";
+import { AppToolError, effectiveCheckout, hostOf, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type { OnDemand } from "../embedding/on-demand.ts";
+import type { MachineClaims } from "../embedding/worker-machine-claims.ts";
+import { embeddedSource, type WorkerMachineSource } from "../embedding/worker-machines.ts";
+import { ownerSubject } from "../host/ownership.ts";
 import type { SignedInWorkers } from "../embedding/signed-in-workers.ts";
 import type { RemoteHosts } from "../host/remote-hosts.ts";
 import type { WorkerHosts } from "../host/worker-host.ts";
@@ -20,6 +23,8 @@ export interface WorkerSandboxDeps {
   readonly signedIn: SignedInWorkers["Service"] | undefined;
   readonly workerHosts: WorkerHosts["Service"] | undefined;
   readonly joined: () => ReturnType<RemoteHosts["Service"]["list"]>;
+  /** Whose each worker machine is (`worker-machine-claims.ts`). Left out: kept in memory. */
+  readonly claims?: MachineClaims | undefined;
 }
 
 type Store = WorkerSandboxDeps["store"];
@@ -64,4 +69,43 @@ export const placedThreads = (
           .map((worker) => worker.threadId),
       ),
     };
+  });
+
+/**
+ * Where the orchestrator `orchestratorId`'s workers' machines come from: the embedder's provider for
+ * the person whose host it is on, or the hosted server the app is signed in to. Undefined: neither.
+ */
+export const workerMachineSourceFor = (
+  {
+    store,
+    onDemand,
+    signedIn,
+    workerHosts,
+    joined,
+  }: Omit<WorkerSandboxDeps, "orchestration" | "claims">,
+  orchestratorId: ThreadId,
+  tool: string,
+) =>
+  Effect.gen(function* () {
+    const orchestrator = yield* store
+      .getThread(orchestratorId)
+      .pipe(
+        Effect.mapError(
+          () => new AppToolError({ tool, message: "The orchestrator's thread can't be read now." }),
+        ),
+      );
+    const ownHost = hostOf(effectiveCheckout(orchestrator));
+    const holder = workerHosts?.ownerOf(ownHost);
+    const owner = ownerSubject(holder);
+    const found: WorkerMachineSource | { readonly refused: string } | undefined =
+      onDemand !== undefined
+        ? owner === undefined
+          ? undefined
+          : embeddedSource(onDemand, owner, joined)
+        : signedIn !== undefined && holder === undefined
+          ? yield* signedIn.source.pipe(
+              Effect.map((each) => ("refused" in each ? each : each.source)),
+            )
+          : undefined;
+    return found;
   });

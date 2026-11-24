@@ -3,7 +3,6 @@ import {
   hostOf,
   type OrchestratorCharter,
   type Thread,
-  type ThreadId,
   type WorkerLedgerEntry,
   type WorkerPacking,
   workerPackingOf,
@@ -72,35 +71,51 @@ export const reservedSeats = (machine: string): ReadonlyArray<string> =>
   [...everyHolds].flatMap((holds) => holds.on(machine));
 export type SeatHolds = ReturnType<typeof makeSeatHolds>;
 
-const someUnfinished = (
-  threads: ReadonlyArray<Placed>,
-  machineId: string,
-  finished: ReadonlySet<ThreadId>,
-) =>
-  threads.some(
-    (thread) =>
-      thread.spawnedBy !== undefined &&
-      thread.parked !== true &&
-      !finished.has(thread.id) &&
-      hostOf(effectiveCheckout(thread)) === machineId,
-  );
+const releasing = new Map<string, Promise<void>>();
 
 /**
- * The workers that count against a machine's cap: an orchestrator's open workers placed on it
- * that aren't parked. A finished worker counts too while any worker there is unfinished: it is
- * still open and can be messaged back to work, so its place is not given to another. Once every
- * worker there is finished none counts, and the machine is released.
+ * Keeps a machine's release and a worker on its way there apart. The release pass begins a
+ * release only while no spawn holds a seat on the machine (`begin`, checked and marked in one
+ * step), and a spawn waits out a release already on its way (`settled`) before it makes its
+ * folder there; the pass takes back a release that a spawn reserved against while it was being
+ * sent (`reservedNow`). So no release is sent after a reservation, and none sent before one is
+ * left standing.
+ */
+export const releaseFence = {
+  begin: (
+    machine: string,
+  ): { readonly reservedNow: () => boolean; readonly done: () => void } | undefined => {
+    if (reservedSeats(machine).length > 0) return undefined;
+    const settle: { now?: () => void } = {};
+    const sent = new Promise<void>((resolve) => {
+      settle.now = resolve;
+    });
+    releasing.set(machine, sent);
+    return {
+      reservedNow: () => reservedSeats(machine).length > 0,
+      done: () => {
+        if (releasing.get(machine) === sent) releasing.delete(machine);
+        settle.now?.();
+      },
+    };
+  },
+  settled: (machine: string): Promise<void> => releasing.get(machine) ?? Promise.resolve(),
+};
+
+/**
+ * The workers that count against a machine's cap: every open worker placed on it, whichever
+ * orchestrator's, that isn't parked. A finished one counts as much as one at work: it is still
+ * open and can be messaged back to work at any time, so its place is its own until it is archived,
+ * and a worker that resumes never finds another in it.
  */
 export const workersOnMachine = <T extends Placed>(
   threads: ReadonlyArray<T>,
   machineId: string,
-  finished: ReadonlySet<ThreadId>,
 ): ReadonlyArray<T> =>
   threads.filter(
     (thread) =>
       thread.spawnedBy !== undefined &&
       thread.parked !== true &&
-      (!finished.has(thread.id) || someUnfinished(threads, machineId, finished)) &&
       hostOf(effectiveCheckout(thread)) === machineId,
   );
 

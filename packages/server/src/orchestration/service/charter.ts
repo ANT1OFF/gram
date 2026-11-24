@@ -6,6 +6,7 @@ import {
   connectorSetOf,
   type ConnectorSet,
   type OrchestratorCharter,
+  type RoutineState,
   type Thread,
   type WorkspaceState,
   applyCharterWrites,
@@ -69,6 +70,24 @@ export const pruneRoutineRuns = (
   const kept = Object.entries(runs).filter(([key]) => keys.has(key));
   const { routineRuns: _, ...rest } = outbox;
   return kept.length === 0 ? rest : { ...rest, routineRuns: Object.fromEntries(kept) };
+};
+
+/**
+ * The outbox with one routine's run state changed by `change` (undefined: forgotten), and that
+ * state: the same outbox when `change` leaves it as it was.
+ */
+export const withRoutineRun = (
+  outbox: OutboxState,
+  id: string,
+  change: (before: RoutineState | undefined) => RoutineState | undefined,
+): readonly [OutboxState, RoutineState | undefined] => {
+  const before = outbox.routineRuns?.[id];
+  const after = change(before);
+  if (after === before) return [outbox, after];
+  const { [id]: _gone, ...others } = outbox.routineRuns ?? {};
+  const runs = after === undefined ? others : { ...others, [id]: after };
+  const { routineRuns: _runs, ...rest } = outbox;
+  return [Object.keys(runs).length === 0 ? rest : { ...rest, routineRuns: runs }, after];
 };
 
 const withIdsOf =

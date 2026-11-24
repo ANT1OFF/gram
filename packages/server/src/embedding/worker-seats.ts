@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { OnDemandHosts } from "./on-demand.ts";
 import { callOutside } from "./outside.ts";
 
@@ -42,6 +42,16 @@ export const releaseOccupied = (body: unknown): boolean =>
 
 /** A new seat: what a provider knows one worker by on its machine. Opaque there. */
 export const newSeat = (): string => randomBytes(8).toString("hex");
+
+/**
+ * The seat of the worker a request makes: the same for each try of one `clientRequestId`, so a
+ * retry holds the place its first try did and never stands in its own way.
+ */
+export const requestSeat = (orchestrator: string, clientRequestId: string): string =>
+  createHash("sha256")
+    .update(`seat\n${orchestrator}\n${clientRequestId}`)
+    .digest("hex")
+    .slice(0, 16);
 
 export const isSeat = (value: unknown): value is string =>
   typeof value === "string" && SEAT.test(value);

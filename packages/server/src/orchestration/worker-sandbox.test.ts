@@ -199,7 +199,11 @@ describe("a worker's machine brought up for a spawn", () => {
               id: "t-first",
               title: "First",
               checkout: { kind: "worktree", path: "/w/first", hostId: machine.id },
-              spawnedBy: { threadId: CALLER, feature: "heavy-build" },
+              spawnedBy: {
+                threadId: CALLER,
+                feature: "heavy-build",
+                placement: { machine: NAME },
+              },
             },
           ]),
         } as never,
@@ -232,8 +236,13 @@ describe("a worker's machine brought up for a spawn", () => {
     it.effect(`keeps a retry out while a give-back that ${during} goes on`, () =>
       Effect.gen(function* () {
         const held = yield* Deferred.make<void>();
-        const { plan, calls } = yield* setup({ [gate]: Deferred.await(held) });
+        // The slow read or call is the give-back's: the first try's own went through before.
+        let slow = false;
+        const { plan, calls } = yield* setup({
+          [gate]: Effect.suspend(() => (slow ? Deferred.await(held) : Effect.void)),
+        });
         const first = yield* prepared(plan);
+        slow = true;
         // The first try is cancelled with no other try holding it: it gives its machine back.
         const giving = yield* Effect.forkScoped(first.ready.abandon ?? Effect.void);
         // Held in its stop: the stop is on its way before the retry comes.

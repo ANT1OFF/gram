@@ -64,19 +64,116 @@ const fakePort = (
 const signedIn = (service: SignedInWorkers["Service"]) => Layer.succeed(SignedInWorkers)(service);
 
 /** One of the orchestrator's workers, placed on a machine: what makes it its own to share. */
-const workerOn = (orchestrator: Thread, hostId: HostId) =>
+const workerOn = (orchestrator: Thread, machine: { readonly id: HostId; readonly name: string }) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
     const { role: _role, ...rest } = orchestrator;
     yield* store.insertThread({
       ...rest,
       id: "t-on-its-machine" as ThreadId,
-      spawnedBy: { threadId: orchestrator.id, feature: "earlier" },
-      checkout: { ...orchestrator.checkout, hostId },
+      // As its spawn left it: the machine it was asked for is on its record.
+      spawnedBy: {
+        threadId: orchestrator.id,
+        feature: "earlier",
+        placement: { machine: machine.name },
+      },
+      checkout: { ...orchestrator.checkout, hostId: machine.id },
     });
   });
 
+const refused = (result: unknown, words: RegExp) =>
+  expect(result).toMatchObject({
+    _tag: "Failure",
+    failure: { message: expect.stringMatching(words) },
+  });
+
 describe("sandbox from a signed-in hosted server", () => {
+  it.effect("decides who goes on a workers' machine where the worker is made or taken on", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const { port } = fakePort((call) =>
+        call === "choices" ? { status: 404, body: {} } : { status: 200, body: {} },
+      );
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "worker-0123456789",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: 1,
+      };
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        watch: () => () => undefined,
+        list: () => [machine],
+      } as unknown as RemoteHostsShape);
+      const hosts = { list: () => [machine], remove: () => false, machines: {} as never };
+      const source = signedInSource(SERVER, { port, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session, workspaceId, thread } = yield* openOrchestrator(world);
+        const store = yield* ThreadStore;
+        const orchestration = yield* Orchestration;
+        // Two workers another orchestrator's spawns put on its machine: the machine is its.
+        const { role: _role, workspaceId: _workspace, ...rest } = thread;
+        const anothers = (id: string) =>
+          store.insertThread({
+            ...rest,
+            id: id as ThreadId,
+            spawnedBy: {
+              threadId: "t-another-orchestrator" as ThreadId,
+              feature: "earlier",
+              placement: { machine: machine.name, packing: "own" },
+            },
+            checkout: { ...thread.checkout, hostId: machine.id },
+          });
+        yield* anothers("t-anothers");
+        yield* anothers("t-anothers-too");
+        const asked = { project: "shop", feature: "beside", title: "Beside", brief: "Synthetic" };
+        // By its name or its id, through the tool: the one decision refuses.
+        for (const named of [machine.name, machine.id])
+          refused(
+            yield* session
+              .callTool("spawn_worker", { ...asked, machine: named })
+              .pipe(Effect.result),
+            /isn't yours to place a worker on/,
+          );
+        // Another spelling of it is no machine at all.
+        refused(
+          yield* session
+            .callTool("spawn_worker", { ...asked, machine: machine.name.toUpperCase() })
+            .pipe(Effect.result),
+          /No joined machine is named/,
+        );
+        // Past the tool, as a held brief or a routine's spawn comes: decided again as the
+        // worker's folder would be made.
+        refused(
+          yield* orchestration
+            .spawnWorker(thread.id, { ...asked, machine: machine.id })
+            .pipe(Effect.result),
+          /isn't yours to place a worker on/,
+        );
+        expect((yield* store.listThreads).some((each) => each.title === "Beside")).toBe(false);
+        // Taking one of them on would put two orchestrators' workers on the machine.
+        refused(
+          yield* orchestration
+            .joinWorkspace("t-anothers" as ThreadId, workspaceId, {})
+            .pipe(Effect.result),
+          /shared within one orchestrator only/,
+        );
+        expect((yield* store.getThread("t-anothers" as ThreadId)).spawnedBy?.threadId).toBe(
+          "t-another-orchestrator",
+        );
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
   it.effect(
     "is refused, naming the sign-in, while no server the app is signed in to offers it",
     () =>
@@ -302,7 +399,7 @@ describe("sandbox from a signed-in hosted server", () => {
       );
       yield* Effect.gen(function* () {
         const { session, workspaceId, thread } = yield* openOrchestrator(world);
-        yield* workerOn(thread, machine.id);
+        yield* workerOn(thread, machine);
         yield* (yield* Orchestration).setCharter(workspaceId, {
           ...DEFAULT_CHARTER,
           autonomy: "publish",
@@ -707,7 +804,7 @@ describe("sandbox from a signed-in hosted server", () => {
       yield* Effect.gen(function* () {
         const readings = yield* UsageLimitReadings;
         const { session, workspaceId, thread } = yield* openOrchestrator(world);
-        yield* workerOn(thread, machine.id);
+        yield* workerOn(thread, machine);
         yield* session.emit({
           type: "rateLimit",
           status: "rejected",

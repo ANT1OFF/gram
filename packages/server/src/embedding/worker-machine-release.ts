@@ -24,9 +24,10 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
-import { reservedSeats } from "../orchestration/worker-packing.ts";
+import { releaseFence, reservedSeats } from "../orchestration/worker-packing.ts";
 import { makeSeatUpkeep, seatAsker, seatsHere, withReserved } from "./worker-seat-upkeep.ts";
 import { ReleaseOccupied, releaseOccupied } from "./worker-seats.ts";
+import { machineClaimsFor } from "./worker-machine-claims.ts";
 import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
 import { busyThreads, setAsideReleased } from "./hosted-machine-set-aside.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -443,8 +444,15 @@ export const releaseSends = (
   options: {
     readonly now?: () => number;
     readonly gapMs?: number;
-    /** Asked as each release is about to go: a worker on its way there keeps the machine. */
-    readonly reserved?: (machine: ReleaseMachine) => boolean;
+    /**
+     * Begins a release as it is about to go (`releaseFence.begin`), in one step with the look at
+     * who is on their way there. Undefined: a spawn holds a seat on the machine, which keeps it.
+     * `reservedNow`: one came while the release was being sent, so it is taken back before
+     * `done` lets that spawn make its folder.
+     */
+    readonly fence?: (
+      machine: ReleaseMachine,
+    ) => { readonly reservedNow: () => boolean; readonly done: () => void } | undefined;
     /** Told of a machine whose release its provider held back for the seats still on it. */
     readonly occupied?: (machine: ReleaseMachine) => void;
   } = {},
@@ -461,12 +469,27 @@ export const releaseSends = (
       })
       .toSorted((a, b) => Number(a.released) - Number(b.released));
     let notTold = 0;
-    for (const [index, { machine, released, run }] of due.entries()) {
+    for (const [index, decision] of due.entries()) {
+      const { machine, run } = decision;
       if (index > 0) yield* Effect.sleep(options.gapMs ?? RELEASE_GAP_MS);
-      if (released && options.reserved?.(machine) === true) continue;
-      const sent = yield* tell(machine, released, run ?? undefined).pipe(Effect.result);
-      const at = now();
+      const held =
+        decision.released && options.fence !== undefined ? options.fence(machine) : undefined;
+      if (decision.released && options.fence !== undefined && held === undefined) continue;
       const key = toldKey(machine);
+      const { sent, released } = yield* tell(machine, decision.released, run ?? undefined).pipe(
+        Effect.result,
+        Effect.flatMap((first) => {
+          if (first._tag !== "Success" || held?.reservedNow() !== true)
+            return Effect.succeed({ sent: first, released: decision.released });
+          recordTold(state.told, machine, true, true, now());
+          return tell(machine, false, run ?? undefined).pipe(
+            Effect.result,
+            Effect.map((back) => ({ sent: back, released: false })),
+          );
+        }),
+        Effect.ensuring(Effect.sync(() => held?.done())),
+      );
+      const at = now();
       recordTold(state.told, machine, released, sent._tag === "Success", at);
       if (sent._tag === "Success") {
         state.retry.delete(key);
@@ -540,6 +563,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       ),
     );
     const told = state.told;
+    const claims = machineClaimsFor(config?.dataDir);
     const asker = seatAsker(hosts, relayed);
     const upkeep = asker === undefined ? undefined : makeSeatUpkeep(asker);
     const pass = Effect.gen(function* () {
@@ -560,6 +584,13 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         ),
       );
       const threads = yield* store.listThreads;
+      claims.prune(
+        new Set([
+          ...remote.list().map((machine) => machine.name),
+          ...threads.flatMap((thread) => thread.spawnedBy?.placement?.machine ?? []),
+        ]),
+        Date.now(),
+      );
       const finished = new Set<ThreadId>();
       const embeddedFinished = new Set<ThreadId>();
       for (const workspace of yield* store.listWorkspaces) {
@@ -573,7 +604,12 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
           yield* upkeep.look(
             machine,
             withReserved(
-              seatsHere(machine, threads, machine.via === undefined ? embeddedFinished : finished),
+              seatsHere(
+                machine,
+                threads,
+                machine.via === undefined ? embeddedFinished : finished,
+                claims.get(machine.name),
+              ),
               reservedSeats(machine.name),
             ),
           );
@@ -599,7 +635,7 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         .filter(({ machine, released }) => !released || reservedSeats(machine.name).length === 0)
         .map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
       yield* releaseSends(decided, tell, state, {
-        reserved: (machine) => reservedSeats(machine.name).length > 0,
+        fence: (machine) => releaseFence.begin(machine.name),
         ...(upkeep === undefined ? {} : { occupied: upkeep.occupied }),
       });
     });

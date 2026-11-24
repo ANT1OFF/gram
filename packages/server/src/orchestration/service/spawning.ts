@@ -32,7 +32,8 @@ import { heldCheckoutPaths } from "../../runtime/create-in-checkout.ts";
 import { selectableModels } from "../../runtime/model-efforts.ts";
 import { limitQueuedNote } from "../../runtime/limit-wait.ts";
 import { finishedWorkers } from "../ledger.ts";
-import { LOCAL_MACHINE_NAMES, namesThisMachine } from "../../host/paired-machines.ts";
+import { machineNamedIn } from "./machine-named.ts";
+import type { WorkerAdmitting } from "./worker-admitting.ts";
 import { type RouteOffer } from "../limit-pause.ts";
 import { ASKED_BY_LOOK_BACK, askedByOf } from "../asked-by.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
@@ -231,6 +232,8 @@ export interface SpawningDeps {
   readonly routeHeld: HeldSpawns["routeHeld"];
   readonly limitGate: HeldSpawns["limitGate"];
   readonly routePaused: HeldSpawns["routePaused"];
+  /** Decides who is placed on a workers' machine (`worker-admitting.ts`). */
+  readonly admitting: WorkerAdmitting;
 }
 
 const modelFields = (model: ModelRef) =>
@@ -268,48 +271,15 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
     headless,
     ownerOf,
   } = kit;
-  const machineNamed = (tool: string, named: string) =>
-    Effect.gen(function* () {
-      const wanted = named.trim().toLowerCase();
-      const machines = joinedMachines();
-      if (wanted === "")
-        return yield* toolError(
-          tool,
-          refusal(
-            "unknown_machine",
-            `machine is blank. Name a joined machine, or omit machine (or say ${LOCAL_MACHINE_NAMES.map((n) => `“${n}”`).join(" or ")}) to run here.`,
-          ),
-        );
-      if (namesThisMachine(wanted)) {
-        const legacy = machines.filter((m) => m.name.trim().toLowerCase() === wanted);
-        if (legacy.length > 0)
-          return yield* toolError(
-            tool,
-            refusal(
-              "ambiguous_machine",
-              `“${named}” names both this machine and a joined machine. Use the joined machine's id (${legacy.map((m) => m.id).join(", ")}), or omit machine to run here.`,
-            ),
-          );
-        return undefined;
-      }
-      const found = machines.filter(
-        (m) => m.id.toLowerCase() === wanted || m.name.trim().toLowerCase() === wanted,
-      );
-      if (found.length === 1) return found[0]!.id as HostId;
-      const known =
-        machines.length === 0
-          ? "No machine is joined to this Gram."
-          : `Joined machines: ${machines.map((m) => m.name).join(", ")}.`;
-      return yield* toolError(
-        tool,
-        refusal(
-          found.length === 0 ? "unknown_machine" : "ambiguous_machine",
-          found.length === 0
-            ? `No joined machine is named “${named}”. ${known} Omit machine, or say “local”, to run on this machine.`
-            : `More than one joined machine is named “${named}”; name it by its id.`,
-        ),
-      );
-    });
+  const machineNamed = (
+    tool: string,
+    named: string,
+  ): Effect.Effect<HostId | undefined, AppToolError> => {
+    const found = machineNamedIn(joinedMachines(), named);
+    return found.kind === "refused"
+      ? Effect.fail(toolError(tool, refusal(found.code, found.message)))
+      : Effect.succeed(found.kind === "here" ? undefined : found.id);
+  };
   const placedMachine = (tool: string, named: string | undefined, under: Thread) =>
     Effect.gen(function* () {
       const own = orchestratorsMachine(under);
@@ -1003,6 +973,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               undefined,
             ]);
           }
+          const placement = yield* deps.admitting.confirm(caller.id, hostId, input.placement);
           const spawnedBy = {
             threadId: caller.id,
             feature: slug,
@@ -1010,7 +981,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               ? {}
               : { routine: { id: input.routine.id, name: input.routine.name } }),
             ...(askedBy === undefined ? {} : { askedBy }),
-            ...(input.placement === undefined ? {} : { placement: input.placement }),
+            ...(placement === undefined ? {} : { placement }),
           };
           const inFolder = (home: HomeWorker) =>
             Effect.gen(function* () {

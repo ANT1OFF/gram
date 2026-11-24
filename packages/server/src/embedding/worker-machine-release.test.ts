@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { HostId, Thread, ThreadId } from "@gram/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { makeOnDemandHosts } from "./on-demand.ts";
@@ -22,7 +24,9 @@ import {
   WORKER_RELEASE_SETTLE_MS,
   workerMachineWork,
   releasableWorkers,
+  toldKey,
 } from "./worker-machine-release.ts";
+import { makeSeatHolds, releaseFence } from "../orchestration/worker-packing.ts";
 
 const now = 10 * WORKER_RELEASE_SETTLE_MS;
 const machine = (id: string, extra: object = {}) => ({
@@ -362,6 +366,80 @@ describe("the releases a pass sends", () => {
       expect(later.sent.map(([id]) => id)).toEqual(["dddd", "aaaa", "bbbb", "cccc"]);
       expect(state.paused).toBeUndefined();
     }),
+  );
+
+  it.effect(
+    "sends no release of a machine a spawn holds a seat on, however late the seat came",
+    () =>
+      Effect.gen(function* () {
+        const state = memoryReleaseState();
+        const holds = makeSeatHolds();
+        const decided = [
+          { machine: hosted("aaaa"), released: true },
+          { machine: hosted("bbbb"), released: true },
+        ];
+        // The pass was decided with nobody on their way to either. While the first release is on
+        // its way, a spawn takes a seat on the second, whose release is queued behind it.
+        const sent: Array<[string, boolean]> = [];
+        const tell = (asked: ReleaseMachine, released: boolean) =>
+          Effect.sync(() => {
+            sent.push([asked.id, released]);
+            if (asked.id === "aaaa") holds.hold(hosted("bbbb").name, "s1");
+          });
+        yield* releaseSends(decided, tell, state, {
+          gapMs: 0,
+          fence: (each) => releaseFence.begin(each.name),
+        });
+        // Asked as each release goes, not as the batch was built: the second is never sent.
+        expect(sent).toEqual([["aaaa", true]]);
+        expect(state.told.get(toldKey(hosted("bbbb")))).toBeUndefined();
+        holds.release(hosted("bbbb").name, "s1");
+      }),
+  );
+
+  it.effect("takes back a release a spawn reserved against while it was being sent", () =>
+    Effect.gen(function* () {
+      const state = memoryReleaseState();
+      const holds = makeSeatHolds();
+      const late = hosted("cccc");
+      const going = yield* Deferred.make<void>();
+      const answer = yield* Deferred.make<void>();
+      const sent: Array<[string, boolean]> = [];
+      const tell = (asked: ReleaseMachine, released: boolean) =>
+        Effect.gen(function* () {
+          sent.push([asked.id, released]);
+          if (!released) return;
+          yield* Deferred.succeed(going, undefined);
+          yield* Deferred.await(answer);
+        });
+      const pass = yield* releaseSends([{ machine: late, released: true }], tell, state, {
+        gapMs: 0,
+        fence: (each) => releaseFence.begin(each.name),
+      }).pipe(Effect.forkScoped);
+      yield* Deferred.await(going);
+      // The release is on its way when a spawn takes a seat there. The spawn waits it out
+      // before it makes its folder (`settled`), and isn't let on until it is taken back.
+      holds.hold(late.name, "s1");
+      let letOn = false;
+      const waiting = releaseFence.settled(late.name).then(() => {
+        letOn = true;
+      });
+      yield* Effect.yieldNow;
+      expect(letOn).toBe(false);
+      yield* Deferred.succeed(answer, undefined);
+      yield* Fiber.join(pass);
+      yield* Effect.promise(() => waiting);
+      // An older provider applied it: told it is working again at once, in the same pass.
+      expect(sent).toEqual([
+        ["cccc", true],
+        ["cccc", false],
+      ]);
+      expect(state.told.get(toldKey(late))?.released).toBe(false);
+      holds.release(late.name, "s1");
+      // With nobody on their way, a release is begun, and a later spawn has nothing to wait for.
+      expect(releaseFence.begin(late.name)?.done()).toBeUndefined();
+      yield* Effect.promise(() => releaseFence.settled(late.name));
+    }).pipe(Effect.scoped),
   );
 
   it.effect("sends one the server applied to no run again only after a wait that doubles", () =>

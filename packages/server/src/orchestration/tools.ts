@@ -88,6 +88,8 @@ import { MAX_WORKER_REPOS, Orchestration } from "./service.ts";
 import { attachUserWords, USER_MESSAGES_MAX, withBriefFooter } from "./user-words.ts";
 import { makeWorkerMachineTools } from "./worker-machines-tool.ts";
 import { makeWorkerSandbox } from "./worker-sandbox.ts";
+import { machineClaimsFor } from "../embedding/worker-machine-claims.ts";
+import { ServerConfig } from "../config.ts";
 
 /**
  * The tools only an orchestrator or a worker is bound, and the wake
@@ -115,14 +117,12 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     const remoteHosts = Option.getOrUndefined(yield* Effect.serviceOption(RemoteHosts));
     const workerHosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
     const joined = () => (remoteHosts === undefined ? [] : remoteHosts.list());
-    const workerSandbox = yield* makeWorkerSandbox({
-      orchestration,
-      store,
-      onDemand,
-      signedIn,
-      workerHosts,
-      joined,
-    });
+    const claims = machineClaimsFor(
+      Option.getOrUndefined(yield* Effect.serviceOption(ServerConfig))?.dataDir,
+    );
+    const planning = { orchestration, store, onDemand, signedIn, workerHosts, joined, claims };
+    const workerSandbox = yield* makeWorkerSandbox(planning);
+    yield* orchestration.setWorkerAdmission(workerSandbox.admission);
     const visualsFor = <
       I extends {
         readonly options?: ReadonlyArray<QuestionChoice> | undefined;
@@ -590,8 +590,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
     });
 
     const dependsOn = yield* makeDependsOn;
-    const sandbox = { orchestration, store, onDemand, signedIn, workerHosts, joined };
-    const machineTools = yield* makeWorkerMachineTools({ sandbox, runtimes });
+    const machineTools = yield* makeWorkerMachineTools({ sandbox: planning, runtimes });
 
     const setStage = defineAppTool({
       descriptor: {

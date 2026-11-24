@@ -11,34 +11,25 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import type * as Scope from "effect/Scope";
-import { ownerSubject } from "../host/ownership.ts";
 import {
-  embeddedSource,
   isWorkerMachineName,
   modelRefusal,
   overTotalWords,
   pinRefusal,
   placementOf,
   resolveWorkerPicks,
-  type WorkerMachineSource,
   workerMachineIdentity,
   workerMachineName,
 } from "../embedding/worker-machines.ts";
-import { type MachineSharing, newSeat } from "../embedding/worker-seats.ts";
-import { charterOf, placedThreads, type WorkerSandboxDeps } from "./worker-placed.ts";
-export type { WorkerSandboxDeps } from "./worker-placed.ts";
+import { type MachineSharing, newSeat, requestSeat } from "../embedding/worker-seats.ts";
+import { memoryMachineClaims } from "../embedding/worker-machine-claims.ts";
+import { charterOf, workerMachineSourceFor, type WorkerSandboxDeps } from "./worker-placed.ts";
+export { workerMachineSourceFor, type WorkerSandboxDeps } from "./worker-placed.ts";
 import { refusal } from "./rules.ts";
-import {
-  fullWords,
-  machineCap,
-  makeSeatHolds,
-  packingOn,
-  picksKey,
-  picksMismatch,
-  picksOn,
-  seatRefusedWords,
-  workersOnMachine,
-} from "./worker-packing.ts";
+import { makeSeatHolds, picksKey, releaseFence, seatRefusedWords } from "./worker-packing.ts";
+import { makeWorkerPlacement } from "./worker-placement.ts";
+import { makeWorkerAdmission } from "./worker-admission.ts";
+import { machineNamedIn } from "./service/machine-named.ts";
 import type { WorkerSandbox } from "./tool-inputs.ts";
 
 const reclaimedWords = (name: string) =>
@@ -55,39 +46,6 @@ interface Flight {
 const flightKey = (identity: string, name: string) => JSON.stringify([identity, name]);
 
 /**
- * Where the orchestrator `orchestratorId`'s workers' machines come from: the embedder's provider for
- * the person whose host it is on, or the hosted server the app is signed in to. Undefined: neither.
- */
-export const workerMachineSourceFor = (
-  { store, onDemand, signedIn, workerHosts, joined }: Omit<WorkerSandboxDeps, "orchestration">,
-  orchestratorId: ThreadId,
-  tool: string,
-) =>
-  Effect.gen(function* () {
-    const orchestrator = yield* store
-      .getThread(orchestratorId)
-      .pipe(
-        Effect.mapError(
-          () => new AppToolError({ tool, message: "The orchestrator's thread can't be read now." }),
-        ),
-      );
-    const ownHost = hostOf(effectiveCheckout(orchestrator));
-    const holder = workerHosts?.ownerOf(ownHost);
-    const owner = ownerSubject(holder);
-    const found: WorkerMachineSource | { readonly refused: string } | undefined =
-      onDemand !== undefined
-        ? owner === undefined
-          ? undefined
-          : embeddedSource(onDemand, owner, joined)
-        : signedIn !== undefined && holder === undefined
-          ? yield* signedIn.source.pipe(
-              Effect.map((each) => ("refused" in each ? each : each.source)),
-            )
-          : undefined;
-    return found;
-  });
-
-/**
  * The sandbox planner, in the scope it is made in: each machine's bring-up runs there, so it
  * outlives the spawn try that began it.
  */
@@ -98,6 +56,7 @@ export const makeWorkerSandbox = ({
   signedIn,
   workerHosts,
   joined,
+  claims = memoryMachineClaims(),
 }: WorkerSandboxDeps) =>
   Effect.gen(function* () {
     const machineFlights = new Map<string, Flight>();
@@ -167,6 +126,7 @@ export const makeWorkerSandbox = ({
       Scope.Scope
     > =>
       Effect.gen(function* () {
+        yield* Effect.promise(() => releaseFence.settled(name));
         const { waited } = yield* holdFlight(name, identity);
         if (waited && !joined().some((each) => each.name === name))
           return yield* new AppToolError({
@@ -176,9 +136,17 @@ export const makeWorkerSandbox = ({
         return {};
       });
     const seatHolds = makeSeatHolds();
+    const placement = yield* makeWorkerPlacement({
+      listThreads: store.listThreads,
+      claims,
+      seatHolds,
+    });
     const coming = new Map<string, string>();
-    const capsSaid = new Map<string, number>();
-    const askedForBy = new Map<string, ThreadId>();
+    const attached = new Set<string>();
+    const tookSeat = (seat: string) => {
+      attached.add(seat);
+      if (attached.size > 1024) attached.delete(attached.keys().next().value!);
+    };
     const workerSandbox = (
       caller: ThreadId,
       input: {
@@ -215,16 +183,13 @@ export const makeWorkerSandbox = ({
       Effect.gen(function* () {
         const tool = "spawn_worker";
         const fail = (message: string) => new AppToolError({ tool, message });
-        const outright = input.machine?.trim();
+        const outright =
+          input.machine === undefined ? undefined : machineNamedIn(joined(), input.machine);
         const workers =
-          outright === undefined
+          outright?.kind !== "machine"
             ? undefined
-            : joined().find(
-                (each) =>
-                  each.onDemand === "worker" &&
-                  (each.name.toLowerCase() === outright.toLowerCase() || each.id === outright),
-              );
-        if (outright !== undefined && workers === undefined) return undefined;
+            : joined().find((each) => each.id === outright.id && each.onDemand === "worker");
+        if (input.machine !== undefined && workers === undefined) return undefined;
         const asked: WorkerSandbox | undefined =
           workers === undefined ? given : { ...given, shareWith: workers.name };
         const named =
@@ -301,27 +266,48 @@ export const makeWorkerSandbox = ({
         const offer = yield* source.sharing;
         const rows = offer === undefined ? undefined : yield* source.machines;
         const identity = source.identity ?? "";
-        const seat = newSeat();
-        const placed = yield* Effect.cached(
-          Effect.all({
-            charter: charterOf(store, caller, tool),
-            facts: placedThreads({ store, orchestration }, caller, tool),
-          }),
+        const mine = (name: string) => joined().find((each) => each.name === name && theirs(each));
+        const charter = yield* Effect.cached(charterOf(store, caller, tool));
+        const retried = (name: string) =>
+          input.clientRequestId === undefined || sandbox.own !== true || mine(name) === undefined
+            ? Effect.succeed(undefined)
+            : store.listThreads.pipe(
+                Effect.map((threads) =>
+                  threads.find(
+                    (thread) =>
+                      thread.spawnedBy?.threadId === caller &&
+                      thread.spawnedBy.placement?.machine === name &&
+                      thread.spawnedBy.placement.packing !== "named" &&
+                      hostOf(effectiveCheckout(thread)) === mine(name)?.id,
+                  ),
+                ),
+                Effect.orElseSucceed(() => undefined),
+              );
+        const ownName = workerMachineName(
+          caller,
+          input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
         );
-        const roomOn = (
-          { charter, facts }: Effect.Success<typeof placed>,
-          machine: { readonly name: string; readonly id?: string },
-          size?: string,
-        ) => {
-          const row = rows?.find((each) => each.name === machine.name);
-          const cap = machineCap(charter, offer, { size, row, said: capsSaid.get(machine.name) });
-          const on =
-            machine.id === undefined
-              ? []
-              : workersOnMachine(facts.threads, machine.id, facts.finished);
-          const held = seatHolds.on(machine.name).length;
-          return { cap, on, held, free: cap - on.length - held };
-        };
+        const again = yield* retried(ownName);
+        const seat =
+          again?.spawnedBy?.placement?.seat ??
+          (input.clientRequestId === undefined
+            ? newSeat()
+            : requestSeat(caller, input.clientRequestId));
+        const askFor = (name: string, as: WorkerPacking) =>
+          Effect.map(charter, (rules) => ({
+            caller,
+            name,
+            machine: mine(name),
+            as,
+            picks,
+            seat,
+            thread: again?.id,
+            charter: rules,
+            sharing: offer,
+            row: rows?.find((each) => each.name === name),
+            comingUp: machineFlights.has(flightKey(identity, name)),
+            tool,
+          }));
         const shared = (machine: { readonly name: string }) =>
           !source.givesBack
             ? { name: machine.name, givesBack: false }
@@ -346,8 +332,6 @@ export const makeWorkerSandbox = ({
               };
         const bringUpPlan = (name: string, sharing: MachineSharing) =>
           Effect.gen(function* () {
-            askedForBy.set(name, caller);
-            if (askedForBy.size > 512) askedForBy.delete(askedForBy.keys().next().value!);
             const seen = joined().find((each) => each.name === name && theirs(each));
             if (
               seen?.onlineSince !== undefined &&
@@ -355,6 +339,7 @@ export const makeWorkerSandbox = ({
             )
               return { name, givesBack: source.givesBack };
             const bringUp = Effect.gen(function* () {
+              yield* Effect.promise(() => releaseFence.settled(name));
               const already = joined().find((each) => each.name === name && theirs(each));
               if (already !== undefined && (yield* source.unrelease(name)) === "gone")
                 return yield* fail(reclaimedWords(name));
@@ -451,6 +436,7 @@ export const makeWorkerSandbox = ({
                   }
                   stopped = true;
                   yield* source.abandon(name);
+                  placement.forget(name);
                 }).pipe(Effect.ensuring(open));
               });
             const prepare = Effect.gen(function* () {
@@ -476,96 +462,83 @@ export const makeWorkerSandbox = ({
             >;
           },
           packing: WorkerPacking,
-          environment: string | undefined = picks.environment,
-          size: string | undefined = picks.size,
-        ) => {
-          const name = plan.name;
-          seatHolds.hold(name, seat);
-          let attached = false;
-          const letGo = Effect.suspend(() => {
-            seatHolds.release(name, seat);
-            if (!attached) return Effect.void;
-            attached = false;
-            return Effect.asVoid(source.seats({ name, detach: [seat] }));
-          });
-          const take = {
-            name,
-            orchestrator: caller,
-            attach: { worker: seat, environment },
-          };
-          const prepare = Effect.gen(function* () {
-            yield* Effect.addFinalizer(() =>
-              Effect.gen(function* () {
-                seatHolds.release(name, seat);
-                if (!attached) return;
-                const threads = yield* store.listThreads.pipe(Effect.option);
-                if (
-                  threads._tag === "Some" &&
-                  !threads.value.some((thread) => thread.spawnedBy?.placement?.seat === seat)
-                )
-                  yield* letGo;
-              }),
-            );
-            const prepared = plan.prepare === undefined ? {} : yield* plan.prepare;
-            seatHolds.hold(name, seat);
-            if (packing === "named" || packing === "shared") {
-              const now = yield* Effect.all({
-                charter: charterOf(store, caller, tool),
-                facts: placedThreads({ store, orchestration }, caller, tool),
-              });
-              const there = joined().find((each) => each.name === name);
-              const room = roomOn(
-                now,
-                { name, ...(there === undefined ? {} : { id: there.id }) },
-                size,
+        ) =>
+          Effect.gen(function* () {
+            const name = plan.name;
+            const admitted = yield* placement.place(yield* askFor(name, packing));
+            const environment = picks.environment ?? admitted.claim.picks["environment"];
+            let taken = false;
+            const letGo = Effect.suspend(() => {
+              seatHolds.release(name, seat);
+              if (!taken) return Effect.void;
+              taken = false;
+              attached.delete(seat);
+              return Effect.asVoid(source.seats({ name, detach: [seat] }));
+            });
+            const take = { name, orchestrator: caller, attach: { worker: seat, environment } };
+            const prepare = Effect.gen(function* () {
+              yield* Effect.addFinalizer(() =>
+                Effect.gen(function* () {
+                  seatHolds.release(name, seat);
+                  if (!taken) return;
+                  const threads = yield* store.listThreads.pipe(Effect.option);
+                  if (
+                    threads._tag === "Some" &&
+                    !threads.value.some((thread) => thread.spawnedBy?.placement?.seat === seat)
+                  )
+                    yield* letGo;
+                }),
               );
-              if (room.free < 0) {
-                seatHolds.release(name, seat);
-                yield* prepared.abandon ?? Effect.void;
-                return yield* fail(fullWords(name, room.cap, room.on, room.held - 1));
+              const prepared = plan.prepare === undefined ? {} : yield* plan.prepare;
+              const refused = (message: string) =>
+                Effect.suspend(() => {
+                  seatHolds.release(name, seat);
+                  return Effect.andThen(prepared.abandon ?? Effect.void, fail(message));
+                });
+              yield* placement
+                .place(yield* askFor(name, packing))
+                .pipe(Effect.catch((error) => refused(error.message)));
+              if (offer !== undefined) {
+                let answered = yield* source.seats(take);
+                if (answered.kind === "unknown") {
+                  yield* Effect.sleep("1 second");
+                  answered = yield* source.seats(take);
+                }
+                if (
+                  answered.kind !== "unknown" &&
+                  answered.kind !== "none" &&
+                  answered.cap !== undefined
+                )
+                  placement.capSaid(name, answered.cap);
+                if (answered.kind === "refused" || answered.kind === "unknown")
+                  return yield* refused(
+                    answered.kind === "refused"
+                      ? seatRefusedWords(name, answered.code, answered.message)
+                      : `Whether ${name} has room for this worker couldn't be confirmed (${answered.message}), so it wasn't placed there. Spawn again in a moment.`,
+                  );
+                taken = answered.kind === "seats";
+                if (taken) tookSeat(seat);
               }
-            }
-            if (offer !== undefined) {
-              let answered = yield* source.seats(take);
-              if (answered.kind === "unknown") {
-                yield* Effect.sleep("1 second");
-                answered = yield* source.seats(take);
-              }
-              if (answered.kind !== "unknown" && answered.kind !== "none") {
-                if (answered.cap !== undefined) capsSaid.set(name, answered.cap);
-                if (capsSaid.size > 256) capsSaid.delete(capsSaid.keys().next().value!);
-              }
-              if (answered.kind === "refused" || answered.kind === "unknown") {
-                seatHolds.release(name, seat);
-                yield* prepared.abandon ?? Effect.void;
-                return yield* fail(
-                  answered.kind === "refused"
-                    ? seatRefusedWords(name, answered.code, answered.message)
-                    : `Whether ${name} has room for this worker couldn't be confirmed (${answered.message}), so it wasn't placed there. Spawn again in a moment.`,
-                );
-              }
-              attached = answered.kind === "seats";
-            }
-            const abandon = prepared.abandon;
-            return abandon === undefined ? {} : { abandon: Effect.andThen(letGo, abandon) };
-          });
-          return {
-            name,
-            givesBack: plan.givesBack,
-            prepare,
-            arrives: plan.prepare !== undefined,
-            placement: placementOf(
+              const abandon = prepared.abandon;
+              return abandon === undefined ? {} : { abandon: Effect.andThen(letGo, abandon) };
+            });
+            return {
               name,
-              { ...sandbox, ...picks },
-              { packing, ...(offer === undefined ? {} : { seat }) },
-            ),
-          };
-        };
+              givesBack: plan.givesBack,
+              prepare,
+              arrives: plan.prepare !== undefined,
+              placement: placementOf(
+                name,
+                { ...sandbox, ...picks },
+                { packing, ...(offer === undefined ? {} : { seat }) },
+              ),
+            };
+          });
         if (sandbox.shareWith !== undefined) {
           const wanted = sandbox.shareWith.trim();
           let machine: ReturnType<typeof joined>[number] | undefined;
           if (isWorkerMachineName(wanted)) {
-            machine = joined().find((each) => each.name === wanted && theirs(each));
+            machine = mine(wanted);
             if (machine === undefined)
               return yield* fail(`No machine of your workers is named ${wanted}.`);
           } else {
@@ -583,115 +556,42 @@ export const makeWorkerSandbox = ({
                 `${worker.title} runs on your machine, not one of its own: leave out sandbox to put this worker there too.`,
               );
           }
-          const known = yield* placed;
-          const { facts } = known;
-          const machineId = machine.id;
-          const anothers = facts.threads.find(
-            (thread) =>
-              thread.spawnedBy !== undefined &&
-              thread.spawnedBy.threadId !== caller &&
-              hostOf(effectiveCheckout(thread)) === machineId,
-          );
-          if (
-            askedForBy.get(machine.name) !== caller &&
-            !facts.threads.some(
-              (thread) =>
-                thread.spawnedBy?.threadId === caller &&
-                thread.spawnedBy.placement?.machine === machine.name &&
-                hostOf(effectiveCheckout(thread)) === machineId,
-            )
-          )
-            return yield* fail(
-              `${machine.name} has no worker of yours on it, so it isn't yours to place one on: a machine is shared within one orchestrator only. Give this worker a machine of its own (sandbox: {"own": true}), or one of your shared machines ({"shared": true}).`,
-            );
-          if (anothers !== undefined)
-            return yield* fail(
-              `${machine.name} carries another orchestrator's worker (${anothers.title}), so yours isn't placed there: a machine is shared within one orchestrator only.`,
-            );
-          if (packingOn(facts.threads, machine.id) === "exclusive")
-            return yield* fail(
-              `${machine.name} was started for one worker only and is never shared. Give this worker a machine of its own (sandbox: {"own": true}), or one of your shared machines ({"shared": true}).`,
-            );
-          const started = picksOn(facts.threads, machine.id);
-          const differs = picksMismatch(picks, started);
-          if (differs !== undefined)
-            return yield* fail(
-              `${machine.name} isn't what this worker asks for: it names ${differs}. Leave that out to take the machine as it is, or give the worker a machine of its own.`,
-            );
-          const room = roomOn(known, machine, started?.size);
-          if (room.free <= 0)
-            return yield* fail(fullWords(machine.name, room.cap, room.on, room.held));
-          return seated(
-            shared(machine),
-            "named",
-            picks.environment ?? started?.environment,
-            started?.size,
-          );
+          return yield* seated(shared(machine), "named");
         }
         if (sandbox.shared === true) {
-          const known = yield* placed;
-          const { facts } = known;
           const key = picksKey(picks);
+          const roomOn = (name: string) =>
+            Effect.flatMap(askFor(name, "shared"), (ask) => placement.room(ask));
+          const placed = yield* store.listThreads.pipe(Effect.orElseSucceed(() => []));
           const pool = joined()
-            .filter(
-              (each) =>
-                theirs(each) &&
-                facts.threads.some(
-                  (thread) =>
-                    thread.spawnedBy?.threadId === caller &&
-                    thread.spawnedBy.placement?.packing === "shared" &&
-                    hostOf(effectiveCheckout(thread)) === each.id,
-                ) &&
-                packingOn(facts.threads, each.id) === "shared" &&
-                picksKey(picksOn(facts.threads, each.id) ?? {}) === key,
-            )
+            .filter((each) => {
+              const claim = theirs(each) ? placement.claimOf(each.name, each, placed) : undefined;
+              return claim?.orchestrator === caller && claim.mode === "shared";
+            })
             .toSorted(
               (a, b) =>
                 Number(b.onlineSince !== undefined) - Number(a.onlineSince !== undefined) ||
                 a.name.localeCompare(b.name),
             );
-          const fits = pool.find((each) => roomOn(known, each, picks.size).free > 0);
-          if (fits !== undefined) return seated(shared(fits), "shared");
+          for (const each of pool)
+            if (yield* roomOn(each.name)) return yield* seated(shared(each), "shared");
           const comingKey = JSON.stringify([caller, identity, key]);
           const begun = coming.get(comingKey);
-          const there =
-            begun === undefined ? undefined : joined().find((each) => each.name === begun);
           const still =
             begun !== undefined &&
-            (there !== undefined ||
+            (mine(begun) !== undefined ||
               seatHolds.on(begun).length > 0 ||
               machineFlights.has(flightKey(identity, begun)));
           if (begun !== undefined && !still) coming.delete(comingKey);
           const name =
-            begun !== undefined &&
-            still &&
-            roomOn(
-              known,
-              { name: begun, ...(there === undefined ? {} : { id: there.id }) },
-              picks.size,
-            ).free > 0
+            begun !== undefined && still && (yield* roomOn(begun))
               ? begun
               : workerMachineName(caller, `shared\n${key}\n${input.clientRequestId ?? seat}`);
           coming.set(comingKey, name);
-          return seated(yield* bringUpPlan(name, "shared"), "shared");
+          return yield* seated(yield* bringUpPlan(name, "shared"), "shared");
         }
-        const name = workerMachineName(
-          caller,
-          input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
-        );
-        const exclusive = sandbox.exclusive === true;
-        const taken = joined().find((each) => each.name === name && theirs(each));
-        if (taken !== undefined && input.clientRequestId === undefined) {
-          const on = workersOnMachine((yield* placed).facts.threads, taken.id, new Set());
-          if (on.length > 0)
-            return yield* fail(
-              `A machine was already asked for under this project, feature and title, and ${on[0]!.title} is on it, so this worker isn't given it as its own. Give this spawn a clientRequestId of its own for a new machine, or name that one with sandbox: {"shareWith": "${taken.name}"}.`,
-            );
-        }
-        return seated(
-          yield* bringUpPlan(name, exclusive ? "exclusive" : "own"),
-          exclusive ? "exclusive" : "own",
-        );
+        const mode = sandbox.exclusive === true ? "exclusive" : "own";
+        return yield* seated(yield* bringUpPlan(ownName, mode), mode);
       });
     const byName = (machine: string | undefined) => {
       const named = machine?.trim();
@@ -711,5 +611,12 @@ export const makeWorkerSandbox = ({
             prepare: fence(relayed.name, workerMachineIdentity(relayed.via!, relayed.viaAccount)),
           };
     };
-    return Object.assign(workerSandbox, { fence, byName });
+    const admission = makeWorkerAdmission({
+      deps: { store, onDemand, signedIn, workerHosts, joined },
+      placement,
+      seatHolds,
+      tookSeat,
+      hasSeat: (seat) => attached.has(seat),
+    });
+    return Object.assign(workerSandbox, { fence, byName, admission });
   });

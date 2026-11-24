@@ -43,12 +43,13 @@ import { makeWakeAlarms, preWakeOrOff } from "./service/wake-alarms.ts";
 import { makeWorkers } from "./service/workers.ts";
 import { makeSessionPolicy } from "./service/session-policy.ts";
 import { makeTaskStartup } from "./service/task-startup.ts";
-import { makeCharter } from "./service/charter.ts";
+import { makeCharter, withRoutineRun } from "./service/charter.ts";
 import { makeWorkspacesHere } from "./service/workspaces.ts";
 import { makeObservers } from "./service/observers.ts";
 import { makeBoot } from "./service/boot.ts";
 import { makeHeldSpawns } from "./service/held-spawns.ts";
 import { makeSpawning } from "./service/spawning.ts";
+import { makeWorkerAdmitting } from "./service/worker-admitting.ts";
 export { DELIVERY_RETRY_DELAYS, DELIVERY_FAILURES_BEFORE_PAUSE } from "./service/digests.ts";
 export { RECOVERY_DELAYS, PAUSE_RESUME_KEY } from "./service/pauses.ts";
 export { MAX_WORKER_REPOS } from "./service/worker-repos.ts";
@@ -94,6 +95,7 @@ export const OrchestrationLive = Layer.effect(
   Orchestration,
   Effect.gen(function* () {
     const kit = yield* makeOrchestrationKit;
+    const admitting = makeWorkerAdmitting(kit.joinedMachines);
     const {
       store,
       hosts,
@@ -422,6 +424,7 @@ export const OrchestrationLive = Layer.effect(
       briefFooter,
       setRoutineAdmission,
     } = makeSpawning(kit, {
+      admitting,
       outsideWorkspace,
       survey,
       repoNames,
@@ -585,6 +588,7 @@ export const OrchestrationLive = Layer.effect(
       checkModelChange,
       reopen,
     } = makeAdoption(kit, {
+      admitting,
       wakeFor,
       survey,
       syncPrWatches,
@@ -764,17 +768,10 @@ export const OrchestrationLive = Layer.effect(
       routineStates: (workspaceId) =>
         readOutbox(workspaceId).pipe(Effect.map((outbox) => outbox.routineRuns ?? {})),
       updateRoutineState: (workspaceId, id, change) =>
-        updateOutbox(workspaceId, (outbox) => {
-          const before = outbox.routineRuns?.[id];
-          const after = change(before);
-          if (after === before) return [outbox, after];
-          const { [id]: _gone, ...others } = outbox.routineRuns ?? {};
-          const runs = after === undefined ? others : { ...others, [id]: after };
-          const { routineRuns: _runs, ...rest } = outbox;
-          return [Object.keys(runs).length === 0 ? rest : { ...rest, routineRuns: runs }, after];
-        }),
+        updateOutbox(workspaceId, (outbox) => withRoutineRun(outbox, id, change)),
       editCharter,
       setRoutineAdmission,
+      setWorkerAdmission: admitting.set,
       listWorkspaces: store.listWorkspaces,
       saveWorkspace,
       commitWorkspace,

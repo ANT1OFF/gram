@@ -91,10 +91,10 @@ export const makeWorkerMachineTools = ({
           const on = theirs.filter(
             (thread) => hostOf(effectiveCheckout(thread)) === machine.id && thread.parked !== true,
           );
-          const counted = workersOnMachine(threads, machine.id, finished);
+          const counted = workersOnMachine(threads, machine.id);
           const hosted = machine.onDemand === "worker";
           const cap = hosted ? machineCap(charter, offer, { row }) : undefined;
-          const packing = packingOn(threads, machine.id);
+          const packing = sandbox.claims?.get(machine.name)?.mode ?? packingOn(threads, machine.id);
           return {
             name: machine.name,
             online: machine.onlineSince !== undefined,

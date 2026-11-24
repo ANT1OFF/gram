@@ -46,6 +46,7 @@ import { type WakeInput } from "../../wakes/thread-wakes.ts";
 import { type CreateThreadInput } from "../../runtime/thread-runtimes.ts";
 import { type RouteAlternative, type RouteOffer } from "../limit-pause.ts";
 import { type SentRequest } from "../outbox.ts";
+import type { WorkerAdmissionHook } from "./worker-admitting.ts";
 import { type RosterEntry } from "../rules.ts";
 
 /** A thread with authority, and the workspace it has it over. */
@@ -638,6 +639,11 @@ export interface OrchestrationShape {
 
   /** Installs the routines engine's admission (`RoutineAdmission`); a routine spawn refuses without it. */
   setRoutineAdmission(admit: RoutineAdmission): Effect.Effect<void>;
+  /**
+   * Installs what decides who is placed on a workers' machine (`worker-admission.ts`). Without
+   * it no worker is made on one, and no thread on one is taken on.
+   */
+  setWorkerAdmission(admission: WorkerAdmissionHook): Effect.Effect<void>;
   /** How each of the workspace's routines' runs stand, by routine id, as its outbox keeps them. */
   routineStates(workspaceId: WorkspaceId): Effect.Effect<Readonly<Record<string, RoutineState>>>;
   /** Changes one routine's run state in the outbox, `undefined` dropping it; what was stored. */

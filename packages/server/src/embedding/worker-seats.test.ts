@@ -150,7 +150,7 @@ const placed = (id: string, machineId: string, seat: string | undefined, more: o
 describe("the upkeep of a machine's seats", () => {
   const machine = { id: "m-1", name: NAME, via: "https://hosted.example.test" };
 
-  it("stands behind an unfinished worker's seat, and no other", () => {
+  it("stands behind every open worker's seat while any there is at work, a finished one's too", () => {
     const threads = [
       placed("a", "m-1", "sa"),
       placed("done", "m-1", "sd"),
@@ -158,9 +158,15 @@ describe("the upkeep of a machine's seats", () => {
       placed("unseated", "m-1", undefined),
       placed("elsewhere", "m-2", "se"),
     ];
-    const seats = seatsHere(machine, threads, new Set(["done" as ThreadId]));
-    expect([...seats.live]).toEqual(["sa"]);
+    const done = new Set(["done" as ThreadId]);
+    // `done` can be messaged back to work: its place is not given away while `a` keeps the machine.
+    const seats = seatsHere(machine, threads, done);
+    expect([...seats.live]).toEqual(["sa", "sd"]);
     expect(seats.any).toBe(true);
+    // Once every worker there is finished, none is: the seats go and the machine is released.
+    const over = seatsHere(machine, threads, new Set(["done", "a", "unseated"] as ThreadId[]));
+    expect([...over.live]).toEqual([]);
+    expect(over.any).toBe(true);
     expect(seatsHere(machine, [placed("unseated", "m-1", undefined)], new Set()).any).toBe(false);
   });
 
@@ -204,6 +210,45 @@ describe("the upkeep of a machine's seats", () => {
         now += 10 * 60_000;
         expect(yield* upkeep.look(machine, seats)).toBe("looked");
       }),
+  );
+
+  it.effect("takes every open worker's seat again when one of them is back at work", () =>
+    Effect.gen(function* () {
+      let now = 0;
+      const asks: Array<Omit<WorkerSeatsAsk, "name">> = [];
+      let held = ["sa", "sb"];
+      const upkeep = makeSeatUpkeep(
+        (_machine, ask) =>
+          Effect.sync((): WorkerSeats => {
+            asks.push(ask);
+            held = [
+              ...held.filter((seat) => !(ask.detach ?? []).includes(seat)),
+              ...(ask.attach === undefined ? [] : [ask.attach.worker]),
+            ];
+            return { kind: "seats", workers: held };
+          }),
+        () => now,
+      );
+      const threads = [placed("a", "m-1", "sa"), placed("b", "m-1", "sb")];
+      const claim = { orchestrator: "t-started-for", picks: { environment: "data" } };
+      const every = new Set(["a", "b"] as ThreadId[]);
+      // Both finished: their seats are given up over two looks, so the machine can be released.
+      yield* upkeep.look(machine, seatsHere(machine, threads, every, claim));
+      now += 120_000;
+      yield* upkeep.look(machine, seatsHere(machine, threads, every, claim));
+      expect(held).toEqual([]);
+      // A is messaged back to work. On the next pass, not ten minutes on, each open worker's
+      // seat is taken again, for the orchestrator the machine was started for: B's too, which
+      // may follow A at any time and must find its place kept.
+      now += 120_000;
+      const back = seatsHere(machine, threads, new Set(["b"] as ThreadId[]), claim);
+      expect(yield* upkeep.look(machine, back)).toBe("looked");
+      expect(asks.slice(-2)).toEqual([
+        { orchestrator: "t-started-for", attach: { worker: "sa", environment: "data" } },
+        { orchestrator: "t-started-for", attach: { worker: "sb", environment: "data" } },
+      ]);
+      expect(held).toEqual(["sa", "sb"]);
+    }),
   );
 
   it.effect(

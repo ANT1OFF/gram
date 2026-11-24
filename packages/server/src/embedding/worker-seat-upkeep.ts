@@ -7,8 +7,9 @@ import { askSeats, seatsBody, seatsOnMachine, type WorkerSeatsAsk } from "./work
 /**
  * Keeps a provider's record of who is on each worker machine in step with this Gram's
  * (docs/EMBEDDING.md, "Several workers on one machine"). A worker takes its seat as it is spawned
- * (`worker-sandbox.ts`); here the seat is given up once its work is over, so the provider releases
- * the machine after its last worker and not before. Looking also lets the provider keep a shared
+ * (`worker-sandbox.ts`); here the seats are given up once the work of every worker there is over,
+ * so the provider releases the machine after its last worker and not before, and taken again when
+ * one of them is messaged back to work. Looking also lets the provider keep a shared
  * machine's size in step with how many are on it.
  */
 
@@ -27,29 +28,51 @@ export interface SeatedMachine {
 
 type Placed = Pick<Thread, "id" | "checkout" | "currentCheckout" | "spawnedBy" | "parked">;
 
+/** Who a seat is taken for again, should its provider no longer hold it. */
+export interface SeatOwed {
+  readonly orchestrator: string;
+  readonly environment?: string | undefined;
+}
+
 /**
- * The seats on a machine this Gram still stands behind, and whether any worker placed there has
- * one at all. While any worker there is unfinished, every open worker's seat is live, a finished
- * one's too: it can be messaged back to work, and must not find its place given away. Once all
- * are finished none is, so the seats are given up and the machine released. A parked one's never.
+ * The seats on a machine this Gram stands behind, and whether any worker placed there has one at
+ * all. While any worker there is at work, every open worker's seat is live, a finished one's too:
+ * it can be messaged back to work at any time, and must never find its place given away. Once all
+ * of them are finished none is, so the seats are given up and the machine can be released; when
+ * one of them works again, each seat is taken again (`owed`, by `claim`'s orchestrator, the one
+ * the machine was asked for). A parked worker's seat is never live.
  */
 export const seatsHere = (
   machine: Pick<SeatedMachine, "id">,
   threads: ReadonlyArray<Placed>,
   finished: ReadonlySet<ThreadId>,
-): { readonly live: ReadonlySet<string>; readonly any: boolean } => {
-  const open = new Set<string>();
+  claim?:
+    | { readonly orchestrator: string; readonly picks: Readonly<Record<string, string>> }
+    | undefined,
+): {
+  readonly live: ReadonlySet<string>;
+  readonly any: boolean;
+  readonly owed?: ReadonlyMap<string, SeatOwed>;
+} => {
+  const open = new Map<string, SeatOwed>();
   let any = false;
   let atWork = false;
   for (const thread of threads) {
     if (hostOf(effectiveCheckout(thread)) !== machine.id || thread.parked === true) continue;
-    if (thread.spawnedBy !== undefined && !finished.has(thread.id)) atWork = true;
-    const seat = thread.spawnedBy?.placement?.seat;
+    if (thread.spawnedBy === undefined) continue;
+    if (!finished.has(thread.id)) atWork = true;
+    const seat = thread.spawnedBy.placement?.seat;
     if (seat === undefined) continue;
     any = true;
-    open.add(seat);
+    open.set(seat, {
+      orchestrator: claim?.orchestrator ?? thread.spawnedBy.threadId,
+      environment:
+        thread.spawnedBy.placement?.picks?.["environment"] ?? claim?.picks["environment"],
+    });
   }
-  return { live: atWork ? open : new Set<string>(), any };
+  return atWork
+    ? { live: new Set(open.keys()), any, owed: open }
+    : { live: new Set<string>(), any };
 };
 
 /**
@@ -60,7 +83,9 @@ export const withReserved = (
   seats: ReturnType<typeof seatsHere>,
   reserved: ReadonlyArray<string>,
 ): ReturnType<typeof seatsHere> =>
-  reserved.length === 0 ? seats : { live: new Set([...seats.live, ...reserved]), any: true };
+  reserved.length === 0
+    ? seats
+    : { ...seats, live: new Set([...seats.live, ...reserved]), any: true };
 
 /**
  * Which of the seats a provider holds for a machine to give up now, and which to remember: a seat
@@ -121,7 +146,7 @@ export const makeSeatUpkeep = (
 ) => {
   const kept = new Map<
     string,
-    { lookedAt: number; stale: ReadonlySet<string>; none?: true; pending?: true }
+    { lookedAt: number; stale: ReadonlySet<string>; none?: true; pending?: true; idle?: true }
   >();
   return {
     /** A release the provider held back because it still holds seats: look at them next pass. */
@@ -140,7 +165,8 @@ export const makeSeatUpkeep = (
       Effect.gen(function* () {
         const before = kept.get(machine.id);
         const at = now();
-        if (before?.pending !== true) {
+        const resumed = before?.idle === true && seats.live.size > 0;
+        if (before?.pending !== true && !resumed) {
           if (!seats.any && (before === undefined || before.stale.size === 0)) return "skipped";
           if (before?.none === true && at - before.lookedAt < NO_SEATS_FOR_MS) return "skipped";
           if (before !== undefined && at - before.lookedAt < SEAT_LOOK_EVERY_MS) return "skipped";
@@ -160,10 +186,17 @@ export const makeSeatUpkeep = (
           before?.stale ?? new Set(),
         );
         if (detach.length > 0) yield* ask(machine, { detach });
+        for (const [seat, owed] of seats.owed ?? [])
+          if (!held.workers.includes(seat))
+            yield* ask(machine, {
+              orchestrator: owed.orchestrator,
+              attach: { worker: seat, environment: owed.environment },
+            });
         kept.set(machine.id, {
           lookedAt: at,
           stale: remember,
           ...(remember.size > 0 ? { pending: true as const } : {}),
+          ...(seats.live.size === 0 ? { idle: true as const } : {}),
         });
         return "looked";
       }),

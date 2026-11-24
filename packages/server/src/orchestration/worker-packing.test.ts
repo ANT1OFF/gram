@@ -8,6 +8,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 import { signedInSource, type WorkerMachinePortShape } from "../embedding/signed-in-workers.ts";
+import { memoryMachineClaims } from "../embedding/worker-machine-claims.ts";
 import { makeWorkerSandbox } from "./worker-sandbox.ts";
 import {
   machineCap,
@@ -20,6 +21,7 @@ import {
 } from "./worker-packing.ts";
 import { withReserved } from "../embedding/worker-seat-upkeep.ts";
 import type { WorkerSandbox } from "./tool-inputs.ts";
+import { machineNamedIn } from "./service/machine-named.ts";
 
 const SERVER = { origin: "https://hosted.example.test", server: "Example hosted" };
 const CALLER = "t-orchestrator" as ThreadId;
@@ -40,17 +42,16 @@ const worker = (
   }) as unknown as Thread;
 
 describe("which workers count against a machine", () => {
-  it("counts an orchestrator's open workers there that aren't finished or parked", () => {
+  it("counts every open worker there, finished or at work, and never a parked one", () => {
     const threads = [
       worker("a", "m-1", { machine: "worker-1", packing: "shared" }),
-      worker("b", "m-1", { machine: "worker-1", packing: "shared" }),
       worker("done", "m-1", { machine: "worker-1", packing: "shared" }),
       worker("parked", "m-1", { machine: "worker-1" }, { parked: true }),
       worker("elsewhere", "m-2", { machine: "worker-2" }),
     ];
-    expect(
-      workersOnMachine(threads, "m-1", new Set(["done" as ThreadId])).map((each) => each.id),
-    ).toEqual(["a", "b"]);
+    // Whether the ledger reads `done` as finished is not asked: it is open, and can be messaged
+    // back to work, so its place is its own until it is archived.
+    expect(workersOnMachine(threads, "m-1").map((each) => each.id)).toEqual(["a", "done"]);
   });
 
   it("caps a machine at what its provider says, lowered and never raised by the workspace", () => {
@@ -226,7 +227,9 @@ const setup = (
     };
     const source = signedInSource(SERVER, { port, hosts });
     const threads = options.threads ?? (() => []);
+    const claims = memoryMachineClaims();
     const plan = yield* makeWorkerSandbox({
+      claims,
       orchestration: {
         ledger: () => Effect.succeed({ features: [] }),
       } as never,
@@ -251,7 +254,7 @@ const setup = (
     const startsOf = () => calls.filter((each) => each.call === "start");
     const attachesOf = () =>
       calls.filter((each) => each.call === "workers" && each.body["attach"] !== undefined);
-    return { spawn, plan, calls, startsOf, attachesOf, online, seated };
+    return { spawn, plan, calls, startsOf, attachesOf, online, seated, claims };
   });
 
 const prepare = (planned: { readonly prepare: Effect.Effect<unknown, unknown, Scope.Scope> }) =>
@@ -366,7 +369,7 @@ describe("a worker packed onto a hosted machine", () => {
             { shareWith: name },
             4,
           ),
-        ).toMatch(/no worker of yours/);
+        ).toMatch(/isn't yours to place a worker on/);
         expect(
           yield* refusal(
             [on({ machine: name, packing: "own", picks: { environment: "data" } })],
@@ -486,7 +489,7 @@ describe("a machine named for a worker, with no way round its checks", () => {
             spawnedBy: { threadId: "t-other", feature: "f" },
           } as never),
         ]),
-      ).toMatch(/no worker of yours/);
+      ).toMatch(/isn't yours to place a worker on/);
       // The caller's own exclusive machine: never shared, by this door either.
       expect(
         yield* refusal([worker("a", `m-${name}`, { machine: name, packing: "exclusive" })]),
@@ -528,6 +531,196 @@ describe("a machine named for a worker, with no way round its checks", () => {
       expect(reservedSeats(planned!.name)).toContain(seat);
       yield* close;
       expect(reservedSeats(planned!.name)).not.toContain(seat);
+    }).pipe(Effect.scoped),
+  );
+});
+
+const failure = <A>(exit: Exit.Exit<A, unknown>) =>
+  Exit.isFailure(exit) ? String(exit.cause) : "placed";
+
+/** A planner whose first spawn, under one project, feature and title, has its worker placed. */
+const titled = (sandbox: WorkerSandbox, options: Parameters<typeof setup>[0] = {}) =>
+  Effect.gen(function* () {
+    let threads: Thread[] = [];
+    const made = yield* setup({ ...options, threads: () => threads });
+    const first = yield* made.spawn(sandbox, "Same title");
+    expect(Exit.isSuccess((yield* prepare(first!)).ready)).toBe(true);
+    threads = [worker("a", `m-${first!.name}`, first!.placement)];
+    return { ...made, first: first! };
+  });
+
+describe("one decision for every way onto a workers' machine", () => {
+  const name = "worker-00000000aa";
+  const id = `m-${name}`;
+  const OTHER = "t-other" as ThreadId;
+
+  it.effect("takes no other spelling of a workers' machine's name for the machine", () =>
+    Effect.gen(function* () {
+      // Another orchestrator's exclusive machine, with its worker on it.
+      const threads = [
+        worker("b", id, { machine: name, packing: "exclusive" }, {
+          spawnedBy: { threadId: OTHER, feature: "f", placement: { machine: name } },
+        } as never),
+      ];
+      const { plan, online, claims, calls } = yield* setup({ threads: () => threads });
+      online.set(name, { id, name });
+      claims.claim(name, { orchestrator: OTHER, mode: "exclusive", picks: {}, at: 1 });
+      const input = { title: "Named", feature: "f", project: "shop" };
+      // Its exact name and its id both come to the one decision, which refuses.
+      for (const machine of [name, id])
+        expect(failure(yield* Effect.exit(plan(CALLER, { ...input, machine }, undefined)))).toMatch(
+          /isn't yours to place a worker on/,
+        );
+      // Any other spelling names no machine at all: the planner has none to place on, and the
+      // spawn's own lookup (the same resolver) refuses it as unknown.
+      for (const machine of [name.toUpperCase(), id.toUpperCase(), ` ${name}x`]) {
+        expect(yield* plan(CALLER, { ...input, machine }, undefined)).toBeUndefined();
+        expect(machineNamedIn([{ id, name, onDemand: "worker" }], machine)).toMatchObject({
+          kind: "refused",
+          code: "unknown_machine",
+        });
+      }
+      // Whatever led a spawn to the machine, making the worker's folder there is decided again:
+      // a spawn that comes with no plan of its own is a worker named there, held to the same.
+      expect(failure(yield* Effect.exit(plan.admission.confirm(CALLER, id, undefined)))).toMatch(
+        /isn't yours to place a worker on/,
+      );
+      expect(calls.some((each) => each.call === "workers")).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("gives a machine of its own to one worker: never one that carries another", () =>
+    Effect.gen(function* () {
+      // An exclusive spawn that works out the same name is not put on the first's ordinary one.
+      const own = yield* titled({ own: true });
+      expect(
+        failure(yield* Effect.exit(own.spawn({ own: true, exclusive: true }, "Same title"))),
+      ).toMatch(/can't become one worker's alone/);
+      // The other way round, on a provider that keeps no seats: the exclusive worker gets no
+      // sibling.
+      const exclusive = yield* titled({ own: true, exclusive: true }, { seats: false });
+      expect(failure(yield* Effect.exit(exclusive.spawn({ own: true }, "Same title")))).toMatch(
+        /never shared/,
+      );
+      // Two ordinary ones: the second isn't given the first's machine as its own, cap or no cap.
+      for (const cap of [1, 4]) {
+        const twice = yield* titled({ own: true }, { cap });
+        expect(failure(yield* Effect.exit(twice.spawn({ own: true }, "Same title")))).toMatch(
+          /isn't given it as its own/,
+        );
+        expect(twice.startsOf()).toHaveLength(1);
+        // Named outright, it is a worker placed there by choice, counted against the cap.
+        expect(failure(yield* Effect.exit(twice.spawn({ shareWith: twice.first.name })))).toMatch(
+          cap === 1 ? /is for 1 worker and has 1/ : /placed/,
+        );
+      }
+      // The folder's making decides it too, for a spawn that reaches it by another road.
+      expect(
+        failure(
+          yield* Effect.exit(
+            own.plan.admission.confirm(CALLER, `m-${own.first.name}`, {
+              machine: own.first.name,
+              packing: "own",
+            }),
+          ),
+        ),
+      ).toMatch(/isn't given it as its own/);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("lets a retry of one request back to its own machine, and its worker's seat", () =>
+    Effect.gen(function* () {
+      let threads: Thread[] = [];
+      const { plan, attachesOf } = yield* setup({ threads: () => threads });
+      const input = { title: "Once", feature: "f", project: "shop", clientRequestId: "once-1" };
+      const first = yield* plan(CALLER, input, { own: true, exclusive: true });
+      // A retry that comes while the first try still places holds the same place, not another.
+      const meanwhile = yield* plan(CALLER, input, { own: true, exclusive: true });
+      expect(meanwhile?.placement.seat).toBe(first?.placement.seat);
+      expect(Exit.isSuccess((yield* prepare(first!)).ready)).toBe(true);
+      threads = [worker("a", `m-${first!.name}`, first!.placement)];
+      // And one that comes once the worker exists: the worker is not in its own way.
+      const retry = yield* plan(CALLER, input, { own: true, exclusive: true });
+      expect(retry?.name).toBe(first?.name);
+      expect(Exit.isSuccess((yield* prepare(retry!)).ready)).toBe(true);
+      const seats = attachesOf().map((each) => (each.body["attach"] as { worker: string }).worker);
+      expect(new Set(seats)).toEqual(new Set([first!.placement.seat]));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a machine its orchestrator's when one of its workers is taken on", () =>
+    Effect.gen(function* () {
+      const placement = { machine: name, packing: "own" as const, seat: "s-a" };
+      let threads = [worker("a", id, placement)];
+      const { plan, online, claims } = yield* setup({ threads: () => threads });
+      online.set(name, { id, name });
+      const input = { title: "Next", feature: "f", project: "shop" };
+      // With another of the first orchestrator's workers there, it isn't taken on by another:
+      // the adoption itself would put two orchestrators' workers on one machine.
+      threads = [...threads, worker("a2", id, { machine: name, packing: "named" })];
+      expect(
+        failure(
+          yield* Effect.exit(plan.admission.adopting(threads[0]!, OTHER, threads[0]!.checkout)),
+        ),
+      ).toMatch(/shared within one orchestrator only/);
+      // Alone there, it may be. The machine's claim was written down as it changed hands.
+      threads = [threads[0]!];
+      expect(
+        yield* plan.admission.adopting(threads[0]!, OTHER, threads[0]!.checkout),
+      ).toBeUndefined();
+      expect(claims.get(name)?.orchestrator).toBe(CALLER);
+      // As the adoption leaves it: the other orchestrator's worker, with no placement of its own.
+      threads = [worker("a", id, undefined, { spawnedBy: { threadId: OTHER, feature: "f" } })];
+      // Its new orchestrator places nothing beside it: the machine isn't that orchestrator's.
+      for (const sandbox of [{ shareWith: name }, { shareWith: "a" }])
+        expect(failure(yield* Effect.exit(plan(OTHER, input, sandbox)))).toMatch(
+          /isn't yours to place a worker on|is not one of your workers/,
+        );
+      expect(
+        failure(yield* Effect.exit(plan(OTHER, { ...input, machine: name }, undefined))),
+      ).toMatch(/isn't yours to place a worker on/);
+      // Nor does the one it was started for, while another's worker is on it.
+      expect(failure(yield* Effect.exit(plan(CALLER, input, { shareWith: name })))).toMatch(
+        /carries another orchestrator's worker/,
+      );
+      // Taken back by the machine's own orchestrator, it is placed as any worker named there.
+      expect(
+        failure(
+          yield* Effect.exit(plan.admission.adopting(threads[0]!, CALLER, threads[0]!.checkout)),
+        ),
+      ).toBe("placed");
+      // A thread is never moved onto a workers' machine by being taken on.
+      const elsewhere = worker("e", "m-elsewhere", undefined);
+      expect(
+        failure(
+          yield* Effect.exit(
+            plan.admission.adopting(elsewhere, CALLER, {
+              ...elsewhere.checkout,
+              hostId: id,
+            } as never),
+          ),
+        ),
+      ).toMatch(/isn't moved onto one/);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("counts a finished worker's place as taken, so one that resumes finds it its own", () =>
+    Effect.gen(function* () {
+      const placement = { machine: name, packing: "shared" as const };
+      // With a cap of two: A's work is over, B keeps the machine at work. Whatever a ledger says
+      // of A, it is open, and a message puts it back to work: no ledger is asked.
+      const threads = [worker("a", id, placement), worker("b", id, placement)];
+      const { plan: made, online } = yield* setup({ cap: 2, threads: () => threads });
+      online.set(name, { id, name });
+      const input = { title: "C", feature: "f", project: "shop" };
+      // C is not packed into A's place, by name or by the pool.
+      expect(failure(yield* Effect.exit(made(CALLER, input, { shareWith: name })))).toMatch(
+        /is for 2 workers and has 2/,
+      );
+      expect((yield* made(CALLER, input, { shared: true }))?.name).not.toBe(name);
+      // Once A is archived its place is free.
+      threads[0] = { ...threads[0]!, parked: true };
+      expect((yield* made(CALLER, input, { shareWith: name }))?.name).toBe(name);
     }).pipe(Effect.scoped),
   );
 });
