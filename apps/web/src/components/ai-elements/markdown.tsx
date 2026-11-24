@@ -2,6 +2,8 @@ import { code } from "@streamdown/code";
 import type { ComponentProps } from "react";
 import { defaultRehypePlugins, Streamdown } from "streamdown";
 
+import { useMountEffect } from "@/lib/effects";
+import { trackScrollUnderPointer } from "@/lib/scroll-under-pointer";
 import { cn } from "@/lib/utils";
 import { messageLinkSafety } from "@/links/link-dialog";
 import { DrawnCheck } from "@/motion";
@@ -36,6 +38,7 @@ const pluginsOf = (given: BuildPlugins | Plugins | undefined): Plugins => {
 };
 
 export function Markdown({ className, rehypePlugins, ...props }: MessageResponseProps) {
+  useMountEffect(() => trackScrollUnderPointer());
   return (
     <Streamdown
       className={cn("size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}

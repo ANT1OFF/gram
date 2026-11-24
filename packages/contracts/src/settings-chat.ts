@@ -43,7 +43,6 @@ import {
   IdleCompactKind,
   idleCompactOf,
   autonomyOf,
-  PauseAtLimitPct,
   OrchestratorCharter,
   WORKER_BRIEF_FOOTER_MAX,
   WORKER_MODEL_NOTE_MAX,
@@ -52,6 +51,7 @@ import {
   type WorkerModel,
   type WorkspaceState,
 } from "./workspaces.ts";
+import { decodeCharterScalar, PACKING_ROWS } from "./settings-chat-scalars.ts";
 import {
   ROUTINES_MAX,
   routineWhenText,
@@ -237,6 +237,7 @@ export const SETTINGS_CATALOGUE: ReadonlyArray<Entry> = [
     "Max concurrent workers",
     (w) => charterOf(w)?.maxConcurrentWorkers,
   ),
+  ...PACKING_ROWS.map((row) => ws(row.key, row.label, (w) => row.read(charterOf(w)), row.unset)),
   ws(
     "workspace.pauseAtLimitPct",
     "Pause new workers at limit (%)",
@@ -976,15 +977,13 @@ export const planSettingsChanges = (
         if (error !== undefined) errors.push(`${key}: ${error}`);
         break;
       }
+      case "workspace.workerPacking":
+      case "workspace.workersPerMachine":
       case "workspace.pauseAtLimitPct": {
-        if (value === null) {
-          delete into[field];
-          break;
-        }
-        const decoded = decodeWith(PauseAtLimitPct, value);
-        if (Result.isFailure(decoded)) {
-          errors.push(`${key}: expected a whole percent from 1 to 100, or null for never.`);
-        } else into[field] = decoded.success;
+        const decoded = decodeCharterScalar(key, value);
+        if (!decoded.ok) errors.push(`${key}: ${decoded.expected}.`);
+        else if (decoded.value === undefined) delete into[field];
+        else into[field] = decoded.value;
         break;
       }
       case "workspace.workerBriefFooter": {

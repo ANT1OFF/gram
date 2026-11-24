@@ -16,13 +16,14 @@ import {
   signedInSource,
   type WorkerMachinePortShape,
 } from "../embedding/signed-in-workers.ts";
-import { AppToolError, DEFAULT_CHARTER, HostId } from "@gram/contracts";
+import { AppToolError, DEFAULT_CHARTER, HostId, type Thread, type ThreadId } from "@gram/contracts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 import { RemoteHosts, type RemoteHostsShape } from "../host/remote-hosts.ts";
 import { makeStopMarks } from "../host/stop-marks.ts";
 import { AppToolRegistry, bindAppTools } from "../app-tools/registry.ts";
 import { workerMachineName } from "../embedding/worker-machines.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { Orchestration } from "./service.ts";
 import { makeWorld, openOrchestrator, outboxOf, serverLayer, waitReal } from "./test-harness.ts";
 import { UsageLimitReadings } from "../usage/limit-readings.ts";
@@ -63,7 +64,148 @@ const fakePort = (
 
 const signedIn = (service: SignedInWorkers["Service"]) => Layer.succeed(SignedInWorkers)(service);
 
+/** One of the orchestrator's workers, placed on a machine: what makes it its own to share. */
+const workerOn = (orchestrator: Thread, machine: { readonly id: HostId; readonly name: string }) =>
+  Effect.gen(function* () {
+    const store = yield* ThreadStore;
+    const { role: _role, ...rest } = orchestrator;
+    yield* store.insertThread({
+      ...rest,
+      id: "t-on-its-machine" as ThreadId,
+      // As its spawn left it: the machine it was asked for is on its record.
+      spawnedBy: {
+        threadId: orchestrator.id,
+        feature: "earlier",
+        placement: { machine: machine.name },
+      },
+      checkout: { ...orchestrator.checkout, hostId: machine.id },
+    });
+  });
+
+const refused = (result: unknown, words: RegExp) =>
+  expect(result).toMatchObject({
+    _tag: "Failure",
+    failure: { message: expect.stringMatching(words) },
+  });
+
 describe("sandbox from a signed-in hosted server", () => {
+  it.effect("decides who goes on a workers' machine where the worker is made or taken on", () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld;
+      const { port } = fakePort((call) =>
+        call === "choices" ? { status: 404, body: {} } : { status: 200, body: {} },
+      );
+      const machine = {
+        id: HostId.make("m-0123456789abcdef01234567"),
+        name: "worker-0123456789",
+        confirmed: true,
+        onDemand: "worker",
+        via: SERVER.origin,
+        onlineSince: 1,
+      };
+      const remote = Layer.succeed(RemoteHosts, {
+        machines: { list: () => [], get: () => undefined },
+        stops: makeStopMarks(),
+        watch: () => () => undefined,
+        list: () => [machine],
+      } as unknown as RemoteHostsShape);
+      const hosts = { list: () => [machine], remove: () => false, machines: {} as never };
+      const source = signedInSource(SERVER, { port, hosts });
+      const context = yield* Layer.build(
+        serverLayer(world).pipe(
+          Layer.provide(remote),
+          Layer.provide(signedIn({ port, source: Effect.succeed({ source, server: SERVER }) })),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const { session, workspaceId, thread } = yield* openOrchestrator(world);
+        const store = yield* ThreadStore;
+        const orchestration = yield* Orchestration;
+        // Two workers another orchestrator's spawns put on its machine: the machine is its.
+        const { role: _role, workspaceId: _workspace, ...rest } = thread;
+        const anothers = (id: string) =>
+          store.insertThread({
+            ...rest,
+            id: id as ThreadId,
+            spawnedBy: {
+              threadId: "t-another-orchestrator" as ThreadId,
+              feature: "earlier",
+              placement: { machine: machine.name, packing: "own" },
+            },
+            checkout: { ...thread.checkout, hostId: machine.id },
+          });
+        yield* anothers("t-anothers");
+        yield* anothers("t-anothers-too");
+        const asked = { project: "shop", feature: "beside", title: "Beside", brief: "Synthetic" };
+        // By its name or its id, through the tool: the one decision refuses.
+        for (const named of [machine.name, machine.id])
+          refused(
+            yield* session
+              .callTool("spawn_worker", { ...asked, machine: named })
+              .pipe(Effect.result),
+            /isn't yours to place a worker on/,
+          );
+        // Another spelling of it is no machine at all.
+        refused(
+          yield* session
+            .callTool("spawn_worker", { ...asked, machine: machine.name.toUpperCase() })
+            .pipe(Effect.result),
+          /No joined machine is named/,
+        );
+        // Past the tool, as a held brief or a routine's spawn comes: decided again as the
+        // worker's folder would be made.
+        refused(
+          yield* orchestration
+            .spawnWorker(thread.id, { ...asked, machine: machine.id })
+            .pipe(Effect.result),
+          /isn't yours to place a worker on/,
+        );
+        expect((yield* store.listThreads).some((each) => each.title === "Beside")).toBe(false);
+        // Taking one of them on would put two orchestrators' workers on the machine.
+        refused(
+          yield* orchestration
+            .joinWorkspace("t-anothers" as ThreadId, workspaceId, {})
+            .pipe(Effect.result),
+          /shared within one orchestrator only/,
+        );
+        expect((yield* store.getThread("t-anothers" as ThreadId)).spawnedBy?.threadId).toBe(
+          "t-another-orchestrator",
+        );
+        // An archived worker of this orchestrator whose folder is on that machine does not come
+        // back to it either, whoever unarchives it: the edit is stored with it still archived.
+        yield* store.insertThread({
+          ...rest,
+          id: "t-archived" as ThreadId,
+          workspaceId,
+          parked: true,
+          spawnedBy: { threadId: thread.id, feature: "earlier" },
+          checkout: { ...thread.checkout, hostId: machine.id },
+        });
+        const runtimes = yield* ThreadRuntimes;
+        const back = yield* runtimes.updateThread("t-archived" as ThreadId, (each) => ({
+          ...each,
+          title: "Renamed",
+          parked: false,
+        }));
+        expect(back).toMatchObject({ parked: true, title: "Renamed" });
+        // One archived on this orchestrator's own machine comes back as it always did.
+        yield* store.insertThread({
+          ...rest,
+          id: "t-archived-here" as ThreadId,
+          workspaceId,
+          parked: true,
+          spawnedBy: { threadId: thread.id, feature: "earlier" },
+        });
+        expect(
+          (yield* runtimes.updateThread("t-archived-here" as ThreadId, (each) => ({
+            ...each,
+            parked: false,
+          }))).parked,
+        ).toBe(false);
+      }).pipe(Effect.provide(context));
+    }).pipe(Effect.scoped),
+  );
+
   it.effect(
     "is refused, naming the sign-in, while no server the app is signed in to offers it",
     () =>
@@ -288,7 +430,8 @@ describe("sandbox from a signed-in hosted server", () => {
         ),
       );
       yield* Effect.gen(function* () {
-        const { session, workspaceId } = yield* openOrchestrator(world);
+        const { session, workspaceId, thread } = yield* openOrchestrator(world);
+        yield* workerOn(thread, machine);
         yield* (yield* Orchestration).setCharter(workspaceId, {
           ...DEFAULT_CHARTER,
           autonomy: "publish",
@@ -692,7 +835,8 @@ describe("sandbox from a signed-in hosted server", () => {
       );
       yield* Effect.gen(function* () {
         const readings = yield* UsageLimitReadings;
-        const { session, workspaceId } = yield* openOrchestrator(world);
+        const { session, workspaceId, thread } = yield* openOrchestrator(world);
+        yield* workerOn(thread, machine);
         yield* session.emit({
           type: "rateLimit",
           status: "rejected",

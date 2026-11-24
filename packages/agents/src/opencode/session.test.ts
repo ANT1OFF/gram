@@ -9,8 +9,10 @@ import {
   XAI_BASE_URL,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Redacted from "effect/Redacted";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import type { OpenCodeClient } from "./client.ts";
@@ -165,6 +167,30 @@ describe("the OpenCode host", () => {
       yield* session.steer({ text: "also this" });
       expect(stand.calls.at(-1)).toEqual(["prompt", "ses_1", "also this", "steer"]);
       yield* Fiber.interrupt(reading);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("serves a thread with a temp folder of its own from a server of its own", () =>
+    Effect.gen(function* () {
+      const stand = standIn();
+      const host = yield* hostWith(stand);
+      const first = yield* Scope.make();
+      yield* host
+        .open({ threadId: THREAD, cwd: "/w/a", tmpDir: "/tmp/a" })
+        .pipe(Scope.provide(first));
+      yield* host.open({ threadId: "thr_2" as ThreadId, cwd: "/w/b", tmpDir: "/tmp/b" });
+      yield* host.open({ threadId: "thr_3" as ThreadId, cwd: "/w/c" });
+      yield* host.open({ threadId: "thr_4" as ThreadId, cwd: "/w/d" });
+      // One `opencode serve` runs every session's commands in its own environment: two workers
+      // on one machine share no temp folder only if each has a server whose `TMPDIR` is its own.
+      expect(stand.started.map((each) => each.env["TMPDIR"])).toEqual([
+        "/tmp/a",
+        "/tmp/b",
+        undefined,
+      ]);
+      // A thread's own server goes with its session; the shared one stays for the host.
+      yield* Scope.close(first, Exit.void);
+      expect(stand.stopped).toEqual([1]);
     }).pipe(Effect.scoped),
   );
 

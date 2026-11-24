@@ -9,6 +9,7 @@ import {
   type ModelRef,
   type ModelSlot,
   type OrchestratorCharter,
+  type WorkerPackingDefault,
   type PermissionMode,
   type Project,
   type ProjectId,
@@ -238,6 +239,27 @@ export const withRouteAtLimit = (
 ): OrchestratorCharter => {
   const { routeAtLimit: _was, ...rest } = charter;
   return on ? { ...rest, routeAtLimit: true } : rest;
+};
+
+/**
+ * The charter with where workers run by default; the orchestrator's own machine, which is what no
+ * setting means, is stored as absent.
+ */
+export const withWorkerPacking = (
+  charter: OrchestratorCharter,
+  packing: WorkerPackingDefault,
+): OrchestratorCharter => {
+  const { workerPacking: _was, ...rest } = charter;
+  return packing === "orchestrator" ? rest : { ...rest, workerPacking: packing };
+};
+
+/** The charter with its own cap on workers per machine, or none of its own (`undefined`). */
+export const withWorkersPerMachine = (
+  charter: OrchestratorCharter,
+  cap: number | undefined,
+): OrchestratorCharter => {
+  const { workersPerMachine: _was, ...rest } = charter;
+  return cap === undefined ? rest : { ...rest, workersPerMachine: cap };
 };
 
 /** The charter letting the orchestrator go beyond the roster, or not; off is stored as absent. */

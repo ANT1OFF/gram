@@ -6,6 +6,7 @@ import {
   connectorSetOf,
   type ConnectorSet,
   type OrchestratorCharter,
+  type RoutineState,
   type Thread,
   type WorkspaceState,
   applyCharterWrites,
@@ -43,6 +44,7 @@ import { type OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 import { randomUUID } from "node:crypto";
 import { type OutboxState } from "../outbox.ts";
+import { packingLine } from "../worker-packing.ts";
 
 const routinesKey = (charter: Pick<OrchestratorCharter, "routines">): string =>
   JSON.stringify(charter.routines ?? []);
@@ -70,6 +72,24 @@ export const pruneRoutineRuns = (
   return kept.length === 0 ? rest : { ...rest, routineRuns: Object.fromEntries(kept) };
 };
 
+/**
+ * The outbox with one routine's run state changed by `change` (undefined: forgotten), and that
+ * state: the same outbox when `change` leaves it as it was.
+ */
+export const withRoutineRun = (
+  outbox: OutboxState,
+  id: string,
+  change: (before: RoutineState | undefined) => RoutineState | undefined,
+): readonly [OutboxState, RoutineState | undefined] => {
+  const before = outbox.routineRuns?.[id];
+  const after = change(before);
+  if (after === before) return [outbox, after];
+  const { [id]: _gone, ...others } = outbox.routineRuns ?? {};
+  const runs = after === undefined ? others : { ...others, [id]: after };
+  const { routineRuns: _runs, ...rest } = outbox;
+  return [Object.keys(runs).length === 0 ? rest : { ...rest, routineRuns: runs }, after];
+};
+
 const withIdsOf =
   (compute: (standing: OrchestratorCharter) => OrchestratorCharter | undefined) =>
   (standing: OrchestratorCharter) => {
@@ -90,7 +110,13 @@ const withIds = (prior: OrchestratorCharter, charter: OrchestratorCharter): Orch
 const charterChangeNotes = (
   before: Pick<
     OrchestratorCharter,
-    "workerBriefFooter" | "routeAtLimit" | "otherWorkerModels" | "watchDefaultBranch" | "routines"
+    | "workerBriefFooter"
+    | "routeAtLimit"
+    | "otherWorkerModels"
+    | "watchDefaultBranch"
+    | "routines"
+    | "workerPacking"
+    | "workersPerMachine"
   >,
   after: OrchestratorCharter,
 ): ReadonlyArray<string> => {
@@ -108,6 +134,11 @@ const charterChangeNotes = (
       after.routeAtLimit === true
         ? `The user turned on your charter's ${ROUTE_AT_LIMIT_LINE}.`
         : "The user turned off offering another worker model at a limit: spawns stop at limits as before, with no alternatives.",
+    );
+  }
+  if (packingLine(before) !== packingLine(after)) {
+    notes.push(
+      `The user changed your charter's line on where workers run: ${packingLine(after) ?? "a spawn with no `sandbox` runs on your machine, and a machine's own cap applies"}. Workers already running stay where they are.`,
     );
   }
   if ((before.otherWorkerModels === true) !== (after.otherWorkerModels === true)) {

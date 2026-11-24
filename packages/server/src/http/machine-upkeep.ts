@@ -23,7 +23,10 @@ export const startMachineUpkeep = (deps: MachineUpkeepDeps) =>
     yield* Effect.addFinalizer(() => Effect.sync(off));
     yield* resumeOwedMachines(deps);
     const signedIn = Option.getOrUndefined(yield* Effect.serviceOption(SignedInWorkers));
-    if (signedIn?.port.available !== true) return;
+    if (signedIn?.port.available !== true)
+      return yield* Effect.logInfo(
+        "hosted worker machines aren't looked at for their provider's asks to move them: no desktop app",
+      );
     yield* startMovingAsked({
       port: signedIn.port,
       machines: () => deps.hosts.list(),

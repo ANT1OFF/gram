@@ -4,6 +4,7 @@ import {
   isPinned,
   type Thread,
   type ThreadId,
+  type WorkerPacking,
   type WorkerReport,
   type WorkspaceState,
   type WorkspaceId,
@@ -15,7 +16,13 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import { redactText } from "../../logging/redact.ts";
-import { filterWorkers, ledgerOf, visibleFeatures, type WorkerFacts } from "../ledger.ts";
+import {
+  filterWorkers,
+  isLiveWorker,
+  ledgerOf,
+  visibleFeatures,
+  type WorkerFacts,
+} from "../ledger.ts";
 import { wakesOf, withNotes } from "../outbox.ts";
 import { ledgerQuestions } from "../worker-questions.ts";
 import { slotHereNow } from "../../runtime/model-slots.ts";
@@ -65,12 +72,57 @@ export const machinesForOrchestrator = <M extends ListedMachine>(
     return !(machine.onDemand === "worker" && machine.onlineSince === undefined);
   });
 
+/** Who is on each machine: the workers not yet finished, and how those there were packed. */
+export interface MachineSharers {
+  /** The unfinished workers on a machine, by its id. */
+  readonly on: (hostId: string) => ReadonlyArray<ThreadId>;
+  /** How a worker was packed onto its machine, where its orchestrator chose. */
+  readonly packingOf: (threadId: ThreadId) => WorkerPacking | undefined;
+}
+
+/**
+ * Who shares which machine, from every worker of the orchestration, listed or not: a row a filter
+ * left out still shares its machine with the ones shown.
+ */
+export const machineSharers = (
+  rows: ReadonlyArray<Parameters<typeof isLiveWorker>[0] & { readonly threadId: ThreadId }>,
+  threads: ReadonlyArray<Pick<Thread, "id" | "spawnedBy">>,
+): MachineSharers => {
+  const byHost = new Map<string, ThreadId[]>();
+  for (const row of rows) {
+    if (row.hostId === undefined || !isLiveWorker(row)) continue;
+    byHost.set(row.hostId, [...(byHost.get(row.hostId) ?? []), row.threadId]);
+  }
+  const packing = new Map(
+    threads.flatMap((thread) =>
+      thread.spawnedBy?.placement?.packing === undefined
+        ? []
+        : [[thread.id, thread.spawnedBy.placement.packing] as const],
+    ),
+  );
+  return { on: (hostId) => byHost.get(hostId) ?? [], packingOf: (id) => packing.get(id) };
+};
+
 const machinesListed = (
-  machines: ReadonlyArray<{ readonly name: string; readonly onlineSince?: number }>,
+  machines: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly onlineSince?: number;
+  }>,
+  sharers?: MachineSharers,
 ) =>
   machines.length === 0
     ? {}
-    : { machines: machines.map((m) => ({ name: m.name, online: m.onlineSince !== undefined })) };
+    : {
+        machines: machines.map((m) => {
+          const workers = sharers?.on(m.id) ?? [];
+          return {
+            name: m.name,
+            online: m.onlineSince !== undefined,
+            ...(workers.length === 0 ? {} : { workers }),
+          };
+        }),
+      };
 
 /**
  * Each worker on another machine with that machine's name and whether it is dialled in, so the
@@ -83,13 +135,27 @@ export const withMachines = <W extends { readonly hostId?: HostId | undefined }>
     readonly name: string;
     readonly onlineSince?: number;
   }>,
-): ReadonlyArray<W & { readonly machine?: { readonly name: string; readonly online: boolean } }> =>
+  sharers?: MachineSharers,
+): ReadonlyArray<
+  W & {
+    readonly machine?: { readonly name: string; readonly online: boolean };
+    readonly packing?: WorkerPacking;
+    readonly sharesWith?: ReadonlyArray<ThreadId>;
+  }
+> =>
   workers.map((worker) => {
     const machine =
       worker.hostId === undefined ? undefined : machines.find((m) => m.id === worker.hostId);
-    return machine === undefined
-      ? worker
-      : { ...worker, machine: { name: machine.name, online: machine.onlineSince !== undefined } };
+    if (machine === undefined) return worker;
+    const mine = (worker as { readonly threadId?: ThreadId }).threadId;
+    const packing = mine === undefined ? undefined : sharers?.packingOf(mine);
+    const others = (sharers?.on(machine.id) ?? []).filter((id) => id !== mine);
+    return {
+      ...worker,
+      machine: { name: machine.name, online: machine.onlineSince !== undefined },
+      ...(packing === undefined ? {} : { packing }),
+      ...(others.length === 0 ? {} : { sharesWith: others }),
+    };
   });
 
 export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
@@ -139,11 +205,15 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
         questions: ledgerQuestions(found.outbox),
         now: found.now,
       });
+      const sharers = machineSharers(
+        found.features.flatMap((feature) => feature.workers),
+        found.workers,
+      );
       return {
         ...ledger,
         features: ledger.features.map((feature) => ({
           ...feature,
-          workers: withMachines(feature.workers, machines),
+          workers: withMachines(feature.workers, machines, sharers),
         })),
         ...(ownWakes.length === 0 ? {} : { wakes: ownWakes }),
         ...(app === undefined ? {} : { app }),
@@ -160,6 +230,7 @@ export const makeWorkers = (kit: OrchestrationKit, deps: WorkersDeps) => {
               ),
             ),
           }),
+          sharers,
         ),
         autonomy: autonomyOf(state.charter),
         workerModels: yield* rosterFor(thread, state.charter).pipe(

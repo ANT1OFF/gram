@@ -24,6 +24,10 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
+import { releaseFence, reservedSeats } from "../orchestration/worker-packing.ts";
+import { makeSeatUpkeep, seatAsker, seatsKept } from "./worker-seat-upkeep.ts";
+import { ReleaseOccupied, releaseOccupied } from "./worker-seats.ts";
+import { machineClaimsFor } from "./worker-machine-claims.ts";
 import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
 import { busyThreads, setAsideReleased } from "./hosted-machine-set-aside.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -215,7 +219,10 @@ export const tellRelease = (hosts: OnDemandHosts, machine: ReleaseMachine, relea
     timeoutMs: 15_000,
   }).pipe(
     Effect.flatMap((response) =>
-      Effect.promise(() => response.body?.cancel() ?? Promise.resolve()),
+      Effect.promise(() => response.json().catch(() => undefined) as Promise<unknown>),
+    ),
+    Effect.flatMap((body) =>
+      releaseOccupied(body) ? Effect.fail(new ReleaseOccupied()) : Effect.void,
     ),
   );
 
@@ -417,6 +424,9 @@ export const fileReleaseState = (dataDir: string, now: () => number = Date.now):
  * not before, whatever the passes in between decide; one deciding the other way is sent at once.
  * A `429` (`ReleaseRateLimited`) ends the pass, and no release is sent until
  * `RELEASE_PAUSE_FIRST_MS` has passed, twice that after each one more, to `RELEASE_PAUSE_MOST_MS`.
+ * A release its provider held back because workers still have seats on the machine
+ * (`ReleaseOccupied`) is no miss: `occupied` is told, the seats of workers whose work is over are
+ * given up (`worker-seat-upkeep.ts`), and the next pass sends it again.
  * `state` is written down once the pass is over.
  */
 export const releaseSends = (
@@ -431,7 +441,21 @@ export const releaseSends = (
     run?: MachineRun | null,
   ) => Effect.Effect<void, Error>,
   state: ReleaseState,
-  options: { readonly now?: () => number; readonly gapMs?: number } = {},
+  options: {
+    readonly now?: () => number;
+    readonly gapMs?: number;
+    /**
+     * Begins a release as it is about to go (`releaseFence.begin`), in one step with the look at
+     * who is on their way there. Undefined: a spawn holds a seat on the machine, which keeps it.
+     * `reservedNow`: one came while the release was being sent, so it is taken back before
+     * `done` lets that spawn make its folder.
+     */
+    readonly fence?: (
+      machine: ReleaseMachine,
+    ) => { readonly reservedNow: () => boolean; readonly done: () => void } | undefined;
+    /** Told of a machine whose release its provider held back for the seats still on it. */
+    readonly occupied?: (machine: ReleaseMachine) => void;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const now = options.now ?? Date.now;
@@ -445,11 +469,27 @@ export const releaseSends = (
       })
       .toSorted((a, b) => Number(a.released) - Number(b.released));
     let notTold = 0;
-    for (const [index, { machine, released, run }] of due.entries()) {
+    for (const [index, decision] of due.entries()) {
+      const { machine, run } = decision;
       if (index > 0) yield* Effect.sleep(options.gapMs ?? RELEASE_GAP_MS);
-      const sent = yield* tell(machine, released, run ?? undefined).pipe(Effect.result);
-      const at = now();
+      const held =
+        decision.released && options.fence !== undefined ? options.fence(machine) : undefined;
+      if (decision.released && options.fence !== undefined && held === undefined) continue;
       const key = toldKey(machine);
+      const { sent, released } = yield* tell(machine, decision.released, run ?? undefined).pipe(
+        Effect.result,
+        Effect.flatMap((first) => {
+          if (first._tag !== "Success" || held?.reservedNow() !== true)
+            return Effect.succeed({ sent: first, released: decision.released });
+          recordTold(state.told, machine, true, true, now());
+          return tell(machine, false, run ?? undefined).pipe(
+            Effect.result,
+            Effect.map((back) => ({ sent: back, released: false })),
+          );
+        }),
+        Effect.ensuring(Effect.sync(() => held?.done())),
+      );
+      const at = now();
       recordTold(state.told, machine, released, sent._tag === "Success", at);
       if (sent._tag === "Success") {
         state.retry.delete(key);
@@ -468,6 +508,11 @@ export const releaseSends = (
         break;
       }
       if (sent.failure instanceof ReleaseHeldOff) continue;
+      if (sent.failure instanceof ReleaseOccupied) {
+        state.retry.delete(key);
+        options.occupied?.(machine);
+        continue;
+      }
       const before = state.retry.get(key);
       const waitMs =
         before === undefined || before.released !== released
@@ -518,8 +563,12 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       ),
     );
     const told = state.told;
+    const claims = machineClaimsFor(config?.dataDir);
+    const asker = seatAsker(hosts, relayed);
+    const upkeep = asker === undefined ? undefined : makeSeatUpkeep(asker);
     const pass = Effect.gen(function* () {
       const machines = remote.list().filter((machine) => machine.onDemand === "worker");
+      upkeep?.prune(new Set(machines.map((machine) => machine.id)));
       if (machines.length === 0) return;
       forgetUnregistered(state, new Set(machines.map(toldKey)));
       const runs = new Map<string, MachineRun | null | undefined>(
@@ -535,6 +584,13 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         ),
       );
       const threads = yield* store.listThreads;
+      claims.prune(
+        new Set([
+          ...remote.list().map((machine) => machine.name),
+          ...threads.flatMap((thread) => thread.spawnedBy?.placement?.machine ?? []),
+        ]),
+        Date.now(),
+      );
       const finished = new Set<ThreadId>();
       const embeddedFinished = new Set<ThreadId>();
       for (const workspace of yield* store.listWorkspaces) {
@@ -543,6 +599,18 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         for (const id of releasableWorkers(ledger.value.features)) finished.add(id);
         for (const id of finishedWorkers(ledger.value.features)) embeddedFinished.add(id);
       }
+      if (upkeep !== undefined)
+        for (const machine of machines)
+          yield* upkeep.look(
+            machine,
+            seatsKept(
+              claims.get(machine.name),
+              machine,
+              threads,
+              machine.via === undefined ? embeddedFinished : finished,
+              reservedSeats(machine.name),
+            ),
+          );
       const ids = new Set(machines.map((machine) => machine.id));
       const archived = threads.filter(
         (thread) => thread.parked === true && ids.has(hostOf(effectiveCheckout(thread))),
@@ -561,8 +629,13 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         told,
         embeddedFinished,
         busy,
-      ).map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
-      yield* releaseSends(decided, tell, state);
+      )
+        .filter(({ machine, released }) => !released || reservedSeats(machine.name).length === 0)
+        .map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
+      yield* releaseSends(decided, tell, state, {
+        fence: (machine) => releaseFence.begin(machine.name),
+        ...(upkeep === undefined ? {} : { occupied: upkeep.occupied }),
+      });
     });
     const asidePass = Effect.gen(function* () {
       const aside = signedIn?.setAside;

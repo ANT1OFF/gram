@@ -18,6 +18,7 @@ import {
   askWorkerMachine,
   choicesOfAsk,
   parseOfferedModels,
+  sharingOfAsk,
   type ProvidedMachine,
   resizeBody,
   type WorkerMachineSource,
@@ -25,6 +26,7 @@ import {
   workerMachineIdentity,
 } from "./worker-machines.ts";
 import { fencedCalls } from "./signed-in-fences.ts";
+import { signedInSeats } from "./signed-in-seats.ts";
 import { signInMarks } from "./signed-in-marks.ts";
 import {
   claimedHere,
@@ -245,6 +247,12 @@ export const signedInSource = (
     label: plainName(server.server),
     choices: Effect.map(asked, (kept) => kept.value),
     models: Effect.map(asked, (kept) => kept.models),
+    ...signedInSeats(
+      port,
+      origin,
+      accountNow,
+      Effect.map(asked, (kept) => kept.value?.sharing),
+    ),
     givesBack: true,
     identity: workerMachineIdentity(origin, first),
     unrelease: (name) =>
@@ -319,6 +327,7 @@ export const signedInSource = (
               title: ask.title.slice(0, 120),
               orchestrator: ask.orchestrator,
               choices: choicesOfAsk(ask),
+              ...sharingOfAsk(ask),
             },
             {
               ...deps,

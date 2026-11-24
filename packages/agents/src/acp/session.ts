@@ -37,6 +37,8 @@ export interface AcpLaunch {
   readonly additionalDirectories?: ReadonlyArray<string>;
   /** Tells the thread what it should know about how the agent signed in. */
   readonly notice?: (message: string) => void;
+  /** The thread's own temp folder (`OpenSessionOptions.tmpDir`): its agent's `TMPDIR`. */
+  readonly tmpDir?: string | undefined;
 }
 
 /**
@@ -55,7 +57,8 @@ export const launchAcp = (
     if (refused !== undefined)
       return yield* Effect.fail(new AgentUnavailable({ agent: spec.kind, message: refused }));
     const binary = yield* config.binary;
-    const env = yield* config.env;
+    const inherited = yield* config.env;
+    const env = launch.tmpDir === undefined ? inherited : { ...inherited, TMPDIR: launch.tmpDir };
     const extra = config.args === undefined ? [] : yield* config.args;
     return yield* Effect.try({
       try: () =>
@@ -164,6 +167,7 @@ export const openAcpSession = (
     const connection = yield* launchAcp(config, spec, options.cwd, handlers, {
       additionalDirectories: options.additionalDirectories ?? [],
       notice: (message) => Queue.offerUnsafe(events, { type: "notice", level: "warning", message }),
+      tmpDir: options.tmpDir,
     });
     yield* Effect.addFinalizer(() =>
       Effect.promise(async () => {

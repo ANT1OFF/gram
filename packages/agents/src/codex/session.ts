@@ -83,6 +83,7 @@ import {
   loadedProjectLayers,
   switchedOff,
   unconfinedServers,
+  tmpConfig,
 } from "./thread-config.ts";
 import { CodexServers, SERVER_WIDE, type CodexServer, type CodexServersConfig } from "./servers.ts";
 import { toCodexTranscript } from "./transcript.ts";
@@ -922,6 +923,7 @@ export const makeCodexHost = (
         ...narrowedSurfaces?.config,
         ...(confined === undefined ? {} : { apps: confined.apps, features: confined.features }),
         ...(roots.length === 0 ? {} : { sandbox_workspace_write: { writable_roots: [...roots] } }),
+        ...tmpConfig(o.tmpDir),
       };
       const settings: ThreadSettings = {
         cwd: o.cwd,

@@ -22,6 +22,7 @@ import {
   unknownTierWhy,
 } from "./recommended.ts";
 import { FeatureStage, OrchestrationPause } from "./orchestration.ts";
+import { WORKERS_PER_MACHINE_DEFAULT, WORKERS_PER_MACHINE_MAX } from "./worker-packing.ts";
 import { WorkspaceRoutines } from "./routines.ts";
 
 /** An embedding app's id for an environment: short, printable, no spaces. */
@@ -385,6 +386,21 @@ export const IdleCompactKind = Schema.Literals(["orchestrator", "worker"]);
 export type IdleCompactKind = typeof IdleCompactKind.Type;
 
 /**
+ * Where a worker runs when its spawn names no `sandbox`, where a provider offers worker machines:
+ *
+ * - `orchestrator`: on its orchestrator's own machine, as it always did.
+ * - `shared`: on one of the orchestrator's shared machines, packed up to the cap.
+ * - `own`: on a machine of its own.
+ */
+export const WorkerPackingDefault = Schema.Literals(["orchestrator", "shared", "own"]);
+export type WorkerPackingDefault = typeof WorkerPackingDefault.Type;
+
+/** How many workers a workspace lets one machine carry: 1 to `WORKERS_PER_MACHINE_MAX`. */
+export const WorkersPerMachine = Schema.Int.check(
+  Schema.isBetween({ minimum: 1, maximum: WORKERS_PER_MACHINE_MAX }),
+);
+
+/**
  * What the user lets an orchestrator do. The one limit is how many workers run at once: what an
  * orchestrator spends, and for how long, is bounded by the user's provider, not by Gram.
  */
@@ -404,6 +420,14 @@ export const OrchestratorCharter = Schema.Struct({
   memoryUpdateEveryHours: Schema.optionalKey(MemoryUpdateEveryHours),
   /** Spawning beyond this asks the user first. */
   maxConcurrentWorkers: AtLeastOne,
+  /**
+   * Where a worker runs when its spawn names no `sandbox`. Absent is `orchestrator`: nothing is
+   * packed onto a machine another worker is on unless a spawn or this says so. Read it through
+   * `workerPackingOf`.
+   */
+  workerPacking: Schema.optionalKey(WorkerPackingDefault),
+  /** The most workers on one machine here; it only lowers what the machine's provider allows. */
+  workersPerMachine: Schema.optionalKey(WorkersPerMachine),
   /**
    * When a subscription limit a new worker would run against reaches this share, `spawn_worker`
    * asks the user once whether to pause new workers until it resets. Absent never pauses.
@@ -483,6 +507,27 @@ export const OrchestratorCharter = Schema.Struct({
   routines: Schema.optionalKey(WorkspaceRoutines),
 });
 export type OrchestratorCharter = typeof OrchestratorCharter.Type;
+
+/** A charter's default packing; absent is the orchestrator's own machine. */
+export const workerPackingOf = (
+  charter: Pick<OrchestratorCharter, "workerPacking"> | undefined,
+): WorkerPackingDefault => charter?.workerPacking ?? "orchestrator";
+
+/**
+ * How many workers one machine carries here: what its provider says a machine of that size is for
+ * (`WORKERS_PER_MACHINE_DEFAULT` when it says nothing), lowered by the workspace's own cap.
+ */
+export const workersPerMachineOf = (
+  charter: Pick<OrchestratorCharter, "workersPerMachine"> | undefined,
+  provider: number | undefined,
+): number =>
+  Math.max(
+    1,
+    Math.min(
+      provider ?? WORKERS_PER_MACHINE_DEFAULT,
+      charter?.workersPerMachine ?? WORKERS_PER_MACHINE_MAX,
+    ),
+  );
 
 /** The workspace's worker brief footer, trimmed; `undefined` when there is none. */
 export const briefFooterOf = (

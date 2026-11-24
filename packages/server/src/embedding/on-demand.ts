@@ -98,6 +98,15 @@ export interface OnDemandChoices {
   readonly note?: string;
   /** Whether the provider keeps a person's picks as theirs (`keep` on a start, preferences). */
   readonly keeps?: boolean;
+  /**
+   * How many workers a worker's machine of each size is for, where the provider keeps who is on
+   * each machine (`worker-seats.ts`), and the size one starts at when its spawn names none.
+   * Absent: it keeps none, and takes none of those calls.
+   */
+  readonly sharing?: {
+    readonly workers: Readonly<Record<string, number>>;
+    readonly size?: string;
+  };
 }
 
 /** What the server knows of on-demand hosts: the provider, and each person's latest progress. */
@@ -270,7 +279,30 @@ export const parseChoices = (value: unknown): OnDemandChoices | undefined => {
   if (choices.length === 0) return undefined;
   const note = text((value as { note?: unknown }).note, 200);
   const keeps = (value as { keeps?: unknown }).keeps === true;
-  return { choices, ...(note === undefined ? {} : { note }), ...(keeps ? { keeps } : {}) };
+  const sharing = parseSharing((value as { sharing?: unknown }).sharing);
+  return {
+    choices,
+    ...(note === undefined ? {} : { note }),
+    ...(keeps ? { keeps } : {}),
+    ...(sharing === undefined ? {} : { sharing }),
+  };
+};
+
+const MAX_WORKERS_SAID = 64;
+
+const parseSharing = (value: unknown): OnDemandChoices["sharing"] => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const said = (value as { workers?: unknown }).workers;
+  if (typeof said !== "object" || said === null || Array.isArray(said)) return undefined;
+  const workers: Record<string, number> = {};
+  for (const [size, most] of Object.entries(said).slice(0, MAX_OPTIONS)) {
+    if (!CHOICE_ID.test(size)) continue;
+    if (typeof most !== "number" || !Number.isInteger(most)) continue;
+    if (most < 1 || most > MAX_WORKERS_SAID) continue;
+    workers[size] = most;
+  }
+  const size = (value as { size?: unknown }).size;
+  return { workers, ...(typeof size === "string" && CHOICE_ID.test(size) ? { size } : {}) };
 };
 
 /**

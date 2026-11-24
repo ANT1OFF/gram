@@ -193,9 +193,23 @@ describe("a worker's machine brought up for a spawn", () => {
         orchestration: {} as never,
         store: {
           getThread: () => Effect.succeed({ checkout: { kind: "main", path: "/repo" } }),
+          // One of this orchestrator's workers is on it: the machine is its own to share.
+          listThreads: Effect.succeed([
+            {
+              id: "t-first",
+              title: "First",
+              checkout: { kind: "worktree", path: "/w/first", hostId: machine.id },
+              spawnedBy: {
+                threadId: CALLER,
+                feature: "heavy-build",
+                placement: { machine: NAME },
+              },
+            },
+          ]),
         } as never,
-        // Never reached: a share asks the provider nothing.
-        onDemand: {} as never,
+        // What the provider offers Grace was asked a moment ago and is kept: nothing, so it keeps
+        // no seats either, and a share asks it nothing.
+        onDemand: { choices: new Map([["grace", { at: Date.now() }]]) } as never,
         signedIn: undefined,
         workerHosts: { ownerOf: () => "grace" } as never,
         joined: () => [{ ...machine, owner: "grace" }] as never,
@@ -203,7 +217,16 @@ describe("a worker's machine brought up for a spawn", () => {
       const planned = yield* plan(CALLER, INPUT, { shareWith: NAME, reason: "Same build." });
       // By name alone, as before hosted machines: no wait for it to join ahead of the spawn,
       // which would stall up to five minutes and then refuse it, a retry of a made spawn too.
-      expect(planned).toEqual({ name: NAME, givesBack: false });
+      expect(planned).toMatchObject({
+        name: NAME,
+        givesBack: false,
+        arrives: false,
+        placement: { machine: NAME, shared: true, packing: "named", why: "Same build." },
+      });
+      // The seat is this Gram's own name for the worker's place: nothing is asked of a
+      // provider that keeps none (none is reachable here, and a call would have failed).
+      expect(planned?.placement.seat).toBeDefined();
+      expect(yield* planned!.prepare).toEqual({});
     }).pipe(Effect.scoped),
   );
 
@@ -214,8 +237,13 @@ describe("a worker's machine brought up for a spawn", () => {
     it.effect(`keeps a retry out while a give-back that ${during} goes on`, () =>
       Effect.gen(function* () {
         const held = yield* Deferred.make<void>();
-        const { plan, calls } = yield* setup({ [gate]: Deferred.await(held) });
+        // The slow read or call is the give-back's: the first try's own went through before.
+        let slow = false;
+        const { plan, calls } = yield* setup({
+          [gate]: Effect.suspend(() => (slow ? Deferred.await(held) : Effect.void)),
+        });
         const first = yield* prepared(plan);
+        slow = true;
         // The first try is cancelled with no other try holding it: it gives its machine back.
         const giving = yield* Effect.forkScoped(first.ready.abandon ?? Effect.void);
         // Held in its stop: the stop is on its way before the retry comes.

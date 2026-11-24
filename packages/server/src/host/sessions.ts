@@ -187,6 +187,9 @@ const optionsFor = (
   };
 };
 
+const withTmpDir = (options: OpenSessionOptions, tmpDir: string | undefined) =>
+  tmpDir === undefined ? options : { ...options, tmpDir };
+
 const sessionFolder = (request: HostSessionOpen): Effect.Effect<string, AgentUnavailable> =>
   request.dreamFilesOnly !== true
     ? Effect.succeed(request.cwd)
@@ -217,6 +220,27 @@ const sessionFolder = (request: HostSessionOpen): Effect.Effect<string, AgentUna
               message: `A folder for the memory update couldn't be made: ${error instanceof Error ? error.message : String(error)}`,
             }),
         });
+
+/**
+ * A temp folder of the thread's own on this machine, made if it isn't there, for its agent's
+ * `TMPDIR`. Several threads work on one machine as one user (an orchestrator's workers on a
+ * machine they share), and a build or a test that writes a fixed temp name would otherwise meet
+ * another thread's. It separates accidents, not access: every thread here is the same user.
+ * Undefined when it can't be made as this user's own folder: the session then keeps the
+ * machine's temp folder, as before.
+ */
+export const threadTmpDir = (
+  threadId: string,
+  root: string = tmpdir(),
+): Promise<string | undefined> =>
+  (async () => {
+    const folder = join(root, `gram-tmp-${threadId.replace(/[^\w-]/g, "_")}`);
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    const made = await lstat(folder);
+    return made.isDirectory() && (process.getuid === undefined || made.uid === process.getuid())
+      ? folder
+      : undefined;
+  })().catch(() => undefined);
 
 /** Reaches a thread's app tools at the server's MCP endpoint. */
 export type AppToolsAt = (
@@ -453,18 +477,26 @@ export const sessionsOnHost = (
                       ),
                     ),
                 (remoteAppTools) =>
-                  Effect.flatMap(sessionFolder(request), (cwd) =>
-                    host.open(
-                      optionsFor(
-                        { ...request, cwd },
-                        remoteAppTools,
-                        (report) => {
-                          seen.last = report;
-                          PubSub.publishUnsafe(changes, report);
-                        },
-                        machine.mcpServer,
-                      ),
+                  Effect.flatMap(
+                    Effect.zip(
+                      sessionFolder(request),
+                      Effect.promise(() => threadTmpDir(request.threadId)),
                     ),
+                    ([cwd, tmpDir]) =>
+                      host.open(
+                        withTmpDir(
+                          optionsFor(
+                            { ...request, cwd },
+                            remoteAppTools,
+                            (report) => {
+                              seen.last = report;
+                              PubSub.publishUnsafe(changes, report);
+                            },
+                            machine.mcpServer,
+                          ),
+                          tmpDir,
+                        ),
+                      ),
                   ),
               ),
             ),

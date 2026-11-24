@@ -351,7 +351,7 @@ const serverRelayMessageOf = (message: unknown): WorkerMachineRelayMessage | und
 };
 
 const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> = {
-  choices: ["choices", "note", "keeps", "models"],
+  choices: ["choices", "note", "keeps", "models", "sharing"],
   start: [
     "code",
     "name",
@@ -374,10 +374,12 @@ const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> 
     "generation",
     "moveRequested",
   ],
-  release: ["code", "known", "released", "applied", "message"],
-  stop: ["code", "stopped", "message"],
+  release: ["code", "known", "released", "applied", "message", "workers"],
+  stop: ["code", "stopped", "message", "workers"],
   resize: ["code", "state", "size", "start", "until", "message", "asked", "inUse", "total"],
   move: ["code", "moved", "message"],
+  workers: ["code", "message", "workers", "cap", "size", "mode"],
+  machines: ["code", "message", "machines"],
 };
 
 const answerFields = (call: WorkerMachineCall, body: unknown): unknown => {

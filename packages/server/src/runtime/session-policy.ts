@@ -5,7 +5,15 @@ import {
   type OutwardGate,
   dreamSupportFor,
 } from "@gram/agents";
-import type { PermissionMode, Thread } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  hostOf,
+  AgentUnavailable,
+  type PermissionMode,
+  type Thread,
+  type ThreadId,
+  type ThreadNotFound,
+} from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -85,7 +93,28 @@ export interface SessionPolicyPort {
    * whose new session takes the thread's handoff.
    */
   switchHandoff?(thread: Thread): Effect.Effect<SystemDelivery | undefined>;
+  /**
+   * Why an archived thread may not come back now, or nothing: asked before any edit that
+   * unarchives one is stored, whoever makes it. Reads the store only.
+   */
+  reviving?(thread: Thread): Effect.Effect<string | undefined>;
+  /**
+   * Why no session may open for this thread where its folder is, or nothing: asked each time a
+   * session opens, before `opening` is told, under the same lock rules as `forThread`.
+   */
+  admitting?(thread: Thread): Effect.Effect<string | undefined>;
 }
+
+/**
+ * Whether the row being written is still the thread a decision was made for: the same
+ * orchestrator's, with its folder on the same machine. A decision made for a row that has since
+ * changed hands or moved is no decision for the row as it stands.
+ */
+export const sameWorkerAndMachine = (row: Thread, decided: Thread): boolean =>
+  row.spawnedBy?.threadId === decided.spawnedBy?.threadId &&
+  hostOf(effectiveCheckout(row)) === hostOf(effectiveCheckout(decided));
+
+const NOT_ADMITTED = "Whether this thread may run where its folder is couldn't be decided now.";
 
 export const PLAIN_POLICY: SessionPolicy = { audience: "plain", outwardGate: undefined };
 
@@ -124,7 +153,28 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
           ),
         );
 
-  const opening = (thread: Thread): Effect.Effect<void> =>
+  const admitted = (thread: Thread): Effect.Effect<void, AgentUnavailable> =>
+    sessionPolicy?.admitting === undefined
+      ? Effect.void
+      : sessionPolicy.admitting(thread).pipe(
+          Effect.catchCause(() => Effect.succeed<string | undefined>(NOT_ADMITTED)),
+          Effect.flatMap((refused) =>
+            refused === undefined
+              ? Effect.void
+              : Effect.fail(
+                  new AgentUnavailable({
+                    agent: thread.model.agent,
+                    reason: "startup-failed",
+                    message: refused,
+                  }),
+                ),
+          ),
+        );
+
+  const opening = (thread: Thread): Effect.Effect<void, AgentUnavailable> =>
+    Effect.andThen(admitted(thread), told(thread));
+
+  const told = (thread: Thread): Effect.Effect<void> =>
     sessionPolicy?.opening === undefined
       ? Effect.void
       : sessionPolicy
@@ -156,29 +206,64 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
       ? Effect.succeed(undefined)
       : sessionPolicy.switchHandoff(thread);
 
-  const methods: Pick<ThreadRuntimesShape, "setSessionPolicy" | "audienceOf" | "browserStatusOf"> =
-    {
-      setSessionPolicy: (port) =>
-        Effect.sync(() => {
-          sessionPolicy = port;
-        }),
-      audienceOf: (threadId) =>
-        store.getThread(threadId).pipe(
-          Effect.flatMap((thread) =>
-            thread.role === "dream"
-              ? Effect.succeed("dream" as const)
-              : Effect.map(policyFor(thread), (policy) => policy.audience),
-          ),
-          Effect.orElseSucceed((): ToolAudience => "plain"),
+  const methods: Pick<
+    ThreadRuntimesShape,
+    "setSessionPolicy" | "audienceOf" | "browserStatusOf"
+  > & {
+    /**
+     * The thread as it stands, and the edit to store for it: `edit` itself, or, where it would
+     * unarchive a thread the policy says may not come back (`reviving`), `edit` with the thread
+     * kept archived. A policy that dies keeps it archived too, and so does a row that changed
+     * hands or moved between the decision and its writing (`sameWorkerAndMachine`).
+     */
+    readonly unparking: (
+      threadId: ThreadId,
+      edit: (thread: Thread) => Thread,
+    ) => Effect.Effect<readonly [Thread, (thread: Thread) => Thread], ThreadNotFound>;
+  } = {
+    unparking: (threadId, edit) =>
+      Effect.gen(function* () {
+        const before = yield* store.getThread(threadId);
+        const asked = sessionPolicy?.reviving;
+        if (asked === undefined || before.parked !== true || edit(before).parked === true)
+          return [before, edit] as const;
+        const refused = yield* asked(before).pipe(
+          Effect.catchCause(() => Effect.succeed<string | undefined>("undecided")),
+        );
+        if (refused === undefined)
+          return [
+            before,
+            (row: Thread) =>
+              row.parked !== true || sameWorkerAndMachine(row, before)
+                ? edit(row)
+                : { ...edit(row), parked: true },
+          ] as const;
+        yield* Effect.logWarning("an archived thread was kept archived").pipe(
+          Effect.annotateLogs({ threadId, reason: refused }),
+        );
+        return [before, (thread: Thread) => ({ ...edit(thread), parked: true })] as const;
+      }),
+    setSessionPolicy: (port) =>
+      Effect.sync(() => {
+        sessionPolicy = port;
+      }),
+    audienceOf: (threadId) =>
+      store.getThread(threadId).pipe(
+        Effect.flatMap((thread) =>
+          thread.role === "dream"
+            ? Effect.succeed("dream" as const)
+            : Effect.map(policyFor(thread), (policy) => policy.audience),
         ),
-      browserStatusOf: (threadId) =>
-        Effect.gen(function* () {
-          const thread = yield* store.getThread(threadId);
-          const settings = yield* store.getSettings;
-          const resume = yield* resumeOptions(thread, undefined);
-          return browserStatus(thread, settings, yield* policyFor(thread), resume);
-        }),
-    };
+        Effect.orElseSucceed((): ToolAudience => "plain"),
+      ),
+    browserStatusOf: (threadId) =>
+      Effect.gen(function* () {
+        const thread = yield* store.getThread(threadId);
+        const settings = yield* store.getSettings;
+        const resume = yield* resumeOptions(thread, undefined);
+        return browserStatus(thread, settings, yield* policyFor(thread), resume);
+      }),
+  };
 
   return { policyFor, opening, modeAfterSwitch, switchHandoff, methods };
 };
