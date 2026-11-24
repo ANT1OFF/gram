@@ -48,6 +48,16 @@ export const seatsHere = (
 };
 
 /**
+ * `seats` with those a spawn or a move under way holds on the machine: its worker has no thread
+ * there yet, and its seat is not stale however long its folder takes to make.
+ */
+export const withReserved = (
+  seats: ReturnType<typeof seatsHere>,
+  reserved: ReadonlyArray<string>,
+): ReturnType<typeof seatsHere> =>
+  reserved.length === 0 ? seats : { live: new Set([...seats.live, ...reserved]), any: true };
+
+/**
  * Which of the seats a provider holds for a machine to give up now, and which to remember: a seat
  * no unfinished worker here holds is given up only once it was seen so on the look before too. A
  * spawn takes its seat a moment before its worker exists, and that seat is nobody's for that long.

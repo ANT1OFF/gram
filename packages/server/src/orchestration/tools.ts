@@ -203,8 +203,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
               tool: "spawn_worker",
               message: "Give machine or sandbox, not both.",
             });
-          const placed =
-            asked.machine === undefined ? yield* workerSandbox(caller, asked, sandbox) : undefined;
+          const placed = yield* workerSandbox(caller, asked, sandbox);
           const input =
             placed === undefined
               ? asked

@@ -42,7 +42,7 @@ export const makeSeatHolds = (now: () => number = Date.now) => {
     else held.set(machine, seats);
     return seats;
   };
-  return {
+  const holds = {
     hold: (machine: string, seat: string, forMs: number = SEAT_HOLD_MS) => {
       const seats = live(machine);
       seats.set(seat, now() + forMs);
@@ -57,7 +57,19 @@ export const makeSeatHolds = (now: () => number = Date.now) => {
     /** The machines that hold a seat and nothing else knows of yet: ones still being asked for. */
     machines: (): ReadonlyArray<string> => [...held.keys()].filter((name) => live(name).size > 0),
   };
+  everyHolds.add(holds);
+  return holds;
 };
+
+const everyHolds = new Set<{ readonly on: (machine: string) => ReadonlyArray<string> }>();
+
+/**
+ * The seats spawns and moves under way hold on a machine, across every planner of this process:
+ * a worker on its way there has no thread on the machine yet, so the release pass reads these to
+ * keep the machine, and its seat, until the worker is placed or its try is over.
+ */
+export const reservedSeats = (machine: string): ReadonlyArray<string> =>
+  [...everyHolds].flatMap((holds) => holds.on(machine));
 export type SeatHolds = ReturnType<typeof makeSeatHolds>;
 
 /**

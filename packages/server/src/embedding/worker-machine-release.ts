@@ -24,7 +24,8 @@ import {
   type WorkerMachinePortShape,
 } from "./signed-in-workers.ts";
 import { callOutside } from "./outside.ts";
-import { makeSeatUpkeep, seatAsker, seatsHere } from "./worker-seat-upkeep.ts";
+import { reservedSeats } from "../orchestration/worker-packing.ts";
+import { makeSeatUpkeep, seatAsker, seatsHere, withReserved } from "./worker-seat-upkeep.ts";
 import { ReleaseOccupied, releaseOccupied } from "./worker-seats.ts";
 import { WORKER_MACHINE_SETTLE_MS } from "./hosted-machine-use.ts";
 import { busyThreads, setAsideReleased } from "./hosted-machine-set-aside.ts";
@@ -568,7 +569,10 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         for (const machine of machines)
           yield* upkeep.look(
             machine,
-            seatsHere(machine, threads, machine.via === undefined ? embeddedFinished : finished),
+            withReserved(
+              seatsHere(machine, threads, machine.via === undefined ? embeddedFinished : finished),
+              reservedSeats(machine.name),
+            ),
           );
       const ids = new Set(machines.map((machine) => machine.id));
       const archived = threads.filter(
@@ -588,7 +592,9 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
         told,
         embeddedFinished,
         busy,
-      ).map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
+      )
+        .filter(({ machine, released }) => !released || reservedSeats(machine.name).length === 0)
+        .map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
       yield* releaseSends(
         decided,
         tell,

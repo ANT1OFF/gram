@@ -249,8 +249,10 @@ export const makeWorkerSandbox = ({
         readonly project: string;
         readonly clientRequestId?: string | undefined;
         readonly model?: string | undefined;
+        /** A joined machine named outright: one of workers' is placed on as `shareWith` is. */
+        readonly machine?: string | undefined;
       },
-      asked: WorkerSandbox | undefined,
+      given: WorkerSandbox | undefined,
     ): Effect.Effect<
       | {
           readonly name: string;
@@ -275,6 +277,17 @@ export const makeWorkerSandbox = ({
       Effect.gen(function* () {
         const tool = "spawn_worker";
         const fail = (message: string) => new AppToolError({ tool, message });
+        const outright = input.machine?.trim();
+        const workers =
+          outright === undefined
+            ? undefined
+            : joined().find(
+                (each) =>
+                  each.onDemand === "worker" && (each.name === outright || each.id === outright),
+              );
+        if (outright !== undefined && workers === undefined) return undefined;
+        const asked: WorkerSandbox | undefined =
+          workers === undefined ? given : { ...given, shareWith: workers.name };
         const named =
           (asked?.own === true ? 1 : 0) +
           (asked?.shared === true ? 1 : 0) +
@@ -523,6 +536,7 @@ export const makeWorkerSandbox = ({
           },
           packing: WorkerPacking,
           environment: string | undefined = picks.environment,
+          size: string | undefined = picks.size,
         ) => {
           const name = plan.name;
           seatHolds.hold(name, seat);
@@ -552,6 +566,22 @@ export const makeWorkerSandbox = ({
               }),
             );
             const prepared = plan.prepare === undefined ? {} : yield* plan.prepare;
+            seatHolds.hold(name, seat);
+            const now = yield* Effect.all({
+              charter: charterOf(store, caller, tool),
+              facts: placedThreads({ store, orchestration }, caller, tool),
+            });
+            const there = joined().find((each) => each.name === name);
+            const room = roomOn(
+              now,
+              { name, ...(there === undefined ? {} : { id: there.id }) },
+              size,
+            );
+            if (room.free < 0) {
+              seatHolds.release(name, seat);
+              yield* prepared.abandon ?? Effect.void;
+              return yield* fail(fullWords(name, room.cap, room.on, room.held - 1));
+            }
             if (offer !== undefined) {
               let answered = yield* source.seats(take);
               if (answered.kind === "unknown") {
@@ -619,6 +649,16 @@ export const makeWorkerSandbox = ({
               thread.spawnedBy.threadId !== caller &&
               hostOf(effectiveCheckout(thread)) === machineId,
           );
+          if (
+            !facts.threads.some(
+              (thread) =>
+                thread.spawnedBy?.threadId === caller &&
+                hostOf(effectiveCheckout(thread)) === machineId,
+            )
+          )
+            return yield* fail(
+              `${machine.name} has no worker of yours on it, so it isn't yours to place one on: a machine is shared within one orchestrator only. Give this worker a machine of its own (sandbox: {"own": true}), or one of your shared machines ({"shared": true}).`,
+            );
           if (anothers !== undefined)
             return yield* fail(
               `${machine.name} carries another orchestrator's worker (${anothers.title}), so yours isn't placed there: a machine is shared within one orchestrator only.`,
@@ -636,7 +676,12 @@ export const makeWorkerSandbox = ({
           const room = roomOn(known, machine, started?.size);
           if (room.free <= 0)
             return yield* fail(fullWords(machine.name, room.cap, room.on, room.held));
-          return seated(shared(machine), "named", picks.environment ?? started?.environment);
+          return seated(
+            shared(machine),
+            "named",
+            picks.environment ?? started?.environment,
+            started?.size,
+          );
         }
         if (sandbox.shared === true) {
           const known = yield* placed;

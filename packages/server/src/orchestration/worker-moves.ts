@@ -6,6 +6,7 @@ import {
   hostServes,
   LOCAL_HOST_ID,
   type Thread,
+  type WorkerPlacement,
 } from "@gram/contracts";
 import { folderName, randomWorktreeName } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -22,10 +23,12 @@ import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
  * its folders are kept at the remote on its hidden ref (`host.stop.keep`), the machine it goes to
  * makes them again from the remote and that ref (`host.stop.restore`), and only then is the thread
  * pointed there. Its next session opens on the new machine and reads the recent turns, as after a
- * machine came back on another disk. A step that fails leaves the worker where it was. The folder
- * it leaves is removed only if nothing in it is uncommitted; otherwise it stays until its machine
- * goes, and its work is at the remote either way. The folders it was let read on the old machine
- * (`readAlso`) are not on the new one, and are let go.
+ * machine came back on another disk. A step that fails leaves the worker where it was. Every
+ * folder of it on the new machine, and where it was placed (`placement`), are written down before
+ * the thread is let go to work again, so no turn starts there with a folder of the old machine.
+ * The folders it leaves are left: files git ignores (a build's output) aren't in what was kept,
+ * so nothing is deleted on its behalf, and they go with their machine. The folders it was let read
+ * on the old machine (`readAlso`) are not on the new one, and are let go.
  */
 
 /** Why a worker wasn't moved. `busy`: it is in a turn, and can be moved once it rests. */
@@ -61,6 +64,7 @@ export const moveWorkerTo = (
   deps: WorkerMoveDeps,
   thread: Thread,
   to: { readonly id: HostId; readonly name: string },
+  placement?: WorkerPlacement,
 ): Effect.Effect<{ readonly moved: boolean; readonly thread: Thread }, WorkerNotMoved> =>
   Effect.gen(function* () {
     const from = hostOf(effectiveCheckout(thread));
@@ -170,15 +174,57 @@ export const moveWorkerTo = (
       }
       return placed;
     }).pipe(Effect.tapError(() => undo));
-    let placed: ReadonlyArray<Checkout> = [];
-    const first = Effect.map(prepare, (all) => {
-      placed = all;
-      return all[0]!;
+    const before = {
+      extraCheckouts: thread.extraCheckouts,
+      additionalDirectories: thread.additionalDirectories,
+      spawnedBy: thread.spawnedBy,
+    };
+    const rest = (current: Thread) => {
+      const { extraCheckouts: _extras, additionalDirectories: _dirs, ...kept } = current;
+      return kept;
+    };
+    let written = false;
+    const first = Effect.gen(function* () {
+      const [primary, ...extras] = yield* prepare;
+      yield* deps.runtimes
+        .updateThread(thread.id, (current) => ({
+          ...rest(current),
+          ...(extras.length === 0
+            ? {}
+            : { extraCheckouts: extras, additionalDirectories: extras.map((each) => each.path) }),
+          ...(placement === undefined || current.spawnedBy === undefined
+            ? {}
+            : { spawnedBy: { ...current.spawnedBy, placement } }),
+        }))
+        .pipe(
+          Effect.mapError(() => new WorkerNotMoved(`${thread.title} is gone.`)),
+          Effect.tapError(() => undo),
+        );
+      written = true;
+      return primary!;
     });
-    const moved = yield* deps.runtimes
+    const putBack = Effect.suspend(() =>
+      !written
+        ? Effect.void
+        : deps.runtimes
+            .updateThread(thread.id, (current) => ({
+              ...rest(current),
+              ...(before.extraCheckouts === undefined
+                ? {}
+                : { extraCheckouts: before.extraCheckouts }),
+              ...(before.additionalDirectories === undefined
+                ? {}
+                : { additionalDirectories: before.additionalDirectories }),
+              ...(before.spawnedBy === undefined ? {} : { spawnedBy: before.spawnedBy }),
+            }))
+            .pipe(Effect.ignore),
+    );
+    const settled = yield* deps.runtimes
       .relocate(thread.id, { from: thread.checkout, prepare: first })
       .pipe(
-        Effect.tapError((error) => (error instanceof WorkerNotMoved ? Effect.void : undo)),
+        Effect.tapError((error) =>
+          error instanceof WorkerNotMoved ? Effect.void : Effect.andThen(putBack, undo),
+        ),
         Effect.mapError((error) =>
           error instanceof WorkerNotMoved
             ? error
@@ -189,38 +235,6 @@ export const moveWorkerTo = (
                 error._tag === "InvalidState" && error.message === "the thread is at work",
               ),
         ),
-      );
-    const extras = placed.slice(1);
-    const settled = yield* deps.runtimes
-      .updateThread(thread.id, (current) => {
-        const { extraCheckouts: _extras, additionalDirectories: _dirs, ...rest } = current;
-        return {
-          ...rest,
-          ...(extras.length === 0
-            ? {}
-            : {
-                extraCheckouts: extras,
-                additionalDirectories: extras.map((extra) => extra.path),
-              }),
-        };
-      })
-      .pipe(Effect.orElseSucceed(() => moved));
-    const source = yield* deps.hosts.connection(from as HostId).pipe(Effect.option);
-    if (source._tag === "Some")
-      yield* Effect.forEach(
-        folders,
-        (checkout) =>
-          checkout.repoRoot === undefined
-            ? Effect.void
-            : source.value.worktrees
-                .remove({
-                  repoPath: checkout.repoRoot,
-                  worktreeDir: checkout.path,
-                  force: false,
-                  openCheckouts: [],
-                })
-                .pipe(Effect.timeout("2 minutes"), Effect.ignore),
-        { discard: true },
       );
     return { moved: true, thread: settled };
   });

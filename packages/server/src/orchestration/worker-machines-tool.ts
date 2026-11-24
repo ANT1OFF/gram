@@ -195,18 +195,13 @@ export const makeWorkerMachineTools = ({
           yield* prepared.abandon ?? Effect.void;
           return yield* fail(`${plan.name} isn't joined here, so nothing was moved.`);
         }
-        const done = yield* moveWorkerTo({ hosts: remoteHosts, runtimes }, target, {
-          id: machine.id as HostId,
-          name: machine.name,
-        }).pipe(Effect.tapError(() => prepared.abandon ?? Effect.void));
+        const done = yield* moveWorkerTo(
+          { hosts: remoteHosts, runtimes },
+          target,
+          { id: machine.id as HostId, name: machine.name },
+          plan.placement,
+        ).pipe(Effect.tapError(() => prepared.abandon ?? Effect.void));
         if (!done.moved) return { moved: false as const, machine: plan.name };
-        yield* runtimes
-          .updateThread(target.id, (current) =>
-            current.spawnedBy === undefined
-              ? current
-              : { ...current, spawnedBy: { ...current.spawnedBy, placement: plan.placement } },
-          )
-          .pipe(Effect.ignore);
         const seat = target.spawnedBy?.placement?.seat;
         if (before !== undefined && seat !== undefined) {
           const found = yield* workerMachineSourceFor(sandbox, orchestratorId, tool).pipe(
@@ -230,6 +225,10 @@ export const makeWorkerMachineTools = ({
         }
         const thread = yield* store.getThread(threadId).pipe(Effect.option);
         if (thread._tag === "None") {
+          waiting.delete(threadId);
+          continue;
+        }
+        if (thread.value.spawnedBy?.threadId !== ask.orchestratorId) {
           waiting.delete(threadId);
           continue;
         }
@@ -315,9 +314,14 @@ export const makeWorkerMachineTools = ({
           if (orchestratorId === undefined || (!asWorker && orchestratorId !== caller))
             return yield* fail(`${target.title} is not one of your workers.`);
           if (input.cancel === true) return { cancelled: waiting.delete(target.id) };
-          const to = input.to;
-          if (to === undefined) return yield* fail("Say where it goes, in `to`.");
-          const shares = to.shared === true || to.shareWith !== undefined;
+          const asked = input.to;
+          const shares = asked?.shared === true || asked?.shareWith !== undefined;
+          if (asked === undefined || (asked.own === true ? 1 : 0) + (shares ? 1 : 0) !== 1)
+            return yield* fail(
+              'Say where it goes, in `to`: one of {"own": true}, {"shared": true} or {"shareWith"}.',
+            );
+          const exclusive = target.spawnedBy?.placement?.packing === "exclusive";
+          const to: WorkerSandbox = exclusive ? { ...asked, exclusive: true } : asked;
           if (asWorker && (to.own !== true || shares))
             return yield* fail(
               'A worker may only ask for a machine of its own for itself: `to: {"own": true}`. Packing workers together is your orchestrator\'s decision: ask it.',
@@ -326,7 +330,7 @@ export const makeWorkerMachineTools = ({
             return yield* fail(
               "A worker isn't moved onto its orchestrator's own machine: name a hosted machine for it.",
             );
-          if (target.spawnedBy?.placement?.packing === "exclusive" && shares)
+          if (exclusive && shares)
             return yield* fail(
               `${target.title} was placed on a machine that is never shared, so it isn't moved onto one it would share.`,
             );
