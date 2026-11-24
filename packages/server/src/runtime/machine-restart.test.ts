@@ -4,6 +4,7 @@ import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
 import {
+  type AgentEvent,
   HOST_PROTOCOL_VERSION,
   HostId,
   HostUnavailable,
@@ -43,6 +44,7 @@ import {
   afterMachineRestart,
   MACHINE_RESTART_CONTINUATIONS,
   MACHINE_RESTART_WINDOW_MS,
+  machineMovedText,
   machineRestartText,
   machineRestartToolText,
   type RestartFacts,
@@ -180,13 +182,21 @@ const fakeMachine = () => {
  * The runtime with Claude's sessions on `machine`, as a worker placed there has them: opened on its
  * host, and nothing here when it can't. The fake agent runs on the machine's side of the wire.
  */
-const onMachine = (machine: ReturnType<typeof fakeMachine>, reattachMs = 5_000) => {
+const onMachine = (
+  machine: ReturnType<typeof fakeMachine>,
+  reattachMs = 5_000,
+  moving?: () => number | undefined,
+) => {
   const agents = Layer.effectContext(
     Effect.gen(function* () {
       const fake = yield* AgentHosts;
       machine.agents.fake = fake;
       const control = yield* FakeAgentControl;
-      const sessions = followingSessions(machine.current, { reattachMs, callMs: 2_000 });
+      const sessions = followingSessions(machine.current, {
+        reattachMs,
+        callMs: 2_000,
+        ...(moving === undefined ? {} : { moving }),
+      });
       return Context.make(
         AgentHosts,
         AgentHosts.of({
@@ -485,6 +495,132 @@ describe("a joined machine whose host restarts mid-turn", () => {
         Effect.scoped,
         Effect.provide(onMachine(machine, 1_000)),
       );
+    },
+    30_000,
+  );
+});
+
+/** What the agent's process ends with when the host's shutdown kills it (SIGTERM). */
+const KILLED: AgentEvent = {
+  type: "ended",
+  reason: "error: Claude Code process exited with code 143",
+};
+
+describe("a joined machine replaced mid-turn", () => {
+  it.live(
+    "waits for it with a notice, not an error, and carries the turn on once it is back",
+    () => {
+      const machine = fakeMachine();
+      return Effect.gen(function* () {
+        const { thread, first } = yield* midTurn(machine);
+        const store = yield* ThreadStore;
+        const sessionId = (yield* store.getThread(thread.id)).agentSessionId;
+        // The host's shutdown kills its agent first, and passes the agent's end on before it goes.
+        yield* first.end(KILLED);
+        yield* Effect.sleep("300 millis");
+        yield* machine.stopInOrder;
+        // Before this change the thread failed here: "agent session ended: error: … code 143".
+        const moving = yield* eventually(
+          "the move's notice",
+          store.getThread(thread.id).pipe(Effect.map((t) => t.machineMove)),
+        );
+        expect(moving.machine).toBe(NAME);
+        const runtimes = yield* ThreadRuntimes;
+        expect(yield* runtimes.status(thread.id)).toBe("running");
+        expect((yield* store.getThread(thread.id)).lastError).toBeUndefined();
+
+        yield* machine.start;
+        const second = yield* nthSession(thread.id, 2);
+        expect(second.options.resumeId).toBe(sessionId);
+        yield* second.emit({ type: "status", status: "idle" });
+        yield* eventually(
+          "the continuation",
+          Effect.sync(() => second.sent.length === 1),
+        );
+        expect(second.sent[0]).toMatchObject({ text: machineMovedText(NAME) });
+        expect(yield* sessionRestarts(thread.id)).toEqual([
+          expect.objectContaining({
+            machineRestart: { machine: NAME, continued: "turn", moved: true },
+          }),
+        ]);
+        const kept = yield* store.getThread(thread.id);
+        expect(kept.lastError).toBeUndefined();
+        expect(kept.machineMove).toBeUndefined();
+        expect(kept.machineIncident).toBeUndefined();
+      }).pipe(
+        Effect.ensuring(machine.stop),
+        Effect.scoped,
+        Effect.provide(onMachine(machine, 1_000, () => 10_000)),
+      );
+    },
+    30_000,
+  );
+
+  it.live(
+    "fails as a lost machine, saying so, when it isn't back within the move's time",
+    () => {
+      const machine = fakeMachine();
+      return Effect.gen(function* () {
+        const { thread, first } = yield* midTurn(machine);
+        yield* first.end(KILLED);
+        yield* Effect.sleep("300 millis");
+        yield* machine.stopInOrder;
+        yield* statusIs(thread.id, "error");
+        const kept = yield* (yield* ThreadStore).getThread(thread.id);
+        expect(kept.lastError?.text ?? "").toContain(`${NAME} was being replaced`);
+        expect(kept.lastError?.machineLost?.machine).toBe(NAME);
+        expect(kept.machineMove).toBeUndefined();
+        const fake = yield* FakeAgentControl;
+        expect(fake.sessions.filter((s) => s.options.threadId === thread.id)).toEqual([first]);
+      }).pipe(
+        Effect.ensuring(machine.stop),
+        Effect.scoped,
+        Effect.provide(onMachine(machine, 1_000, () => 1_500)),
+      );
+    },
+    30_000,
+  );
+});
+
+describe("an agent that ends on a joined machine", () => {
+  it.live(
+    "carries on as after a restart when its host went with it",
+    () => {
+      const machine = fakeMachine();
+      return Effect.gen(function* () {
+        const { thread, first } = yield* midTurn(machine);
+        // A service restart that signals the whole process group: the agent dies first, and its
+        // end reaches this side before the host's connection closes.
+        yield* first.end(KILLED);
+        yield* Effect.sleep("300 millis");
+        yield* machine.stopInOrder;
+        yield* Effect.sleep("100 millis");
+        yield* machine.start;
+        const second = yield* nthSession(thread.id, 2);
+        yield* second.emit({ type: "status", status: "idle" });
+        yield* eventually(
+          "the continuation",
+          Effect.sync(() => second.sent.length === 1),
+        );
+        expect(second.sent[0]).toMatchObject({ text: machineRestartText(NAME) });
+        expect((yield* (yield* ThreadStore).getThread(thread.id)).lastError).toBeUndefined();
+      }).pipe(Effect.ensuring(machine.stop), Effect.scoped, Effect.provide(onMachine(machine)));
+    },
+    30_000,
+  );
+
+  it.live(
+    "fails as it did when its host stays",
+    () => {
+      const machine = fakeMachine();
+      return Effect.gen(function* () {
+        const { thread, first } = yield* midTurn(machine);
+        yield* first.end(KILLED);
+        yield* statusIs(thread.id, "error");
+        const kept = yield* (yield* ThreadStore).getThread(thread.id);
+        expect(kept.lastError?.text ?? "").toContain("code 143");
+        expect(kept.lastError?.machineLost).toBeUndefined();
+      }).pipe(Effect.ensuring(machine.stop), Effect.scoped, Effect.provide(onMachine(machine)));
     },
     30_000,
   );
