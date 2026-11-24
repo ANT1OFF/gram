@@ -221,7 +221,8 @@ export const makeWorkerSandbox = ({
             ? undefined
             : joined().find(
                 (each) =>
-                  each.onDemand === "worker" && (each.name === outright || each.id === outright),
+                  each.onDemand === "worker" &&
+                  (each.name.toLowerCase() === outright.toLowerCase() || each.id === outright),
               );
         if (outright !== undefined && workers === undefined) return undefined;
         const asked: WorkerSandbox | undefined =
@@ -596,6 +597,7 @@ export const makeWorkerSandbox = ({
             !facts.threads.some(
               (thread) =>
                 thread.spawnedBy?.threadId === caller &&
+                thread.spawnedBy.placement?.machine === machine.name &&
                 hostOf(effectiveCheckout(thread)) === machineId,
             )
           )
@@ -678,6 +680,14 @@ export const makeWorkerSandbox = ({
           input.clientRequestId ?? `${input.project}\n${input.feature}\n${input.title}`,
         );
         const exclusive = sandbox.exclusive === true;
+        const taken = joined().find((each) => each.name === name && theirs(each));
+        if (taken !== undefined && input.clientRequestId === undefined) {
+          const on = workersOnMachine((yield* placed).facts.threads, taken.id, new Set());
+          if (on.length > 0)
+            return yield* fail(
+              `A machine was already asked for under this project, feature and title, and ${on[0]!.title} is on it, so this worker isn't given it as its own. Give this spawn a clientRequestId of its own for a new machine, or name that one with sandbox: {"shareWith": "${taken.name}"}.`,
+            );
+        }
         return seated(
           yield* bringUpPlan(name, exclusive ? "exclusive" : "own"),
           exclusive ? "exclusive" : "own",

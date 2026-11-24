@@ -72,10 +72,24 @@ export const reservedSeats = (machine: string): ReadonlyArray<string> =>
   [...everyHolds].flatMap((holds) => holds.on(machine));
 export type SeatHolds = ReturnType<typeof makeSeatHolds>;
 
+const someUnfinished = (
+  threads: ReadonlyArray<Placed>,
+  machineId: string,
+  finished: ReadonlySet<ThreadId>,
+) =>
+  threads.some(
+    (thread) =>
+      thread.spawnedBy !== undefined &&
+      thread.parked !== true &&
+      !finished.has(thread.id) &&
+      hostOf(effectiveCheckout(thread)) === machineId,
+  );
+
 /**
  * The workers that count against a machine's cap: an orchestrator's open workers placed on it
- * that aren't parked and that the ledger doesn't read as finished. A finished worker's session is
- * at rest and its folder is all that is left of it there.
+ * that aren't parked. A finished worker counts too while any worker there is unfinished: it is
+ * still open and can be messaged back to work, so its place is not given to another. Once every
+ * worker there is finished none counts, and the machine is released.
  */
 export const workersOnMachine = <T extends Placed>(
   threads: ReadonlyArray<T>,
@@ -86,7 +100,7 @@ export const workersOnMachine = <T extends Placed>(
     (thread) =>
       thread.spawnedBy !== undefined &&
       thread.parked !== true &&
-      !finished.has(thread.id) &&
+      (!finished.has(thread.id) || someUnfinished(threads, machineId, finished)) &&
       hostOf(effectiveCheckout(thread)) === machineId,
   );
 

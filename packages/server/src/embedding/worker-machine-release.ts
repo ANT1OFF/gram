@@ -443,6 +443,8 @@ export const releaseSends = (
   options: {
     readonly now?: () => number;
     readonly gapMs?: number;
+    /** Asked as each release is about to go: a worker on its way there keeps the machine. */
+    readonly reserved?: (machine: ReleaseMachine) => boolean;
     /** Told of a machine whose release its provider held back for the seats still on it. */
     readonly occupied?: (machine: ReleaseMachine) => void;
   } = {},
@@ -461,6 +463,7 @@ export const releaseSends = (
     let notTold = 0;
     for (const [index, { machine, released, run }] of due.entries()) {
       if (index > 0) yield* Effect.sleep(options.gapMs ?? RELEASE_GAP_MS);
+      if (released && options.reserved?.(machine) === true) continue;
       const sent = yield* tell(machine, released, run ?? undefined).pipe(Effect.result);
       const at = now();
       const key = toldKey(machine);
@@ -595,12 +598,10 @@ export const WorkerMachineReleaseLive = Layer.effectDiscard(
       )
         .filter(({ machine, released }) => !released || reservedSeats(machine.name).length === 0)
         .map((decision) => ({ ...decision, run: runs.get(decision.machine.id) }));
-      yield* releaseSends(
-        decided,
-        tell,
-        state,
-        upkeep === undefined ? {} : { occupied: upkeep.occupied },
-      );
+      yield* releaseSends(decided, tell, state, {
+        reserved: (machine) => reservedSeats(machine.name).length > 0,
+        ...(upkeep === undefined ? {} : { occupied: upkeep.occupied }),
+      });
     });
     const asidePass = Effect.gen(function* () {
       const aside = signedIn?.setAside;

@@ -29,22 +29,27 @@ type Placed = Pick<Thread, "id" | "checkout" | "currentCheckout" | "spawnedBy" |
 
 /**
  * The seats on a machine this Gram still stands behind, and whether any worker placed there has
- * one at all: an unfinished worker's seat is live; a finished or parked one's is not.
+ * one at all. While any worker there is unfinished, every open worker's seat is live, a finished
+ * one's too: it can be messaged back to work, and must not find its place given away. Once all
+ * are finished none is, so the seats are given up and the machine released. A parked one's never.
  */
 export const seatsHere = (
   machine: Pick<SeatedMachine, "id">,
   threads: ReadonlyArray<Placed>,
   finished: ReadonlySet<ThreadId>,
 ): { readonly live: ReadonlySet<string>; readonly any: boolean } => {
-  const live = new Set<string>();
+  const open = new Set<string>();
   let any = false;
+  let atWork = false;
   for (const thread of threads) {
+    if (hostOf(effectiveCheckout(thread)) !== machine.id || thread.parked === true) continue;
+    if (thread.spawnedBy !== undefined && !finished.has(thread.id)) atWork = true;
     const seat = thread.spawnedBy?.placement?.seat;
-    if (seat === undefined || hostOf(effectiveCheckout(thread)) !== machine.id) continue;
+    if (seat === undefined) continue;
     any = true;
-    if (thread.parked !== true && !finished.has(thread.id)) live.add(seat);
+    open.add(seat);
   }
-  return { live, any };
+  return { live: atWork ? open : new Set<string>(), any };
 };
 
 /**
