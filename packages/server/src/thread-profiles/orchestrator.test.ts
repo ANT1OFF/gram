@@ -131,10 +131,6 @@ describe.skipIf(!hasGit)("an orchestrator started from a profile", () => {
         );
         const workspaceId = ID as string as WorkspaceId;
         expect((yield* store.getWorkspace(workspaceId)).charter.automaticDreamThreshold).toBe(10);
-        expect(yield* store.getAutomaticDreamState(workspaceId)).toMatchObject({
-          threshold: 10,
-          completed: 0,
-        });
       }),
     ),
   );

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { shot } from "./shots";
 
-test("automatic Dream is opt-in, validates its threshold, and saves its workspace charter across route remounts", async ({
+test("automatic memory updates are opt-in, wait for both time and new items, and save across route remounts", async ({
   page,
 }) => {
   await page.goto("/settings/workspaces");
@@ -43,15 +43,12 @@ test("automatic Dream is opt-in, validates its threshold, and saves its workspac
   const toggle = section.getByRole("switch", { name: "Update memory automatically" });
   await expect(toggle).not.toBeChecked();
   await toggle.check();
-  const threshold = section.getByRole("spinbutton", {
-    name: "Threads per memory update",
-  });
-  await expect(threshold).toHaveValue("10");
+  const threshold = section.getByRole("spinbutton", { name: "New items per update" });
+  const hours = section.getByRole("spinbutton", { name: "Hours between updates" });
+  await expect(threshold).toHaveValue("50");
+  await expect(hours).toHaveValue("24");
   await expect(section.getByTestId("automatic-dream-progress")).toContainText(
-    "0 / 10 completed threads",
-  );
-  await expect(section.getByTestId("automatic-dream-setting")).toContainText(
-    "changing the threshold starts a fresh count",
+    "after 24 h and 50 new items",
   );
   await threshold.fill("1001");
   await threshold.press("Enter");
@@ -75,9 +72,7 @@ test("automatic Dream is opt-in, validates its threshold, and saves its workspac
     .click();
   await open();
   await expect(threshold).toHaveValue("25");
-  await expect(section.getByTestId("automatic-dream-progress")).toContainText(
-    "Automatic runs await review",
-  );
+  await expect(section.getByTestId("automatic-dream-progress")).toContainText("0 of 25 so far");
   await shot(section.getByTestId("automatic-dream-setting"), {
     path: test.info().outputPath("automatic-dream-settings.png"),
   });

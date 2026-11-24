@@ -463,7 +463,7 @@ waking it and reclaiming it later are the provider's.
 ## Memory updates on a headless server
 
 A headless server runs memory updates as the desktop app does, from the same Settings, with Review
-as the default and automatic runs after a number of completed threads. What differs is where the
+as the default and automatic runs once enough time has passed and enough has happened. What differs is where the
 agent runs:
 
 - **Its session goes on the workspace's orchestrator's machine.** The memory update's folder (its

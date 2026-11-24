@@ -56,8 +56,9 @@ a message, and it answers small things itself and hands real work to workers.
   in the workspace.
 - **Memory** is the workspace's, as any orchestrator's, and so are memory updates: each workspace
   a profile made reads only its own threads. `workspace.memoryUpdatesAfter` (1 to 1000) starts one
-  by itself each time that many of its workers have completed, for a person to review; absent,
-  none starts by itself.
+  by itself once that many new items have happened and 24 hours have passed since the last (see
+  [when it runs](AGENTS_AND_FEATURES.md#when-it-runs)), for a person to review; absent, none starts
+  by itself.
 - **Asked again** under the same id, the start answers the orchestrator as it is, and makes
   nothing. A start that fails takes back the workspace, its folder and the thread.
 - **What is refused.** A workplace of repositories (`profileProblems` says so), and a start with

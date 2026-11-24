@@ -1,5 +1,4 @@
 import type { StoredActor } from "../host/ownership.ts";
-import { AutomaticDreamState, completionBaseline } from "./automatic-dream-state.ts";
 import {
   advanceDreamCursor,
   type DreamCursor,
@@ -1106,12 +1105,6 @@ export interface ThreadStoreShape {
   /** Moves the cursor on to `cursor`, field by field; it never moves back. */
   advanceDreamCursor(workspaceId: WorkspaceId, cursor: DreamCursor): Effect.Effect<void>;
 
-  getAutomaticDreamState(workspaceId: WorkspaceId): Effect.Effect<AutomaticDreamState | undefined>;
-  updateAutomaticDreamState(
-    workspaceId: WorkspaceId,
-    f: (state: AutomaticDreamState) => AutomaticDreamState,
-  ): Effect.Effect<void>;
-
   /** Inserts or replaces a dream's row. */
   putDream(dream: Dream): Effect.Effect<void>;
   /**
@@ -2000,55 +1993,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
       const unlinkOrchestration = (id: ThreadId, keepReports = false) =>
         unlinkOrchestrationIn(sql, id, keepReports);
 
-      const readAutomaticDreamState = (id: WorkspaceId) =>
-        sql<{ data: string }>`SELECT data FROM automatic_dream WHERE workspace_id = ${id}`.pipe(
-          Effect.map((rows) =>
-            rows[0] === undefined
-              ? undefined
-              : Schema.decodeUnknownSync(Schema.fromJsonString(AutomaticDreamState))(rows[0].data),
-          ),
-        );
-      const writeAutomaticDreamState = (id: WorkspaceId, state: AutomaticDreamState) =>
-        sql`INSERT INTO automatic_dream (workspace_id, data) VALUES (${id}, ${toJson(AutomaticDreamState, state)})
-          ON CONFLICT (workspace_id) DO UPDATE SET data = excluded.data`;
-
       const writeWorkspace = (state: WorkspaceState) =>
         Effect.gen(function* () {
           const id = state.workspace.id;
-          const threshold = state.charter.automaticDreamThreshold;
-          const previous = yield* readAutomaticDreamState(id);
-          if (threshold === undefined) {
-            yield* sql`DELETE FROM automatic_dream WHERE workspace_id = ${id}`;
-          } else if (previous?.threshold !== threshold) {
-            const rows = yield* sql<{
-              data: string;
-            }>`SELECT data FROM threads UNION ALL SELECT data FROM closed_threads`;
-            const threads = rows.flatMap((row) => {
-              const decoded = decodeStored(Thread, row.data);
-              return decoded.ok ? [decoded.value] : [];
-            });
-            const dreamRows = yield* sql<{
-              data: string;
-            }>`SELECT data FROM dreams WHERE workspace_id = ${id}`;
-            const runningDreams = dreamRows.flatMap((row) => {
-              const decoded = decodeStored(Dream, row.data);
-              return decoded.ok &&
-                decoded.value.workspaceId === id &&
-                decoded.value.status === "running"
-                ? [decoded.value]
-                : [];
-            });
-            yield* writeAutomaticDreamState(id, {
-              ...completionBaseline(
-                threshold,
-                threads,
-                state,
-                yield* Clock.currentTimeMillis,
-                previous,
-              ),
-              ...(runningDreams.length === 1 ? { observedDreamId: runningDreams[0]!.id } : {}),
-            });
-          }
           yield* sql`INSERT INTO workspaces (id, orchestrator_thread_id, created_at, data)
           VALUES (${id}, ${state.workspace.orchestratorThreadId ?? null},
             ${state.workspace.createdAt}, ${toJson(WorkspaceState, state)})
@@ -3789,14 +3736,6 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
           run(eventsAfter(sql, workspaceId, afterSeq, kinds)),
         getDreamCursor: (id) => run(readDreamCursor(sql, id)),
         advanceDreamCursor: (id, cursor) => tx(advanceDreamCursor(sql, id, cursor)),
-        getAutomaticDreamState: (id) => run(readAutomaticDreamState(id)),
-        updateAutomaticDreamState: (id, f) =>
-          tx(
-            Effect.gen(function* () {
-              const state = yield* readAutomaticDreamState(id);
-              if (state !== undefined) yield* writeAutomaticDreamState(id, f(state));
-            }),
-          ),
         withDreamFileCommit: (effect) => tx(Effect.uninterruptible(effect)),
         putDream: (dream) =>
           run(
