@@ -1266,7 +1266,7 @@ export const LocalChecksLive = Layer.effect(
               wanted.preparation,
               started.head,
               started.base,
-              started.tree!,
+              started.tree,
             ).entries;
           } catch {
             return {

@@ -229,7 +229,7 @@ export function WorkerPane({
       onPointerDownCapture={() => setFocused(true)}
       onFocusCapture={() => setFocused(true)}
       onBlurCapture={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
       }}
     >
       <header
@@ -554,11 +554,7 @@ function ToolRow({
             )}
           </button>
         );
-        return off ? (
-          <Hint key={tool.id} label={tool.off!} side="bottom" render={button} />
-        ) : (
-          button
-        );
+        return off ? <Hint key={tool.id} label={tool.off} side="bottom" render={button} /> : button;
       })}
     </div>
   );

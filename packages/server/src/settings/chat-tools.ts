@@ -280,7 +280,7 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               "settings",
               {
                 displayName: "Change settings",
-                input: card as unknown as Record<string, unknown>,
+                input: card,
                 description: settingsProposalSummary(card),
               },
               { scope: proposed.scope },

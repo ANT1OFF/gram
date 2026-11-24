@@ -199,7 +199,7 @@ export const readOffLoop = <A extends object>(
       if (Option.isSome(rows)) return rows.value as ReadonlyArray<A>;
     }
     const client = yield* SqlClient.SqlClient;
-    return yield* client.unsafe<A>(sql, params as Array<never>);
+    return yield* client.unsafe<A>(sql, params);
   });
 
 /** The read worker in the context building a service, to hand to the reads it runs later. */

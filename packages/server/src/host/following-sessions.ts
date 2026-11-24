@@ -172,7 +172,7 @@ export const followingSessions = (
             return live.sessions.events(handle, seen).pipe(
               Stream.takeUntil((next) => next.event.type === "ended"),
               Stream.map((next): Next => ({ lost: false, next })),
-              Stream.catchTag("HostUnavailable", () => Stream.make({ lost: true } as Next)),
+              Stream.catchTag("HostUnavailable", () => Stream.make({ lost: true })),
               Stream.flatMap((item) => {
                 if (item.lost) return lost();
                 const { next } = item;

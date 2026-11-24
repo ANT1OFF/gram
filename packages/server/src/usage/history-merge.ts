@@ -233,7 +233,7 @@ export function mergeHistoryUsage(
       supported &&
       (uncertainClaudeOverlap ||
         duplicateGram.has(record) ||
-        (providersWithHistory.has(record.agent as "codex" | "claude") &&
+        (providersWithHistory.has(record.agent) &&
           ((session === undefined && !independentClaude) ||
             (ids === undefined && sessions.has(JSON.stringify([record.agent, session]))))));
     if (record.ended_at !== null && (untrusted || ambiguousGram)) {

@@ -20,8 +20,11 @@ import { basisHash, type HelperJob, type HelperResult } from "./scheduler.ts";
 const T = "t-ask" as ThreadId;
 const R = "req-1" as RequestId;
 
-const text = (role: "user" | "assistant", body: string): GramUIMessage =>
-  ({ id: body, role, parts: [{ type: "text", text: body }] }) as GramUIMessage;
+const text = (role: "user" | "assistant", body: string): GramUIMessage => ({
+  id: body,
+  role,
+  parts: [{ type: "text", text: body }],
+});
 
 const freeForm: QuestionRequest = {
   kind: "question",
@@ -61,7 +64,7 @@ const harness = (
   const deps: AskRepliesDeps = {
     schedule: <A, I>(job: HelperJob<A, I>) =>
       Effect.gen(function* () {
-        jobs.push(job as HelperJob<unknown, unknown>);
+        jobs.push(job);
         prompts.push(yield* job.prompt);
         return (options.result ?? {
           _tag: "Done",

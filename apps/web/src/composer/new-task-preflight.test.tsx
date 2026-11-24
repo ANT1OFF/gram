@@ -85,9 +85,9 @@ describe("new-task authoritative preflight", () => {
       target: { value: "Synthetic task" },
     });
     await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
-      ).toBe(false),
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: /Send to team/ }).disabled).toBe(
+        false,
+      ),
     );
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
     await screen.findByText("Synthetic start boundary");
@@ -145,9 +145,9 @@ describe("new-task authoritative preflight", () => {
       target: { value: "Synthetic task" },
     });
     await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
-      ).toBe(false),
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: /Send to team/ }).disabled).toBe(
+        false,
+      ),
     );
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
     await screen.findByText("Synthetic start boundary");
@@ -187,9 +187,9 @@ describe("new-task authoritative preflight", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry task check" }));
     await plannedOn(/Synthetic/);
     await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
-      ).toBe(false),
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: /Send to team/ }).disabled).toBe(
+        false,
+      ),
     );
   });
 });
@@ -208,9 +208,9 @@ describe("an orchestrator slot that can't run here", () => {
       target: { value: "Synthetic task" },
     });
     await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: /Send to team/ }) as HTMLButtonElement).disabled,
-      ).toBe(false),
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: /Send to team/ }).disabled).toBe(
+        false,
+      ),
     );
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
     await screen.findByText("Synthetic start boundary");
@@ -230,9 +230,9 @@ describe("Start while the check runs", () => {
     fireEvent.submit(screen.getByRole("form", { name: "New task" }));
     expect(start).not.toHaveBeenCalled();
     // Start says what it waits on, on the button itself, keeping its action as its name.
-    const button = screen.getByRole("button", {
+    const button = screen.getByRole<HTMLButtonElement>("button", {
       name: "Send to team, Checking agents…",
-    }) as HTMLButtonElement;
+    });
     expect(button.disabled).toBe(true);
     expect(button.textContent).toBe("Checking agents…");
     expect(screen.queryByText(/Checking the task's selected harness/)).toBeNull();
@@ -244,7 +244,7 @@ describe("Start while the check runs", () => {
       target: { value: "Synthetic task" },
     });
     await waitFor(() => {
-      const button = screen.getByTestId("task-submit") as HTMLButtonElement;
+      const button = screen.getByTestId<HTMLButtonElement>("task-submit");
       expect(button.disabled).toBe(false);
       expect(button.hasAttribute("data-checking")).toBe(false);
       expect(button.textContent).toMatch(/^Send to team/);

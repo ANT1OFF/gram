@@ -12,8 +12,11 @@ const box = (turnId: string, recap = "Done."): WrapUpData => ({
   at: 0,
 });
 
-const user = (id: string): GramUIMessage =>
-  ({ id, role: "user", parts: [{ type: "text", text: "go" }] }) as GramUIMessage;
+const user = (id: string): GramUIMessage => ({
+  id,
+  role: "user",
+  parts: [{ type: "text", text: "go" }],
+});
 
 const reply = (id: string, data?: WrapUpData, parentToolUseId?: string): GramUIMessage =>
   ({

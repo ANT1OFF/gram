@@ -157,7 +157,7 @@ class Approve implements fc.AsyncCommand<Model, Real> {
   constructor(at: number) {
     this.at = at;
   }
-  check = (m: Readonly<Model>) => ofKinds(m as Model, "approval", "plan").length > 0;
+  check = (m: Readonly<Model>) => ofKinds(m, "approval", "plan").length > 0;
   async run(m: Model, r: Real) {
     const item = pick(ofKinds(m, "approval", "plan"), this.at);
     await show(r, item);
@@ -189,7 +189,7 @@ class Reject implements fc.AsyncCommand<Model, Real> {
     this.at = at;
     this.note = note;
   }
-  check = (m: Readonly<Model>) => ofKinds(m as Model, "approval", "plan").length > 0;
+  check = (m: Readonly<Model>) => ofKinds(m, "approval", "plan").length > 0;
   async run(m: Model, r: Real) {
     const item = pick(ofKinds(m, "approval", "plan"), this.at);
     await show(r, item);
@@ -222,7 +222,7 @@ class Answer implements fc.AsyncCommand<Model, Real> {
     this.option = option;
     this.words = words;
   }
-  check = (m: Readonly<Model>) => ofKinds(m as Model, "options", "reply").length > 0;
+  check = (m: Readonly<Model>) => ofKinds(m, "options", "reply").length > 0;
   async run(m: Model, r: Real) {
     const item = pick(ofKinds(m, "options", "reply"), this.at);
     await show(r, item);

@@ -52,7 +52,7 @@ beforeEach(async () => {
   sessionStorage.clear();
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   api = createMockApi({ speed: 0, autoplay: false, persist: false });
-  made = (await api.simulateOrchestration("board")) as typeof made;
+  made = await api.simulateOrchestration("board");
   await seed();
   // The ledger's held worker, given a merged PR in a worktree of its own.
   const ledger = await api.orchestratorLedger(made.workspaceId);
@@ -294,7 +294,7 @@ describe("palette commands", () => {
     expect(keys.textContent).toContain("⏎ open");
     // Down to the first thread, whose own commands Tab lists.
     const field = screen.getByRole("combobox");
-    for (let step = 0; step < 20 && !keys.textContent!.includes("⇥"); step++) {
+    for (let step = 0; step < 20 && !keys.textContent.includes("⇥"); step++) {
       fireEvent.keyDown(field, { key: "ArrowDown" });
     }
     expect(keys.textContent).toContain("⇥ actions");

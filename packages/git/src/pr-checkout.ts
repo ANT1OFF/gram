@@ -89,7 +89,7 @@ export const prHead = (
     } catch {
       view = {};
     }
-    const text = (key: string) => (typeof view[key] === "string" ? (view[key] as string) : "");
+    const text = (key: string) => (typeof view[key] === "string" ? view[key] : "");
     const nwo = repoFromPrUrl(text("url"));
     const nested = (key: string, field: string) => {
       const value = view[key];

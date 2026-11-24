@@ -52,8 +52,11 @@ const detail = (more: Partial<PrDetail> = {}): PrDetail => ({
   ...more,
 });
 
-const text = (role: "user" | "assistant", words: string): GramUIMessage =>
-  ({ id: words, role, parts: [{ type: "text", text: words }] }) as GramUIMessage;
+const text = (role: "user" | "assistant", words: string): GramUIMessage => ({
+  id: words,
+  role,
+  parts: [{ type: "text", text: words }],
+});
 
 const tool = (name: string, input: unknown, running = false): GramUIMessage =>
   ({

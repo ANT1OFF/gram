@@ -5,7 +5,6 @@ import {
   HostId,
   HostUnavailable,
   InvalidState,
-  type ThreadId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -122,7 +121,7 @@ const remoteThread = Effect.gen(function* () {
     ...created,
     checkout: { kind: "worktree", path: here, branch: "work", hostId: MACHINE },
   });
-  return { here, threadId: thread.id as ThreadId };
+  return { here, threadId: thread.id };
 });
 
 /** `fsHandlers` over a `WorkerHosts` with the joined machine, online or not. */

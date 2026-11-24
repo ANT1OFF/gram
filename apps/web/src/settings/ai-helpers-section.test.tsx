@@ -48,7 +48,7 @@ const onExample = async (api: MockApi, overrides: Partial<GatewayProfile> = {}) 
   });
 };
 
-const toggle = (name: string) => screen.getByRole("switch", { name }) as HTMLButtonElement;
+const toggle = (name: string) => screen.getByRole<HTMLButtonElement>("switch", { name });
 const picker = (name: string) => screen.findByRole("combobox", { name });
 
 beforeEach(() => {
@@ -312,7 +312,7 @@ describe("AiHelpersSection", () => {
     await onExample(api);
     const save = vi.spyOn(api, "updateSettings");
     renderWithApi(<AiHelpersSection />, api);
-    const field = screen.getByLabelText("Gateway estimate limit") as HTMLInputElement;
+    const field = screen.getByLabelText<HTMLInputElement>("Gateway estimate limit");
     expect(field.value).toBe("2");
     fireEvent.change(field, { target: { value: "0" } });
     fireEvent.blur(field);

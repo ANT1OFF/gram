@@ -39,8 +39,8 @@ export interface HostWire {
 const part = (schema: Schema.Top): WirePart => {
   const document = Schema.toJsonSchemaDocument(Schema.toCodecJson(schema));
   return {
-    schema: document.schema as WireSchema,
-    definitions: document.definitions as WirePart["definitions"],
+    schema: document.schema,
+    definitions: document.definitions,
   };
 };
 
@@ -52,7 +52,7 @@ export const describeHostWire = (
   const calls: Record<string, WireCall> = {};
   const tags = [...rpcs.requests.keys()].toSorted();
   for (const tag of tags) {
-    const rpc = rpcs.requests.get(tag) as unknown as Rpc.AnyWithProps;
+    const rpc = rpcs.requests.get(tag) as Rpc.AnyWithProps;
     const success = rpc.successSchema;
     calls[tag] = RpcSchema.isStreamSchema(success)
       ? {

@@ -120,7 +120,7 @@ export function Picker<V extends string>({
       onValueChange={(next) => {
         if (next === null) return;
         confirm.pick(next);
-        onChange(next as V);
+        onChange(next);
       }}
     >
       <PickerTrigger

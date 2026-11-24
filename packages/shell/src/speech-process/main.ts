@@ -1,5 +1,5 @@
 import type { SpeechHostMessage } from "./protocol.ts";
-import { createSpeechService, type SessionPort } from "./service.ts";
+import { createSpeechService } from "./service.ts";
 import { loadSherpaRuntime } from "./sherpa.ts";
 
 // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Electron parentPort
@@ -17,5 +17,5 @@ const service = createSpeechService({
 
 process.parentPort.on("message", (event) => {
   const message = event.data as SpeechHostMessage;
-  service.receive(message, event.ports as readonly SessionPort[]);
+  service.receive(message, event.ports);
 });

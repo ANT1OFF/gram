@@ -2,7 +2,7 @@
 // exchanges with the user into its boot digest, through any thread's handoff paths, and limit mode
 // lets the new session write the note. Synthetic only: the fake agent, a temp repo, no CLI.
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, type Handoff, type ModelRef, type ThreadId } from "@gram/contracts";
+import { DEFAULT_CHARTER, type ModelRef, type ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -79,7 +79,7 @@ const dividers = (threadId: ThreadId) =>
   Effect.gen(function* () {
     const store = yield* ThreadStore;
     return (yield* store.messagesWithParts(threadId, ["data-handoff"])).flatMap((message) =>
-      message.parts.flatMap((part) => (part.type === "data-handoff" ? [part.data as Handoff] : [])),
+      message.parts.flatMap((part) => (part.type === "data-handoff" ? [part.data] : [])),
     );
   });
 

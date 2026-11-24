@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import type { Server as HttpListener } from "node:http";
 import { createServer } from "node:https";
 import type { Socket } from "node:net";
 import { createSecureContext } from "node:tls";
@@ -134,7 +133,7 @@ export const withProvisionedListener = <E>(
             const started = yield* Effect.try(() => createTlsListener(config)).pipe(
               Effect.flatMap((listener) => {
                 end = listener.end;
-                return NodeHttpServer.make(() => listener.server as unknown as HttpListener, {
+                return NodeHttpServer.make(() => listener.server, {
                   ...options,
                   host: config.listenHost,
                   port: config.port,

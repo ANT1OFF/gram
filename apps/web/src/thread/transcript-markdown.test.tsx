@@ -47,8 +47,8 @@ const HISTORY = [
 
 async function* threadFeed(): AsyncIterable<ApiThreadFeedEvent> {
   yield { type: "subscribed" };
-  yield { type: "messages", messages: HISTORY } as ApiThreadFeedEvent;
-  yield { type: "caughtUp", rev: 1 } as ApiThreadFeedEvent;
+  yield { type: "messages", messages: HISTORY };
+  yield { type: "caughtUp", rev: 1 };
 }
 
 let api: MockApi;

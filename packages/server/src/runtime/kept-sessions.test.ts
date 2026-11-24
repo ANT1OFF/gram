@@ -90,7 +90,7 @@ const keptHost = (fake: AgentHosts["Service"], toolsAt?: AppToolsAt) =>
         { graceFrom: () => connectedAt },
       ),
       scan: Effect.succeed({ listening: new Map(), children: new Map() }),
-    } as unknown as HostService;
+    };
     /** One app connected to it, for as long as `scope` stays open. */
     const connect = (scope: Scope.Scope) =>
       Effect.gen(function* () {
@@ -233,7 +233,7 @@ describe("a session kept running after Gram quits", () => {
               yield* stopForShutdown((message) => void posted.push(message));
               expect(posted).toContainEqual({ type: "keptRunning", agents: 1 });
             }
-            return { threadId: thread.id as ThreadId, session };
+            return { threadId: thread.id, session };
           }).pipe(Effect.provide(context));
         }).pipe(Effect.scoped);
 

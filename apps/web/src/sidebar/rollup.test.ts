@@ -27,7 +27,7 @@ const summary = (
     createdAt: 1,
     lastActivityAt: 1,
     ...thread,
-  } as Thread,
+  },
 });
 
 describe("rollupOf", () => {

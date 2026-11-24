@@ -4,7 +4,7 @@ import { toZodObject } from "./apptools.ts";
 
 describe("toZodObject", () => {
   it("serves settings_propose's change set, every op, to Claude", () => {
-    const zod = toZodObject(SettingsProposeInput as never);
+    const zod = toZodObject(SettingsProposeInput);
     const input = {
       reason: "asked",
       changes: [
@@ -20,7 +20,7 @@ describe("toZodObject", () => {
   });
 
   it("serves mcp_server_propose's server, either transport, to Claude", () => {
-    const zod = toZodObject(McpServerProposeInput as never);
+    const zod = toZodObject(McpServerProposeInput);
     for (const server of [
       { type: "stdio", command: "npx", args: ["-y", "x"], env: { MODE: "a" } },
       { type: "http", url: "https://mcp.example.invalid/x", headers: { "X-Tenant": "docs" } },

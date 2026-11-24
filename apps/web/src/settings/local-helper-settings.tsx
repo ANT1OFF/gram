@@ -160,7 +160,7 @@ export function LocalHelperSettings({
         <Select
           value={fallback}
           onValueChange={(value) => {
-            if (value) onSave({ localFallback: value as "automatic" | "none" });
+            if (value) onSave({ localFallback: value });
           }}
         >
           <SelectTrigger aria-label="Local helper fallback" className="w-56 max-w-full">
@@ -362,7 +362,7 @@ function LocalProviderRows({
         <Select
           value={settings.helpers?.[scopeKey] ?? "off"}
           onValueChange={(value) => {
-            if (value) onSave({ [scopeKey]: value as "off" | "opening" | "conversation" });
+            if (value) onSave({ [scopeKey]: value });
           }}
         >
           <SelectTrigger aria-label={`Helper context to ${name}`} className="w-64 max-w-full">

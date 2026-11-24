@@ -130,7 +130,7 @@ describe("GatewaysSettings", () => {
     fireEvent.change(form.getByLabelText("Base URL"), {
       target: { value: "https://gw.example.test/v1" },
     });
-    const field = form.getByLabelText("API key (optional)") as HTMLInputElement;
+    const field = form.getByLabelText<HTMLInputElement>("API key (optional)");
     expect(field.type).toBe("password");
     fireEvent.change(field, { target: { value: "sk-team-secret" } });
     fireEvent.click(form.getByRole("button", { name: "Save gateway" }));
@@ -153,9 +153,9 @@ describe("GatewaysSettings", () => {
     renderWithApi(<GatewaysSettings />, api);
     const litellm = within(await card("Personal Gateway"));
 
-    const field = litellm.getByLabelText("API key") as HTMLInputElement;
+    const field = litellm.getByLabelText<HTMLInputElement>("API key");
     expect(field.type).toBe("password");
-    expect((litellm.getByRole("button", { name: "Save key" }) as HTMLButtonElement).disabled).toBe(
+    expect(litellm.getByRole<HTMLButtonElement>("button", { name: "Save key" }).disabled).toBe(
       true,
     );
     fireEvent.change(field, { target: { value: "sk-secret-123" } });
@@ -164,10 +164,10 @@ describe("GatewaysSettings", () => {
     expect(await litellm.findByText("Saved securely in the macOS Keychain")).toBeTruthy();
     expect(await litellm.findByText("Found 3 models.")).toBeTruthy();
     expect(setKey).toHaveBeenCalledWith(LITELLM, "sk-secret-123");
-    expect((litellm.getByLabelText("API key") as HTMLInputElement).value).toBe("");
+    expect(litellm.getByLabelText<HTMLInputElement>("API key").value).toBe("");
     expect(document.body.textContent).not.toContain("sk-secret-123");
 
-    const replace = litellm.getByRole("button", { name: "Replace key" }) as HTMLButtonElement;
+    const replace = litellm.getByRole<HTMLButtonElement>("button", { name: "Replace key" });
     expect(replace.disabled).toBe(true);
     fireEvent.change(litellm.getByLabelText("API key"), { target: { value: "sk-newer" } });
     expect(replace.disabled).toBe(false);
@@ -191,7 +191,7 @@ describe("GatewaysSettings", () => {
     fireEvent.click(litellm.getByRole("button", { name: "Save key" }));
 
     expect(await litellm.findByText("The key store is locked")).toBeTruthy();
-    expect((litellm.getByLabelText("API key") as HTMLInputElement).value).toBe("sk-typed");
+    expect(litellm.getByLabelText<HTMLInputElement>("API key").value).toBe("sk-typed");
   });
 
   it("keeps the add form and its key open when the key fails to save, then retries on the same id", async () => {
@@ -212,7 +212,7 @@ describe("GatewaysSettings", () => {
     fireEvent.click(form.getByRole("button", { name: "Save gateway" }));
 
     expect(await form.findByText("The key store is locked")).toBeTruthy();
-    expect((form.getByLabelText("API key (optional)") as HTMLInputElement).value).toBe("sk-typed");
+    expect(form.getByLabelText<HTMLInputElement>("API key (optional)").value).toBe("sk-typed");
 
     fireEvent.click(form.getByRole("button", { name: "Save gateway" }));
     await waitFor(() => expect(screen.queryByRole("form", { name: "Add gateway" })).toBeNull());
@@ -340,7 +340,7 @@ describe("GatewaysSettings", () => {
     renderWithApi(<GatewaysSettings />, mockApi());
     const litellm = within(await card("Personal Gateway"));
     expect(
-      (litellm.getByRole("button", { name: "Discover models" }) as HTMLButtonElement).disabled,
+      litellm.getByRole<HTMLButtonElement>("button", { name: "Discover models" }).disabled,
     ).toBe(true);
   });
 
@@ -481,7 +481,7 @@ describe("Add OpenRouter", () => {
     const add = within(await screen.findByRole("region", { name: "Add OpenRouter" }));
     fireEvent.click(add.getByRole("button", { name: "Paste a key" }));
     const field = add.getByLabelText("OpenRouter key");
-    const save = add.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    const save = add.getByRole<HTMLButtonElement>("button", { name: "Save" });
     fireEvent.change(field, { target: { value: "sk-ant-wrong" } });
     expect(save.disabled).toBe(true);
     fireEvent.change(field, { target: { value: "sk-or-v1-right" } });

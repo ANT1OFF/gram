@@ -209,13 +209,13 @@ describe("TaskCard", () => {
     } as unknown as AnyToolPart;
     card(new Set(), {
       part: overridden,
-      messages: [{ ...transcript, metadata: { parentToolUseId: "bg1" } } as GramUIMessage],
+      messages: [{ ...transcript, metadata: { parentToolUseId: "bg1" } }],
     });
     expect(screen.getByTestId("subagent-model").textContent).toBe("Opus");
     cleanup();
 
     card(new Set(), {
-      messages: [{ ...transcript, metadata: { parentToolUseId: "bg1" } } as GramUIMessage],
+      messages: [{ ...transcript, metadata: { parentToolUseId: "bg1" } }],
     });
     expect(screen.queryByTestId("subagent-model")).toBeNull();
   });
@@ -425,7 +425,7 @@ describe("Gram's own events in the orchestrator's chat", () => {
     return orchestrator
       ? renderWithApi(
           <OrchestratorStreamProvider stream={stream}>{row}</OrchestratorStreamProvider>,
-          {} as never,
+          {},
         )
       : render(row);
   };

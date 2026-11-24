@@ -108,8 +108,8 @@ const setup = (
       ),
     },
     runtimes: {
-      create: () => Effect.die("not created") as never,
-      close: () => Effect.die("not closed") as never,
+      create: () => Effect.die("not created"),
+      close: () => Effect.die("not closed"),
       // As the runtime's fence does (its own tests are in `runtime/thread-runtimes.test.ts`):
       // a thread at work is refused; any session stops; the placement changes after `prepare`;
       // the queue goes on once it lets go, whether or not it moved.
@@ -249,7 +249,7 @@ describe("moving a profile thread to another machine", () => {
         });
       const { profile: _profile, ...plain } = placedThread();
       // A person's own thread.
-      yield* refused(plain as Thread);
+      yield* refused(plain);
       // A worktree of a repository the machine holds.
       yield* refused(
         placedThread({

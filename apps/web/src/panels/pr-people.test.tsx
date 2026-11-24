@@ -99,7 +99,7 @@ describe("PrPeople", () => {
       target: { value: "priya, sami" },
     });
     fireEvent.click(within(suggested).getByRole("button", { name: "samir" }));
-    expect((screen.getByLabelText("Logins or teams to ask") as HTMLInputElement).value).toBe(
+    expect(screen.getByLabelText<HTMLInputElement>("Logins or teams to ask").value).toBe(
       "priya, samir, ",
     );
 

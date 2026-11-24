@@ -560,7 +560,7 @@ describe("makeCodexMapper", () => {
       mapper.compactionRequested(requested);
       return input
         .slice(firstEnds)
-        .flatMap((message) => mapper.map(message as ServerNotification))
+        .flatMap((message) => mapper.map(message))
         .flatMap((e) =>
           e.type === "chunk" && e.chunk.type === "data-compaction"
             ? [e.chunk.data.trigger]

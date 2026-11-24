@@ -1895,27 +1895,24 @@ const ROUTINES_POLISH_SHOTS: readonly Shot[] = [
         const state = (await api.listWorkspaces()).find(
           (each) => each.workspace.id === made.workspaceId,
         )!;
-        await api.setOrchestratorCharter(
-          made.workspaceId as never,
-          {
-            ...state.charter,
-            routines: [
-              {
-                id: "routine-ci",
-                name: "Daily CI triage",
-                brief: "Look at main's failing jobs and open one PR per real failure.",
-                schedule: { every: "weekday", at: "09:00" },
-              },
-              {
-                id: "routine-deps",
-                name: "Weekly dependency check",
-                brief: "Check for outdated dependencies and brief a worker for each bump.",
-                schedule: { every: "week", day: 1, at: "08:00" },
-                target: "orchestrator",
-              },
-            ],
-          } as never,
-        );
+        await api.setOrchestratorCharter(made.workspaceId, {
+          ...state.charter,
+          routines: [
+            {
+              id: "routine-ci",
+              name: "Daily CI triage",
+              brief: "Look at main's failing jobs and open one PR per real failure.",
+              schedule: { every: "weekday", at: "09:00" },
+            },
+            {
+              id: "routine-deps",
+              name: "Weekly dependency check",
+              brief: "Check for outdated dependencies and brief a worker for each bump.",
+              schedule: { every: "week", day: 1, at: "08:00" },
+              target: "orchestrator",
+            },
+          ],
+        } as never);
       });
       // In the app, not a reload, which would start the mock afresh: the palette's Go to.
       await page.keyboard.press("ControlOrMeta+k");
@@ -2346,40 +2343,37 @@ const EVENT_ROUTINE_SHOTS: readonly Shot[] = [
         const state = (await api.listWorkspaces()).find(
           (each) => each.workspace.id === made.workspaceId,
         )!;
-        await api.setOrchestratorCharter(
-          made.workspaceId as never,
-          {
-            ...state.charter,
-            routines: [
-              {
-                id: "routine-ci",
-                name: "Daily CI triage",
-                brief: "Look at main's failing jobs and open one PR per real failure.",
-                schedule: { every: "weekday", at: "09:00" },
-              },
-              {
-                id: "routine-review",
-                name: "Review ready PRs",
-                brief: "Review the pull request and leave one summary comment.",
-                on: { event: "prReady" },
-              },
-              {
-                id: "routine-red",
-                name: "Red main triage",
-                brief: "Find why main went red and fix it in one PR if the cause is clear.",
-                on: { event: "ciFailed" },
-              },
-            ],
-          } as never,
-        );
+        await api.setOrchestratorCharter(made.workspaceId, {
+          ...state.charter,
+          routines: [
+            {
+              id: "routine-ci",
+              name: "Daily CI triage",
+              brief: "Look at main's failing jobs and open one PR per real failure.",
+              schedule: { every: "weekday", at: "09:00" },
+            },
+            {
+              id: "routine-review",
+              name: "Review ready PRs",
+              brief: "Review the pull request and leave one summary comment.",
+              on: { event: "prReady" },
+            },
+            {
+              id: "routine-red",
+              name: "Red main triage",
+              brief: "Find why main went red and fix it in one PR if the cause is clear.",
+              on: { event: "ciFailed" },
+            },
+          ],
+        } as never);
         const now = Date.now();
-        api.simulateRoutineState(made.workspaceId as never, "routine-review", {
+        api.simulateRoutineState(made.workspaceId, "routine-review", {
           nextRunAt: now + 6 * 60_000,
           scheduleKey: JSON.stringify({ on: { event: "prReady" } }),
           trigger: { seeded: true, lookedAt: now - 4 * 60_000 },
           lastRun: { at: now - 3 * 3_600_000, outcome: "started", events: 2 },
         });
-        api.simulateRoutineState(made.workspaceId as never, "routine-red", {
+        api.simulateRoutineState(made.workspaceId, "routine-red", {
           nextRunAt: now + 2 * 60_000,
           scheduleKey: JSON.stringify({ on: { event: "ciFailed" } }),
           trigger: {
@@ -2640,7 +2634,7 @@ const openRecommendedRoster = async (page: Page) => {
   await page.getByTestId("workspace-settings").waitFor();
   await page.evaluate(async (models) => {
     const api = window.gramMock!;
-    api.seedClaudeAccountModels(models as never);
+    api.seedClaudeAccountModels(models);
     const made = await api.simulateOrchestration("board");
     const state = (await api.listWorkspaces()).find(
       (each) => each.workspace.id === made.workspaceId,
@@ -3736,7 +3730,7 @@ export const SHOTS: readonly Shot[] = [
             const [h, m] = hm.split(":").map(Number);
             const day = new Date(today);
             day.setDate(day.getDate() + days);
-            day.setHours(h!, m!, 0, 0);
+            day.setHours(h!, m, 0, 0);
             return day.getTime();
           };
           await mock.setOrchestratorCharter(made.workspaceId, {
@@ -4537,12 +4531,12 @@ export const SHOTS: readonly Shot[] = [
       const made = await openBoardSidebar(page);
       await page.evaluate((id) => {
         window.gramMock!.simulateStatus(
-          id.working as never,
+          id.working,
           "running",
           "Running grep -n needle src/mail/trigger.ts",
         );
         window.gramMock!.simulateStatus(
-          id.ungrouped as never,
+          id.ungrouped,
           "running",
           "Reading /tmp/[scratch]/docs/guide.md",
         );
@@ -5365,15 +5359,15 @@ export const SHOTS: readonly Shot[] = [
       await openOrchestrator(page, made.orchestratorThreadId);
       await page.evaluate(({ orchestratorThreadId, workerThreadId }) => {
         const mock = window.gramMock!;
-        const worker = mock.world.summary(workerThreadId as never).thread;
+        const worker = mock.world.summary(workerThreadId).thread;
         const at = Date.UTC(2026, 9, 20, 9, 42);
-        mock.simulateMessage(orchestratorThreadId as never, {
+        mock.simulateMessage(orchestratorThreadId, {
           id: "shot-user",
           role: "user",
           metadata: { createdAt: at },
           parts: [{ type: "text", text: "Merge #431 once its checks are green." }],
         });
-        mock.simulateMessage(orchestratorThreadId as never, {
+        mock.simulateMessage(orchestratorThreadId, {
           id: "shot-worker",
           role: "user",
           metadata: { createdAt: at + 60_000 },
@@ -5386,7 +5380,7 @@ export const SHOTS: readonly Shot[] = [
               type: "data-thread-origin",
               id: "shot-worker",
               data: {
-                threadId: workerThreadId as never,
+                threadId: workerThreadId,
                 title: worker.title,
                 depth: 2,
                 feature: "rate-limit-headers",
@@ -6346,11 +6340,11 @@ export const SHOTS: readonly Shot[] = [
           const minute = 60_000;
           titles.forEach((title, i) =>
             window.gramMock!.simulatePublishDoc(
-              thread as never,
+              thread,
               {
                 title,
                 content: `# ${title}\n\nWhat was checked, and what is left.`,
-              } as never,
+              },
               Date.now() - (titles.length - i) * 9 * minute,
             ),
           );
@@ -6389,24 +6383,24 @@ export const SHOTS: readonly Shot[] = [
           const minute = 60_000;
           const at = (ago: number) => Date.now() - ago * minute;
           mock.simulatePublishDoc(
-            other as never,
+            other,
             {
               title: "Cold start: where the first paint goes",
               content: "# Cold start\n\nMost of the first paint is the theme and the thread list.",
-            } as never,
+            },
             at(52),
           );
           const first = mock.simulatePublishDoc(
-            search as never,
+            search,
             {
               title: "Review of #142",
               content:
                 "# Review of #142\n\n**Reviewed head:** `4be1c09a77d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4`\n\nTwo nits: an unused import, and a misspelt test name.",
-            } as never,
+            },
             at(40),
           );
           mock.simulatePublishDoc(
-            search as never,
+            search,
             {
               id: first.id,
               revision: first.revision,
@@ -6416,11 +6410,11 @@ export const SHOTS: readonly Shot[] = [
             at(12),
           );
           mock.simulatePublishDoc(
-            search as never,
+            search,
             {
               title: "Settings search: how matching works",
               content: "# Matching\n\nEvery word must match a row's label or its description.",
-            } as never,
+            },
             at(25),
           );
         },
@@ -6473,7 +6467,7 @@ export const SHOTS: readonly Shot[] = [
         .locator(`[data-testid="workers-panel-row"][data-thread-id="${made.live}"]`)
         .click({ modifiers: ["ControlOrMeta"] });
       await page.evaluate((id) => {
-        window.gramMock!.simulateChunks(id as never, "shot-live" as never, [
+        window.gramMock!.simulateChunks(id, "shot-live" as never, [
           { type: "start", messageId: "shot-live" },
           { type: "text-start", id: "shot-live-text" },
           {

@@ -72,10 +72,9 @@ const summary = (
     pendingRequests: [],
   }) as unknown as ThreadSummary;
 
-const ledgerOf = (workers: WorkerLedgerEntry[]): Pick<OrchestratorLedger, "features"> =>
-  ({
-    features: workers.map((w) => ({ feature: w.feature, state: w.state, workers: [w] })),
-  }) as unknown as Pick<OrchestratorLedger, "features">;
+const ledgerOf = (workers: WorkerLedgerEntry[]): Pick<OrchestratorLedger, "features"> => ({
+  features: workers.map((w) => ({ feature: w.feature, state: w.state, workers: [w] })),
+});
 
 describe("the palette's status words", () => {
   const waiting = worker("settings-search", "inReview", { pr: pr({ checks: "pending" }) });

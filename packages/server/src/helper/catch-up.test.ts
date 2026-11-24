@@ -67,7 +67,7 @@ const harness = (
   const deps: CatchUpDeps = {
     schedule: <A, I>(job: HelperJob<A, I>) =>
       Effect.gen(function* () {
-        jobs.push(job as HelperJob<unknown, unknown>);
+        jobs.push(job);
         // The scheduler builds the prompt only for a call it makes; this harness always does.
         prompts.push(yield* job.prompt);
         return (options.result ?? {

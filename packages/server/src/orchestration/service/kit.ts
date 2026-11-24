@@ -533,7 +533,7 @@ export const startupKeysOf = (
   state: WorkspaceState | undefined,
 ): ReadonlyArray<string> => {
   const projects = state?.workspace.projectIds ?? [];
-  return projects.length === 1 ? [workspaceId, projectKey(projects[0]!)] : [workspaceId];
+  return projects.length === 1 ? [workspaceId, projectKey(projects[0])] : [workspaceId];
 };
 
 const sameKeys = <K>(a: ReadonlyArray<K>, b: ReadonlyArray<K>) => {
@@ -806,8 +806,8 @@ export const makeOrchestrationKit = Effect.gen(function* () {
         });
       return {
         roster,
-        unavailable: unavailable as RosterUnavailable,
-        catalogue: catalogue as RosterCatalogue,
+        unavailable: unavailable,
+        catalogue: catalogue,
         other,
       };
     });
@@ -829,7 +829,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     charter.workerModels === undefined
       ? Effect.succeed({
           roster: ownWorkerModel(caller),
-          unavailable: new Map<number, string>() as RosterUnavailable,
+          unavailable: new Map<number, string>(),
           catalogue: new Map() as RosterCatalogue,
         })
       : rosterHere(charter.workerModels, charter);

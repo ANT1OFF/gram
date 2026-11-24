@@ -1,6 +1,5 @@
 import type {
   MemoryQuestion,
-  MessageId,
   PendingRequest,
   RequestId,
   GramUIMessage,
@@ -45,7 +44,7 @@ const summary = (waits: WaitItem[] | undefined) => ({
 });
 
 const message = (...texts: string[]): GramUIMessage => ({
-  id: "m-1" as MessageId,
+  id: "m-1",
   role: "assistant",
   parts: texts.map((text) => ({ type: "text", text })),
 });

@@ -4,7 +4,6 @@ import {
   isPersonalSetting,
   LOCAL_HOST_ID,
   settingsPatchPaths,
-  type SettingsPatch,
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -487,7 +486,7 @@ export const setsOnlyOwnView = (action: string, payload: unknown): boolean => {
   if (action !== "settings.set" || typeof payload !== "object" || payload === null) return false;
   const patch = (payload as Record<string, unknown>)["patch"];
   if (typeof patch !== "object" || patch === null) return false;
-  const paths = settingsPatchPaths(patch as SettingsPatch);
+  const paths = settingsPatchPaths(patch);
   return paths.length > 0 && paths.every(isPersonalSetting);
 };
 

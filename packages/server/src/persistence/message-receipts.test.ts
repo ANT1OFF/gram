@@ -1,11 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  CLOSED_THREADS_LIMIT,
-  InvalidState,
-  SendResult,
-  type Thread,
-  type ThreadId,
-} from "@gram/contracts";
+import { CLOSED_THREADS_LIMIT, InvalidState, SendResult, type ThreadId } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -36,7 +30,7 @@ const seed = Effect.gen(function* () {
       unread: false,
       createdAt: 1,
       lastActivityAt: 1,
-    } as Thread);
+    });
 });
 const memory = ThreadStore.layerSqlite(":memory:").pipe(Layer.orDie);
 

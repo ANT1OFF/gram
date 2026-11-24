@@ -189,7 +189,7 @@ export const makeCliUpdates = (deps: CliUpdatesDeps) =>
         if (result.out === undefined || result.out.status !== 0) {
           const failure =
             result.out === undefined
-              ? procFailure(result.error!, argv, command)
+              ? procFailure(result.error, argv, command)
               : updateFailure(
                   agent,
                   step.installer,
@@ -264,7 +264,7 @@ export const makeCliUpdates = (deps: CliUpdatesDeps) =>
             runtime?.resolved?.version,
           ),
         );
-        return running as CliUpdateState;
+        return running;
       });
 
     return {

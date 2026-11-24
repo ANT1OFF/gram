@@ -21,7 +21,7 @@ const machines: ReadonlyArray<MachineState> = [
 afterEach(() => {
   cleanup();
   useMachines.setState({ machines: undefined });
-  useThreadsStore.setState({ byId: {} as never });
+  useThreadsStore.setState({ byId: {} });
 });
 
 describe("a thread's machine marker", () => {

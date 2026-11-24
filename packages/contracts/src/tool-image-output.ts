@@ -24,7 +24,7 @@ export function splitToolImageOutput(output: unknown): {
       typeof fields["mimeType"] === "string"
     ) {
       const { data, ...metadata } = fields;
-      images.push({ mediaType: fields["mimeType"], data: data as string });
+      images.push({ mediaType: fields["mimeType"], data: data });
       return metadata;
     }
     if (dynamic && fields["type"] === "inputImage" && typeof fields["imageUrl"] === "string") {

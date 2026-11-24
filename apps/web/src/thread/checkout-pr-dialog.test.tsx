@@ -30,7 +30,7 @@ describe("CheckoutPrDialog", () => {
     });
 
     await waitFor(() =>
-      expect((screen.getByLabelText("Project") as HTMLSelectElement).value).toBe("/code/web"),
+      expect(screen.getByLabelText<HTMLSelectElement>("Project").value).toBe("/code/web"),
     );
     const input = screen.getByRole("textbox", { name: "Pull request number or URL" });
     fireEvent.change(input, { target: { value: "https://github.com/acme/web/pull/7/files" } });
@@ -52,13 +52,13 @@ describe("CheckoutPrDialog", () => {
     const input = screen.getByRole("textbox", { name: "Pull request number or URL" });
     fireEvent.change(input, { target: { value: "not a pr" } });
     expect(screen.getByText(/Type a number like #12/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Check out" }) as HTMLButtonElement).disabled).toBe(
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Check out" }).disabled).toBe(
       true,
     );
 
     fireEvent.change(input, { target: { value: "#99" } });
     await waitFor(() =>
-      expect((screen.getByLabelText("Project") as HTMLSelectElement).value).toBe("/code/api"),
+      expect(screen.getByLabelText<HTMLSelectElement>("Project").value).toBe("/code/api"),
     );
     fireEvent.click(screen.getByRole("button", { name: "Check out" }));
     await waitFor(() =>

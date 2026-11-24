@@ -63,7 +63,7 @@ test("the user pins a drafted page, and an agent's newer version waits for Show 
     ({ thread, html, url }) => {
       const mock = window.gramMock!;
       mock.previewUrls[html] = url;
-      mock.simulateWrittenFile(thread as never, html, "<h1>Release radar draft</h1>");
+      mock.simulateWrittenFile(thread, html, "<h1>Release radar draft</h1>");
     },
     { thread: made.workerThreadId, html: DRAFT, url: `http://127.0.0.1:${port}/` },
   );

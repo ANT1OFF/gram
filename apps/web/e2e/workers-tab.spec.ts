@@ -142,7 +142,7 @@ test("Following live pauses when you scroll up, and Jump to live follows again",
   const dot = pill.getByTestId("following-live-dot");
   await expect(dot).toHaveAttribute("data-streaming", "false");
   await page.evaluate((id) => {
-    window.gramMock!.simulateChunks(id as never, "live-reply" as never, [
+    window.gramMock!.simulateChunks(id, "live-reply" as never, [
       { type: "start", messageId: "live-reply" },
       { type: "text-start", id: "live-text" },
       { type: "text-delta", id: "live-text", delta: "40 of 52 pass so far. " },
@@ -159,7 +159,7 @@ test("Following live pauses when you scroll up, and Jump to live follows again",
   await expect(jump).toBeVisible();
   await expect(pill).toHaveCount(0);
   await page.evaluate((id) => {
-    window.gramMock!.simulateChunks(id as never, "live-reply" as never, [
+    window.gramMock!.simulateChunks(id, "live-reply" as never, [
       { type: "text-delta", id: "live-text", delta: "Still running test_consumer.py. ".repeat(20) },
     ]);
   }, made.live);
@@ -173,11 +173,11 @@ test("Following live pauses when you scroll up, and Jump to live follows again",
 
   // The turn ends: the dot stops, and nothing live is left to follow.
   await page.evaluate((id) => {
-    window.gramMock!.simulateChunks(id as never, "live-reply" as never, [
+    window.gramMock!.simulateChunks(id, "live-reply" as never, [
       { type: "text-end", id: "live-text" },
       { type: "finish" },
     ]);
-    window.gramMock!.simulateStatus(id as never, "idle");
+    window.gramMock!.simulateStatus(id, "idle");
   }, made.live);
   await expect(page.getByTestId("following-live")).toHaveCount(0);
   await expect(page.getByTestId("jump-to-live")).toHaveCount(0);

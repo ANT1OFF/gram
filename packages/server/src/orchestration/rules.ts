@@ -1460,7 +1460,7 @@ export const digestDiff = (input: {
       const switched =
         before?.agent !== undefined && worker.agent !== undefined && before.agent !== worker.agent;
       if (switched)
-        remarks.push(`continues in ${AGENT_NAMES[worker.agent!]} (the user switched it)`);
+        remarks.push(`continues in ${AGENT_NAMES[worker.agent]} (the user switched it)`);
       if (newOverlaps.length > 0) {
         const files = worker.overlapFiles ?? [];
         remarks.push(

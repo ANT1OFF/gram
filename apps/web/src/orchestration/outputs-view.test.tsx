@@ -86,7 +86,7 @@ describe("OutputsView", () => {
     renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
     await waitFor(() => expect(tiles().length).toBeGreaterThan(5));
     const shot = tiles().find((tile) => tile.getAttribute("data-kind") === "screenshot")!;
-    const name = shot.textContent!.replace(/\d{2}:\d{2}$/, "");
+    const name = shot.textContent.replace(/\d{2}:\d{2}$/, "");
     fireEvent.click(within(shot).getByRole("button", { name: `Open ${name}` }));
     const viewer = await screen.findByTestId("output-viewer");
     await waitFor(() => expect(within(viewer).getByRole("img")).toBeTruthy());

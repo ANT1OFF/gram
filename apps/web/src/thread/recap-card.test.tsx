@@ -74,7 +74,7 @@ describe("recap actions", () => {
     expect(factPanel("3 files changed", 0, git)).toBe("diff");
     expect(factPanel("not pushed", 1, git)).toBeUndefined();
     expect(factPanel("#12 open", 2, git)).toBe("pr");
-    expect(factPanel("pushed", 0, { ...MOCK_DEPS_GIT, changedFiles: 0 } as never)).toBeUndefined();
+    expect(factPanel("pushed", 0, { ...MOCK_DEPS_GIT, changedFiles: 0 })).toBeUndefined();
   });
 
   it("puts the next step after what the composer holds, on its own line", () => {
@@ -418,7 +418,7 @@ describe("RecapCard with the agent's wrap_up", () => {
         }),
       ),
     );
-    vi.mocked(api.send!).mockImplementation(() => sent.promise as never);
+    vi.mocked(api.send!).mockImplementation(() => sent.promise);
     fireEvent.click(await screen.findByRole("button", { name: "Yes" }));
     fireEvent.click(screen.getByRole("button", { name: "No" }));
     expect(api.send).toHaveBeenCalledTimes(1);
@@ -444,9 +444,7 @@ describe("RecapCard with the agent's wrap_up", () => {
     expect(screen.queryByTestId("wrap-up")).toBeNull();
     cleanup();
     const answered = mount(
-      transcript(box(), [
-        { id: "u2", role: "user", parts: [{ type: "text", text: "Not yet" }] } as GramUIMessage,
-      ]),
+      transcript(box(), [{ id: "u2", role: "user", parts: [{ type: "text", text: "Not yet" }] }]),
     );
     await waitFor(() => expect(answered.api.threadRecap).toHaveBeenCalled());
     expect(screen.queryByTestId("wrap-up")).toBeNull();

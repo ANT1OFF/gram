@@ -59,7 +59,7 @@ const harness = (
   const summaries = makeFeatureSummaries({
     schedule: (job) =>
       Effect.sync(() => {
-        jobs.push(job as HelperJob<unknown, unknown>);
+        jobs.push(job);
         return result as never;
       }),
     orchestratorOf: () => Effect.succeed(O),

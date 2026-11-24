@@ -58,7 +58,7 @@ const el = (tagName: string, children: Node[], properties: Record<string, unknow
   children,
 });
 const run = (tree: Node) => {
-  rehypeFileRefs()(tree as never);
+  rehypeFileRefs()(tree);
   return tree;
 };
 

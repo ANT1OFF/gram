@@ -64,7 +64,7 @@ describe("springToCss", () => {
 describe("paletteCss", () => {
   // A custom palette can come from another member of a shared server.
   it("writes no palette whose id could change the stylesheet", () => {
-    const base = PRESET_PALETTES[0]!;
+    const base = PRESET_PALETTES[0];
     expect(paletteCss({ ...base, id: "custom:ocean-2" })).toContain(
       '[data-palette="custom:ocean-2"]',
     );

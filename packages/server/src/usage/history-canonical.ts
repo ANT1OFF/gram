@@ -194,7 +194,7 @@ export function canonicalHistory(
             ].every((key) => {
               const lane = key as keyof TokenUsage;
               const required = record.expectedTurnTokens![lane] ?? 0;
-              return required === 0 || (tokens[lane] !== undefined && tokens[lane]! >= required);
+              return required === 0 || (tokens[lane] !== undefined && tokens[lane] >= required);
             }),
         ),
       partial: group.some((record) => record.partial),

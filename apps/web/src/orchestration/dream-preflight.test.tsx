@@ -81,16 +81,16 @@ describe("Dream selected-harness preflight", () => {
     async (agent) => {
       const model: ModelRef = { agent, model: "synthetic-selected-model" };
       const { start } = setup(model, () => ({}));
-      const review = screen.getByRole("radio", {
+      const review = screen.getByRole<HTMLInputElement>("radio", {
         name: "Let me review it first",
-      }) as HTMLInputElement;
+      });
       expect(review.checked).toBe(true);
       expect(screen.getByText("When this update is ready")).toBeDefined();
       fireEvent.click(screen.getByRole("radio", { name: "Save it if it checks out" }));
       expect(screen.getByText(/without another review or approval/)).toBeDefined();
       await waitFor(() =>
         expect(
-          (screen.getByRole("button", { name: "Start drafting" }) as HTMLButtonElement).disabled,
+          screen.getByRole<HTMLButtonElement>("button", { name: "Start drafting" }).disabled,
         ).toBe(false),
       );
       fireEvent.click(screen.getByRole("button", { name: "Start drafting" }));
@@ -113,9 +113,9 @@ describe("Dream selected-harness preflight", () => {
       },
     }));
     await screen.findByText("Unverified: Synthetic CLI version is unqualified. Update and retry.");
-    expect(
-      (screen.getByRole("button", { name: "Start drafting" }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start drafting" }).disabled).toBe(
+      true,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Start drafting" }));
     expect(preview).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe("Dream selected-harness preflight", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry check" }));
     await waitFor(() =>
       expect(
-        (screen.getByRole("button", { name: "Start drafting" }) as HTMLButtonElement).disabled,
+        screen.getByRole<HTMLButtonElement>("button", { name: "Start drafting" }).disabled,
       ).toBe(false),
     );
     expect(preview).toHaveBeenCalledTimes(1);

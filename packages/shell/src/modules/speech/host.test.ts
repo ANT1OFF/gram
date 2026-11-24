@@ -41,9 +41,9 @@ const fakeChild = () => {
   let killed = false;
   const child: SpeechChild = {
     postMessage: (message, transfer) => posted.push({ message, transfer }),
-    on: ((event: "message" | "exit", listener: never) => {
+    on: (event: "message" | "exit", listener: never) => {
       listeners[event].push(listener);
-    }) as SpeechChild["on"],
+    },
     kill: () => {
       killed = true;
       return true;

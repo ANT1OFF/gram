@@ -56,7 +56,7 @@ describe("go to in words grammar", () => {
       "unknown",
     ],
   ])("parses %s", (query, filters, text) =>
-    expect(parseWordFilters(query as string, workspaces)).toEqual({ filters, text }),
+    expect(parseWordFilters(query, workspaces)).toEqual({ filters, text }),
   );
 
   it("uses local midnight, Monday and exclusive yesterday end", () => {

@@ -460,15 +460,13 @@ describe.skipIf(!hasGit)("orchestration service", () => {
               inMinutes: 10,
               note: "check the canary",
             })) as { readonly id: string; readonly at: string };
-            const extra = [];
+            const extra: { readonly id: string }[] = [];
             for (let i = 0; i < 4; i++) {
               extra.push(
                 (yield* session.callTool("schedule_wake", {
                   inMinutes: 60 + i,
                   note: `n${i}`,
-                })) as {
-                  readonly id: string;
-                },
+                })) as { readonly id: string },
               );
             }
             const capped = yield* session

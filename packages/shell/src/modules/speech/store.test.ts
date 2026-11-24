@@ -587,7 +587,7 @@ const fakeNet = () => {
               },
             }),
           ),
-      } as never;
+      };
     },
   };
   return { net, calls, data: (chunk: Buffer) => data?.(chunk), end: () => end?.() };
@@ -632,7 +632,7 @@ describe("Electron's net as a SpeechFetch", () => {
                 { "x-repo-commit": [REVISION] },
               ),
             ),
-        } as never;
+        };
       },
     };
     const response = await electronFetch(net)("https://huggingface.co/x", {

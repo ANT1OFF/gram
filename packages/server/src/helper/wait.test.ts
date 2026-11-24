@@ -320,7 +320,7 @@ describe("the helper's answer, applied", () => {
     id: "m-reply",
     role: "assistant",
     parts: [{ type: "text", text: "Here is the draft:\n\n> Hi Kari, the fix is out." }],
-  } as GramUIMessage;
+  };
   const kept: WaitItem = {
     id: "w-1" as WaitId,
     kind: "draft",

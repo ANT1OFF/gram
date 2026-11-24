@@ -139,7 +139,7 @@ const withGh = (
           const live = yield* Proc;
           return {
             run: (bin: string, args: ReadonlyArray<string>, options: { readonly cwd: string }) => {
-              if (bin !== "gh") return live.run(bin, args, options as never);
+              if (bin !== "gh") return live.run(bin, args, options);
               calls.push({ args, cwd: options.cwd });
               return answer === "missing"
                 ? Effect.fail(new ProcSpawnError({ bin, message: "gh not found" }))

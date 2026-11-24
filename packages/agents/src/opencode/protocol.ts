@@ -116,7 +116,7 @@ export const field = {
 export const tokensOf = (value: unknown): OpenCodeTokens | undefined => {
   if (!isRecord(value)) return undefined;
   const number = (key: string, from: Readonly<Record<string, unknown>> = value) =>
-    typeof from[key] === "number" ? (from[key] as number) : 0;
+    typeof from[key] === "number" ? from[key] : 0;
   const cache = isRecord(value["cache"]) ? value["cache"] : {};
   return {
     input: number("input"),

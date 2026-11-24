@@ -9,7 +9,7 @@ const workspaces = [{ id: "w-api", name: "agent-platform" }];
 function harness(result: HelperResult<{ filters: readonly PaletteFilter[] }>) {
   const jobs: HelperJob<unknown, unknown>[] = [];
   const schedule: HelperScheduler["Service"]["schedule"] = <A, I>(job: HelperJob<A, I>) => {
-    jobs.push(job as HelperJob<unknown, unknown>);
+    jobs.push(job);
     return Effect.succeed(result as HelperResult<A>);
   };
   return { jobs, schedule };

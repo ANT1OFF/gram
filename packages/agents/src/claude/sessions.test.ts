@@ -5,8 +5,12 @@ import { describe, expect, it } from "vitest";
 import { TRANSCRIPT_TOOL_MAX_CHARS } from "../transcript-text.ts";
 import { toSessionSummary, toSessionTranscript } from "./sessions.ts";
 
-const info = (extra: Partial<SDKSessionInfo>): SDKSessionInfo =>
-  ({ sessionId: "s1", summary: "", lastModified: 1_700_000_000_000, ...extra }) as SDKSessionInfo;
+const info = (extra: Partial<SDKSessionInfo>): SDKSessionInfo => ({
+  sessionId: "s1",
+  summary: "",
+  lastModified: 1_700_000_000_000,
+  ...extra,
+});
 
 describe("toSessionSummary", () => {
   it("prefers the custom title, then the summary, then the first prompt", () => {

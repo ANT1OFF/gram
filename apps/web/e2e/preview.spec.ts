@@ -145,12 +145,12 @@ test("a page an agent drove off loopback is never re-opened in the user's web se
 
   // The thread's agent drives the page to a public host it was allowed, unseen by this record.
   await page.evaluate(() =>
-    window.gramMock!.shell.preview.moved("t-deps" as never, "https://agent-chosen.example/act"),
+    window.gramMock!.shell.preview.moved("t-deps", "https://agent-chosen.example/act"),
   );
   await expect(page.getByTestId("preview-address")).toHaveValue("https://agent-chosen.example/act");
 
   // The shell closes the page for newer threads', and the user comes back to the thread.
-  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps" as never));
+  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps"));
   await threadRow(page, "t-flaky").click();
   await threadRow(page, "t-deps").click();
 
@@ -182,7 +182,7 @@ test("the user's web page re-opens by the shell's token after it was closed for 
     page.frameLocator('[data-thread="t-deps"]').getByRole("heading", { level: 1 }),
   ).toHaveText("A page on the web");
 
-  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps" as never));
+  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps"));
   await threadRow(page, "t-flaky").click();
   await threadRow(page, "t-deps").click();
 
@@ -220,15 +220,12 @@ test("a web page an agent replaced is never re-opened in the user's web session"
   // local one of the agent's, which it drives to a host of its choosing.
   await threadRow(page, "t-flaky").click();
   await page.evaluate(() =>
-    window.gramMock!.shell.preview.agentTakes(
-      "t-deps" as never,
-      "https://agent-chosen.example/act",
-    ),
+    window.gramMock!.shell.preview.agentTakes("t-deps", "https://agent-chosen.example/act"),
   );
   // Back on the thread, the shell reports the agent's page; then it is closed for newer threads'.
   await threadRow(page, "t-deps").click();
   await expect(address).toHaveValue("https://agent-chosen.example/act");
-  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps" as never));
+  await page.evaluate(() => window.gramMock!.shell.preview.evict("t-deps"));
   await threadRow(page, "t-flaky").click();
   await threadRow(page, "t-deps").click();
 

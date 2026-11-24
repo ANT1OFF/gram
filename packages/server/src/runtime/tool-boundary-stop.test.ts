@@ -101,7 +101,7 @@ describe("stopAtToolBoundary", () => {
             messageId: next,
             messageMetadata: { agent: "claude", initiator: "agent" },
           },
-        } as AgentEvent,
+        },
         {
           type: "chunk",
           messageId: next,
@@ -111,7 +111,7 @@ describe("stopAtToolBoundary", () => {
             toolName: "Bash",
             input: { command: "git push origin main" },
           },
-        } as AgentEvent,
+        },
       );
       yield* waitFor(
         "the held turn's gate",
@@ -122,7 +122,7 @@ describe("stopAtToolBoundary", () => {
         type: "chunk",
         messageId: next,
         chunk: { type: "tool-output-available", toolCallId: "c2", output: "" },
-      } as AgentEvent);
+      });
       yield* session.completeTurn();
       yield* waitFor("idle", statusOf(thread.id).pipe(Effect.map((s) => s === "idle")));
       holding = false;
@@ -197,7 +197,7 @@ describe("stopAtToolBoundary", () => {
           id: "q-port" as RequestId,
           questions: [{ question: "Which port?", header: "Port", options: [], multiSelect: false }],
         },
-      } as AgentEvent);
+      });
       yield* waitFor(
         "the card",
         store.listRequests(thread.id).pipe(Effect.map((all) => all.length === 1)),
@@ -226,7 +226,7 @@ describe("stopAtToolBoundary", () => {
           messageId: own,
           messageMetadata: { agent: "claude", initiator: "agent" },
         },
-      } as AgentEvent);
+      });
       yield* waitFor(
         "the held turn's gate",
         Effect.sync(() => session.gateCloses === 1),
@@ -244,7 +244,7 @@ describe("stopAtToolBoundary", () => {
           messageId: next,
           messageMetadata: { agent: "claude", initiator: "agent" },
         },
-      } as AgentEvent);
+      });
       yield* waitFor("running", statusOf(thread.id).pipe(Effect.map((s) => s === "running")));
       for (let i = 0; i < 200; i++) yield* Effect.yieldNow;
       expect(session.gateCloses).toBe(1);

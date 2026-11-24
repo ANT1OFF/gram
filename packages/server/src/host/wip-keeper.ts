@@ -130,7 +130,7 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
         const kept = yield* keepThreadWork(deps, id, thread);
         if (kept.length === 0) return skipped("no folder of it there was made from a clone");
         yield* noteKept(thread, id, kept);
-        return { kind: "kept", hostId: id, kept } satisfies Outcome as Outcome;
+        return { kind: "kept", hostId: id, kept } satisfies Outcome;
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
@@ -138,7 +138,7 @@ export const startWipKeeper = (deps: WipKeeperDeps): Effect.Effect<void, never, 
             const message =
               error instanceof Error ? error.message : "Its work in progress couldn't be kept.";
             yield* noteFailed(threadId, message);
-            return { kind: "failed", reason: message } satisfies Outcome as Outcome;
+            return { kind: "failed", reason: message } satisfies Outcome;
           }),
         ),
       );

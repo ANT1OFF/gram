@@ -35,9 +35,9 @@ export const TranscriptSearchAppToolsLive = Layer.effectDiscard(
     const scopeOf = (caller: ThreadId) =>
       Effect.gen(function* () {
         const authority = yield* orchestration.authorityOf(caller);
-        if (authority !== undefined) return authority.state.workspace.id as string;
+        if (authority !== undefined) return authority.state.workspace.id;
         const worker = yield* orchestration.memoryReaderOf(caller);
-        if (worker !== undefined) return worker as string;
+        if (worker !== undefined) return worker;
         const thread = yield* store.getThread(caller).pipe(Effect.option);
         if (thread._tag === "None") return undefined;
         const { role, workspaceId } = thread.value;
@@ -49,7 +49,7 @@ export const TranscriptSearchAppToolsLive = Layer.effectDiscard(
             dream.filesClosedAt === undefined &&
             dream.inputs.recent === undefined,
         );
-        return running ? (workspaceId as string) : undefined;
+        return running ? workspaceId : undefined;
       });
 
     const tool = defineAppTool({

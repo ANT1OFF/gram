@@ -207,7 +207,7 @@ export function selectedSourceManifest(
     });
     if (raw.toString("utf8") !== canonical)
       throw new Error("noncanonical selected-source manifest");
-    return { tree: v.tree as string, entries: rows };
+    return { tree: v.tree, entries: rows };
   } finally {
     closeSync(fd);
   }

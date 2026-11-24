@@ -906,7 +906,7 @@ export const planSettingsChanges = (
       if (update.default === false) delete next["default"];
       list[index] = next as WorkerModel;
       if (update.default === true) withoutDefault(list, index);
-      const changed = list[index]!;
+      const changed = list[index];
       if (isPinned(changed) && (update.variant !== undefined || update.speed !== undefined))
         models.push(changed);
       continue;
@@ -930,7 +930,7 @@ export const planSettingsChanges = (
         );
         continue;
       }
-      mergePatch(patch, decoded.success as Record<string, unknown>);
+      mergePatch(patch, decoded.success);
       if (key === "agents.defaultModel" && isModelRef(value)) models.push(value);
       continue;
     }

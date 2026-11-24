@@ -210,7 +210,7 @@ test("late append during a jump keeps its stable target and manual wheel takes c
     await item.evaluate((el, id) => {
       (el as HTMLElement).click();
       requestAnimationFrame(() => {
-        window.gramMock!.simulateMessage(id as never, {
+        window.gramMock!.simulateMessage(id, {
           id: "nav-late",
           role: "assistant",
           parts: [{ type: "text", text: "An invented late reply. ".repeat(800) }],
@@ -266,7 +266,7 @@ test("pending jump survives a same-count interior history replacement", async ({
           ...all.slice(160),
         ];
         window.gramNavigationReplacement = { threadId: id, messages: replacement };
-        window.gramMock!.simulateMessage(id as never, {
+        window.gramMock!.simulateMessage(id, {
           id: "replacement-trigger",
           role: "assistant",
           parts: [{ type: "text", text: "Synthetic snapshot trigger" }],
@@ -420,8 +420,8 @@ test("a repeated nonce jumps again after manual reading; running text and follow
   await page.mouse.wheel(0, 700);
   await expect.poll(() => transcript.evaluate((el) => el.scrollTop)).toBeGreaterThan(landed + 650);
   await page.evaluate((id) => {
-    window.gramMock!.simulateStatus(id as never, "running");
-    window.gramMock!.simulateChunks(id as never, "nav-live" as never, [
+    window.gramMock!.simulateStatus(id, "running");
+    window.gramMock!.simulateChunks(id, "nav-live" as never, [
       { type: "start", messageId: "nav-live" },
       { type: "text-start", id: "nav-live-text" },
       {
@@ -588,8 +588,8 @@ test("selected older turn survives a delayed page, live append and viewport refl
   const stages = [{ name: "wide-before-page", geometry: await geometry(page) }];
   await page.setViewportSize({ width: 1200, height: 1000 });
   await page.evaluate((id) => {
-    window.gramMock!.simulateStatus(id as never, "running");
-    window.gramMock!.simulateChunks(id as never, "timing-live" as never, [
+    window.gramMock!.simulateStatus(id, "running");
+    window.gramMock!.simulateChunks(id, "timing-live" as never, [
       { type: "start", messageId: "timing-live" },
       { type: "text-start", id: "timing-text" },
       {

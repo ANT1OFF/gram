@@ -344,7 +344,7 @@ const tidy = (record: MachineMarks): MachineMarks | undefined => {
       continue;
     value[key] = field;
   }
-  return Object.keys(value).length === 0 ? undefined : (value as MachineMarks);
+  return Object.keys(value).length === 0 ? undefined : value;
 };
 
 export const makeStopMarks = (

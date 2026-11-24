@@ -68,7 +68,7 @@ describe("the setup-token consent dialog", () => {
     ]);
     render(<TokenDialog machine={BOX} machines={[BOX, SPARE, OFFLINE]} onClose={() => {}} />);
     expect(screen.getByText(/Revoke it at claude\.ai/)).toBeTruthy();
-    const boxes = screen.getAllByRole("checkbox") as Array<HTMLInputElement>;
+    const boxes = screen.getAllByRole<HTMLInputElement>("checkbox");
     // Only the machine it was opened from is ticked; an offline one isn't offered.
     expect(boxes.map((box) => box.checked)).toEqual([true, false]);
     expect(screen.queryByText("laptop")).toBeNull();
@@ -91,7 +91,7 @@ describe("the setup-token consent dialog", () => {
     const closed = vi.fn();
     render(<TokenDialog machine={BOX} machines={[BOX]} onClose={closed} />);
     fireEvent.click(screen.getByRole("checkbox"));
-    expect((screen.getByTestId("machines-token-start") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId<HTMLButtonElement>("machines-token-start").disabled).toBe(true);
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByTestId("machines-token-start"));
     await waitFor(() => expect(screen.getByLabelText("Code from the sign-in page")).toBeTruthy(), {

@@ -55,7 +55,7 @@ const setup = async ({
   // The thread lives only in the store, so the mock server would answer ThreadNotFound.
   vi.spyOn(api, "threadSuggestions").mockResolvedValue(null);
   renderWithApi(<Composer threadId={THREAD} focused />, api);
-  const composer = screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+  const composer = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   if (role === "orchestrator") {
     await waitFor(() => expect(listWorkspaces).toHaveBeenCalled());
   }

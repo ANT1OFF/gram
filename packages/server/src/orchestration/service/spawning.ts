@@ -295,7 +295,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
       const found = machines.filter(
         (m) => m.id.toLowerCase() === wanted || m.name.trim().toLowerCase() === wanted,
       );
-      if (found.length === 1) return found[0]!.id as HostId;
+      if (found.length === 1) return found[0]!.id;
       const known =
         machines.length === 0
           ? "No machine is joined to this Gram."

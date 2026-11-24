@@ -837,7 +837,7 @@ describe("GramRpcs", () => {
       const error = RpcSchema.isStreamSchema(rpc.successSchema)
         ? rpc.successSchema.error
         : rpc.errorSchema;
-      const decoded = Schema.decodeUnknownSync(error as Schema.Codec<unknown, unknown>)({
+      const decoded = Schema.decodeUnknownSync(error)({
         _tag: "NotImplemented",
         rpc: tag,
       });

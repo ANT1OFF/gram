@@ -77,9 +77,7 @@ export const codexStatusOf = (
             Effect.as("yes" as const),
             Effect.catch((error) =>
               Effect.succeed(
-                (error as AgentUnavailable | undefined)?.reason === "not-logged-in"
-                  ? ("noAccount" as const)
-                  : ("no" as const),
+                error?.reason === "not-logged-in" ? ("noAccount" as const) : ("no" as const),
               ),
             ),
           ),

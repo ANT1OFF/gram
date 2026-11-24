@@ -15,21 +15,20 @@ import {
   type StripWorkspace,
 } from "./quiet-model";
 
-const ask = (key: string, threadId?: string): Ask =>
-  ({
-    key,
-    ids: [key],
-    icon: "approval",
-    lead: key,
-    extras: [],
-    members: [],
-    count: 1,
-    context: "",
-    options: [],
-    ...(threadId === undefined
-      ? {}
-      : { group: { entries: [{ threadId: threadId as ThreadId }] } as never }),
-  }) as Ask;
+const ask = (key: string, threadId?: string): Ask => ({
+  key,
+  ids: [key],
+  icon: "approval",
+  lead: key,
+  extras: [],
+  members: [],
+  count: 1,
+  context: "",
+  options: [],
+  ...(threadId === undefined
+    ? {}
+    : { group: { entries: [{ threadId: threadId as ThreadId }] } as never }),
+});
 
 const source = (id: string, asks: readonly Ask[], orchestrator?: string): DeckSource => ({
   workspaceId: id as WorkspaceId,

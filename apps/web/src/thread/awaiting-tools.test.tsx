@@ -14,7 +14,7 @@ const T = "t-approve" as ThreadId;
 
 afterEach(() => {
   cleanup();
-  useThreadsStore.setState({ byId: {} as never });
+  useThreadsStore.setState({ byId: {} });
 });
 
 const push = {

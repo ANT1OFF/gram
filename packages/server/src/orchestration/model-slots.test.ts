@@ -54,7 +54,7 @@ const CODEX = [row("gpt-6.1-sol"), row("gpt-6-luna")];
 const listedBy = (lists: Partial<Record<AgentKind, AgentModel[]>>, agent: AgentKind) => () =>
   lists[agent] === undefined
     ? Effect.fail(new AgentUnavailable({ agent, message: "Synthetic signed-out CLI" }))
-    : Effect.succeed(lists[agent]!);
+    : Effect.succeed(lists[agent]);
 
 const adapters = (lists: Partial<Record<AgentKind, AgentModel[]>>) =>
   Layer.effectContext(

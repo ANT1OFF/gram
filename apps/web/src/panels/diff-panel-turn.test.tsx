@@ -59,7 +59,7 @@ const file = (path: string): DiffFile => ({
 /** The history and catch-up every feed here starts with. */
 async function* history(): AsyncIterable<ApiThreadFeedEvent> {
   yield { type: "subscribed" };
-  yield { type: "messages", messages: MESSAGES } as ApiThreadFeedEvent;
+  yield { type: "messages", messages: MESSAGES };
   yield { type: "caughtUp" } as ApiThreadFeedEvent;
 }
 

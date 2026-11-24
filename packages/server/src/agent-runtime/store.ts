@@ -120,7 +120,7 @@ const isReceipt = (value: unknown): value is RuntimeReceipt => {
     typeof r["entrypointSha256"] === "string" &&
     (r["source"] === "bundled" || r["source"] === "catalog") &&
     typeof r["installedAt"] === "string" &&
-    r["id"] === versionId(r["version"] as string, r["target"] as string)
+    r["id"] === versionId(r["version"], r["target"])
   );
 };
 

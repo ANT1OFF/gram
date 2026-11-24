@@ -133,7 +133,7 @@ test("an approval answered beside the chat hands focus on in its own thread, and
   ] as const;
   await page.evaluate((each) => {
     for (const [threadId, request] of each) {
-      window.gramMock!.simulateRequest(threadId as never, request as never);
+      window.gramMock!.simulateRequest(threadId, request as never);
     }
   }, asks);
   const chat = page.locator(`[data-thread-view="${made.orchestratorThreadId}"]`).first();

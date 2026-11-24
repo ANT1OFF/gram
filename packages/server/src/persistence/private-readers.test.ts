@@ -91,9 +91,7 @@ describe("a private thread pushed off the closed list", () => {
         const project = yield* store.ensureProject({ root: "/synthetic/repo", name: "repo" });
         yield* sql`INSERT INTO private_readers (thread_id, data)
           VALUES (${id}, ${JSON.stringify({ readableBy: "ada", readers: ["carol"] })})`;
-        yield* store.insertThread(
-          thread(project.id, id, { readableBy: "ada", readers: [] } as Partial<Thread>),
-        );
+        yield* store.insertThread(thread(project.id, id, { readableBy: "ada", readers: [] }));
       }).pipe(
         Effect.provide(before.ThreadStore.layerSqlite(file).pipe(Layer.orDie)),
         Effect.scoped,

@@ -165,9 +165,9 @@ describe("resuming a machine on another disk", () => {
             // Cloning takes a while; one made meanwhile is found there at the end.
             yield* Effect.sleep("1 second");
             if (disk.has(request.cwd))
-              return { restored: false, note: "Its folder is there already." } as HostStopRestored;
+              return { restored: false, note: "Its folder is there already." };
             disk.add(request.cwd);
-            return { restored: true, commit: COMMIT } as HostStopRestored;
+            return { restored: true, commit: COMMIT };
           });
         const cwd = "/clones/widgets-trees/shared";
         const deps = {
@@ -547,7 +547,7 @@ describe("resuming a machine on another disk", () => {
           Effect.gen(function* () {
             yield* Effect.sleep("12 minutes");
             made = true;
-            return { restored: true, commit: COMMIT } as HostStopRestored;
+            return { restored: true, commit: COMMIT };
           });
         const deps = {
           hosts: {

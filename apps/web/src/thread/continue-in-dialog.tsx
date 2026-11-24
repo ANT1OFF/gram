@@ -257,7 +257,7 @@ function ContinueInSheet({ threadId, model: picked, onClose }: ContinueInProps) 
                   value={choice?.variant ?? null}
                   items={effortItems}
                   onValueChange={(next) => {
-                    if (next !== null) pickEffort(next as ReasoningVariant);
+                    if (next !== null) pickEffort(next);
                   }}
                 >
                   <SelectTrigger

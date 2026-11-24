@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { makeCodexMapper } from "./mapper.ts";
-import type { ServerNotification } from "./protocol/ServerNotification.ts";
 import type { ServerRequest } from "./protocol/ServerRequest.ts";
 import { gateVerdict, responseFor, toPendingRequest } from "./requests.ts";
 import { codexFixture, serverMessages } from "./testing.ts";
@@ -10,8 +9,8 @@ const firstRequest = (name: string) => {
   const messages = serverMessages(codexFixture(name));
   const mapper = makeCodexMapper({ requestScope: "s", newMessageId: () => MessageId.make("m1") });
   for (const message of messages) {
-    if ("id" in message) return { request: message as ServerRequest, mapper };
-    mapper.map(message as ServerNotification);
+    if ("id" in message) return { request: message, mapper };
+    mapper.map(message);
   }
   throw new Error(`${name} has no server request`);
 };

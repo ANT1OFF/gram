@@ -144,7 +144,7 @@ export class ThreadPorts extends Context.Service<ThreadPorts, ThreadPortsShape>(
             ...new Set(
               terminals
                 .filter(({ pid }) => foregroundOf(processes, children, pid) !== undefined)
-                .map(({ threadId }) => threadId as ThreadId),
+                .map(({ threadId }) => threadId),
             ),
           ];
         });

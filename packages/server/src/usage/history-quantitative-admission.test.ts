@@ -115,7 +115,7 @@ for (const gap of ["null", "invalid", "contradictory", "discard"] as const) {
         expect(report).toEqual(
           supported ? { tokens: last, basis: "last-request", partial: true } : { partial: true },
         );
-        expect(known(reducer)).toBe(20 + (supported ? last!.inputTokens + last!.outputTokens : 0));
+        expect(known(reducer)).toBe(20 + (supported ? last.inputTokens + last.outputTokens : 0));
         expect(reducer.records.get("prior")).toMatchObject({
           tokens: { inputTokens: 10, outputTokens: 10 },
           nativeIds: ["prior"],
@@ -142,7 +142,7 @@ for (const gap of ["null", "invalid", "contradictory", "discard"] as const) {
         });
         reducer.consume(token(actualTotal, actualLast));
         reducer.consume(done("recovery"));
-        expect(known(reducer)).toBe(27 + (supported ? last!.inputTokens + last!.outputTokens : 0));
+        expect(known(reducer)).toBe(27 + (supported ? last.inputTokens + last.outputTokens : 0));
         expect(reducer.records.get("recovery")).toMatchObject({
           tokens: actualLast,
           basis: "last-request",

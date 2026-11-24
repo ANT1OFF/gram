@@ -9,7 +9,6 @@ import {
   type CssVariables,
   type Mode,
   type Palette,
-  type SeedTokens,
 } from "@gram/themes";
 
 import type { HostTheme } from "@/embed/contract";
@@ -33,7 +32,7 @@ const DEFAULT_PAIR: ReadonlySet<string> = new Set(
 export function hostPalettes(theme: HostTheme | undefined): Palette[] {
   const modes = (["dark", "light"] as const).filter((mode) => theme?.palettes?.[mode]);
   return modes.map((mode) => {
-    const palette = paletteFromSeeds(theme!.palettes![mode]! as SeedTokens, {
+    const palette = paletteFromSeeds(theme!.palettes![mode]!, {
       id: HOST_PALETTE_IDS[mode],
       name: theme?.name ?? "Default",
     });

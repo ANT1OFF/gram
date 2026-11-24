@@ -31,8 +31,11 @@ const T = "t-deps" as ThreadId;
 const TURN = "turn-9" as TurnId;
 const thread = { id: T } as Thread;
 
-const text = (role: "user" | "assistant", body: string): GramUIMessage =>
-  ({ id: body, role, parts: [{ type: "text", text: body }] }) as GramUIMessage;
+const text = (role: "user" | "assistant", body: string): GramUIMessage => ({
+  id: body,
+  role,
+  parts: [{ type: "text", text: body }],
+});
 
 const harness = (
   options: {
@@ -63,7 +66,7 @@ const harness = (
     schedule: <A, I>(job: HelperJob<A, I>) =>
       Effect.gen(function* () {
         options.onSchedule?.(jobs.length);
-        jobs.push(job as HelperJob<unknown, unknown>);
+        jobs.push(job);
         prompts.push(yield* job.prompt);
         answered = true;
         return (options.result ?? {

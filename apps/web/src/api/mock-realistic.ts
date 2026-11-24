@@ -2,7 +2,6 @@ import {
   orchestrationMode,
   type DiffFile,
   type DigestChange,
-  type DigestReport,
   type GitState,
   type GramUIMessage,
   type OrchestrationDigest,
@@ -485,7 +484,7 @@ export async function simulateRealistic(
       workspaceName: "Gram",
       reasons: filed.length > 0 ? ["report"] : ["wake: merge"],
       changes,
-      reports: filed as readonly DigestReport[],
+      reports: filed,
       features: ledger.features,
       ...(ledger.groups === undefined ? {} : { groups: ledger.groups }),
       budget: ledger.budget,
@@ -722,7 +721,7 @@ function seedSearchTranscript(
         ...(turn === undefined ? {} : { turnId: turn }),
       },
       parts: role === "user" ? parts : [{ type: "step-start" }, ...parts],
-    } as GramUIMessage);
+    });
 
   message(136, "user", [
     {

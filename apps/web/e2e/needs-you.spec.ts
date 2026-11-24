@@ -51,7 +51,7 @@ const start = async (page: Page, size = WIDE): Promise<Seeded> => {
     };
     const made = await mock.simulateFailures();
     sent.length = 0;
-    return made as unknown as Seeded;
+    return made;
   });
 };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { DEFAULT_CHARTER, type ThreadId } from "@gram/contracts";
+import { DEFAULT_CHARTER } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import type * as Scope from "effect/Scope";
@@ -82,7 +82,7 @@ describe.skipIf(!hasGit)("the worker cap under a burst of spawns", () => {
             2,
           );
           const workers = (yield* store.listThreads).filter(
-            (each) => each.spawnedBy?.threadId === (thread.id as ThreadId),
+            (each) => each.spawnedBy?.threadId === thread.id,
           );
           expect(workers.length).toBeLessThanOrEqual(2);
         }),

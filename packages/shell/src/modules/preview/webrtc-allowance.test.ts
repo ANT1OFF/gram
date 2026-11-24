@@ -124,7 +124,7 @@ const setUp = () => {
       links.push(url);
       return false;
     },
-    log: { info: () => {}, warn: () => {}, error: () => {} } as never,
+    log: { info: () => {}, warn: () => {}, error: () => {} },
     appOrigins: () => [APP],
     agent: {
       navigation: () => undefined,

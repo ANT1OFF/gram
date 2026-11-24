@@ -22,7 +22,7 @@ describe("paletteChoices", () => {
   });
 
   it("keeps a hidden preset and the user's own palettes on show", () => {
-    const mine = paletteFromSeeds(PRESET_PALETTES[3]!.seeds, { id: "custom:mine", name: "Mine" });
+    const mine = paletteFromSeeds(PRESET_PALETTES[3].seeds, { id: "custom:mine", name: "Mine" });
     const choices = paletteChoices("dracula", [mine]);
     expect(choices.slice(-2)).toMatchObject([
       { id: "dracula", name: "Dracula", note: "dark only" },

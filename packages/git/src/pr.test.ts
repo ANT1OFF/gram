@@ -760,7 +760,7 @@ describe("a branch's PR, polled by number", () => {
       expect(queryOf(calls[3]!)).toContain("reviewThreads");
 
       // Resolved on github.com, which needn't move `updatedAt`: unseen until the threads age out.
-      prs[0] = { ...prs[0]!, reviewThreads: { nodes: [botThread(true), botThread(true)] } };
+      prs[0] = { ...prs[0], reviewThreads: { nodes: [botThread(true), botThread(true)] } };
       expect((yield* lookupFeat(resolver))?.review?.threads.unresolved).toBe(2);
       yield* TestClock.adjust(Duration.millis(THREADS_MAX_AGE_MS));
       const aged = yield* lookupFeat(resolver);

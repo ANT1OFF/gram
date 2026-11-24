@@ -4,14 +4,13 @@ import { describe, expect, it } from "vitest";
 import { followOfPinned, slotAfterPick } from "./model-slots";
 
 const efforts = ["low", "medium", "high", "xhigh", "max"] as const;
-const row = (id: string, resolvedId?: string): AgentModel =>
-  ({
-    id,
-    displayName: id,
-    supportsEffort: true,
-    efforts,
-    ...(resolvedId === undefined ? {} : { resolvedId }),
-  }) as AgentModel;
+const row = (id: string, resolvedId?: string): AgentModel => ({
+  id,
+  displayName: id,
+  supportsEffort: true,
+  efforts,
+  ...(resolvedId === undefined ? {} : { resolvedId }),
+});
 
 // Synthetic lists in each CLI's shape: Claude's aliases with what they run, Codex's ids.
 const both: AvailableModels = {

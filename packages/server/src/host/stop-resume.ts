@@ -948,7 +948,7 @@ export const stopStatus = (
     deps.hosts.machines.list().filter((machine) => machine.confirmedAt !== undefined),
     (machine) =>
       Effect.gen(function* () {
-        const id = machine.id as HostId;
+        const id = machine.id;
         const online = yield* deps.hosts.connection(id).pipe(
           Effect.as(true),
           Effect.orElseSucceed(() => false),
@@ -1022,7 +1022,7 @@ export const resumeOwedMachines = (
     const sweep = Effect.gen(function* () {
       const hosted = embeddingOn(yield* deps.settings.getSettings);
       for (const machine of deps.hosts.machines.list()) {
-        const id = machine.id as HostId;
+        const id = machine.id;
         if (machine.confirmedAt === undefined || going.has(id)) continue;
         if (deps.hosts.stops.resumeRunning(id)) continue;
         const at = yield* Clock.currentTimeMillis;

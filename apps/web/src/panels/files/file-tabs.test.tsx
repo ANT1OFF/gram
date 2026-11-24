@@ -100,7 +100,7 @@ describe("Files layout", () => {
         observe(target: Element) {
           this.callback(
             [{ target, contentRect: { width: SIDE_BY_SIDE_MIN + 100 } } as ResizeObserverEntry],
-            this as unknown as ResizeObserver,
+            this,
           );
         }
         disconnect() {}

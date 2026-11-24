@@ -29,7 +29,7 @@ const summary = (id: ThreadId, createdAt: number) =>
     queue: [],
     pendingRequests: [],
   }) as unknown as ThreadSummary;
-const field = () => screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+const field = () => screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
 const type = (value: string) => fireEvent.change(field(), { target: { value } });
 const stash = () => {
   act(() => field().focus());

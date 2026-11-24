@@ -3,7 +3,6 @@ import { DEFAULT_SETTINGS, type ThreadId } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ConnectionControl } from "@/api/connection";
 import { createMockApi } from "@/api/mock";
 import { MOCK_SESSION_EXPIRED_KEY } from "@/api/mock-overrides";
 import { renderWithApi } from "@/panels/test-utils";
@@ -46,7 +45,7 @@ const setup = ({
   const api = createMockApi({ speed: 0, autoplay: false, agents: ["claude"], persist: false });
   const steer = vi.spyOn(api, "steer").mockResolvedValue(undefined);
   const view = renderWithApi(<Composer threadId={THREAD} focused />, api);
-  const textarea = screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+  const textarea = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   return { api, steer, textarea, unmount: view.unmount };
 };
 
@@ -173,7 +172,7 @@ describe("Composer steer", () => {
   it("waits for a dropped connection with the draft still in the box, saying so, then steers", async () => {
     const { api, steer, textarea } = setup();
     // The mock's monitor is the full control the feeds report through.
-    const connection = api.connection as ConnectionControl;
+    const connection = api.connection;
     const feed = Symbol("feed");
     connection.opened(feed);
     connection.failed(feed, 1, Date.now() + 60_000);
@@ -200,7 +199,7 @@ describe("Composer steer", () => {
 
   it("sends nothing by itself once the draft changed while it waited, nor after the composer went", async () => {
     const { api, steer, textarea } = setup();
-    const connection = api.connection as ConnectionControl;
+    const connection = api.connection;
     const feed = Symbol("feed");
     connection.opened(feed);
     connection.failed(feed, 1, Date.now() + 60_000);
@@ -232,7 +231,7 @@ describe("Composer steer", () => {
   it("sends nothing by itself when a file pasted while it waited is still uploading", async () => {
     const { api, steer, textarea } = setup();
     vi.spyOn(api, "uploadAttachment").mockReturnValue(new Promise(() => {}));
-    const connection = api.connection as ConnectionControl;
+    const connection = api.connection;
     const feed = Symbol("feed");
     connection.opened(feed);
     connection.failed(feed, 1, Date.now() + 60_000);
@@ -316,7 +315,7 @@ describe("Composer steer", () => {
   it("steers on Enter, queues on ⌥Enter and interrupts on ⌘. with a draft", async () => {
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     const { api, steer, textarea } = setup();
-    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
+    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
     const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
     fireEvent.change(textarea, { target: { value: "skip e2e" } });
     fireEvent.keyDown(textarea, { key: "Enter" });
@@ -343,7 +342,7 @@ describe("Composer steer", () => {
 
   it("sends the way picked on the chip, for that message only", async () => {
     const { api, steer, textarea } = setup();
-    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
+    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
     fireEvent.click(screen.getByTestId("delivery-menu"));
     const items = await screen.findAllByRole("menuitemradio");
     expect(items.map((item) => item.textContent)).toEqual([
@@ -429,7 +428,7 @@ describe("Composer steer", () => {
 
   it("queues rather than steers for an agent that takes no input mid-turn", async () => {
     const { textarea, steer, api } = setup({ steers: false });
-    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true } as never);
+    const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     fireEvent.keyDown(window, { key: "Meta", metaKey: true });
     expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
@@ -622,7 +621,7 @@ describe("Composer suggestion ghost", () => {
     // A turn still open on the server: the message waits in its queue and no new turn starts.
     const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
     renderWithApi(<Composer threadId={GHOSTED} focused />, api);
-    const textarea = screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+    const textarea = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
     fireEvent.focus(textarea);
     return { send, textarea };
   };

@@ -6,5 +6,5 @@ export const withoutSender = (chunk: GramUIMessageChunk): GramUIMessageChunk => 
   const metadata = chunk.messageMetadata as Record<string, unknown>;
   if (!("author" in metadata) && !("sentBy" in metadata)) return chunk;
   const { author: _author, sentBy: _sentBy, ...rest } = metadata;
-  return { ...chunk, messageMetadata: rest } as GramUIMessageChunk;
+  return { ...chunk, messageMetadata: rest };
 };

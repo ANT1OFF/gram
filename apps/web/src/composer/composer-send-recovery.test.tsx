@@ -50,7 +50,7 @@ const setup = () => {
   const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
   const steer = vi.spyOn(api, "steer").mockResolvedValue(undefined);
   renderWithApi(<Composer threadId={THREAD} focused />, api);
-  const textarea = screen.getByRole("combobox", { name: "Message" }) as HTMLTextAreaElement;
+  const textarea = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   const paste = async (name: string) => {
     fireEvent.paste(textarea, {
       clipboardData: {

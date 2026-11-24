@@ -463,7 +463,7 @@ describe("lanes at the independent merge gate", () => {
       const result = yield* verify(
         "packages/server/src/a.test.ts",
         [job("classify"), job("qualification"), job("check static")],
-        shared as unknown as typeof laned,
+        shared,
       );
       expect(result).not.toMatchObject({ _tag: "Success", success: "passing" });
     }),
@@ -487,7 +487,7 @@ describe("lanes at the independent merge gate", () => {
       const result = yield* verify(
         "apps/web/src/app.tsx",
         [...ran, job("macos package"), ...e2e.map((name) => job(name))],
-        overlapping as unknown as typeof laned,
+        overlapping,
       );
       expect(result).toMatchObject({ _tag: "Failure" });
     }),

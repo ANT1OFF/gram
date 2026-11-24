@@ -42,10 +42,10 @@ const wallAsUtc = (format: Intl.DateTimeFormat, at: number): number => {
   return Date.UTC(
     parts.year!,
     parts.month! - 1,
-    parts.day!,
+    parts.day,
     parts.hour! % 24,
-    parts.minute!,
-    parts.second!,
+    parts.minute,
+    parts.second,
   );
 };
 

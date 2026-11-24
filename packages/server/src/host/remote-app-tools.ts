@@ -4,7 +4,6 @@ import { Readable } from "node:stream";
 import type { McpEndpoint, RemoteAppTools } from "@gram/agents";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
@@ -69,7 +68,7 @@ export const appToolsAt = (
             requestInit: { headers: { ...endpoint.headers } },
             fetch: untimedFetch,
           });
-          await next.connect(transport as Transport);
+          await next.connect(transport);
           return next;
         },
         catch: (error) => (error instanceof Error ? error : new Error(String(error))),

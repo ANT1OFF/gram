@@ -38,7 +38,7 @@ for (const agent of ["claude", "codex"] as const) {
           (cwd) => {
             const run = (host: AgentHost) =>
               Effect.gen(function* () {
-                const models = yield* host.listModels!();
+                const models = yield* host.listModels();
                 expect(models.length).toBeGreaterThan(0);
                 const model = models.find((m) => m.isDefault) ?? models[0]!;
                 let sessionId = "";
@@ -152,7 +152,7 @@ describe.skipIf(process.env["GRAM_LIVE_CODEX_WEB_SEARCH"] !== "1")(
             Effect.scoped(
               Effect.flatMap(CodexHost, (host) =>
                 Effect.gen(function* () {
-                  const models = yield* host.listModels!();
+                  const models = yield* host.listModels();
                   const model =
                     models.find((m) => /luna/i.test(m.displayName)) ??
                     models.find((m) => m.isDefault) ??
