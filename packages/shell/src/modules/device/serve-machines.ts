@@ -366,6 +366,7 @@ const ANSWER_FIELDS: Readonly<Record<WorkerMachineCall, ReadonlyArray<string>>> 
   status: ["code", "phase", "message", "step", "publicKey", "platform", "sandboxId", "generation"],
   release: ["code", "known", "released", "applied", "message"],
   stop: ["code", "stopped", "message"],
+  resize: ["code", "state", "size", "start", "until", "message", "asked", "inUse", "total"],
 };
 
 const answerFields = (call: WorkerMachineCall, body: unknown): unknown => {

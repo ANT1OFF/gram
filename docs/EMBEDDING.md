@@ -371,6 +371,22 @@ again, a worker reopened, it asks the same with `released: false, reason: "worki
 provider keeps the disk. Each is told once; after a restart it may be told again, which a provider
 takes as the same word. `404` means the provider keeps none of this.
 
+A worker host can hold a larger size for a while (`request_resources`,
+`orchestration/request-resources-tool.ts`). A worker asks for its own host before a heavy step,
+such as a full check, a big build or a long test run. The server
+asks `POST /hosts/resize` with `{ kind: "worker", owner, name, size, holdMinutes?, reason? }`. `size`
+is one of the provider's size ids, or `null` to go back to the size the host started at. The
+provider answers `200` with `{ state, size?, start?, until?, message? }`:
+
+- `state` is `grown` (in force now), `waiting` (its node applies it once it has room), `releasing`
+  or `released` (going back, or back), or `infeasible` (it can never hold that size, and kept the
+  one it had);
+- `until` is when the hold ends and the host goes back by itself.
+
+Any other answer is a refusal, with the provider's `message`: over the person's total, past what
+the organisation allows, asked too often, or `404` and `501` where hosts aren't resized. Which sizes
+there are, and what each holds, are the provider's.
+
 While a worker host is online with work, the server also measures, observe only, whether it could
 have been paused (`embedding/idle-measure.ts`): every minute, whether each thread on it is at rest
 with no queued send, open question, background task or busy terminal, no wake that reads the machine

@@ -79,6 +79,7 @@ The calls, each `POST` with a DPoP-bound `machines:workers` token, the person ta
 | `…/status`  | `{name}`                               | `{phase, message?, publicKey?, platform?}`: the host's public key once it has made one.                |
 | `…/release` | `{name, released, reason}`             | As `/hosts/release`.                                                                                   |
 | `…/stop`    | `{name}`                               | The machine is stopped and reclaimed; used when it never joins.                                        |
+| `…/resize`  | `{name, size, holdMinutes?, reason?}`  | As `/hosts/resize` (`docs/EMBEDDING.md`): hold a larger size for a while, or `size: null` to go back.  |
 
 Which of the person's workspaces there the machine is started under, and so whose limits and
 choices apply, is the server's to decide from the sign-in; `…/choices` says which (`workspace:
