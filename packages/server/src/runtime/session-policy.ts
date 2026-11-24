@@ -5,7 +5,15 @@ import {
   type OutwardGate,
   dreamSupportFor,
 } from "@gram/agents";
-import type { PermissionMode, Thread, ThreadId, ThreadNotFound } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  hostOf,
+  AgentUnavailable,
+  type PermissionMode,
+  type Thread,
+  type ThreadId,
+  type ThreadNotFound,
+} from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
@@ -90,7 +98,23 @@ export interface SessionPolicyPort {
    * unarchives one is stored, whoever makes it. Reads the store only.
    */
   reviving?(thread: Thread): Effect.Effect<string | undefined>;
+  /**
+   * Why no session may open for this thread where its folder is, or nothing: asked each time a
+   * session opens, before `opening` is told, under the same lock rules as `forThread`.
+   */
+  admitting?(thread: Thread): Effect.Effect<string | undefined>;
 }
+
+/**
+ * Whether the row being written is still the thread a decision was made for: the same
+ * orchestrator's, with its folder on the same machine. A decision made for a row that has since
+ * changed hands or moved is no decision for the row as it stands.
+ */
+export const sameWorkerAndMachine = (row: Thread, decided: Thread): boolean =>
+  row.spawnedBy?.threadId === decided.spawnedBy?.threadId &&
+  hostOf(effectiveCheckout(row)) === hostOf(effectiveCheckout(decided));
+
+const NOT_ADMITTED = "Whether this thread may run where its folder is couldn't be decided now.";
 
 export const PLAIN_POLICY: SessionPolicy = { audience: "plain", outwardGate: undefined };
 
@@ -129,7 +153,28 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
           ),
         );
 
-  const opening = (thread: Thread): Effect.Effect<void> =>
+  const admitted = (thread: Thread): Effect.Effect<void, AgentUnavailable> =>
+    sessionPolicy?.admitting === undefined
+      ? Effect.void
+      : sessionPolicy.admitting(thread).pipe(
+          Effect.catchCause(() => Effect.succeed<string | undefined>(NOT_ADMITTED)),
+          Effect.flatMap((refused) =>
+            refused === undefined
+              ? Effect.void
+              : Effect.fail(
+                  new AgentUnavailable({
+                    agent: thread.model.agent,
+                    reason: "startup-failed",
+                    message: refused,
+                  }),
+                ),
+          ),
+        );
+
+  const opening = (thread: Thread): Effect.Effect<void, AgentUnavailable> =>
+    Effect.andThen(admitted(thread), told(thread));
+
+  const told = (thread: Thread): Effect.Effect<void> =>
     sessionPolicy?.opening === undefined
       ? Effect.void
       : sessionPolicy
@@ -168,7 +213,8 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
     /**
      * The thread as it stands, and the edit to store for it: `edit` itself, or, where it would
      * unarchive a thread the policy says may not come back (`reviving`), `edit` with the thread
-     * kept archived. A policy that dies keeps it archived too.
+     * kept archived. A policy that dies keeps it archived too, and so does a row that changed
+     * hands or moved between the decision and its writing (`sameWorkerAndMachine`).
      */
     readonly unparking: (
       threadId: ThreadId,
@@ -184,7 +230,14 @@ export const makeSessionPolicy = ({ store }: SessionPolicyDeps) => {
         const refused = yield* asked(before).pipe(
           Effect.catchCause(() => Effect.succeed<string | undefined>("undecided")),
         );
-        if (refused === undefined) return [before, edit] as const;
+        if (refused === undefined)
+          return [
+            before,
+            (row: Thread) =>
+              row.parked !== true || sameWorkerAndMachine(row, before)
+                ? edit(row)
+                : { ...edit(row), parked: true },
+          ] as const;
         yield* Effect.logWarning("an archived thread was kept archived").pipe(
           Effect.annotateLogs({ threadId, reason: refused }),
         );

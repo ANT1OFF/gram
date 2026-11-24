@@ -24,6 +24,12 @@ export interface MachineClaim {
    * then is the provider asked about its seats; one that keeps none is sent no such call.
    */
   readonly seats?: boolean | undefined;
+  /**
+   * Who has a place on it now: each worker by its seat, a thread with none by `thread:<id>`. Only
+   * the placement decision adds one, and only one of these may open a session there. Absent on a
+   * claim from before this was kept: whoever is on the machine then is taken as admitted, once.
+   */
+  readonly occupants?: ReadonlyArray<string> | undefined;
   /** When it was written (epoch ms). */
   readonly at: number;
 }
@@ -32,6 +38,8 @@ export interface MachineClaims {
   readonly get: (name: string) => MachineClaim | undefined;
   /** Writes a machine's claim. One already there is kept: a claim is never rewritten. */
   readonly claim: (name: string, claim: MachineClaim) => MachineClaim;
+  /** Writes who has a place on a machine now (`MachineClaim.occupants`); nothing else of it. */
+  readonly occupy: (name: string, occupants: ReadonlyArray<string>) => void;
   /** Forgets a claim: its machine never came, or was given back. */
   readonly forget: (name: string) => void;
   /**
@@ -45,6 +53,7 @@ const CLAIMS_FILE = "worker-machine-claims.json";
 const CLAIMS_FILE_MOST = 512 * 1024;
 const CLAIMS_KEPT_MOST = 1024;
 const PRUNE_AFTER_MS = 60 * 60_000;
+const OCCUPANTS_MOST = 64;
 const MODES: ReadonlySet<string> = new Set(["own", "exclusive", "shared"]);
 
 const claimsOver = (kept: Map<string, MachineClaim>, save: () => void): MachineClaims => ({
@@ -56,6 +65,12 @@ const claimsOver = (kept: Map<string, MachineClaim>, save: () => void): MachineC
     if (kept.size > CLAIMS_KEPT_MOST) kept.delete(kept.keys().next().value!);
     save();
     return claim;
+  },
+  occupy: (name, occupants) => {
+    const before = kept.get(name);
+    if (before === undefined) return;
+    kept.set(name, { ...before, occupants: [...new Set(occupants)].slice(0, OCCUPANTS_MOST) });
+    save();
   },
   forget: (name) => {
     if (kept.delete(name)) save();
@@ -72,7 +87,7 @@ export const memoryMachineClaims = (): MachineClaims => claimsOver(new Map(), ()
 
 const readClaim = (raw: unknown): MachineClaim | undefined => {
   if (typeof raw !== "object" || raw === null) return undefined;
-  const { orchestrator, mode, picks, at, seat, seats } = raw as Record<string, unknown>;
+  const { orchestrator, mode, picks, at, seat, seats, occupants } = raw as Record<string, unknown>;
   if (
     typeof orchestrator !== "string" ||
     orchestrator === "" ||
@@ -97,6 +112,13 @@ const readClaim = (raw: unknown): MachineClaim | undefined => {
     picks: Object.fromEntries(read),
     ...(typeof seat === "string" && seat.length <= 64 ? { seat } : {}),
     ...(seats === true ? { seats: true } : {}),
+    ...(Array.isArray(occupants)
+      ? {
+          occupants: occupants
+            .filter((each): each is string => typeof each === "string" && each.length <= 80)
+            .slice(0, OCCUPANTS_MOST),
+        }
+      : {}),
     at,
   };
 };

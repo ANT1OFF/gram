@@ -719,6 +719,7 @@ export const OrchestrationLive = Layer.effect(
       forThread: policyFor,
       opening,
       reviving: admitting.reviving,
+      admitting: admitting.opening,
       modeAfterSwitch,
       switchHandoff: (thread) =>
         Effect.succeed(

@@ -444,7 +444,8 @@ a minute, and a reviewer placed beside its author can read the author's worktree
   `exclusive` carries the one worker it was asked for, for life, known by the seat written into
   its claim: no other spawn is placed there even once it stands empty (its worker archived or
   closed). One asked for otherwise never becomes exclusive. A retry of one `clientRequestId`
-  holds the seat its first try did, and so the same place.
+  holds the seat its first try did, and so the same place: each try holds it as itself, and the
+  seat is given up only when the last of them lets go.
 - **The shared pool.** A machine is one of an orchestrator's shared machines when it was asked
   for with `shared`. A spawn joins one with the same picks (size, architecture, isolation,
   environment) that has room. Machines asked for with `own` are reached only by name.
@@ -453,18 +454,29 @@ a minute, and a reviewer placed beside its author can read the author's worktree
   card, and a seat never used lapses after ten minutes.
 - **The cap.** A machine carries at most what its provider says a machine of that size is for,
   lowered by the workspace's `workersPerMachine` (1 to 8), and 4 where the provider says nothing.
-  Counted: every open thread whose folder is there, finished or at work, a worker or one that
-  was detached from its workspace, and the seats of spawns under way. A finished worker is still
+  Counted: everyone who holds a place there (the machine's claim keeps them, `occupants`: a
+  worker by its seat, a thread with none by its id), finished or at work, a worker or one that
+  was detached from its workspace, and the seats of spawns under way. Only the placement
+  decision gives a place, and a place is let go once its thread is archived and at rest, closed
+  or moved away. A finished worker is still
   open and can be messaged back to work, so its place is its own until it is archived: a worker
   that resumes never finds another in it, and a machine full of finished workers takes no more
   until one is archived. One archived while something still goes on in its session keeps its
   place until that ends. The decision is made again as the spawn goes ahead, after any approval
   card, and once more as the worker's folder is made. Each spawn is counted once: its seat is on
   its placement, so its own reservation and the worker it becomes are one place.
+- **No session without a place.** No session opens on a workers' machine for a thread that
+  holds no place there: the question is asked where every session opens
+  (`SessionPolicyPort.admitting`, in the runtime's one open path), and a thread without a place
+  is decided at that moment or refused. So whatever leads a session to open is held to the same
+  decision: a message to an archived worker, a close undone, a thread started on the machine by
+  hand. A thread that is no orchestrator's worker gets a place only alone, and never on an
+  exclusive machine. A thread without a place is not counted against those that hold one.
 - **Coming back from the archive.** An archived worker gave its place up, and is decided again
   as it comes back: any edit that unarchives a thread whose folder is on a workers' machine asks
   the same decision first (`ThreadRuntimes.updateThread`, whoever makes the edit), and where the
-  machine has no place for it the thread stays archived. A thread that is no orchestrator's any
+  machine has no place for it the thread stays archived. The decision holds for the row it was
+  made for: one that changed hands or moved before the edit was stored stays archived too. A thread that is no orchestrator's any
   more comes back only to a machine nobody else is on.
 - **`shareWith` checks its picks.** A size, architecture, isolation or environment named with it
   that differs from what the machine was asked with is refused; naming none takes the machine

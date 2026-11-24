@@ -9,16 +9,13 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { newSeat } from "../embedding/worker-seats.ts";
-import {
-  releaseFence,
-  seatRefusedWords,
-  type SeatHolds,
-  workersOnMachine,
-} from "./worker-packing.ts";
+import { releaseFence, seatRefusedWords, type SeatHolds } from "./worker-packing.ts";
 import { charterOf, workerMachineSourceFor, type WorkerSandboxDeps } from "./worker-placed.ts";
-import type { WorkerPlacementService } from "./worker-placement.ts";
+import { occupantKey, type WorkerPlacementService } from "./worker-placement.ts";
 
 const NOBODY = "" as ThreadId;
+const UNDECIDED =
+  "Whether this thread has a place on its machine couldn't be decided now, so its session wasn't opened. Try again in a moment.";
 
 /**
  * The placement decision where it can't be gone round (`worker-placement.ts`). The orchestration
@@ -45,6 +42,11 @@ const NOBODY = "" as ThreadId;
  * `reviving` is the same question for an archived thread coming back to the machine its folder is
  * on, a worker or one that is no orchestrator's any more (which must then be alone there): archived, it gave its place up, and others may have been placed there since. It answers
  * why it may not come back, or nothing; allowed, its place is held from here on.
+ *
+ * `opening` is asked as a session opens: no session opens on a workers' machine for a thread
+ * that has no place there. One that holds a place (`MachineClaim.occupants`) opens; any other is
+ * decided then, as a return from the archive is, whatever led its session to open (a message to
+ * an archived worker, a close undone, a thread started on the machine by hand).
  */
 export const makeWorkerAdmission = ({
   deps,
@@ -154,6 +156,7 @@ export const makeWorkerAdmission = ({
             as: claim.mode === "exclusive" ? "exclusive" : "named",
             picks: claim.mode === "exclusive" ? claim.picks : {},
             seat,
+            occupant: occupantKey(thread),
             thread: thread.id,
             charter: yield* charterOf(store, holder, "adopt_thread").pipe(
               Effect.orElseSucceed(() => undefined),
@@ -166,7 +169,11 @@ export const makeWorkerAdmission = ({
         if (!keepPlace) seatHolds.release(machine.name, seat);
         return kept?.machine === machine.name ? kept : undefined;
       }
-      const others = workersOnMachine(threads, machine.id).filter((each) => each.id !== thread.id);
+      if (claim?.mode === "exclusive")
+        return yield* Effect.fail(
+          `${machine.name} was started for one worker only and is never shared, so “${thread.title}” has no place on it.`,
+        );
+      const others = yield* placement.on(threads, machine, thread.id);
       const coming = seatHolds.on(machine.name).filter((each) => each !== seat).length;
       if (others.length + coming > 0)
         return yield* Effect.fail(
@@ -176,6 +183,7 @@ export const makeWorkerAdmission = ({
         );
       if (keepPlace) {
         seatHolds.hold(machine.name, seat);
+        placement.occupy(machine.name, occupantKey(thread));
         yield* Effect.promise(() => releaseFence.settled(machine.name));
       }
       return undefined;
@@ -187,6 +195,18 @@ export const makeWorkerAdmission = ({
       Effect.catch((refused) => Effect.succeed<string | undefined>(refused)),
     );
 
-  return { confirm, adopting, reviving };
+  const opening = (thread: Thread): Effect.Effect<string | undefined> =>
+    Effect.gen(function* () {
+      const machine = workersMachine(hostOf(effectiveCheckout(thread)));
+      if (machine === undefined) return undefined;
+      const threads = yield* store.listThreads;
+      placement.claimOf(machine.name, machine, threads);
+      const { keys } = yield* placement.admitted(machine.name, machine, threads, thread.id);
+      return thread.parked !== true && keys.includes(occupantKey(thread))
+        ? undefined
+        : yield* reviving(thread);
+    }).pipe(Effect.catchCause(() => Effect.succeed<string | undefined>(UNDECIDED)));
+
+  return { confirm, adopting, reviving, opening };
 };
 export type WorkerAdmission = ReturnType<typeof makeWorkerAdmission>;

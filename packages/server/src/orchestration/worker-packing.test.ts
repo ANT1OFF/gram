@@ -199,9 +199,10 @@ const setup = (
                 status: 409,
                 body: { code: options.refuseSeat, message: "Refused there.", cap, workers: here },
               };
+            const kept = here.filter((seat) => !detach.includes(seat));
             const after = [
-              ...here.filter((seat) => !detach.includes(seat)),
-              ...(attach === undefined ? [] : [attach.worker]),
+              ...kept,
+              ...(attach === undefined || kept.includes(attach.worker) ? [] : [attach.worker]),
             ];
             seated.set(name, after);
             return { ok: true as const, status: 200, body: { workers: after, cap, size: "large" } };
@@ -315,9 +316,11 @@ describe("a worker packed onto a hosted machine", () => {
       online.set("worker-00000000aa", { id: "m-worker-00000000aa", name: "worker-00000000aa" });
       const joined = yield* spawn({ shared: true });
       expect(joined?.name).toBe("worker-00000000aa");
-      yield* (yield* prepare(joined!)).close;
-      // With two workers on it, it is full: the next goes to a new machine.
-      threads = [...threads, worker("b", "m-worker-00000000aa", placement)];
+      const { close } = yield* prepare(joined!);
+      // Its worker is made, with the seat its spawn was admitted with. With two workers on it,
+      // the machine is full: the next goes to a new one.
+      threads = [...threads, worker("b", "m-worker-00000000aa", joined!.placement)];
+      yield* close;
       const next = yield* spawn({ shared: true });
       expect(next?.name).not.toBe("worker-00000000aa");
       expect(Exit.isSuccess((yield* prepare(next!)).ready)).toBe(true);
@@ -516,17 +519,20 @@ describe("a machine named for a worker, with no way round its checks", () => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("checks the cap again as the spawn goes ahead, after any approval", () =>
+  it.effect("decides again as the spawn goes ahead, after any approval", () =>
     Effect.gen(function* () {
       const placement = { machine: name, packing: "shared" as const };
-      let threads = [worker("a", `m-${name}`, placement)];
-      const { spawn, online } = yield* setup({ cap: 2, threads: () => threads });
+      const charter = { workersPerMachine: 2 };
+      const { spawn, online } = yield* setup({
+        charter,
+        threads: () => [worker("a", `m-${name}`, placement)],
+      });
       online.set(name, { id: `m-${name}`, name });
       const planned = yield* spawn({ shareWith: name });
-      // While its approval card is open, another worker lands on the machine.
-      threads = [...threads, worker("b", `m-${name}`, placement)];
+      // While its approval card is open, the workspace lowers how many a machine carries.
+      charter.workersPerMachine = 1;
       const { ready, close } = yield* prepare(planned!);
-      expect(Exit.isFailure(ready) && String(ready.cause)).toMatch(/is for 2 workers and has 2/);
+      expect(Exit.isFailure(ready) && String(ready.cause)).toMatch(/is for 1 worker and has 1/);
       yield* close;
     }).pipe(Effect.scoped),
   );
@@ -869,6 +875,97 @@ describe("round 4: the same decision on every road, and nothing counted twice", 
         release!.done();
         expect(Exit.isSuccess(yield* Fiber.join(fiber)), road).toBe(true);
       }
+    }).pipe(Effect.scoped),
+  );
+});
+
+const seated = (id: string, machine: string, seat: string, more: Partial<Thread> = {}) =>
+  worker(id, `m-${machine}`, { machine, packing: "shared", seat }, more);
+
+describe("round 5: no session opens on a workers' machine without a place there", () => {
+  const input = { title: "Next", feature: "f", project: "shop" };
+
+  it.effect("decides a session's opening for any thread that holds no place there", () =>
+    Effect.gen(function* () {
+      const name = "worker-00000000ea";
+      const b = seated("b", name, "sb");
+      const c = seated("c", name, "sc");
+      let threads = [b, c];
+      const { plan, online, claims } = yield* setup({ cap: 2, threads: () => threads });
+      online.set(name, { id: `m-${name}`, name });
+      // B and C hold the machine's two places, and open their sessions as they always did.
+      expect(yield* plan.admission.opening(b)).toBeUndefined();
+      expect(claims.get(name)?.occupants?.toSorted()).toEqual(["sb", "sc"]);
+      // A message to archived A opens its session before anything unarchives it: refused.
+      const a = seated("a", name, "sa", { parked: true });
+      threads = [a, b, c];
+      expect(yield* plan.admission.opening(a)).toMatch(/is for 2 workers and has 2/);
+      // A close undone brings A back unparked, with its old placement: it holds no place now.
+      const undone = seated("a", name, "sa");
+      threads = [undone, b, c];
+      expect(yield* plan.admission.opening(undone)).toMatch(/is for 2 workers and has 2/);
+      // A thread started on the machine by hand, no orchestrator's worker: not beside workers.
+      const byHand = { ...seated("h", name, "sh"), spawnedBy: undefined } as never as Thread;
+      threads = [byHand, b, c];
+      expect(yield* plan.admission.opening(byHand)).toMatch(/shared within one orchestrator only/);
+      // None of them is counted against the workers that do hold places: B still opens, and
+      // the machine is full with two, not four.
+      threads = [undone, byHand, b, c];
+      expect(yield* plan.admission.opening(b)).toBeUndefined();
+      expect(yield* plan.admission.opening(c)).toBeUndefined();
+      expect(claims.get(name)?.occupants?.toSorted()).toEqual(["sb", "sc"]);
+      // With C archived there is a place, and the archived worker that is messaged gets it.
+      threads = [a, b, { ...c, parked: true }];
+      expect(yield* plan.admission.opening(a)).toBeUndefined();
+      expect(claims.get(name)?.occupants?.toSorted()).toEqual(["sa", "sb"]);
+      expect(failure(yield* Effect.exit(plan(CALLER, input, { shareWith: name })))).toMatch(
+        /is for 2 workers and has 2/,
+      );
+      // A thread whose folder is on no workers' machine is none of this.
+      expect(yield* plan.admission.opening(worker("e", "m-elsewhere", undefined))).toBeUndefined();
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("opens no other thread's session on an exclusive machine, empty or not", () =>
+    Effect.gen(function* () {
+      let threads: Thread[] = [];
+      const made = yield* setup({ threads: () => threads });
+      const first = yield* made.spawn({ own: true, exclusive: true }, "Alone");
+      expect(Exit.isSuccess((yield* prepare(first!)).ready)).toBe(true);
+      const own = worker("a", `m-${first!.name}`, first!.placement);
+      const byHand = worker("h", `m-${first!.name}`, undefined, { spawnedBy: undefined } as never);
+      threads = [own, byHand];
+      expect(yield* made.plan.admission.opening(own)).toBeUndefined();
+      expect(yield* made.plan.admission.opening(byHand)).toMatch(/started for one worker only/);
+      // Its worker archived, the machine stands empty: still not a place for a thread by hand.
+      threads = [{ ...own, parked: true }, byHand];
+      expect(yield* made.plan.admission.opening(byHand)).toMatch(/started for one worker only/);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps a seat two tries of one request hold until the last of them lets go", () =>
+    Effect.gen(function* () {
+      const name = "worker-00000000eb";
+      const threads = [seated("a", name, "sa")];
+      const { plan, online, seated: atProvider } = yield* setup({ threads: () => threads });
+      online.set(name, { id: `m-${name}`, name });
+      const twice = { ...input, clientRequestId: "same-request" };
+      const one = yield* plan(CALLER, twice, { shareWith: name });
+      const two = yield* plan(CALLER, twice, { shareWith: name });
+      const seat = one!.placement.seat!;
+      expect(two!.placement.seat).toBe(seat);
+      const first = yield* prepare(one!);
+      const second = yield* prepare(two!);
+      expect(atProvider.get(name)).toEqual([seat]);
+      // One try is cancelled while its twin still makes the worker: the place stays held, here
+      // and with the provider.
+      yield* second.close;
+      expect(reservedSeats(name)).toContain(seat);
+      expect(atProvider.get(name)).toEqual([seat]);
+      // The last try ends with no worker made: now the seat is given up.
+      yield* first.close;
+      expect(reservedSeats(name)).not.toContain(seat);
+      expect(atProvider.get(name)).toEqual([]);
     }).pipe(Effect.scoped),
   );
 });

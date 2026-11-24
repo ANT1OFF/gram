@@ -33,6 +33,8 @@ import { makeWorkerAdmission } from "./worker-admission.ts";
 import { machineNamedIn } from "./service/machine-named.ts";
 import type { WorkerSandbox } from "./tool-inputs.ts";
 
+const NONE_WORKING = Effect.succeed<ReadonlyArray<ThreadId>>([]);
+
 const reclaimedWords = (name: string) =>
   `The server says it no longer holds the machine ${name}: most likely it was reclaimed once its work was over, so the worker wasn't placed on it. Spawn again with another clientRequestId for a new machine, or leave out sandbox to run the worker on your machine.`;
 
@@ -59,7 +61,9 @@ export const makeWorkerSandbox = ({
   joined,
   claims = memoryMachineClaims(),
   runtimes,
-  busy = runtimes === undefined ? undefined : (archived) => busyThreads(runtimes, archived),
+  busy = runtimes === undefined
+    ? undefined
+    : (archived) => busyThreads({ summaryOf: runtimes.summaryOf, working: NONE_WORKING }, archived),
 }: WorkerSandboxDeps) =>
   Effect.gen(function* () {
     const machineFlights = new Map<string, Flight>();
@@ -271,7 +275,7 @@ export const makeWorkerSandbox = ({
         const rows = offer === undefined ? undefined : yield* source.machines;
         const identity = source.identity ?? "";
         const mine = (name: string) => joined().find((each) => each.name === name && theirs(each));
-        const charter = yield* Effect.cached(charterOf(store, caller, tool));
+        const charter = charterOf(store, caller, tool);
         const retried = (name: string) =>
           input.clientRequestId === undefined || sandbox.own !== true || mine(name) === undefined
             ? Effect.succeed(undefined)
@@ -297,6 +301,7 @@ export const makeWorkerSandbox = ({
           (input.clientRequestId === undefined
             ? newSeat()
             : requestSeat(caller, input.clientRequestId));
+        const attempt = newSeat();
         const askFor = (name: string, as: WorkerPacking) =>
           Effect.map(charter, (rules) => ({
             caller,
@@ -310,6 +315,7 @@ export const makeWorkerSandbox = ({
             sharing: offer,
             row: rows?.find((each) => each.name === name),
             comingUp: machineFlights.has(flightKey(identity, name)),
+            holder: attempt,
             tool,
           }));
         const shared = (machine: { readonly name: string }) =>
@@ -473,8 +479,8 @@ export const makeWorkerSandbox = ({
             const environment = picks.environment ?? admitted.claim.picks["environment"];
             let taken = false;
             const letGo = Effect.suspend(() => {
-              seatHolds.release(name, seat);
-              if (!taken) return Effect.void;
+              const heldByAnother = seatHolds.release(name, seat, attempt);
+              if (!taken || heldByAnother) return Effect.void;
               taken = false;
               attached.delete(seat);
               return Effect.asVoid(source.seats({ name, detach: [seat] }));
@@ -483,8 +489,7 @@ export const makeWorkerSandbox = ({
             const prepare = Effect.gen(function* () {
               yield* Effect.addFinalizer(() =>
                 Effect.gen(function* () {
-                  seatHolds.release(name, seat);
-                  if (!taken) return;
+                  if (seatHolds.release(name, seat, attempt) || !taken) return;
                   const threads = yield* store.listThreads.pipe(Effect.option);
                   if (
                     threads._tag === "Some" &&
@@ -496,7 +501,7 @@ export const makeWorkerSandbox = ({
               const prepared = plan.prepare === undefined ? {} : yield* plan.prepare;
               const refused = (message: string) =>
                 Effect.suspend(() => {
-                  seatHolds.release(name, seat);
+                  seatHolds.release(name, seat, attempt);
                   return Effect.andThen(prepared.abandon ?? Effect.void, fail(message));
                 });
               yield* placement

@@ -26,6 +26,8 @@ export interface WorkerAdmissionHook {
   ) => Effect.Effect<WorkerPlacement | undefined, string>;
   /** Why an archived worker may not come back to its machine now, or nothing. */
   readonly reviving: (thread: Thread) => Effect.Effect<string | undefined>;
+  /** Why no session may open for this thread on its machine now, or nothing. */
+  readonly opening: (thread: Thread) => Effect.Effect<string | undefined>;
 }
 
 /**
@@ -44,7 +46,9 @@ const NOT_DECIDED =
 /**
  * Where the service finds the placement decision. It is installed once the tools that plan a
  * worker's machine are made (`setWorkerAdmission`). Until then, and on a server that makes none,
- * a workers' machine takes no worker at all: with nothing to decide, the answer is no.
+ * a workers' machine takes no worker at all: with nothing to decide, the answer is no. The one
+ * thing not refused meanwhile is a session opening for a thread already there: a server restarting
+ * resumes its threads before its tools are made, and nothing new was placed without the decision.
  */
 export const makeWorkerAdmitting = (
   joinedMachines: () => ReadonlyArray<{
@@ -84,6 +88,10 @@ export const makeWorkerAdmitting = (
       const machine = workers(hostOf(effectiveCheckout(thread)));
       return Effect.succeed(machine === undefined ? undefined : `${machine.name} ${NOT_DECIDED}`);
     }) satisfies WorkerAdmissionHook["reviving"],
+    opening: ((thread) =>
+      installed === undefined
+        ? Effect.succeed(undefined)
+        : installed.opening(thread)) satisfies WorkerAdmissionHook["opening"],
   };
 };
 export type WorkerAdmitting = ReturnType<typeof makeWorkerAdmitting>;

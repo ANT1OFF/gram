@@ -33,24 +33,41 @@ export const SEAT_HOLD_MS = 10 * 60_000;
  * let go (a card denied) runs out after `SEAT_HOLD_MS`.
  */
 export const makeSeatHolds = (now: () => number = Date.now) => {
-  const held = new Map<string, Map<string, number>>();
-  const live = (machine: string): Map<string, number> => {
-    const seats = held.get(machine) ?? new Map<string, number>();
-    for (const [seat, until] of seats) if (until <= now()) seats.delete(seat);
+  const held = new Map<string, Map<string, { until: number; readonly owners: Set<string> }>>();
+  const live = (machine: string) => {
+    const seats = held.get(machine) ?? new Map<string, { until: number; owners: Set<string> }>();
+    for (const [seat, hold] of seats) if (hold.until <= now()) seats.delete(seat);
     if (seats.size === 0) held.delete(machine);
     else held.set(machine, seats);
     return seats;
   };
   const holds = {
-    hold: (machine: string, seat: string, forMs: number = SEAT_HOLD_MS) => {
+    /**
+     * Holds `seat` for `owner`: the try that holds it. Two tries of one request hold the same
+     * seat, each as itself, and the seat stays held until the last of them lets go.
+     */
+    hold: (machine: string, seat: string, forMs: number = SEAT_HOLD_MS, owner = "") => {
       const seats = live(machine);
-      seats.set(seat, now() + forMs);
+      const before = seats.get(seat);
+      const owners = before?.owners ?? new Set<string>();
+      owners.add(owner);
+      seats.set(seat, { until: now() + forMs, owners });
       held.set(machine, seats);
     },
-    release: (machine: string, seat: string) => {
+    /**
+     * Lets go of `owner`'s hold on `seat`, and of any taken in nobody's name for it (the
+     * folder's making). Whether the seat is still held by another try afterwards.
+     */
+    release: (machine: string, seat: string, owner = ""): boolean => {
       const seats = held.get(machine);
-      seats?.delete(seat);
-      if (seats?.size === 0) held.delete(machine);
+      const hold = seats?.get(seat);
+      if (seats === undefined || hold === undefined) return false;
+      hold.owners.delete(owner);
+      hold.owners.delete("");
+      if (hold.owners.size > 0) return true;
+      seats.delete(seat);
+      if (seats.size === 0) held.delete(machine);
+      return false;
     },
     on: (machine: string): ReadonlyArray<string> => [...live(machine).keys()],
     /** The machines that hold a seat and nothing else knows of yet: ones still being asked for. */

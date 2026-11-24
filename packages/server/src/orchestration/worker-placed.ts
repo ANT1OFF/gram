@@ -33,8 +33,13 @@ export interface WorkerSandboxDeps {
   /** Whose each worker machine is (`worker-machine-claims.ts`). Left out: kept in memory. */
   readonly claims?: MachineClaims | undefined;
   /** The sessions, asked which archived threads are still busy (`busy`, where that isn't given). */
-  readonly runtimes?: Pick<ThreadRuntimes["Service"], "working" | "summaryOf"> | undefined;
-  /** Of these archived threads, those still busy in their session: they keep their place. */
+  readonly runtimes?: Pick<ThreadRuntimes["Service"], "summaryOf"> | undefined;
+  /**
+   * Of these archived threads, those still busy in their session: they keep their place. It is
+   * asked as a session opens, with that thread's own lock held, and while placements wait their
+   * turn, so it reads only what takes no thread's lock: a turn, a start, a queued message or a
+   * request waiting.
+   */
   readonly busy?:
     | ((archived: ReadonlyArray<Thread>) => Effect.Effect<ReadonlySet<ThreadId>>)
     | undefined;

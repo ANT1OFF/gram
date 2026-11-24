@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import type { MachineClaim, MachineClaims } from "../embedding/worker-machine-claims.ts";
 import type { ProvidedWorkerMachine } from "../embedding/worker-seats.ts";
+import type { WorkerSandboxDeps } from "./worker-placed.ts";
 import {
   fullWords,
   machineCap,
@@ -185,6 +186,13 @@ export const claimFromWorkers = (
   };
 };
 
+/**
+ * What a thread's place on a machine is kept by (`MachineClaim.occupants`): its seat, or, for a
+ * thread with none (one no orchestrator placed), the thread itself.
+ */
+export const occupantKey = (thread: Pick<Thread, "id" | "spawnedBy">): string =>
+  thread.spawnedBy?.placement?.seat ?? `thread:${thread.id}`;
+
 /** A joined machine as a placement reads it. */
 export interface PlacedOnMachine {
   readonly id: string;
@@ -208,6 +216,10 @@ export interface PlacementAsk {
     | { readonly workers: Readonly<Record<string, number>>; readonly size?: string | undefined }
     | undefined;
   readonly row?: ProvidedWorkerMachine | undefined;
+  /** What the place is kept by once admitted (`occupantKey`): left out, the seat. */
+  readonly occupant?: string | undefined;
+  /** The try that holds the seat (`SeatHolds.hold`): left out, it is held in nobody's name. */
+  readonly holder?: string | undefined;
   /** Whether the machine is being brought up now: its claim then stands though it isn't joined. */
   readonly comingUp: boolean;
   readonly tool: string;
@@ -225,9 +237,7 @@ export const makeWorkerPlacement = (deps: {
   readonly claims: MachineClaims;
   readonly seatHolds: SeatHolds;
   /** Of these archived threads, those with something still going on in their session. */
-  readonly busy?:
-    | ((archived: ReadonlyArray<Thread>) => Effect.Effect<ReadonlySet<ThreadId>>)
-    | undefined;
+  readonly busy?: WorkerSandboxDeps["busy"];
   readonly now?: () => number;
 }) =>
   Effect.gen(function* () {
@@ -255,6 +265,36 @@ export const makeWorkerPlacement = (deps: {
         return workersOnMachine(threads, machine.id, busy).filter(
           (thread) => thread.id !== placing,
         );
+      });
+    const admitted = (
+      name: string,
+      machine: PlacedOnMachine | undefined,
+      threads: ReadonlyArray<Thread>,
+      placing?: ThreadId,
+    ) =>
+      Effect.gen(function* () {
+        const others = yield* openOn(threads, machine, placing);
+        const self = threads.find(
+          (thread) =>
+            thread.id === placing &&
+            thread.parked !== true &&
+            hostOf(effectiveCheckout(thread)) === machine?.id,
+        );
+        const present = self === undefined ? others : [...others, self];
+        const before = claims.get(name)?.occupants;
+        const held = seatHolds.on(name);
+        const keys =
+          before === undefined
+            ? present.map(occupantKey)
+            : before.filter(
+                (key) => held.includes(key) || present.some((each) => occupantKey(each) === key),
+              );
+        if (
+          claims.get(name) !== undefined &&
+          (before === undefined || keys.length !== before.length)
+        )
+          claims.occupy(name, keys);
+        return { keys, on: others.filter((each) => keys.includes(occupantKey(each))) };
       });
     const claimOf = (
       name: string,
@@ -289,12 +329,21 @@ export const makeWorkerPlacement = (deps: {
                       }),
                   ),
                 );
-          const on = yield* openOn(threads, ask.machine, ask.thread);
+          const claimed = claimOf(
+            ask.name,
+            ask.machine,
+            threads,
+            ask.comingUp || seatHolds.on(ask.name).some((seat) => seat !== ask.seat),
+          );
+          const { keys, on } =
+            claimed === undefined
+              ? { keys: [], on: yield* openOn(threads, ask.machine, ask.thread) }
+              : yield* admitted(ask.name, ask.machine, threads, ask.thread);
           const seated = new Set(on.map((thread) => thread.spawnedBy?.placement?.seat));
           const coming = seatHolds
             .on(ask.name)
             .filter((seat) => seat !== ask.seat && !seated.has(seat)).length;
-          const claim = claimOf(ask.name, ask.machine, threads, ask.comingUp || coming > 0);
+          const claim = claimed;
           const cap = machineCap(ask.charter, ask.sharing, {
             size: claim?.picks["size"] ?? ask.picks["size"],
             row: ask.row,
@@ -313,7 +362,8 @@ export const makeWorkerPlacement = (deps: {
           if (!decided.ok)
             return yield* new AppToolError({ tool: ask.tool, message: decided.message });
           const kept = decided.fresh ? claims.claim(ask.name, decided.claim) : decided.claim;
-          seatHolds.hold(ask.name, ask.seat);
+          seatHolds.hold(ask.name, ask.seat, undefined, ask.holder);
+          claims.occupy(ask.name, [...keys, ask.occupant ?? ask.seat]);
           return { claim: kept, cap, on, coming };
         }),
       ).pipe(Effect.tap(() => Effect.promise(() => releaseFence.settled(ask.name))));
@@ -323,7 +373,10 @@ export const makeWorkerPlacement = (deps: {
       room: (ask: Omit<PlacementAsk, "seat">) =>
         Effect.gen(function* () {
           const threads = yield* deps.listThreads.pipe(Effect.orElseSucceed(() => []));
-          const on = yield* openOn(threads, ask.machine);
+          const on =
+            claims.get(ask.name) === undefined
+              ? yield* openOn(threads, ask.machine)
+              : (yield* admitted(ask.name, ask.machine, threads)).on;
           const seated = new Set(on.map((thread) => thread.spawnedBy?.placement?.seat));
           const coming = seatHolds.on(ask.name).filter((seat) => !seated.has(seat)).length;
           const claim =
@@ -344,6 +397,16 @@ export const makeWorkerPlacement = (deps: {
         capsSaid.set(name, cap);
         if (capsSaid.size > 256) capsSaid.delete(capsSaid.keys().next().value!);
       },
+      /** Who is on a machine now, `placing` aside: the open, and the archived still busy. */
+      on: openOn,
+      /**
+       * Who has a place on a machine now (`MachineClaim.occupants`), with those gone from it let
+       * go: an occupant stays while its thread is open or still busy there, or its seat is held.
+       */
+      admitted,
+      /** Gives a thread decided elsewhere (one alone on the machine) its place there. */
+      occupy: (name: string, key: string) =>
+        claims.occupy(name, [...(claims.get(name)?.occupants ?? []), key]),
       claimOn: (name: string) => claims.get(name),
       /** A joined machine's claim, worked out from its workers and written down where none was. */
       claimOf: (name: string, machine: PlacedOnMachine, threads: ReadonlyArray<Placed>) =>
