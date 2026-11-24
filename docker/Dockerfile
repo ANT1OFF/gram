@@ -40,7 +40,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 # The GitHub CLI, for Clone from GitHub, pull requests and their checks: its release tarball for
 # this architecture, checked against the release's checksums. An empty GH_VERSION leaves it out.
-ARG GH_VERSION=2.103.3
+ARG GH_VERSION=2.104.0
 RUN if [ -n "${GH_VERSION}" ]; then \
     set -e; \
     arch="$(dpkg --print-architecture)"; \
