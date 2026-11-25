@@ -1,4 +1,4 @@
-import { type Thread, type ThreadId } from "@gram/contracts";
+import type { Thread, ThreadId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
 import { Brain, Columns3, FolderGit2, Pause, Repeat, Settings2 } from "lucide-react";
 

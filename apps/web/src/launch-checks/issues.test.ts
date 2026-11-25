@@ -1,4 +1,4 @@
-import { type AgentRuntime, type LaunchChecks } from "@gram/contracts";
+import type { AgentRuntime, LaunchChecks } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import {

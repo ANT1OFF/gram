@@ -4,12 +4,12 @@
 // nor misses what came while Gram was closed; a run a crash cut short resumes with its own events;
 // and a routine turned off mid-fire starts nothing, and looks afresh when it is turned on.
 import { describe, expect, it } from "@effect/vitest";
-import {
-  type ProjectId,
-  type RoutineEvent,
-  type RoutineTrigger,
-  type ThreadId,
-  type WorkspaceId,
+import type {
+  ProjectId,
+  RoutineEvent,
+  RoutineTrigger,
+  ThreadId,
+  WorkspaceId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";

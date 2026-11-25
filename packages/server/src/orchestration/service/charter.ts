@@ -20,7 +20,7 @@ import {
   profileModelRefusal,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
-import { type SettingsAuditEntry } from "../../persistence/thread-store.ts";
+import type { SettingsAuditEntry } from "../../persistence/thread-store.ts";
 import { withNotes } from "../outbox.ts";
 import {
   admittedForRole,
@@ -40,10 +40,10 @@ import {
   type OrchestrationKit,
   underKeysOf,
 } from "./kit.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 import { randomUUID } from "node:crypto";
-import { type OutboxState } from "../outbox.ts";
+import type { OutboxState } from "../outbox.ts";
 import { packingLine } from "../worker-packing.ts";
 
 const routinesKey = (charter: Pick<OrchestratorCharter, "routines">): string =>

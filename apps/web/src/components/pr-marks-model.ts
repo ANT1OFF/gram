@@ -166,13 +166,14 @@ export function reviewMarkOf(pr: ReviewSource): PrMark<ReviewMarkKind> | undefin
             ? "Waiting on an approving review"
             : `Waiting on ${requested.map((request) => request.name).join(", ")}`,
       };
+    default:
+      if (requested.length === 0) return undefined;
+      return {
+        kind: "waiting",
+        word: "Review requested",
+        detail: `Waiting on ${requested.map((request) => request.name).join(", ")}`,
+      };
   }
-  if (requested.length === 0) return undefined;
-  return {
-    kind: "waiting",
-    word: "Review requested",
-    detail: `Waiting on ${requested.map((request) => request.name).join(", ")}`,
-  };
 }
 
 /** People's open threads, which a decision doesn't speak for. */

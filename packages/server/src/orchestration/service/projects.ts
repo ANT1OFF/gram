@@ -1,4 +1,4 @@
-import { type Project, type ProjectId, type ThreadId, type WorkspaceState } from "@gram/contracts";
+import type { Project, ProjectId, ThreadId, WorkspaceState } from "@gram/contracts";
 import { basename, samePath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import { dirname, isAbsolute, join } from "node:path";
 import { registerRepo, repoFolder, repoIdentity } from "../../fs/folders.ts";
 import { toolError, type OutsideRepo, type OrchestrationKit } from "./kit.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 
 /** One call's projects: those it registered, and those it resolved and holds claimed. */
 export interface ProjectCall {

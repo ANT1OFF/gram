@@ -1,16 +1,16 @@
-import {
-  type Dream,
-  type DreamFailure,
-  type DreamReport,
-  type DreamFileDiff,
-  type DreamFileStatus,
-  type DreamPlan,
-  type DreamResolution,
-  type DreamReview,
-  type DreamStatus,
-  type ImportPreview,
-  type MemoryFileInfo,
-  type ModelRef,
+import type {
+  Dream,
+  DreamFailure,
+  DreamReport,
+  DreamFileDiff,
+  DreamFileStatus,
+  DreamPlan,
+  DreamResolution,
+  DreamReview,
+  DreamStatus,
+  ImportPreview,
+  MemoryFileInfo,
+  ModelRef,
 } from "@gram/contracts";
 
 import type { DreamPreviewInput, StartDreamInput } from "@/api/types";

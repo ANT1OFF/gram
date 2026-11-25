@@ -10,7 +10,7 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { redactText } from "../../logging/redact.ts";
-import { type StoredWorkerQuestion } from "../outbox.ts";
+import type { StoredWorkerQuestion } from "../outbox.ts";
 import { isRefusal, type QuestionRefusal } from "../worker-questions.ts";
 import { toolError } from "./kit.ts";
 

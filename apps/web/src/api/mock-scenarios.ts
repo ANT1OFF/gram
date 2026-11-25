@@ -17,13 +17,13 @@ import type {
 import { askQuestion, closeQuestion, questionDate } from "@gram/contracts";
 import { MOCK_DEPS_GIT, MOCK_DEPS_PLAN, MOCK_DEPS_RECAP } from "./mock-assist";
 import type { MockReadmeSimulation } from "./mock-readme";
-import {
-  type MockBoardSimulation,
-  type MockFinishedSimulation,
-  type MockReleaseSimulation,
-  type MockQuietBusySimulation,
-  type MockWaitingOnSimulation,
-  type MockWaitsSimulation,
+import type {
+  MockBoardSimulation,
+  MockFinishedSimulation,
+  MockReleaseSimulation,
+  MockQuietBusySimulation,
+  MockWaitingOnSimulation,
+  MockWaitsSimulation,
 } from "./mock-orchestration";
 import {
   seedAsks,

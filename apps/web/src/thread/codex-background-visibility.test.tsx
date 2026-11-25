@@ -5,7 +5,7 @@ import { afterEach, expect, it } from "vitest";
 import { createMessageFold } from "@/stores/message-fold";
 import { createThreadFeed, syncScheduler } from "@/stores/thread-feed";
 import displayed from "./codex-background.fixture.json";
-import { type AnyToolPart } from "./parts";
+import type { AnyToolPart } from "./parts";
 import { ToolCard } from "./tool-cards";
 import { runState } from "./tool-group-model";
 import { stripRows } from "./subagent-strip-model";

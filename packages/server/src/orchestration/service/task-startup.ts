@@ -23,7 +23,7 @@ import {
 } from "../rules.ts";
 import { type OrchestrationKit, underKeysOf, projectKey, startupKeysOf } from "./kit.ts";
 import { admitWorkspaceReader, projectWorkspaceOf } from "./reader-workspaces.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 
 /** Planning and starting a user's task, and the model a thread opens on. */
 export const makeTaskStartup = (kit: OrchestrationKit) => {

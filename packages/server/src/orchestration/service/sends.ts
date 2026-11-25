@@ -1,4 +1,4 @@
-import { type ThreadId } from "@gram/contracts";
+import type { ThreadId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { WINDOW_MS } from "../../app-tools/loop-guard.ts";
@@ -11,7 +11,7 @@ import {
   underKeysOf,
   callerKey,
 } from "./kit.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 
 const sendKey = (callerId: ThreadId, targetId: ThreadId) => `${callerId} ${targetId}`;
 

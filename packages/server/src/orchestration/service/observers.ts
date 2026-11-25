@@ -25,7 +25,7 @@ import { branchPrOf } from "../../git/completion.ts";
 import { isBadgeOf } from "../../git/extra-prs.ts";
 import { redactText } from "../../logging/redact.ts";
 import { releaseBatchAt } from "../../runtime/limit-wait.ts";
-import { type ObservedTurnEnd } from "../../runtime/thread-runtimes.ts";
+import type { ObservedTurnEnd } from "../../runtime/thread-runtimes.ts";
 import {
   changedPaths,
   driftBetween,

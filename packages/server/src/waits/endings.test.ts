@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { type ThreadId, type WaitId } from "@gram/contracts";
+import type { ThreadId, WaitId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { AppToolRegistry } from "../app-tools/registry.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";

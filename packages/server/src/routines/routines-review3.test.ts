@@ -4,7 +4,7 @@
 // back a removed routine's state; and a worker reads memory through the anchored tree, without
 // private or credential-shaped files.
 import { describe, expect, it } from "@effect/vitest";
-import { type ThreadId, type WorkspaceId } from "@gram/contracts";
+import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

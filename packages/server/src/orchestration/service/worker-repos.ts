@@ -13,7 +13,7 @@ import {
   type OrchestrationKit,
   underKeysOf,
 } from "./kit.ts";
-import { type AddedWorkerRepo, type OrchestrationShape } from "./shape.ts";
+import type { AddedWorkerRepo, OrchestrationShape } from "./shape.ts";
 import type { Projects } from "./projects.ts";
 import type { Sends } from "./sends.ts";
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
 import type { ConnectorStatus } from "@gram/agents";
-import {
-  type AgentConfiguredServers,
-  type ConfiguredServer,
-  type SeenConnector,
-  type ThreadId,
+import type {
+  AgentConfiguredServers,
+  ConfiguredServer,
+  SeenConnector,
+  ThreadId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";

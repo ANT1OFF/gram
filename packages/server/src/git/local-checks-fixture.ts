@@ -1,4 +1,4 @@
-import { type ProjectId, type ProjectLocalCheck, type ThreadId } from "@gram/contracts";
+import type { ProjectId, ProjectLocalCheck, ThreadId } from "@gram/contracts";
 import { type Proc, ProcLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

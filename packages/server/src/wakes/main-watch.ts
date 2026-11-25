@@ -1,4 +1,4 @@
-import { type Project, type Thread, type WorkspaceId, type WorkspaceState } from "@gram/contracts";
+import type { Project, Thread, WorkspaceId, WorkspaceState } from "@gram/contracts";
 import { ghApi, Proc } from "@gram/git";
 import { projectRepo } from "../git/repo-reach.ts";
 import * as Cause from "effect/Cause";

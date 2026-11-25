@@ -3,7 +3,7 @@
 // next start; a live worker from the last run makes the next one a skip; a paused workspace holds
 // them; and a worker's routine tool always asks the user.
 import { describe, expect, it } from "@effect/vitest";
-import { type RoutineSchedule, type ThreadId, type WorkspaceId } from "@gram/contracts";
+import type { RoutineSchedule, ThreadId, WorkspaceId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";

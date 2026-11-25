@@ -48,7 +48,7 @@ import type { Charter } from "./charter.ts";
 import { makeKeyedLock } from "../../git/keyed-lock.ts";
 import { admitWorkspaceReader, projectWorkspaceOf } from "./reader-workspaces.ts";
 import { readableWorkspacesOnly } from "../../embedding/readable-by.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 import type { Pauses } from "./pauses.ts";
 import type { TaskStartup } from "./task-startup.ts";

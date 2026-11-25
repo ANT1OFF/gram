@@ -1,7 +1,7 @@
 // The wrap-up turn: the one turn a worker that stops without a word is sent, and the stops that
 // never get one.
 import { describe, expect, it } from "@effect/vitest";
-import { type ThreadId } from "@gram/contracts";
+import type { ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import { hasGit } from "../git/test-repo.ts";

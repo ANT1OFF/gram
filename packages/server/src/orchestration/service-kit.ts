@@ -1,4 +1,4 @@
-import { type PrStatus, type ServerEvent, type ThreadId } from "@gram/contracts";
+import type { PrStatus, ServerEvent, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import type * as Scope from "effect/Scope";
 import { FakeAgentControl, type FakeSession } from "../runtime/fake-agent.ts";

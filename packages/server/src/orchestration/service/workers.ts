@@ -36,7 +36,7 @@ import {
   workerMergesOwnAtFull,
 } from "../rules.ts";
 import { heldOf, workersOf, pausedFeatureOf, type OrchestrationKit } from "./kit.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Digests } from "./digests.ts";
 import { orchestratorsMachine, workerMachine, type NamedMachine } from "./spawning.ts";

@@ -2,7 +2,7 @@
 // why; only the thread that froze it or its orchestrator lifts it; it always expires, over a
 // restart too; and a `freezeLifted` wake fires when it ends.
 import { describe, expect, it } from "@effect/vitest";
-import { type PrStatus, type Thread } from "@gram/contracts";
+import type { PrStatus, Thread } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";

@@ -44,7 +44,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { workerPauseHint } from "@/thread/orchestration-model";
 import { useThreadHeadline } from "@/thread/plan-ui";
 import { threadDragProps, WorkerRowMenuItems, rowMenuKeys } from "@/thread/row-menu";
-import { type MachineMark } from "@/thread/machine-mark";
+import type { MachineMark } from "@/thread/machine-mark";
 import {
   MachineMarker,
   useMachineMark,
