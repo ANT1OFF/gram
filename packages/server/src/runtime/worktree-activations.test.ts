@@ -117,6 +117,38 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
           Effect.sync(() => agent.sessions.length === 2),
         );
         expect(readFileSync(join(checkout, "attempts"), "utf8")).toBe("srrr");
+        yield* eventually(
+          "restarted worker idle",
+          runtimes.status(worker.id).pipe(Effect.map((status) => status === "idle")),
+        );
+        const resumed = agent.sessions[1]!;
+        write(join(checkout, ".gram", "resume"), "#!/bin/sh\nprintf x >> attempts\n");
+        run(checkout, "add", ".gram/resume");
+        run(checkout, "commit", "-qm", "new resume");
+        yield* runtimes.sendNotice(worker.id, "wake:changed-hook", {
+          text: "Wake after hook change",
+        });
+        const changed = yield* eventually(
+          "changed resume approval",
+          store.listRequests(worker.id).pipe(Effect.map((cards) => cards[0])),
+        );
+        if (changed.shown === undefined) throw new Error("Missing changed-hook card key");
+        yield* ui["thread.respond"]({
+          threadId: worker.id,
+          requestId: changed.id,
+          shown: changed.shown,
+          answer: { kind: "approval", decision: "deny", scope: "once" },
+        });
+        yield* eventually(
+          "wake after decline",
+          Effect.sync(() => resumed.sent.length > 0),
+        );
+        expect(resumed.sent[0]?.text).toContain("The user declined this hook revision.");
+        const resume = (yield* store.getThread(worker.id)).worktreeHooks?.find(
+          (each) => each.kind === "resume",
+        );
+        expect(resume?.result).toMatchObject({ status: "skipped" });
+        expect(readFileSync(join(checkout, "attempts"), "utf8")).toBe("srrr");
       }).pipe(
         Effect.provide(
           makeRuntimeTestLayer(undefined, undefined, { ...TEST_CONFIG, dataDir: dir }).pipe(
