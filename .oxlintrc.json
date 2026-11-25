@@ -363,14 +363,7 @@
     },
     {
       "files": [
-        "packages/server/src/app-tools/**",
-        "packages/server/src/browser/**",
-        "packages/server/src/gateway/**",
-        "packages/server/src/git/**",
-        "packages/server/src/http/**",
         "packages/server/src/orchestration/**",
-        "packages/server/src/persistence/**",
-        "packages/server/src/rpc/**",
         "packages/server/src/runtime/**",
         "packages/server/src/transfer/**",
         "packages/server/src/usage/**"

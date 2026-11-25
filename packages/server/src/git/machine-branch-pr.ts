@@ -1,4 +1,10 @@
-import { effectiveCheckout, isLocalHost, type PrStatus, type Thread } from "@gram/contracts";
+import {
+  effectiveCheckout,
+  fieldsOf,
+  isLocalHost,
+  type PrStatus,
+  type Thread,
+} from "@gram/contracts";
 import { gh, git, isSameRepoHead, originOwnerRepo, Proc, repoFromPrUrl } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -80,7 +86,7 @@ const openPrNumber = (root: string, repo: string, branch: string) =>
         if (!Array.isArray(listed)) return undefined;
         const own = listed.find(
           (entry: unknown): entry is { readonly number: number } =>
-            isSameRepoHead(entry) && typeof (entry as { number?: unknown }).number === "number",
+            isSameRepoHead(entry) && typeof fieldsOf(entry).get("number") === "number",
         );
         return own?.number;
       } catch {

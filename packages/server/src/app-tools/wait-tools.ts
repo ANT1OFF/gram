@@ -4,16 +4,16 @@ import {
   MAX_OPEN_WAITS,
   NotFound,
   plainWaitText,
+  type Thread,
+  ThreadId,
   WAIT_BODY_MAX,
   WAIT_COPY_MAX,
   WAIT_TITLE_MAX,
-  type Thread,
-  type ThreadId,
   type WaitChange,
-  WaitId,
   waitEndingOf,
-  WaitKind,
+  WaitId,
   type WaitItem,
+  WaitKind,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -135,11 +135,20 @@ const targetOf = (
 ): Effect.Effect<ThreadId, AppToolError> =>
   named === undefined || named === caller
     ? Effect.succeed(caller)
-    : Effect.flatMap(managesWaitsOf(threads, runtimes, caller, named as ThreadId), (owns) =>
+    : Effect.flatMap(managesWaitsOf(threads, runtimes, caller, ThreadId.make(named)), (owns) =>
         owns
-          ? Effect.succeed(named as ThreadId)
+          ? Effect.succeed(ThreadId.make(named))
           : Effect.fail(new AppToolError({ tool, message: WAIT_NOT_YOUR_WORKER })),
       );
+
+const resolveWaitFields = {
+  id: WaitId,
+  note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WAIT_BODY_MAX))),
+  ending: Schema.optionalKey(Schema.Literals(["done", "withdrawn", "deleted"])),
+};
+const listWaitsFields = {
+  state: Schema.optionalKey(Schema.Literals(["open", "all", "deleted"])),
+};
 
 /**
  * `wait_on_user`, `resolve_wait` and `list_waits`: the agent's own list
@@ -174,7 +183,7 @@ export const waitAppTools = (
       handle: (caller, input) =>
         Effect.gen(function* () {
           const tool = "wait_on_user";
-          const named = "threadId" in input ? (input.threadId as string | undefined) : undefined;
+          const named = "threadId" in input ? input.threadId : undefined;
           const threadId = yield* targetOf(tool, threads, runtimes, caller, named);
           const editor = threadId === caller ? undefined : caller;
           if (editor !== undefined && input.id === undefined) {
@@ -253,16 +262,16 @@ export const waitAppTools = (
       },
       audience: orchestrator ? ["orchestrator"] : ["plain", "worker"],
       rejectExcessProperties: true,
-      input: Schema.Struct({
-        id: WaitId,
-        note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WAIT_BODY_MAX))),
-        ending: Schema.optionalKey(Schema.Literals(["done", "withdrawn", "deleted"])),
-        ...(orchestrator ? { threadId: Schema.optionalKey(Schema.NonEmptyString) } : {}),
-      }),
+      input: orchestrator
+        ? Schema.Struct({
+            ...resolveWaitFields,
+            threadId: Schema.optionalKey(Schema.NonEmptyString),
+          })
+        : Schema.Struct(resolveWaitFields),
       handle: (caller, input) =>
         Effect.gen(function* () {
           const { id, note, ending } = input;
-          const named = "threadId" in input ? (input.threadId as string | undefined) : undefined;
+          const named = "threadId" in input ? input.threadId : undefined;
           const target = yield* targetOf("resolve_wait", threads, runtimes, caller, named);
           const plainNote = note === undefined ? undefined : plainWaitText(note);
           const said = plainNote === undefined || plainNote === "" ? {} : { note: plainNote };
@@ -304,14 +313,13 @@ export const waitAppTools = (
       },
       audience: orchestrator ? ["orchestrator"] : ["plain", "worker"],
       rejectExcessProperties: true,
-      input: Schema.Struct({
-        state: Schema.optionalKey(Schema.Literals(["open", "all", "deleted"])),
-        ...(orchestrator ? { threadId: Schema.optionalKey(Schema.NonEmptyString) } : {}),
-      }),
+      input: orchestrator
+        ? Schema.Struct({ ...listWaitsFields, threadId: Schema.optionalKey(Schema.NonEmptyString) })
+        : Schema.Struct(listWaitsFields),
       handle: (caller, input) =>
         Effect.gen(function* () {
           const which = input.state ?? "open";
-          const named = "threadId" in input ? (input.threadId as string | undefined) : undefined;
+          const named = "threadId" in input ? input.threadId : undefined;
           const now = Date.now();
           if (!orchestrator || named !== undefined) {
             const target = yield* targetOf("list_waits", threads, runtimes, caller, named);

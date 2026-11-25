@@ -1,3 +1,4 @@
+import { errnoCode, fieldsOf } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -70,7 +71,7 @@ const walEmpty = (filename: string): boolean => {
   try {
     return statSync(`${filename}-wal`).size === 0;
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT";
+    return errnoCode(error) === "ENOENT";
   }
 };
 
@@ -84,12 +85,9 @@ const seal = (sql: SqlClient.SqlClient) =>
     const durable = yield* Effect.gen(function* () {
       yield* run("BEGIN IMMEDIATE");
       yield* run("ROLLBACK");
-      const [row] = (yield* run("PRAGMA wal_checkpoint(TRUNCATE)")) as ReadonlyArray<{
-        readonly busy?: unknown;
-        readonly log?: unknown;
-        readonly checkpointed?: unknown;
-      }>;
-      return row !== undefined && row.busy === 0 && row.log === row.checkpointed;
+      const rows: ReadonlyArray<unknown> = yield* run("PRAGMA wal_checkpoint(TRUNCATE)");
+      const row = fieldsOf(rows[0]);
+      return row.get("busy") === 0 && row.get("log") === row.get("checkpointed");
     }).pipe(Effect.orElseSucceed(() => false));
     if (!durable) yield* run(`PRAGMA busy_timeout = ${CLIENT_BUSY_TIMEOUT_MS}`).pipe(Effect.ignore);
     return durable;

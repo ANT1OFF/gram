@@ -300,7 +300,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
   );
   const readChars = int(PANE_READ_MIN_CHARS, PANE_READ_MAX_CHARS);
   const key = Schema.Union([
-    Schema.Literals(Object.keys(PANE_NAMED_KEYS) as [string, ...string[]]),
+    Schema.Literals(Object.keys(PANE_NAMED_KEYS)),
     Schema.String.check(Schema.isPattern(/^[\x21-\x7e]$/)),
   ]);
   const navigate = defineAppTool({
@@ -531,7 +531,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
       key,
       ref: Schema.optionalKey(ref),
       modifiers: Schema.optionalKey(
-        Schema.Array(Schema.Literals(PANE_KEY_MODIFIERS as [string, ...string[]])).check(
+        Schema.Array(Schema.Literals(PANE_KEY_MODIFIERS)).check(
           Schema.isMaxLength(PANE_KEY_MODIFIERS.length),
         ),
       ),
@@ -539,7 +539,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
       actionSummary,
     }),
     handle: (threadId, input) => {
-      const refusal = paneKeyRefusal(input.key, input.modifiers as never);
+      const refusal = paneKeyRefusal(input.key, input.modifiers);
       if (refusal !== undefined)
         return Effect.fail(new AppToolError({ tool: "browser_press_key", message: refusal }));
       return run("browser_press_key", threadId, {
@@ -548,7 +548,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
         ...(input.ref === undefined ? {} : { ref: input.ref }),
         ...(input.modifiers === undefined || input.modifiers.length === 0
           ? {}
-          : { modifiers: [...new Set(input.modifiers)] as never }),
+          : { modifiers: [...new Set(input.modifiers)] }),
         ...(input.repeat === undefined || input.repeat === 1 ? {} : { repeat: input.repeat }),
         ...labelled(input.actionSummary),
       }).pipe(Effect.map(afterAct));
@@ -949,7 +949,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
     input: Schema.Struct({
       actions: Schema.Array(
         Schema.Struct({
-          name: Schema.Literals([...byName.keys()] as [string, ...string[]]),
+          name: Schema.Literals([...byName.keys()]),
           input: Schema.Record(Schema.String, Schema.Unknown),
         }),
       ).check(Schema.isMinLength(1), Schema.isMaxLength(BATCH_MAX_STEPS)),
@@ -961,10 +961,9 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
         for (const [index, action] of actions.entries()) {
           const label = `Step ${index + 1} of ${actions.length}, ${action.name}`;
           const tool = byName.get(action.name)!;
-          const decoded = yield* Schema.decodeUnknownEffect(
-            tool.input as unknown as Schema.Codec<unknown, unknown>,
-            { onExcessProperty: "error" },
-          )(action.input).pipe(Effect.option);
+          const decoded = yield* Schema.decodeUnknownEffect(tool.input, {
+            onExcessProperty: "error",
+          })(action.input).pipe(Effect.option);
           if (Option.isNone(decoded)) {
             say(
               `${label}: its input isn't what ${action.name} takes, so it didn't run. The batch stopped here.`,

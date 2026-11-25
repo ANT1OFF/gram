@@ -442,7 +442,7 @@ const harness = (
   });
   const call = (name: string, input: unknown) => {
     const tool = tools.find((t) => t.descriptor.name === name) as AppToolDefinition;
-    return Schema.decodeUnknownEffect(tool.input as Schema.Codec<unknown, unknown>)(input).pipe(
+    return Schema.decodeUnknownEffect(tool.input)(input).pipe(
       Effect.orDie,
       Effect.flatMap((decoded) => tool.handle(THREAD, decoded, {})),
     );

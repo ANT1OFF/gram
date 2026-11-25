@@ -3,15 +3,15 @@ import {
   effectiveCheckout,
   fenceThreadMessage,
   fromOwnOrchestrator,
-  isLocalHost,
-  threadSender,
-  ThreadStatus,
   type GitState,
+  type GramUIMessage,
+  isLocalHost,
   type MessageOrigin,
   type Project,
   type ServerEvent,
-  type GramUIMessage,
-  type ThreadId,
+  ThreadId,
+  threadSender,
+  ThreadStatus,
   type ThreadSummary,
 } from "@gram/contracts";
 import { hiddenThreads, readableOnly } from "../embedding/readable-by.ts";
@@ -269,7 +269,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
 
     const threadOf = (tool: string, caller: ThreadId, threadId: string | undefined) =>
       store
-        .getThread((threadId ?? caller) as ThreadId)
+        .getThread(ThreadId.make(threadId ?? caller))
         .pipe(
           Effect.mapError(
             () => new AppToolError({ tool, message: `unknown thread ${threadId ?? caller}` }),
@@ -515,7 +515,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
       handle: (caller, { threadId, messages = 10 }) =>
         Effect.gen(function* () {
           const tool = "get_thread";
-          const summary = yield* runtimes.summaryOf(threadId as ThreadId);
+          const summary = yield* runtimes.summaryOf(ThreadId.make(threadId));
           if (summary === undefined) {
             return yield* new AppToolError({ tool, message: `unknown thread ${threadId}` });
           }
@@ -600,7 +600,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
       }),
       handle: (_caller, { threadId, since, limit = 50 }) =>
         Effect.gen(function* () {
-          const thread = yield* store.getThread(threadId as ThreadId);
+          const thread = yield* store.getThread(ThreadId.make(threadId));
           const events = (log.get(thread.id) ?? []).filter(
             (event) => since === undefined || event.at > since,
           );

@@ -2,6 +2,7 @@ import { type HostId, LOCAL_HOST_ID } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { resolve } from "node:path";
 import { pathsMentioned } from "../embedding/readable-by.ts";
+import * as Predicate from "effect/Predicate";
 
 /**
  * What reaches this server's own disk rather than a thread's folder. Not `projects.clone`: on a
@@ -21,11 +22,7 @@ export const SERVER_DISK_UNLESS_THREAD: ReadonlySet<string> = new Set(["fs.list"
 export const readsServerDisk = (action: string, payload: unknown): boolean =>
   SERVER_DISK.has(action) ||
   (SERVER_DISK_UNLESS_THREAD.has(action) &&
-    !(
-      typeof payload === "object" &&
-      payload !== null &&
-      typeof (payload as Record<string, unknown>)["threadId"] === "string"
-    ));
+    !(Predicate.isObject(payload) && typeof payload["threadId"] === "string"));
 
 /**
  * What runs git, `gh` or a folder's own config in a folder the call names. On a headless server

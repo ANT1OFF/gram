@@ -17,6 +17,7 @@ import { errnoCode } from "@gram/contracts";
 import { realPathOrOwned } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { parse, stringify } from "smol-toml";
+import * as Predicate from "effect/Predicate";
 
 /** The model provider a machine's own Codex runs on, kept by the gated home (`ownCodexProvider`). */
 export interface OwnCodexProvider {
@@ -27,8 +28,7 @@ export interface OwnCodexProvider {
   readonly env: ReadonlyArray<string>;
 }
 
-const isTable = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isTable = (value: unknown): value is Record<string, unknown> => Predicate.isObject(value);
 
 const own = (object: unknown, key: string): unknown =>
   isTable(object) && Object.hasOwn(object, key) ? object[key] : undefined;
@@ -217,8 +217,8 @@ export const prepareOwnedCodexHome = (
         config["web_search"] = "disabled";
       }
       const servers = user["mcp_servers"];
-      if (typeof servers === "object" && servers !== null && !Array.isArray(servers)) {
-        const { [APP_TOOLS_SERVER_NAME]: _ours, ...rest } = servers as Record<string, unknown>;
+      if (Predicate.isObject(servers)) {
+        const { [APP_TOOLS_SERVER_NAME]: _ours, ...rest } = servers;
         config["mcp_servers"] = rest;
       }
       Object.assign(config, {

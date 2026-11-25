@@ -590,6 +590,7 @@ export const migrationLoader = (
         if (id <= keptLatest || id > readLatest) continue;
         yield* load.pipe(
           Effect.flatMap(
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- each migration module default-exports an Effect over the SQL client
             (migration) => migration as Effect.Effect<unknown, unknown, SqlClient.SqlClient>,
           ),
           Effect.andThen(

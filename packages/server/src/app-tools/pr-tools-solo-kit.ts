@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { run } from "../git/test-repo.ts";
@@ -15,6 +16,19 @@ import {
 } from "../orchestration/test-harness.ts";
 import { AppToolRegistry } from "./registry.ts";
 import { badge } from "./pr-tools-kit.ts";
+
+const Ledger = Schema.Struct({
+  features: Schema.Array(
+    Schema.Struct({
+      workers: Schema.Array(
+        Schema.Struct({
+          threadId: Schema.String,
+          pr: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+        }),
+      ),
+    }),
+  ),
+});
 
 /**
  * A worker under solo policy with its PR bound, on a branch one commit ahead of `main`, while
@@ -109,15 +123,10 @@ export const soloPr = (world: World, configured = true) =>
         .find((t) => t.descriptor.name === "list_workers")!
         .run({})
         .pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(Ledger)),
           Effect.map(
             (ledger) =>
-              (
-                ledger as {
-                  features: ReadonlyArray<{
-                    workers: ReadonlyArray<{ threadId: string; pr?: Record<string, unknown> }>;
-                  }>;
-                }
-              ).features
+              ledger.features
                 .flatMap((feature) => feature.workers)
                 .find((row) => row.threadId === worker.thread.id)?.pr,
           ),

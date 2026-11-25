@@ -1,7 +1,9 @@
-import type { Thread, ThreadId } from "@gram/contracts";
+import { fieldsOf, type Thread, ThreadId } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { notePrivacy, noteReaders } from "../embedding/readable-by.ts";
 import type { SqlClient } from "../platform/unstable.ts";
+import * as Predicate from "effect/Predicate";
 
 const privateFieldsOf = (data: string): string | undefined => {
   let stored: unknown;
@@ -10,8 +12,8 @@ const privateFieldsOf = (data: string): string | undefined => {
   } catch {
     return undefined;
   }
-  if (typeof stored !== "object" || stored === null) return undefined;
-  const thread = stored as Record<string, unknown>;
+  if (!Predicate.isObject(stored)) return undefined;
+  const thread = stored;
   if (typeof thread["readableBy"] !== "string") return undefined;
   const kept: Record<string, unknown> = {};
   for (const key of [
@@ -50,6 +52,15 @@ export const rememberPrivateIn = (
     }),
   );
 
+const isCheckoutAt = Schema.is(
+  Schema.Struct({
+    path: Schema.String,
+    hostId: Schema.optional(Schema.String),
+    repoRoot: Schema.optional(Schema.String),
+  }),
+);
+const checkoutAtOf = (value: unknown) => (isCheckoutAt(value) ? value : undefined);
+
 /**
  * Whose each thread is, open, closed or gone, and where it works, noted before anything asks
  * (`embedding/readable-by.ts`): a thread no read has touched yet since the server started is
@@ -67,14 +78,27 @@ export const notePrivateThreads = (sql: SqlClient.SqlClient) =>
       SELECT thread_id AS id, data FROM private_readers
         WHERE thread_id NOT IN (SELECT id FROM threads)
           AND thread_id NOT IN (SELECT thread_id FROM closed_threads)`.pipe(Effect.orDie)) {
-      const stored = JSON.parse(row.data) as Partial<Thread>;
-      if (typeof stored.readableBy !== "string") continue;
-      const noted = { ...stored, id: row.id as ThreadId, readableBy: stored.readableBy };
+      const stored = fieldsOf(JSON.parse(row.data));
+      const readableBy = stored.get("readableBy");
+      if (typeof readableBy !== "string") continue;
+      const workspaceId = stored.get("workspaceId");
+      const readers = stored.get("readers");
+      const extraCheckouts = stored.get("extraCheckouts");
+      const noted = {
+        id: ThreadId.make(row.id),
+        readableBy,
+        workspaceId: typeof workspaceId === "string" ? workspaceId : undefined,
+        checkout: checkoutAtOf(stored.get("checkout")),
+        currentCheckout: checkoutAtOf(stored.get("currentCheckout")),
+        extraCheckouts: Array.isArray(extraCheckouts)
+          ? extraCheckouts.filter(isCheckoutAt)
+          : undefined,
+      };
       notePrivacy(noted);
       noteReaders({
         ...noted,
-        readers: Array.isArray(stored.readers)
-          ? stored.readers.filter((each): each is string => typeof each === "string")
+        readers: Array.isArray(readers)
+          ? readers.filter((each): each is string => typeof each === "string")
           : undefined,
       });
     }
@@ -105,10 +129,10 @@ export const rememberHolderIn = (sql: SqlClient.SqlClient, threadId: string) =>
       } catch {
         stored = undefined;
       }
-      const thread = typeof stored === "object" && stored !== null ? stored : {};
+      const thread = Predicate.isObject(stored) ? stored : {};
       const kept = Object.fromEntries(
         MACHINE_FIELDS.flatMap((key) => {
-          const value = (thread as Record<string, unknown>)[key];
+          const value = thread[key];
           return value === undefined || value === null ? [] : [[key, value]];
         }),
       );
@@ -131,8 +155,9 @@ export const holderMachinesIn = (sql: SqlClient.SqlClient, workspaceId: string) 
       if (rows[0] === undefined) return undefined;
       try {
         const kept: unknown = JSON.parse(rows[0].data);
-        const checkout = (kept as Partial<Thread> | null)?.checkout;
-        if (typeof checkout?.path !== "string") return "unreadable";
+        const checkout = fieldsOf(fieldsOf(kept).get("checkout"));
+        if (typeof checkout.get("path") !== "string") return "unreadable";
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the row is a thread this store wrote; its checkout was just checked
         return kept as Pick<Thread, (typeof MACHINE_FIELDS)[number]>;
       } catch {
         return "unreadable";

@@ -1,4 +1,4 @@
-import { sessionHostOf, type ThreadId } from "@gram/contracts";
+import { sessionHostOf, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
 import * as Layer from "effect/Layer";
@@ -25,7 +25,7 @@ const loopbackProxiesHere = Effect.gen(function* () {
   const run = yield* FiberSet.makeRuntime();
   const proxies = loopbackProxies(
     (threadId) =>
-      store.getThread(threadId as ThreadId).pipe(
+      store.getThread(ThreadId.make(threadId)).pipe(
         Effect.flatMap((thread) => hosts.get(sessionHostOf(thread))),
         Effect.map((host) => ({ tunnels: host.loopback })),
         Effect.orElseSucceed(() => undefined),

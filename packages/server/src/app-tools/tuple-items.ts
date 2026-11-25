@@ -7,11 +7,9 @@ const isRecord = (value: Json): value is Record<string, Json> =>
  * The JSON Schema with an `items` beside every tuple's `prefixItems`: some model APIs (Gemini's)
  * refuse an array without `items`. `prefixItems` and the length bounds still say the exact shape.
  */
-export const withTupleItems = (schema: Json): Json => {
-  if (Array.isArray(schema)) return schema.map(withTupleItems);
-  if (!isRecord(schema)) return schema;
+export const withTupleItems = (schema: Readonly<Record<string, Json>>): Record<string, Json> => {
   const out: Record<string, Json> = {};
-  for (const [key, value] of Object.entries(schema)) out[key] = withTupleItems(value);
+  for (const [key, value] of Object.entries(schema)) out[key] = inJson(value);
   const prefix = out["prefixItems"];
   if (Array.isArray(prefix) && prefix.length > 0 && out["items"] === undefined) {
     const kinds = [...new Map(prefix.map((each) => [JSON.stringify(each), each])).values()];
@@ -19,3 +17,6 @@ export const withTupleItems = (schema: Json): Json => {
   }
   return out;
 };
+
+const inJson = (value: Json): Json =>
+  Array.isArray(value) ? value.map(inJson) : isRecord(value) ? withTupleItems(value) : value;

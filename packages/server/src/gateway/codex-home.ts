@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 
 import { APP_TOOLS_SERVER_NAME, type OutwardGate } from "@gram/agents";
 import { CATALOG_DIR, outwardPromptRules } from "@gram/agents/codex";
+import * as Predicate from "effect/Predicate";
 export { outwardPromptRules, OUTWARD_PROMPT_RULES } from "@gram/agents/codex";
 import * as Effect from "effect/Effect";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
@@ -14,9 +15,7 @@ const userCodexHome = (home: string, env: Readonly<Record<string, string | undef
   env["CODEX_HOME"] ?? join(home, ".codex");
 
 const tomlTable = (value: unknown): Record<string, unknown> | undefined =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
+  Predicate.isObject(value) ? value : undefined;
 
 const tomlText = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
@@ -236,8 +235,8 @@ export const prepareCodexHome = (
         await readFile(join(userCodexHome(home, env), "config.toml"), "utf8"),
       );
       const table = config["mcp_servers"];
-      if (typeof table === "object" && table !== null && !Array.isArray(table)) {
-        const { [APP_TOOLS_SERVER_NAME]: _ours, ...rest } = table as Record<string, unknown>;
+      if (Predicate.isObject(table)) {
+        const { [APP_TOOLS_SERVER_NAME]: _ours, ...rest } = table;
         servers = rest;
       }
       skills = tomlTable(config["skills"]);

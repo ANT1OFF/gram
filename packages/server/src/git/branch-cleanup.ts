@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fromGitPath, git, parseWorktrees, Pr, type Proc } from "@gram/git";
@@ -47,7 +48,7 @@ const operationUsesBranch = (worktree: string, branch: string) =>
           try {
             return (await readFile(join(gitDir, file), "utf8")).trim();
           } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+            if (errnoCode(error) === "ENOENT") return undefined;
             throw error;
           }
         }),

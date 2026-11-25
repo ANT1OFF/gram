@@ -6,8 +6,8 @@ import {
   LOCAL_HOST_ID,
   pageContent,
   sessionHostOf,
+  ThreadId,
   visibleText,
-  type ThreadId,
 } from "@gram/contracts";
 import { PathProbe } from "@gram/git";
 import * as Effect from "effect/Effect";
@@ -308,7 +308,7 @@ export const DevServerAppToolsLive = Layer.effectDiscard(
           probe === undefined ? "" : await Effect.runPromise(probe.path),
           process.platform,
         ),
-      rooted: (threadId, pid) => roots?.add(threadId as ThreadId, pid),
+      rooted: (threadId, pid) => roots?.add(ThreadId.make(threadId), pid),
       unrooted: (pid) => roots?.remove(pid),
     });
     yield* hub.internalEvents(isThreadRemoved, "dev server cleanup").pipe(

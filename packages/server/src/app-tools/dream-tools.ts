@@ -12,6 +12,7 @@ import { defineAppTool, failed, type AppToolDefinition } from "./definition.ts";
 const MAX_BYTES = 1024 * 1024;
 const MAX_ENTRIES = 2048;
 const pathSchema = Schema.NonEmptyString;
+type DreamArgs = { readonly [field: string]: string | undefined };
 type FileTree = Pick<
   ReturnType<typeof confinedTree>,
   "readText" | "listDir" | "writeAtomic" | "removeFile"
@@ -92,13 +93,13 @@ export const dreamFileTools = (
   const lock = Semaphore.makeUnsafe(1);
   const tool = (
     name: string,
-    input: Schema.Top,
+    input: Schema.Codec<DreamArgs, unknown>,
     mutate: boolean,
     run: (
       tree: FileTree,
       id: string,
       path: string,
-      raw: Record<string, string>,
+      args: DreamArgs,
     ) => Effect.Effect<unknown, { readonly message: string }>,
   ) =>
     defineAppTool({
@@ -114,9 +115,8 @@ export const dreamFileTools = (
       },
       audience: ["dream"],
       input,
-      handle: (threadId, raw) =>
+      handle: (threadId, args) =>
         Effect.gen(function* () {
-          const args = raw as Record<string, string>;
           const thread = yield* store.getThread(threadId);
           if (thread.role !== "dream" || thread.workspaceId === undefined)
             return yield* new AppToolError({

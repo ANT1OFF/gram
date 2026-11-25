@@ -9,6 +9,7 @@ import {
 } from "@gram/contracts";
 
 import type { PaneViewPort } from "./pane-port.ts";
+import * as Predicate from "effect/Predicate";
 
 export type ViewEvent = BrowserViewEvent;
 type PageEvent = Extract<ViewEvent, { type: "page" }>;
@@ -17,10 +18,10 @@ const URL_MAX = 8_192;
 const TITLE_MAX = 300;
 
 const pageOf = (raw: unknown): BrowserViewPage | null => {
-  if (typeof raw !== "object" || raw === null) return null;
-  const r = raw as Record<string, unknown>;
+  if (!Predicate.isObject(raw)) return null;
+  const r = raw;
   if (typeof r["url"] !== "string" || typeof r["title"] !== "string") return null;
-  const action = r["action"] as { summary?: unknown; at?: unknown } | undefined;
+  const action = Predicate.isObject(r["action"]) ? r["action"] : undefined;
   return {
     url: r["url"].slice(0, URL_MAX),
     title: r["title"].slice(0, TITLE_MAX),
@@ -28,18 +29,18 @@ const pageOf = (raw: unknown): BrowserViewPage | null => {
     canGoBack: r["canGoBack"] === true,
     canGoForward: r["canGoForward"] === true,
     ...(r["driver"] === "agent" || r["driver"] === "user" ? { driver: r["driver"] } : {}),
-    ...(typeof action?.summary === "string" && typeof action.at === "number"
-      ? { action: { summary: action.summary.slice(0, TITLE_MAX), at: action.at } }
+    ...(typeof action?.["summary"] === "string" && typeof action["at"] === "number"
+      ? { action: { summary: action["summary"].slice(0, TITLE_MAX), at: action["at"] } }
       : {}),
     ...(r["recording"] === true ? { recording: true } : {}),
   };
 };
 
 const statusOf = (raw: unknown): PageEvent["status"] => {
-  const r = raw as { kind?: unknown; message?: unknown } | undefined;
-  if (r?.kind === "starting") return { kind: "starting" };
-  return r?.kind === "failed" && typeof r.message === "string"
-    ? { kind: "failed", message: r.message }
+  if (!Predicate.isObject(raw)) return undefined;
+  if (raw["kind"] === "starting") return { kind: "starting" };
+  return raw["kind"] === "failed" && typeof raw["message"] === "string"
+    ? { kind: "failed", message: raw["message"] }
     : undefined;
 };
 

@@ -11,13 +11,16 @@ import {
 import * as nodePath from "node:path";
 
 import {
+  fieldsOf,
+  type FileImage,
   VERIFY_EVIDENCE_MANIFEST,
   VERIFY_EVIDENCE_MAX_BYTES,
   VERIFY_EVIDENCE_MAX_ITEMS,
-  type FileImage,
   type VerifyEvidence,
-  type VerifyEvidenceKind,
+  VerifyEvidenceKind,
 } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 
 const MANIFEST_MAX_BYTES = 64 * 1024;
 const CAPTION_MAX = 200;
@@ -120,7 +123,7 @@ const readBounded = (path: string, max: number): Buffer | undefined => {
   }
 };
 
-const KINDS: ReadonlySet<string> = new Set(["screenshot", "video", "snapshot", "log"]);
+const isKind = Schema.is(VerifyEvidenceKind);
 
 const manifestItems = (dir: string) => {
   if (lstat(nodePath.join(dir, VERIFY_EVIDENCE_MANIFEST))?.isFile() !== true) return undefined;
@@ -132,18 +135,17 @@ const manifestItems = (dir: string) => {
   } catch {
     return undefined;
   }
-  const items = (parsed as { items?: unknown } | null)?.items;
+  const items = fieldsOf(parsed).get("items");
   if (!Array.isArray(items)) return undefined;
   return items.flatMap((item: unknown) => {
-    if (typeof item !== "object" || item === null) return [];
-    const { file, caption, kind } = item as Record<string, unknown>;
+    if (!Predicate.isObject(item)) return [];
+    const { file, caption, kind } = item;
     if (typeof file !== "string") return [];
     return [
       {
         file,
         caption: typeof caption === "string" ? caption.trim().slice(0, CAPTION_MAX) : undefined,
-        kind:
-          typeof kind === "string" && KINDS.has(kind) ? (kind as VerifyEvidenceKind) : undefined,
+        kind: isKind(kind) ? kind : undefined,
       },
     ];
   });

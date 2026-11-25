@@ -1,4 +1,4 @@
-import { type GramRpcs } from "@gram/contracts";
+import { fieldsOf, type GramRpcs } from "@gram/contracts";
 import { GhCallEnv } from "@gram/git";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -28,7 +28,7 @@ const logDefect = (rpc: string, defect: unknown) =>
 /** The thread a request names by its `threadId`, if it names one. */
 export const requestThread = (payload: unknown): string | undefined => {
   if (typeof payload !== "object" || payload === null) return undefined;
-  const id = (payload as { readonly threadId?: unknown }).threadId;
+  const id = fieldsOf(payload).get("threadId");
   return typeof id === "string" && id.length > 0 ? id : undefined;
 };
 
@@ -39,12 +39,13 @@ export const requestThread = (payload: unknown): string | undefined => {
  * thread's (`GhCallEnv`), so every GitHub read it makes is made for that thread.
  */
 export const logDefects = <H extends Readonly<Record<string, (...args: never) => unknown>>>(
-  group: Pick<RpcGroup.RpcGroup<Rpc.Any>, "requests">,
+  group: Pick<RpcGroup.RpcGroup<Rpc.AnyWithProps>, "requests">,
   handlers: H,
 ): H =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- each handler of H is wrapped under its own key with its own parameters and result
   Object.fromEntries(
     Object.entries(handlers).map(([rpc, handler]) => {
-      const schema = (group.requests.get(rpc) as Rpc.AnyWithProps | undefined)?.successSchema;
+      const schema = group.requests.get(rpc)?.successSchema;
       const isStream = schema !== undefined && RpcSchema.isStreamSchema(schema);
       return [
         rpc,

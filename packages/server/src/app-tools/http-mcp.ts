@@ -31,10 +31,13 @@ export const toolInputSchema = (tool: AppTool): Tool["inputSchema"] => {
   if (doc.schema["type"] !== "object") {
     throw new Error(`App tool ${tool.descriptor.name} input must be an object schema`);
   }
-  return withTupleItems({
-    ...doc.schema,
-    ...(Object.keys(doc.definitions).length === 0 ? {} : { $defs: doc.definitions }),
-  }) as Tool["inputSchema"];
+  return {
+    ...withTupleItems({
+      ...doc.schema,
+      ...(Object.keys(doc.definitions).length === 0 ? {} : { $defs: doc.definitions }),
+    }),
+    type: "object",
+  };
 };
 
 const textResult = (text: string, isError = false): CallToolResult =>

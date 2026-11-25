@@ -1,3 +1,4 @@
+import { errnoCode } from "@gram/contracts";
 import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -60,7 +61,7 @@ export const removeDir = (
       }
       return;
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code ?? "";
+      const code = errnoCode(error) ?? "";
       if (!BUSY.has(code)) throw error;
       if (attempt === 1) {
         console.warn(
