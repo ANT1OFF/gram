@@ -48,7 +48,7 @@ import {
   readableWorkspacesOnly,
   readerMayWorkspace,
 } from "../embedding/readable-by.ts";
-import { askUser, canonicalRosterChanges, checkModels, fail } from "./approval.ts";
+import { askWorkspace, canonicalRosterChanges, checkModels, fail } from "./approval.ts";
 import { workspaceListing } from "./workspace-listing.ts";
 import type { SettingsToolsOptions } from "./chat-tools.ts";
 
@@ -377,12 +377,11 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               ...(notes.length === 0 ? {} : { notes }),
             };
 
-            const answered = yield* askUser(
+            const answered = yield* askWorkspace(
               runtimes,
               caller,
               tool,
               ttl,
-              "workspace",
               {
                 displayName: "Create workspace",
                 input: card,
@@ -707,12 +706,11 @@ export const workspaceAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               ...(notes.length === 0 ? {} : { notes }),
             };
 
-            const answered = yield* askUser(
+            const answered = yield* askWorkspace(
               runtimes,
               caller,
               tool,
               ttl,
-              "workspace",
               {
                 displayName: "Change workspace",
                 input: card,

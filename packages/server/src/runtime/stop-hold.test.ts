@@ -61,7 +61,7 @@ const atServerCard = Effect.gen(function* () {
     scope: "once",
   });
   const asking = yield* Effect.forkScoped(
-    state.runtimes.requestApproval(state.thread.id, {
+    state.runtimes.requestApproval(state.thread.id, "anyone", {
       toolName: "mcp__gram__probe",
       displayName: "probe",
       input: {},

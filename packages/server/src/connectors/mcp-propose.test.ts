@@ -27,7 +27,15 @@ import {
   type World,
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { answerAsMemberForTests } from "../embedding/ask-answer-kit.ts";
+import { localAppHeadersForTests, LOCAL_APP_HEADER } from "../http/local-app.ts";
 import { ConnectorConfigs } from "../rpc/handlers/connectors.ts";
+import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
+import {
+  APPROVE_IN_LOCAL_APP,
+  asLocalAppAnswerForTests,
+  DEPLOYMENT_APPROVAL,
+} from "../runtime/answer-reach.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -101,7 +109,9 @@ const cardIn = (threadId: ThreadId) =>
 const answer = (threadId: ThreadId, card: ApprovalRequest, decision: "allow" | "deny") =>
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
-    yield* runtimes.respond(threadId, card.id, { kind: "approval", decision, scope: "once" });
+    yield* asLocalAppAnswerForTests(
+      runtimes.respond(threadId, card.id, { kind: "approval", decision, scope: "once" }),
+    );
   });
 
 const noCard = (threadId: ThreadId) =>
@@ -159,6 +169,88 @@ describe("mcp_server_propose", () => {
           true,
           false,
         ]);
+      }),
+    ),
+  );
+
+  it.effect("is approved only in the local app: a paired browser's approval is refused", () =>
+    inMcp((world, cli) =>
+      Effect.gen(function* () {
+        const fake = yield* FakeAgentControl;
+        const store = yield* ThreadStore;
+        // The socket's own handlers, as a paired browser and the local app reach them.
+        const socket = makeRespondHandlers(store, yield* ThreadRuntimes);
+        const thread = yield* plainThread(world);
+        const asked = yield* call(thread.id, "plain", LOCAL).pipe(Effect.forkScoped);
+        const card = yield* cardIn(thread.id);
+        const allow = {
+          threadId: thread.id,
+          requestId: card.id,
+          answer: { kind: "approval", decision: "allow", scope: "once" },
+          ...(card.shown === undefined ? {} : { shown: card.shown }),
+        } as const;
+        const paired = { headers: {} };
+        const forged = { headers: { [LOCAL_APP_HEADER]: "forged" } };
+        for (const from of [paired, forged, undefined]) {
+          const outcome = yield* socket["thread.respond"](allow, from).pipe(
+            Effect.as("approved" as const),
+            Effect.catch((error) => Effect.succeed(error)),
+          );
+          expect(outcome).toMatchObject({ _tag: "InvalidState", message: APPROVE_IN_LOCAL_APP });
+        }
+        const [many] = yield* socket["thread.respondMany"]({ answers: [allow] }, paired);
+        expect(many).toMatchObject({ ok: false, error: APPROVE_IN_LOCAL_APP });
+        // The card is still up for the local app, and nothing was written.
+        yield* settle;
+        expect((yield* store.listRequests(thread.id)).map((each) => each.id)).toEqual([card.id]);
+        expect(cli.calls).toEqual([]);
+        expect(fake.mcpConfigCalls).toEqual([]);
+
+        yield* socket["thread.respond"](allow, { headers: localAppHeadersForTests() });
+        expect(yield* Fiber.join(asked)).toMatchObject({ applied: true, action: "add" });
+        expect(fake.mcpConfigCalls).toEqual(["codex:add:user:docs-index"]);
+      }),
+    ),
+  );
+
+  it.effect("refuses a signed-in member's approval over HTTP and writes nothing", () =>
+    inMcp((world, cli) =>
+      Effect.gen(function* () {
+        const fake = yield* FakeAgentControl;
+        const store = yield* ThreadStore;
+        const thread = yield* plainThread(world);
+        yield* call(thread.id, "plain", LOCAL).pipe(Effect.forkScoped);
+        const card = yield* cardIn(thread.id);
+        expect(yield* answerAsMemberForTests(thread.id, card, "allow")).toEqual({
+          status: 409,
+          body: { _tag: "InvalidState", message: DEPLOYMENT_APPROVAL },
+        });
+        yield* settle;
+        expect((yield* store.listRequests(thread.id)).map((each) => each.id)).toEqual([card.id]);
+        expect(cli.calls).toEqual([]);
+        expect(fake.mcpConfigCalls).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("lets a paired browser decline", () =>
+    inMcp((world, cli) =>
+      Effect.gen(function* () {
+        const socket = makeRespondHandlers(yield* ThreadStore, yield* ThreadRuntimes);
+        const thread = yield* plainThread(world);
+        const asked = yield* call(thread.id, "plain", LOCAL).pipe(Effect.flip, Effect.forkScoped);
+        const card = yield* cardIn(thread.id);
+        yield* socket["thread.respond"](
+          {
+            threadId: thread.id,
+            requestId: card.id,
+            answer: { kind: "approval", decision: "deny", scope: "once" },
+            ...(card.shown === undefined ? {} : { shown: card.shown }),
+          },
+          { headers: {} },
+        );
+        expect(yield* Fiber.join(asked)).toMatchObject({ approvalRequired: true });
+        expect(cli.calls).toEqual([]);
       }),
     ),
   );

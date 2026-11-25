@@ -73,7 +73,7 @@ const harness = (
       ),
     },
     runtimes: {
-      requestApproval: (_threadId, request) =>
+      requestApproval: (_threadId, _reach, request) =>
         Effect.sync(() => {
           cards.push(request);
           return { kind: "approval", decision: answers.shift() ?? "deny", scope: "once" } as const;

@@ -1161,7 +1161,7 @@ describe("ThreadRuntimes into a turn waiting on the user", () => {
         });
         // A card of Gram's own: withdrawn, its tool call is answered at once and can finish.
         const asking = yield* Effect.forkScoped(
-          runtimes.requestApproval(thread.id, {
+          runtimes.requestApproval(thread.id, "anyone", {
             toolName: "mcp__gram__probe",
             displayName: "probe",
             input: {},

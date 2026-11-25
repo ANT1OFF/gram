@@ -74,6 +74,7 @@ export const makeActionGuard =
         const answer = yield* runtimes
           .requestApproval(
             threadId,
+            "anyone",
             {
               toolName: shown.toolName,
               displayName: shown.displayName,

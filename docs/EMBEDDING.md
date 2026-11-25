@@ -811,6 +811,8 @@ POST /embed/v1/thread-settles
 
 The deployment can set some of the settings for this server. A supplied setting reads as supplied to everything inside, and nothing inside can change it: the Settings page, a paired phone and an agent's `settings_propose` are each refused, with a message that says the service that runs this Gram set it.
 
+A signed-in person may decline but never approve a card whose change is the deployment's: an agent's `settings_propose` of app settings, its `mcp_server_propose`, or its `report_issue`, which files as the server's own GitHub account. `POST /asks/answer` refuses that approval with `409`, as `settings.set`, `connectors.add` and `issues.file` are refused to them directly; the card stays up.
+
 ```
 PUT /embed/v1/settings
 { "settings": { "logLevel": "info", "updates": { "channel": "stable" } } }

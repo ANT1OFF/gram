@@ -457,7 +457,7 @@ export const verifyTools = (deps: VerifyDeps): ReadonlyArray<AppToolDefinition> 
         const key = `${thread.projectId ?? checkout.repoRoot ?? checkout.path}\u0000${driver.run}`;
         if (committed === undefined && !allowed.has(key)) {
           const answer = yield* deps.runtimes
-            .requestApproval(threadId, {
+            .requestApproval(threadId, "anyone", {
               toolName: `mcp__gram__${TOOL}`,
               displayName: TOOL,
               input: { driver: driver.name, command: driver.run, recipe: VERIFY_FILE },

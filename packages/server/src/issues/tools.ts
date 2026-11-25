@@ -34,6 +34,7 @@ export const IssueAppToolsLive = Layer.effectDiscard(
         includeDiagnostics: Schema.optionalKey(Schema.Boolean),
       }),
       alwaysAsks: true,
+      approvalReach: "deployment",
       resolve: (threadId, { includeDiagnostics = true, ...text }) =>
         reporter.compose(text, { filer: "agent", diagnostics: includeDiagnostics, threadId }),
       describe: (_threadId, issue) => Effect.succeed(describeIssue(issue)),

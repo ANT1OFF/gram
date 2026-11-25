@@ -41,6 +41,7 @@ import {
   requestActions,
 } from "../embedding/hooked-requests.ts";
 import { KEYLESS_ANSWER } from "./card-key.ts";
+import { type ApprovalReach, reachRefusal } from "./answer-reach.ts";
 
 /** Why one answer of `respondMany` wasn't given, in words a row of the inbox can show. */
 export const respondFailure = (cause: Cause.Cause<unknown>): string => {
@@ -64,6 +65,8 @@ export interface ServerApprovalRequest {
   readonly toolName: string;
   /** Best-effort snapshot at request creation; resolution must not depend on database access. */
   readonly permissionMode?: PermissionMode;
+  /** Who may approve it, beyond reaching its thread. */
+  readonly reach: ApprovalReach;
   readonly answer: Deferred.Deferred<ServerApprovalAnswer>;
 }
 
@@ -201,7 +204,12 @@ export const makeServerApprovals = ({
       }
     });
 
-  const requestApproval: ThreadRuntimesShape["requestApproval"] = (threadId, fields, decided) =>
+  const requestApproval: ThreadRuntimesShape["requestApproval"] = (
+    threadId,
+    reach,
+    fields,
+    decided,
+  ) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const request: ApprovalRequest = {
@@ -220,6 +228,7 @@ export const makeServerApprovals = ({
             threadId,
             toolName: fields.toolName,
             answer,
+            reach,
             ...(thread === undefined ? {} : { permissionMode: thread.mode }),
           });
           serverApprovalOrigins.set(request.id, threadId);
@@ -312,6 +321,11 @@ export const makeServerApprovals = ({
                 threadId,
                 status: rt.status,
               });
+            }
+            const refused =
+              answer.decision === "allow" ? yield* reachRefusal(pending.reach) : undefined;
+            if (refused !== undefined) {
+              return yield* new InvalidState({ message: refused, threadId, status: rt.status });
             }
             serverRequests.delete(requestId);
             const answeredBy = yield* ActingPerson;

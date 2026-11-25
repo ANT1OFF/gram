@@ -104,7 +104,7 @@ export const sessionAppTools = (
           return { granted: true, path: folder };
         }
         const answer = yield* runtimes
-          .requestApproval(threadId, {
+          .requestApproval(threadId, "anyone", {
             toolName: `mcp__gram__${tool}`,
             displayName: "Grant folder access",
             input: { path: folder, ...(reason === undefined ? {} : { reason }) },

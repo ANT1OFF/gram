@@ -849,7 +849,9 @@ Any agent, an orchestrator, a worker or a plain thread, can propose an MCP serve
 and host, or a local server's command line and env as written, under a line saying it runs a
 program on this machine; then the scope (user, or the repo's `.mcp.json`) and each agent with
 where it goes. Only on approval does Gram add it, through Settings → Connectors' own path
-(`claude mcp add-json`, and Codex's own config write, which Gram's Codex home copies). A proposal
+(`claude mcp add-json`, and Codex's own config write, which Gram's Codex home copies). As with
+adding a server directly, only Gram on this computer can approve it: a paired browser sees the
+card and may decline it, but its approval is refused. A proposal
 carrying a credential (a secret-looking env var, header, argument or URL) is refused: you add
 those by hand. A name in use is refused unless the agent asks to replace it, and the card then
 shows both. A remote server that needs a sign-in is signed in from the agent:
