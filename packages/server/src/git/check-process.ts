@@ -126,7 +126,7 @@ export const readTail = (log: string): string => {
   }
 };
 
-const plainLines = (text: string): Array<string> =>
+export const plainLines = (text: string): Array<string> =>
   text
     // oxlint-disable-next-line no-control-regex -- terminal escape sequences
     .replace(/\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)|[@-Z\\-_])/g, "")
@@ -323,7 +323,7 @@ export const timedOut = (log: string, timeoutMs: number): LocalCheckOutcome => {
 
 const REAP_MS = 5_000;
 
-const signalGroup = (pgid: number, signal: NodeJS.Signals | 0) => {
+export const signalGroup = (pgid: number, signal: NodeJS.Signals | 0) => {
   try {
     process.kill(-pgid, signal);
     return true;
@@ -332,10 +332,11 @@ const signalGroup = (pgid: number, signal: NodeJS.Signals | 0) => {
   }
 };
 
-const stopGroup = (
+export const stopGroup = (
   pgid: number,
   present: () => "ours" | "gone" | "unsure",
   graceMs: number,
+  reapMs = REAP_MS,
 ): Promise<boolean> =>
   new Promise<boolean>((done) => {
     const first = present();
@@ -354,7 +355,7 @@ const stopGroup = (
         killed = true;
         signalGroup(pgid, "SIGKILL");
       }
-      if (waited >= graceMs + REAP_MS) {
+      if (waited >= graceMs + reapMs) {
         clearInterval(poll);
         done(false);
       }

@@ -1,0 +1,148 @@
+import { chmodSync, readFileSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "@effect/vitest";
+import { ProcLive } from "@gram/git";
+import * as Effect from "effect/Effect";
+import { makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
+import { runWorktreeHook } from "./worktree-hook-runner.ts";
+import { resolveWorktreeHook } from "./worktree-hook-source.ts";
+
+const fixture = Effect.gen(function* () {
+  const dir = tempDir();
+  yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+  return { dir, repo: makeRepo(dir) };
+});
+
+const putHook = (repo: string, path: string, source: string) => {
+  const file = join(repo, path);
+  write(file, source);
+  chmodSync(file, 0o755);
+};
+
+const commit = (repo: string) => {
+  run(repo, "add", "-A");
+  run(repo, "commit", "-qm", "hook fixture");
+};
+
+const onGit = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.provide(ProcLive));
+
+describe.skipIf(process.platform === "win32")("committed worktree hooks", () => {
+  it.live("falls back to Amp, ignores pending edits, and refuses an invalid preferred hook", () =>
+    onGit(
+      Effect.gen(function* () {
+        const { repo } = yield* fixture;
+        const script = "#!/bin/sh\necho amp\n";
+        putHook(repo, ".agents/setup", script);
+        commit(repo);
+        putHook(repo, ".gram/setup", "#!/bin/sh\necho uncommitted\n");
+        expect(yield* resolveWorktreeHook(repo, "setup")).toMatchObject({
+          status: "found",
+          source: { path: ".agents/setup", script },
+        });
+        commit(repo);
+        const selected = yield* resolveWorktreeHook(repo, "setup");
+        expect(selected).toMatchObject({ status: "found", source: { path: ".gram/setup" } });
+        if (selected.status !== "found") throw new Error("Missing fixture hook");
+        run(repo, "rm", ".gram/setup");
+        write(join(repo, ".gram", "tracked.txt"), "keep the directory\n");
+        symlinkSync("../.agents/setup", join(repo, ".gram", "setup"));
+        commit(repo);
+        expect(yield* resolveWorktreeHook(repo, "setup", selected.source.revision)).toMatchObject({
+          status: "invalid",
+          reason: expect.stringContaining("revision changed"),
+        });
+        expect(yield* resolveWorktreeHook(repo, "setup")).toMatchObject({
+          status: "invalid",
+          reason: expect.stringContaining("committed executable file"),
+        });
+      }),
+    ),
+  );
+
+  it.live(
+    "uses the login PATH and runs approved bytes with stdin closed and a clean child environment",
+    () =>
+      onGit(
+        Effect.gen(function* () {
+          const { dir, repo } = yield* fixture;
+          const loginBin = join(dir, "login-bin");
+          putHook(loginBin, "gram-fixture-tool", "#!/bin/sh\necho tool-ran\n");
+          putHook(
+            repo,
+            ".gram/setup",
+            `#!/bin/sh
+set -eu
+test "$PWD" = "$GRAM_WORKTREE"
+test "$GRAM_SETUP" = 1
+test "\${GRAM_RESUME-unset}" = unset
+test "\${GRAM_HOOK_PUBLIC_REGION-unset}" = fixture
+test "\${UNRELATED_CREDENTIAL-unset}" = unset
+test "\${UNRECOGNIZED_VARIABLE-unset}" = unset
+test "\${GRAM_HOOK_PUBLIC_API_KEY-unset}" = unset
+test "\${GIT_CONFIG_COUNT-unset}" = unset
+test "\${SSH_AUTH_SOCK-unset}" = unset
+test "\${NODE_OPTIONS-unset}" = unset
+if read -r line; then exit 5; fi
+gram-fixture-tool
+echo 'password=fixture-sensitive-text'
+`,
+          );
+          commit(repo);
+          const lookup = yield* resolveWorktreeHook(repo, "setup");
+          if (lookup.status !== "found") throw new Error("Missing fixture hook");
+          putHook(repo, ".gram/setup", "#!/bin/sh\nexit 9\n");
+          const result = yield* runWorktreeHook(repo, lookup.source, {
+            base: {
+              HOME: dir,
+              PATH: "/usr/bin:/bin",
+              UNRELATED_CREDENTIAL: "synthetic-only",
+              UNRECOGNIZED_VARIABLE: "synthetic-only",
+              GIT_CONFIG_COUNT: "3",
+              SSH_AUTH_SOCK: join(dir, "synthetic.sock"),
+              NODE_OPTIONS: "--trace-warnings",
+            },
+            loginPath: `${loginBin}:/usr/bin:/bin`,
+            publicVariables: {
+              GRAM_HOOK_PUBLIC_REGION: "fixture",
+              GRAM_HOOK_PUBLIC_API_KEY: "synthetic-only",
+            },
+          });
+          expect(result).toMatchObject({
+            status: "passed",
+            log: "tool-ran\npassword=[redacted]\n",
+          });
+        }),
+      ),
+  );
+
+  it.live("stops a timed-out hook process group and distinguishes a missing command", () =>
+    onGit(
+      Effect.gen(function* () {
+        const { repo } = yield* fixture;
+        putHook(repo, ".gram/resume", "#!/bin/sh\necho $$ > hook.pid\nwhile :; do :; done\n");
+        commit(repo);
+        const lookup = yield* resolveWorktreeHook(repo, "resume");
+        if (lookup.status !== "found") throw new Error("Missing fixture hook");
+        const result = yield* runWorktreeHook(repo, lookup.source, {
+          loginPath: "/usr/bin:/bin",
+          budgetMs: 250,
+        });
+        expect(result).toMatchObject({ status: "failed", failure: "timeout" });
+        const pid = Number(readFileSync(join(repo, "hook.pid"), "utf8"));
+        expect(pid).toBeGreaterThan(1);
+        expect(() => process.kill(-pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
+        putHook(repo, ".gram/resume", "#!/bin/sh\ngram-fixture-missing-command\n");
+        commit(repo);
+        const next = yield* resolveWorktreeHook(repo, "resume");
+        if (next.status !== "found") throw new Error("Missing fixture hook");
+        expect(
+          yield* runWorktreeHook(repo, next.source, { loginPath: "/usr/bin:/bin" }),
+        ).toMatchObject({
+          status: "failed",
+          failure: "missing-tool",
+          reason: expect.stringContaining("gram-fixture-missing-command"),
+        });
+      }),
+    ),
+  );
+});
