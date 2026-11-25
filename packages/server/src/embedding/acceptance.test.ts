@@ -40,9 +40,10 @@ import {
 } from "./acceptance-harness.ts";
 
 /** One person's thread whose reply streams in many deltas, run to its end. */
-const streamedTurn = (text = "say a lot /stream{400}") =>
+const streamedTurn = (text = "say a lot /stream{400}", beforeStart = Effect.void) =>
   Effect.gen(function* () {
     yield* setHosted(true);
+    yield* beforeStart;
     const runtimes = yield* ThreadRuntimes;
     const thread = yield* startThread(text).pipe(Effect.provideService(ActingPerson, "person-1"));
     yield* eventually(
@@ -1182,7 +1183,11 @@ describe("event sink", () => {
     Effect.gen(function* () {
       const to = yield* receiver;
       return yield* Effect.gen(function* () {
-        const thread = yield* streamedTurn();
+        const started = eventually(
+          "the sink's initial snapshot",
+          Effect.sync(() => to.held.find((event) => event.type === "sink.started")),
+        );
+        const thread = yield* streamedTurn(undefined, started.pipe(Effect.asVoid));
         const held = yield* settledAt(to);
         const turns = new Map<string, string>();
         const named = (value: unknown): unknown =>
