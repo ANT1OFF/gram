@@ -1,4 +1,5 @@
 import { NOT_READABLE, readableByOf, readerMay } from "./readable-by.ts";
+import { withUiApproval } from "../runtime/ui-approval.ts";
 import {
   type AnswerQuestionResult,
   type AnswerWorkerQuestionInput,
@@ -187,7 +188,13 @@ export const answerAsk = (
       yield* record(keylessForKeyedCard);
       return refusal(409, "InvalidState", keylessForKeyedCard);
     }
-    const failed = yield* asActor(deps.runtimes.respond(threadId, requestId, answer, shown)).pipe(
+    const response = withUiApproval(
+      deps.runtimes.respond(threadId, requestId, answer, shown),
+      threadId,
+      requestId,
+      shown,
+    );
+    const failed = yield* asActor(response).pipe(
       Effect.provideService(AnswerProofRef, proof),
       Effect.as(undefined),
       Effect.catch((error) => Effect.succeed(error)),

@@ -8,6 +8,7 @@ import {
 import * as Effect from "effect/Effect";
 import type { ThreadStoreShape } from "../../persistence/thread-store.ts";
 import { KEYLESS_ANSWER, keylessRefusal } from "../../runtime/card-key.ts";
+import { withUiApproval } from "../../runtime/ui-approval.ts";
 import type { ThreadRuntimesShape } from "../../runtime/thread-runtimes-shape.ts";
 
 export { KEYLESS_ANSWER };
@@ -33,7 +34,12 @@ export const makeRespondHandlers = (
     }) =>
       Effect.andThen(keyless(threadId, requestId, shown), (refused) =>
         refused === undefined
-          ? runtimes.respond(threadId, requestId, answer, shown)
+          ? withUiApproval(
+              runtimes.respond(threadId, requestId, answer, shown),
+              threadId,
+              requestId,
+              shown,
+            )
           : Effect.fail(new InvalidState({ message: refused, threadId })),
       ),
     "thread.respondMany": ({
