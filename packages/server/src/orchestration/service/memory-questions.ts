@@ -15,7 +15,7 @@ import * as Stream from "effect/Stream";
 import { makeKeyedLock } from "../../git/keyed-lock.ts";
 import { redactText } from "../../logging/redact.ts";
 import { memoryRevision, type MemoryError } from "../memory.ts";
-import { type OrchestrationKit } from "./kit.ts";
+import type { OrchestrationKit } from "./kit.ts";
 
 /**
  * An orchestrator's questions in the server's store, beside its workers' (the outbox's

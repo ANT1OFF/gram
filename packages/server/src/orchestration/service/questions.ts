@@ -20,7 +20,7 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import { redactText } from "../../logging/redact.ts";
 import { makeDurableWork } from "../../durable-work.ts";
-import { type OutboxState, type StoredWorkerQuestion } from "../outbox.ts";
+import type { OutboxState, StoredWorkerQuestion } from "../outbox.ts";
 import {
   addQuestion,
   answeredByOrchestrator,
@@ -38,7 +38,7 @@ import {
   type QuestionRefusal,
 } from "../worker-questions.ts";
 import { refusal, type PendingReason } from "../rules.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import { USER_ANSWERS_MAX, userMessagesOf } from "../user-words.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
 import { toolError, pausedFeatureOf, clipped, type OrchestrationKit } from "./kit.ts";

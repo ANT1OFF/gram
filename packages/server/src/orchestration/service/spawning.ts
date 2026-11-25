@@ -35,7 +35,7 @@ import { limitQueuedNote } from "../../runtime/limit-wait.ts";
 import { finishedWorkers } from "../ledger.ts";
 import { machineNamedIn } from "./machine-named.ts";
 import type { WorkerAdmitting } from "./worker-admitting.ts";
-import { type RouteOffer } from "../limit-pause.ts";
+import type { RouteOffer } from "../limit-pause.ts";
 import { ASKED_BY_LOOK_BACK, askedByOf } from "../asked-by.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
 import { emptyWorkerMemo, withNotes, workerThreadId, type WorkerMemo } from "../outbox.ts";
@@ -61,13 +61,13 @@ import {
   type OrchestrationKit,
   underKeysOf,
 } from "./kit.ts";
-import {
-  type RoutineAdmission,
-  type SpawnWorkerInput,
-  type HeldSpawn,
-  type WorkerWorktree,
-  type SpawnedWorker,
-  type OrchestrationShape,
+import type {
+  RoutineAdmission,
+  SpawnWorkerInput,
+  HeldSpawn,
+  WorkerWorktree,
+  SpawnedWorker,
+  OrchestrationShape,
 } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import {

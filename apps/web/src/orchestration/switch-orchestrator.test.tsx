@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type ModelRef, type SessionSwitch } from "@gram/contracts";
+import type { ModelRef, SessionSwitch } from "@gram/contracts";
 import { describe, expect, it } from "vitest";
 
 import { switchCurrentText, switchStatusText } from "./switch-orchestrator";

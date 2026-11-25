@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "@effect/vitest";
 import type { AgentHost } from "@gram/agents";
-import { type GatewayProfile, type ProfileId, type ThreadId } from "@gram/contracts";
+import type { GatewayProfile, ProfileId, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 

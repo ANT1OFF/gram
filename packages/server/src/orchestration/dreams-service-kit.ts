@@ -29,7 +29,7 @@ import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { ThreadArchive, ThreadArchiverLive, type ArchiveCaps } from "./archive.ts";
 import { TranscriptReadAppToolsLive } from "./transcript-read-tool.ts";
 import { DreamFiles } from "./dream-files.ts";
-import { type AnswerDelivery } from "./dream-handler.ts";
+import type { AnswerDelivery } from "./dream-handler.ts";
 import { Dreams, makeDreamsLive } from "./dreams.ts";
 import {
   completeTurn,

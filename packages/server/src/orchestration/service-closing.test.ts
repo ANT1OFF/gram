@@ -1,11 +1,6 @@
 // Orchestration service: detaching, closing, reopening and parking, and unreadable outboxes.
 import { describe, expect, it } from "@effect/vitest";
-import {
-  type ModelRef,
-  type OrchestrationDigest,
-  type ServerEvent,
-  type TurnId,
-} from "@gram/contracts";
+import type { ModelRef, OrchestrationDigest, ServerEvent, TurnId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";

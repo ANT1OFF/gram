@@ -1,4 +1,4 @@
-import { type Thread, type ThreadId } from "@gram/contracts";
+import type { Thread, ThreadId } from "@gram/contracts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, SquareSplitHorizontal } from "lucide-react";
 

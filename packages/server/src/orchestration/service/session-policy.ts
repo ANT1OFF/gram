@@ -12,7 +12,7 @@ import {
 import * as Effect from "effect/Effect";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { type SessionPolicy } from "../../runtime/thread-runtimes.ts";
+import type { SessionPolicy } from "../../runtime/thread-runtimes.ts";
 import { dreamRolePromptFor } from "../dream-prompt.ts";
 import { plainPrompt, rolePrompt, workerPrompt } from "../prompt.ts";
 import {

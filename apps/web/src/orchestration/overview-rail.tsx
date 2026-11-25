@@ -1,9 +1,4 @@
-import {
-  type OrchestratorLedger,
-  type ThreadId,
-  type ThreadSummary,
-  type WorkspaceState,
-} from "@gram/contracts";
+import type { OrchestratorLedger, ThreadId, ThreadSummary, WorkspaceState } from "@gram/contracts";
 import { useRouterState } from "@tanstack/react-router";
 import { History, Inbox, MessageSquare, PanelLeft, PanelLeftClose, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";

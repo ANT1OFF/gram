@@ -28,7 +28,7 @@ import { steerOrSend } from "../runtime/steer-or-send.ts";
 import { Dreams } from "./dreams.ts";
 import { OrchestrationMemory, type MemoryError } from "./memory.ts";
 import { Orchestration } from "./service.ts";
-import { type MemoryQuestionsShape } from "./service/memory-questions.ts";
+import type { MemoryQuestionsShape } from "./service/memory-questions.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
 
 /** Where an answer finds its question and closes it: the store (`Orchestration.memoryQuestions`). */

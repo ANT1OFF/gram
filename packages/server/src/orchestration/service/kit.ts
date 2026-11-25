@@ -118,15 +118,14 @@ import {
   rosterNames,
   workerModelLabel,
 } from "../rules.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import { RemoteHosts } from "../../host/remote-hosts.ts";
 import type { OwnerOf } from "../../host/ownership.ts";
 import { WorkerHosts } from "../../host/worker-host.ts";
 import { Conversations } from "../../embedding/conversations.ts";
 import { workerMachinesOffered } from "./worker-machines-offered.ts";
 import { heldBriefOf } from "../limit-pause.ts";
-import { type PromptWorktree } from "../prompt.ts";
-
+import type { PromptWorktree } from "../prompt.ts";
 import { prMarkOf } from "./pr-mark.ts";
 
 export { prMarkOf };
@@ -440,6 +439,7 @@ export const SIGNAL_COALESCING: Coalescing<Signal> = {
     switch (signal.type) {
       case "turnStart":
       case "turnEnd":
+      case "quiet":
       case "userInput":
       case "limitWait":
       case "gitState":
@@ -476,9 +476,8 @@ export const SIGNAL_COALESCING: Coalescing<Signal> = {
       signal.type === "gitState" ||
       signal.type === "contextLow" ||
       signal.type === "limitHeadroom"
-    ) {
+    )
       return signal.type;
-    }
     if (signal.type !== "hub") return undefined;
     return signal.event.type === "thread.upsert" || signal.event.type === "thread.background"
       ? signal.event.type

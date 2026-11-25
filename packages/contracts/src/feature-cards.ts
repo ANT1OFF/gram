@@ -255,6 +255,15 @@ export const nowLineOf = (
         return "delivered";
       case "archived":
         return "archived";
+      case "blocked":
+      case "briefed":
+      case "done":
+      case "inReview":
+      case "needsUser":
+      case "question":
+      case "readyToMerge":
+      case "working":
+        break;
     }
     if (worker.moving === true && worker.status !== "error") return "moving";
     if (worker.status === "running" || worker.status === "starting") {

@@ -21,20 +21,20 @@ import {
   type Turn,
 } from "./runtime-state.ts";
 import type { SystemDeliveryFailure } from "./system-delivery.ts";
-import {
-  type AgentEvent,
-  type AgentStatus,
-  type AgentUnavailable,
-  type TurnId,
-  type ThreadStatus,
-  type ThreadError,
-  type AgentFailure,
-  type MachineIncident,
-  type MessageId,
-  type Thread,
-  type TurnEndReason,
-  type ThreadId,
-  type UsageSummary,
+import type {
+  AgentEvent,
+  AgentStatus,
+  AgentUnavailable,
+  TurnId,
+  ThreadStatus,
+  ThreadError,
+  AgentFailure,
+  MachineIncident,
+  MessageId,
+  Thread,
+  TurnEndReason,
+  ThreadId,
+  UsageSummary,
 } from "@gram/contracts";
 import {
   unavailableMessage,

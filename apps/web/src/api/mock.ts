@@ -103,10 +103,10 @@ import {
   type MockClosedWorker,
   type MockReopenFields,
 } from "./mock-orchestration";
-import {
-  type MockAsksSimulation,
-  type MockFailuresSimulation,
-  type MockOneThreadSimulation,
+import type {
+  MockAsksSimulation,
+  MockFailuresSimulation,
+  MockOneThreadSimulation,
 } from "./mock-asks";
 import type { MockReachingSimulation } from "./mock-reaching";
 import type { MockWorkersSimulation } from "./mock-workers";

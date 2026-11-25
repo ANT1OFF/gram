@@ -63,12 +63,7 @@ import {
 import { admittedForRole, budgetVerdict, featureSlug, refusal } from "../rules.ts";
 import { workerModel, toolError, type OrchestrationKit, underKeysOf } from "./kit.ts";
 import { threadOwner } from "../../host/ownership.ts";
-import {
-  type SpawnWorkerInput,
-  type HeldSpawn,
-  type SpawnedWorker,
-  type OrchestrationShape,
-} from "./shape.ts";
+import type { SpawnWorkerInput, HeldSpawn, SpawnedWorker, OrchestrationShape } from "./shape.ts";
 import { claimedHeld, heldAgain, withoutHeld } from "./held-outbox.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Digests } from "./digests.ts";

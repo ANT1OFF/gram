@@ -1,4 +1,4 @@
-import { type GatewayAgentTool, type LaunchChecks, type LaunchTool } from "@gram/contracts";
+import type { GatewayAgentTool, LaunchChecks, LaunchTool } from "@gram/contracts";
 
 import { agentLabel } from "@/agents/agent-label";
 

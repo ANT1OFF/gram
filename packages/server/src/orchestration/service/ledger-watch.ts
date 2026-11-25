@@ -20,7 +20,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { type LocalCheck } from "../../git/local-checks.ts";
+import type { LocalCheck } from "../../git/local-checks.ts";
 import { redactText } from "../../logging/redact.ts";
 import {
   accrueCost,
@@ -37,7 +37,7 @@ import { wakesOf } from "../outbox.ts";
 import { ledgerQuestions } from "../worker-questions.ts";
 import { heldOf, projectOfCheckout, workersOf, clipped, type OrchestrationKit } from "./kit.ts";
 import type { WorkerQuestions } from "./questions.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 
 /** How long `watchLedger` lets changes settle before it builds the ledger again. */
 export const LEDGER_WATCH_DEBOUNCE = Duration.millis(300);

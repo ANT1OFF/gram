@@ -1,9 +1,4 @@
-import {
-  type ModelRef,
-  type SessionSwitch,
-  type Thread,
-  type WorkspaceState,
-} from "@gram/contracts";
+import type { ModelRef, SessionSwitch, Thread, WorkspaceState } from "@gram/contracts";
 import { Check, Layers, TriangleAlert, X } from "lucide-react";
 import { useState } from "react";
 

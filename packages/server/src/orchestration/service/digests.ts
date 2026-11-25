@@ -27,7 +27,7 @@ import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { clockText, resumeText, spanText } from "../../runtime/limit-wait.ts";
-import { type SystemDelivery, type SystemDeliveryFailure } from "../../runtime/thread-runtimes.ts";
+import type { SystemDelivery, SystemDeliveryFailure } from "../../runtime/thread-runtimes.ts";
 import { findUserMessages } from "../../persistence/thread-store.ts";
 import { visibleFeatures } from "../ledger.ts";
 import { DECISIONS_FILE } from "../memory.ts";
@@ -78,7 +78,7 @@ import {
   type OrchestrationKit,
   OTHER_WORKER_MODELS_LINE,
 } from "./kit.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Pauses } from "./pauses.ts";
 

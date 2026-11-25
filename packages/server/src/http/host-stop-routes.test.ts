@@ -3,7 +3,7 @@
 // resume that joins it rather than running again, and a restart of this Gram in the middle of one.
 
 import { describe, expect, it } from "@effect/vitest";
-import { type HostId, type HostStopRestored, type Thread, type ThreadId } from "@gram/contracts";
+import type { HostId, HostStopRestored, Thread, ThreadId } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";

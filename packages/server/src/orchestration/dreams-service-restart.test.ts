@@ -1,6 +1,6 @@
 // Dreams across a restart, and imports.
 import { describe, expect, it } from "@effect/vitest";
-import { type AgentKind, type ThreadId } from "@gram/contracts";
+import type { AgentKind, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
