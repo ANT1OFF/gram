@@ -76,7 +76,7 @@ describe("decision hook: an action the server takes", () => {
           hook: yield* DecisionHook,
           store: { getThread: () => Effect.succeed(thread) },
           runtimes: {
-            requestApproval: (_threadId, _request, decided) =>
+            requestApproval: (_threadId, _reach, _request, decided) =>
               Effect.succeed({
                 kind: "approval" as const,
                 decision: answers.shift()!,
@@ -147,7 +147,7 @@ describe("decision hook: an action the server takes", () => {
             hook: yield* DecisionHook,
             store: { getThread: () => Effect.succeed(thread) },
             runtimes: {
-              requestApproval: (_threadId, request, decided) =>
+              requestApproval: (_threadId, _reach, request, decided) =>
                 Effect.sync(() => {
                   cards.push({ reason: request.decisionReason, decided });
                   return {

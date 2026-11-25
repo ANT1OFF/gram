@@ -8,8 +8,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { homedir, release, type as osType } from "node:os";
 import { AppToolRegistry, bindAppTools, defineAppTool } from "../app-tools/registry.ts";
+import { answerAsMemberForTests } from "../embedding/ask-answer-kit.ts";
 import { LaunchChecksCache } from "../launch-checks/handler.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { DEPLOYMENT_APPROVAL } from "../runtime/answer-reach.ts";
 import { RuntimeTestLayer, waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {
@@ -305,6 +307,24 @@ describe("report_issue", () => {
       }).pipe(Effect.provide(TestLayer)),
     );
   }
+
+  it.effect("refuses a signed-in member's approval, as issues.file is the deployment's", () =>
+    Effect.gen(function* () {
+      const { thread, pick } = yield* setup("plain", "default");
+      const store = yield* ThreadStore;
+      yield* Effect.forkScoped(pick("transport", "report_issue").run(report));
+      const card = yield* waitFor(
+        "the approval card",
+        store.listRequests(thread.id).pipe(Effect.map((requests) => requests[0])),
+      );
+      expect(yield* answerAsMemberForTests(thread.id, card, "allow")).toEqual({
+        status: 409,
+        body: { _tag: "InvalidState", message: DEPLOYMENT_APPROVAL },
+      });
+      expect(gh.calls).toEqual([]);
+      expect((yield* store.listRequests(thread.id)).map((each) => each.id)).toEqual([card.id]);
+    }).pipe(Effect.provide(TestLayer), Effect.scoped),
+  );
 
   it.effect("leaves the footer out without diagnostics", () =>
     Effect.gen(function* () {

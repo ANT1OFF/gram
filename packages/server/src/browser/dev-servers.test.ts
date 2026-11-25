@@ -429,7 +429,7 @@ const harness = (
         } as Thread),
     },
     runtimes: {
-      requestApproval: (_threadId, request) =>
+      requestApproval: (_threadId, _reach, request) =>
         Effect.sync(() => {
           cards.push(request);
           return {

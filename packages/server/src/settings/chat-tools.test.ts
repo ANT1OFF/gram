@@ -15,7 +15,7 @@ import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 import { AppToolRegistry } from "../app-tools/registry.ts";
-import { type AskAnswerDeps, answerAsk } from "../embedding/ask-answer.ts";
+import { answerAsMemberForTests as answerAsMember } from "../embedding/ask-answer-kit.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import {
@@ -32,7 +32,6 @@ import {
   type World,
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
 import { DEPLOYMENT_APPROVAL } from "../runtime/answer-reach.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { settingsAppToolsLayer } from "./chat-tools.ts";
@@ -94,28 +93,6 @@ const answer = (threadId: ThreadId, card: ApprovalRequest, decision: "allow" | "
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
     yield* runtimes.respond(threadId, card.id, { kind: "approval", decision, scope: "once" });
-  });
-
-/** `decision` posted to `/asks/answer` by a member a fronting proxy signed in. */
-const answerAsMember = (threadId: ThreadId, card: ApprovalRequest, decision: "allow" | "deny") =>
-  Effect.gen(function* () {
-    const deps: AskAnswerDeps = { runtimes: yield* ThreadRuntimes, store: yield* ThreadStore };
-    const body = JSON.stringify({
-      threadId,
-      requestId: card.id,
-      answer: { kind: "approval", decision, scope: "once" },
-      ...(card.shown === undefined ? {} : { shown: card.shown }),
-    });
-    const request = HttpServerRequest.fromWeb(
-      new Request("http://127.0.0.1/asks/answer", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body,
-      }),
-    );
-    const member = { id: "member-1", name: "M", role: "member" } as const;
-    const web = HttpServerResponse.toWeb(yield* answerAsk(deps, request, member, "signed"));
-    return { status: web.status, body: yield* Effect.promise(() => web.json()) };
   });
 
 /** A plain thread the user is chatting with, outside any workspace. */

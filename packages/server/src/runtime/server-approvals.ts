@@ -65,8 +65,8 @@ export interface ServerApprovalRequest {
   readonly toolName: string;
   /** Best-effort snapshot at request creation; resolution must not depend on database access. */
   readonly permissionMode?: PermissionMode;
-  /** Who may approve it, beyond reaching its thread; anyone who may, when absent. */
-  readonly reach?: ApprovalReach;
+  /** Who may approve it, beyond reaching its thread. */
+  readonly reach: ApprovalReach;
   readonly answer: Deferred.Deferred<ServerApprovalAnswer>;
 }
 
@@ -206,9 +206,9 @@ export const makeServerApprovals = ({
 
   const requestApproval: ThreadRuntimesShape["requestApproval"] = (
     threadId,
+    reach,
     fields,
     decided,
-    reach,
   ) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
@@ -228,8 +228,8 @@ export const makeServerApprovals = ({
             threadId,
             toolName: fields.toolName,
             answer,
+            reach,
             ...(thread === undefined ? {} : { permissionMode: thread.mode }),
-            ...(reach === undefined ? {} : { reach }),
           });
           serverApprovalOrigins.set(request.id, threadId);
           yield* store.putRequest(threadId, request, yield* Clock.currentTimeMillis);

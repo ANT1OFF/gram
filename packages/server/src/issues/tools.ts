@@ -34,6 +34,8 @@ export const IssueAppToolsLive = Layer.effectDiscard(
         includeDiagnostics: Schema.optionalKey(Schema.Boolean),
       }),
       alwaysAsks: true,
+      // Filed as the server's own GitHub account, as `issues.file` is: the deployment's alone.
+      approvalReach: "deployment",
       resolve: (threadId, { includeDiagnostics = true, ...text }) =>
         reporter.compose(text, { filer: "agent", diagnostics: includeDiagnostics, threadId }),
       describe: (_threadId, issue) => Effect.succeed(describeIssue(issue)),

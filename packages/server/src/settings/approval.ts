@@ -27,9 +27,9 @@ export type ProposalNoun = "settings" | "workspace" | "MCP server";
 /**
  * Raises the card in `caller`'s thread and waits for the user, for `ttl` at most. Its only scope is
  * `once` and it offers no rule to remember, so an approval covers this card alone. `reach` is who
- * may approve it, as they may make the change directly (`ApprovalReach`): a proposal of what only
- * the local app or the deployment may change names it. Succeeds with the user's approval; fails,
- * saying nothing changed, when they declined, the card was withdrawn or it expired.
+ * may approve it: those who may make the change directly (`ApprovalReach`). Succeeds with the
+ * user's approval; fails, saying nothing changed, when they declined, the card was withdrawn or it
+ * expired.
  */
 export const askUser = (
   runtimes: Pick<ThreadRuntimesShape, "requestApproval">,
@@ -37,27 +37,22 @@ export const askUser = (
   tool: string,
   ttl: Duration.Duration,
   noun: ProposalNoun,
+  reach: ApprovalReach,
   card: {
     readonly displayName: string;
     readonly input: Record<string, unknown>;
     readonly description: string;
   },
   logged: Record<string, unknown>,
-  reach?: ApprovalReach,
 ): Effect.Effect<ServerApprovalAnswer, AppToolError> =>
   Effect.gen(function* () {
     const answer = yield* runtimes
-      .requestApproval(
-        caller,
-        {
-          toolName: `mcp__gram__${tool}`,
-          ...card,
-          suggestions: [],
-          scopes: ["once"],
-        },
-        undefined,
-        reach,
-      )
+      .requestApproval(caller, reach, {
+        toolName: `mcp__gram__${tool}`,
+        ...card,
+        suggestions: [],
+        scopes: ["once"],
+      })
       .pipe(
         Effect.timeoutOption(ttl),
         Effect.catchTag("ThreadNotFound", () =>
@@ -95,6 +90,16 @@ export const askUser = (
       ...(resolution === undefined ? {} : { approvalResolution: resolution }),
     });
   });
+
+/** `askUser` for a workspace proposal, which anyone who may answer the thread may approve. */
+export const askWorkspace = (
+  runtimes: Pick<ThreadRuntimesShape, "requestApproval">,
+  caller: ThreadId,
+  tool: string,
+  ttl: Duration.Duration,
+  card: Parameters<typeof askUser>[6],
+  logged: Record<string, unknown>,
+) => askUser(runtimes, caller, tool, ttl, "workspace", "anyone", card, logged);
 
 /**
  * The models a plan names, checked against what their agent lists, as the pickers do: an unknown

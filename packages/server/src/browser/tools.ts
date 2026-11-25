@@ -181,7 +181,7 @@ export const browserTools = (deps: BrowserDeps): ReadonlyArray<AppToolDefinition
       const step = yield* BatchStep;
       if (step !== undefined) step.asked = true;
       return yield* runtimes
-        .requestApproval(threadId, {
+        .requestApproval(threadId, "anyone", {
           toolName: `mcp__gram__${tool}`,
           displayName: tool,
           input: request.input,

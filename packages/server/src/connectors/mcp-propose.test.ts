@@ -27,10 +27,15 @@ import {
   type World,
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { answerAsMemberForTests } from "../embedding/ask-answer-kit.ts";
 import { localAppHeadersForTests, LOCAL_APP_HEADER } from "../http/local-app.ts";
 import { ConnectorConfigs } from "../rpc/handlers/connectors.ts";
 import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
-import { APPROVE_IN_LOCAL_APP, asLocalAppAnswerForTests } from "../runtime/answer-reach.ts";
+import {
+  APPROVE_IN_LOCAL_APP,
+  asLocalAppAnswerForTests,
+  DEPLOYMENT_APPROVAL,
+} from "../runtime/answer-reach.ts";
 import { AgentHosts } from "../runtime/agent-hosts.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -204,6 +209,26 @@ describe("mcp_server_propose", () => {
         yield* socket["thread.respond"](allow, { headers: localAppHeadersForTests() });
         expect(yield* Fiber.join(asked)).toMatchObject({ applied: true, action: "add" });
         expect(fake.mcpConfigCalls).toEqual(["codex:add:user:docs-index"]);
+      }),
+    ),
+  );
+
+  it.effect("refuses a signed-in member's approval over HTTP and writes nothing", () =>
+    inMcp((world, cli) =>
+      Effect.gen(function* () {
+        const fake = yield* FakeAgentControl;
+        const store = yield* ThreadStore;
+        const thread = yield* plainThread(world);
+        yield* call(thread.id, "plain", LOCAL).pipe(Effect.forkScoped);
+        const card = yield* cardIn(thread.id);
+        expect(yield* answerAsMemberForTests(thread.id, card, "allow")).toEqual({
+          status: 409,
+          body: { _tag: "InvalidState", message: DEPLOYMENT_APPROVAL },
+        });
+        yield* settle;
+        expect((yield* store.listRequests(thread.id)).map((each) => each.id)).toEqual([card.id]);
+        expect(cli.calls).toEqual([]);
+        expect(fake.mcpConfigCalls).toEqual([]);
       }),
     ),
   );

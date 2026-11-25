@@ -69,7 +69,7 @@ describe("app approval post-answer interruption", () => {
               let completed = 0;
               const asking = yield* Effect.forkScoped(
                 rt
-                  .requestApproval(thread.id, {
+                  .requestApproval(thread.id, "anyone", {
                     toolName: "invented",
                     displayName: "Invented",
                     input: {},
