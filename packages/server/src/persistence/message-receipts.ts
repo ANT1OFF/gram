@@ -8,7 +8,9 @@ import type * as Scope from "effect/Scope";
 import type { SqlClient, SqlError } from "../platform/unstable.ts";
 
 const decodeOutcome = Schema.decodeUnknownSync(
-  Schema.fromJsonString(Schema.Struct({ ok: Schema.Boolean, value: Schema.Unknown })),
+  Schema.fromJsonString(
+    Schema.Struct({ ok: Schema.Boolean, value: Schema.optionalKey(Schema.Unknown) }),
+  ),
 );
 
 /** Per thread: bounds responses plus unfinished work, not permanent identity tombstones. */
