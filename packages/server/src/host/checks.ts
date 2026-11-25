@@ -1,5 +1,5 @@
 import { type HostCheckResult, HostFailed } from "@gram/contracts";
-import { git, type ProcOutput, type ProcShape, remoteGit } from "@gram/git";
+import { git, Proc, type ProcOutput, type ProcShape, remoteGit } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -15,9 +15,12 @@ import { isolatedGitOptions, ranOn } from "../git/isolated-git.ts";
 import {
   type LocalCheckOutcome,
   type LocalCheckRun,
+  markRetained,
   readTail,
   spawnCheck,
 } from "../git/check-process.ts";
+import { runRepositoryCheckSetup } from "../git/repository-check-setup.ts";
+import { resolveWorktreeHook } from "./worktree-hook-source.ts";
 
 /** What the control plane asks the host to check. */
 export interface HostCheckRequest {
@@ -28,6 +31,7 @@ export interface HostCheckRequest {
   readonly base: string;
   readonly command: string;
   readonly setup?: string | undefined;
+  readonly repositorySetup?: { readonly fingerprint?: string } | undefined;
   readonly timeoutMs: number;
 }
 
@@ -42,10 +46,20 @@ export type HostCheckRunner = (
   dir: string,
   log: string,
   run: LocalCheckRun,
+  setupOutput?: string,
 ) => Effect.Effect<LocalCheckOutcome>;
 
-const liveRunner: HostCheckRunner = (dir, log, run) =>
-  spawnCheck(dir, log, { base: process.env, pathValue: "" }, run);
+const liveRunner: HostCheckRunner = (dir, log, run, setupOutput) =>
+  spawnCheck(
+    dir,
+    log,
+    {
+      base: process.env,
+      pathValue: "",
+      ...(setupOutput === undefined ? {} : { setupOutput }),
+    },
+    run,
+  );
 
 const SHA = /^[a-f0-9]{40}$/;
 
@@ -70,6 +84,7 @@ const asksOf = (request: HostCheckRequest) =>
     request.command,
     request.setup ?? null,
     request.timeoutMs,
+    request.repositorySetup ?? null,
   ]);
 
 const unstartable = (reason: string): LocalCheckOutcome => ({
@@ -96,6 +111,7 @@ export const checksOn = (
   dir: string,
   runner: HostCheckRunner = liveRunner,
   now: () => number = Date.now,
+  loginPath: Effect.Effect<string> = Effect.sync(() => process.env["PATH"] ?? ""),
 ): Effect.Effect<HostChecks, never, Scope.Scope> =>
   Effect.gen(function* () {
     const fibers = yield* FiberMap.make<string>();
@@ -230,7 +246,9 @@ export const checksOn = (
         );
         const src = nodePath.join(folder, "src");
         const log = nodePath.join(folder, "check.log");
+        let retain = false;
         const remove = Effect.gen(function* () {
+          if (retain) return;
           yield* g(own, ["worktree", "remove", "--force", src]);
           yield* Effect.sync(() => rmSync(folder, { recursive: true, force: true }));
           yield* g(own, ["worktree", "prune"]);
@@ -238,23 +256,78 @@ export const checksOn = (
         return yield* Effect.acquireUseRelease(
           g(own, ["-c", "core.hooksPath=/dev/null", "worktree", "add", "--detach", src, sha]),
           (added) =>
-            added?.status === 0
-              ? runner(src, log, {
+            Effect.gen(function* () {
+              const pin = { tree, mergedCommit: sha };
+              if (added?.status !== 0)
+                return result(unstartable("couldn't check out the merged tree"), pin);
+              let timeoutMs = request.timeoutMs;
+              let setupOutput: string | undefined;
+              let setupFingerprint: string | undefined;
+              if (request.repositorySetup !== undefined) {
+                const found = yield* resolveWorktreeHook(src, "setup", sha).pipe(
+                  Effect.provideService(Proc, proc),
+                );
+                if (found.status !== "found")
+                  return result(
+                    unstartable(
+                      found.status === "invalid"
+                        ? found.reason
+                        : "No executable committed setup hook is in the checked source.",
+                    ),
+                    pin,
+                  );
+                const { path, script, fingerprint, revision } = found.source;
+                if (request.repositorySetup.fingerprint === undefined)
+                  return {
+                    ...result(unstartable("Repository setup needs consent."), pin),
+                    setupApproval: {
+                      status: "found" as const,
+                      path,
+                      script,
+                      fingerprint,
+                      revision,
+                    },
+                  };
+                if (request.repositorySetup.fingerprint !== fingerprint)
+                  return result(
+                    unstartable("The checked source no longer matches the approved setup hook."),
+                    pin,
+                  );
+                setupFingerprint = fingerprint;
+                const prelude = yield* runRepositoryCheckSetup({
+                  checkout: src,
+                  source: found.source,
+                  fingerprint,
+                  timeoutMs,
+                  log,
+                  stagingRoot: nodePath.join(dir, "hook-staging"),
+                  loginPath: yield* loginPath,
+                  retain: () => {
+                    retain = true;
+                    markRetained(src);
+                  },
+                });
+                if (prelude.status === "failed")
+                  return result(prelude.outcome, { ...pin, log: readTail(log) });
+                setupOutput = prelude.output;
+                timeoutMs = prelude.remaining;
+              }
+              const outcome = yield* runner(
+                src,
+                log,
+                {
                   isolation: "host",
                   command: request.command,
                   ...(request.setup === undefined ? {} : { setup: request.setup }),
-                  timeoutMs: request.timeoutMs,
-                }).pipe(
-                  Effect.map((outcome) =>
-                    result(outcome, { tree, mergedCommit: sha, log: readTail(log) }),
-                  ),
-                )
-              : Effect.succeed(
-                  result(unstartable("couldn't check out the merged tree"), {
-                    tree,
-                    mergedCommit: sha,
-                  }),
-                ),
+                  timeoutMs,
+                },
+                setupOutput,
+              );
+              return {
+                ...result(outcome, { ...pin, log: readTail(log) }),
+                ...(setupFingerprint === undefined ? {} : { setupFingerprint }),
+              };
+            }),
           () => remove,
         );
       }).pipe(
@@ -286,6 +359,8 @@ export const checksOn = (
             return yield* new HostFailed({ message: "A check names its head and base by SHA." });
           if (request.command.trim() === "")
             return yield* new HostFailed({ message: "A check needs a command." });
+          if (request.repositorySetup !== undefined && request.setup !== undefined)
+            return yield* new HostFailed({ message: "A check may use one setup definition." });
           prune();
           let run = runs.get(request.id);
           if (run !== undefined && run.asks !== asksOf(request))

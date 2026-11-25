@@ -295,7 +295,9 @@ export const ProjectCheckPreparation = Schema.Struct({
 export const ProjectLocalCheck = Schema.Struct({
   command: Schema.optionalKey(ProjectCheckCommand),
   preparation: Schema.optionalKey(ProjectCheckPreparation),
-  setup: Schema.optionalKey(ProjectCheckCommand),
+  setup: Schema.optionalKey(
+    Schema.Union([ProjectCheckCommand, Schema.Struct({ source: Schema.Literal("repository") })]),
+  ),
   timeoutMs: Schema.optionalKey(
     Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 86_400_000 })),
   ),

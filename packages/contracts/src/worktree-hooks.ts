@@ -3,16 +3,19 @@ import * as Schema from "effect/Schema";
 export const WorktreeHookKind = Schema.Literals(["setup", "resume"]);
 export type WorktreeHookKind = typeof WorktreeHookKind.Type;
 
+export const InspectedWorktreeHook = Schema.Struct({
+  status: Schema.Literal("found"),
+  path: Schema.String,
+  revision: Schema.String,
+  fingerprint: Schema.String,
+  script: Schema.String,
+});
+export type InspectedWorktreeHook = typeof InspectedWorktreeHook.Type;
+
 export const WorktreeHookInspection = Schema.Union([
   Schema.Struct({ status: Schema.Literal("absent") }),
   Schema.Struct({ status: Schema.Literals(["invalid", "skipped"]), reason: Schema.String }),
-  Schema.Struct({
-    status: Schema.Literal("found"),
-    path: Schema.String,
-    revision: Schema.String,
-    fingerprint: Schema.String,
-    script: Schema.String,
-  }),
+  InspectedWorktreeHook,
 ]);
 export type WorktreeHookInspection = typeof WorktreeHookInspection.Type;
 

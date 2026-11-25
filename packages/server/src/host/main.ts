@@ -222,7 +222,13 @@ const hostService = (
     );
     const sessions = hostId === LOCAL_HOST_ID ? opened : gatedSessions(opened, folders.gate);
     let clones = 0;
-    const checks = yield* checksOn(proc, join(hostHome(), "checks"));
+    const checks = yield* checksOn(
+      proc,
+      join(hostHome(), "checks"),
+      undefined,
+      undefined,
+      loginPath,
+    );
     const repos = reposOn(proc, hostRepos());
     if (hostId !== LOCAL_HOST_ID)
       yield* Effect.acquireRelease(

@@ -34,6 +34,7 @@ import { ProfileFile } from "../thread-profile.ts";
 import { FileImage } from "../thread-ui.ts";
 import { WorktreeList } from "../worktrees.ts";
 import {
+  InspectedWorktreeHook,
   WorktreeHookInspection,
   WorktreeHookOutcome,
   WorktreeHookRequest,
@@ -357,6 +358,8 @@ export const HostCheckResult = Schema.Struct({
   tree: Schema.NullOr(Schema.String),
   /** The throwaway commit of that tree the check ran on. */
   mergedCommit: Schema.optionalKey(Schema.String),
+  setupApproval: Schema.optionalKey(InspectedWorktreeHook),
+  setupFingerprint: Schema.optionalKey(Schema.String),
   ok: Schema.Boolean,
   reason: Schema.optionalKey(Schema.String),
   failure: Schema.optionalKey(HostCheckFailure),
@@ -903,6 +906,11 @@ export const HostRpcs = RpcGroup.make(
       base: Schema.String,
       command: Schema.String,
       setup: Schema.optionalKey(Schema.String),
+      repositorySetup: Schema.optionalKey(
+        Schema.Struct({
+          fingerprint: Schema.optionalKey(Schema.String),
+        }),
+      ),
       timeoutMs: PositiveInt,
     },
     success: HostCheckResult,

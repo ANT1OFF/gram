@@ -1370,6 +1370,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const found = yield* localChecks
           .ensure(dir, head, base, {
             projectId: thread.projectId,
+            approvalThread: thread.id,
             pr: bound,
             since: intent.setAt,
             ...(verificationAfter.has(key) ? { after: verificationAfter.get(key)! } : {}),
@@ -1602,6 +1603,7 @@ export const MergeWhenReadyLive = Layer.effect(
         const requestedAt = yield* Clock.currentTimeMillis;
         const found = yield* localChecks.ensure(site, head, base, {
           projectId: thread.value.projectId,
+          approvalThread: threadId,
           pr: bound,
           since: requestedAt,
           ...(verificationAfter.has(baseKey(bound.repo, badge.baseRef))
