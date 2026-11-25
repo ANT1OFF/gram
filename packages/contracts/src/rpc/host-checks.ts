@@ -18,6 +18,8 @@ export const HostCheckResult = Schema.Struct({
   mergedCommit: Schema.optionalKey(Schema.String),
   setupApproval: Schema.optionalKey(InspectedWorktreeHook),
   setupFingerprint: Schema.optionalKey(Schema.String),
+  /** The runner that issued the setup preview or executed the setup. */
+  setupRunnerVersion: Schema.optionalKey(Schema.Number),
   ok: Schema.Boolean,
   reason: Schema.optionalKey(Schema.String),
   failure: Schema.optionalKey(HostCheckFailure),

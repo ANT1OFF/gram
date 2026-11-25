@@ -21,7 +21,7 @@ import {
   spawnCheck,
 } from "../git/check-process.ts";
 import { runRepositoryCheckSetup } from "../git/repository-check-setup.ts";
-import { resolveWorktreeHook } from "./worktree-hook-source.ts";
+import { resolveWorktreeHook, WORKTREE_HOOK_VERSION } from "./worktree-hook-source.ts";
 import { HOST_WORKTREE_HOOKS_DISABLED, type hostedHooksFrom } from "./worktree-hooks.ts";
 
 /** What the control plane asks the host to check. */
@@ -292,6 +292,7 @@ export const checksOn = (
                 if (request.repositorySetup.fingerprint === undefined)
                   return {
                     ...result(unstartable("Repository setup needs consent."), pin),
+                    setupRunnerVersion: WORKTREE_HOOK_VERSION,
                     setupApproval: {
                       status: "found" as const,
                       path,
@@ -343,7 +344,9 @@ export const checksOn = (
               );
               return {
                 ...result(outcome, { ...pin, log: readTail(log) }),
-                ...(setupFingerprint === undefined ? {} : { setupFingerprint }),
+                ...(setupFingerprint === undefined
+                  ? {}
+                  : { setupFingerprint, setupRunnerVersion: WORKTREE_HOOK_VERSION }),
               };
             }),
           () => remove,

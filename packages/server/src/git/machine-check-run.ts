@@ -12,6 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import type { HostCheckRequest } from "../host/checks.ts";
+import { WORKTREE_HOOK_VERSION } from "../host/worktree-hook-source.ts";
 import type { RemoteHostsShape } from "../host/remote-hosts.ts";
 import type { MachineCheckSite } from "./check-site.ts";
 import type { LocalCheckFailure, LocalCheckOutcome, LocalCheckRun } from "./check-process.ts";
@@ -134,6 +135,7 @@ export const runMachineCheck = ({
         if (wanted.repositorySetup === true && hook !== undefined) {
           if (
             result.ok ||
+            result.setupRunnerVersion !== WORKTREE_HOOK_VERSION ||
             request.repositorySetup?.fingerprint !== undefined ||
             result.mergedCommit !== hook.revision ||
             !SHA.test(hook.revision) ||
@@ -157,6 +159,7 @@ export const runMachineCheck = ({
           wanted.repositorySetup === true &&
           result.ok &&
           (request.repositorySetup?.fingerprint === undefined ||
+            result.setupRunnerVersion !== WORKTREE_HOOK_VERSION ||
             result.setupFingerprint !== request.repositorySetup.fingerprint ||
             result.mergedCommit !== request.repositorySetup.revision)
         )

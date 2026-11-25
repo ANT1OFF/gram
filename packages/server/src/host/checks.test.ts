@@ -20,6 +20,7 @@ import { reposOn } from "./repos.ts";
 import { noAgents, sessionsOnHost } from "./sessions.ts";
 import { terminalsOnHost } from "./terminals.ts";
 import { streamPair } from "./test-stream.ts";
+import { WORKTREE_HOOK_VERSION } from "./worktree-hook-source.ts";
 
 const MACHINE = HostId.make("m-0123456789abcdef01234567");
 
@@ -205,6 +206,7 @@ describe.skipIf(!hasGit)("a joined machine's checks", () => {
       const preview = yield* connection.checks!.run({ ...request, repositorySetup: {} });
       if (preview.setupApproval === undefined) throw new Error("Missing setup approval");
       const { fingerprint, revision } = preview.setupApproval;
+      expect(preview.setupRunnerVersion).toBe(WORKTREE_HOOK_VERSION);
       expect(ran).toBe(0);
       expect(
         yield* connection.checks!.run({
@@ -220,7 +222,12 @@ describe.skipIf(!hasGit)("a joined machine's checks", () => {
           id: "approved",
           repositorySetup: { fingerprint, revision },
         }),
-      ).toMatchObject({ ok: true, setupFingerprint: fingerprint, mergedCommit: revision });
+      ).toMatchObject({
+        ok: true,
+        setupFingerprint: fingerprint,
+        setupRunnerVersion: WORKTREE_HOOK_VERSION,
+        mergedCommit: revision,
+      });
       expect(ran).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(Live)),
   );

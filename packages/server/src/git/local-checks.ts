@@ -30,8 +30,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { createHash } from "node:crypto";
-import { LocalCheck } from "./local-check-record.ts";
-export { LocalCheck } from "./local-check-record.ts";
+import { LocalCheck, qualifiedSetup, runIdOf } from "./local-check-record.ts";
+export { LocalCheck, runIdOf } from "./local-check-record.ts";
 import {
   existsSync,
   mkdirSync,
@@ -172,46 +172,10 @@ export const localCheckRunFor = (
           ? { setup: setting.setup }
           : setting.setup === undefined
             ? {}
-            : { repositorySetup: true }),
+            : { repositorySetup: true, setupRunnerVersion: WORKTREE_HOOK_VERSION }),
         timeoutMs: setting.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
       };
 };
-
-/** Run identity includes the source-isolation version, so runs under another one hash apart. */
-export const runIdOf = (run: {
-  readonly isolation?: string | undefined;
-  readonly preparation?: ProjectLocalCheck["preparation"] | undefined;
-  readonly command: string;
-  readonly projectId?: string | undefined;
-  readonly setup?: string | undefined;
-  readonly repositorySetup?: true | undefined;
-  readonly timeoutMs?: number | undefined;
-  readonly profile?: string | undefined;
-  readonly qualification?: string | undefined;
-}): string =>
-  createHash("sha256")
-    .update(
-      JSON.stringify([
-        run.isolation ?? null,
-        run.projectId ?? null,
-        run.command,
-        run.setup ?? null,
-        run.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
-        ...(run.repositorySetup === true ? ["repository-setup", WORKTREE_HOOK_VERSION] : []),
-        ...(run.profile === undefined ? [] : [run.profile, run.qualification ?? null]),
-        ...(run.preparation === undefined
-          ? []
-          : [
-              run.preparation.manifest,
-              run.preparation.sha256,
-              ...(run.preparation.inputConfigSha256 === undefined
-                ? []
-                : [run.preparation.inputConfigSha256]),
-            ]),
-      ]),
-    )
-    .digest("hex")
-    .slice(0, 12);
 
 const SHA = /^[a-f0-9]{40}$/;
 
@@ -251,11 +215,6 @@ const lost = (reason: string): LocalCheckOutcome => ({
   reason,
   failure: { kind: "stopped" },
 });
-const qualifiedSetup = (check: LocalCheck) =>
-  check.status !== "passed" ||
-  check.repositorySetup !== true ||
-  (check.setupFingerprint !== undefined && /^[a-f0-9]{64}$/.test(check.setupFingerprint));
-
 const RESTARTED_AFTER_QUIT = "restarted after Gram quit";
 const KEPT_AFTER_QUIT = "kept running while Gram was closed";
 
@@ -1500,6 +1459,9 @@ export const LocalChecksLive = Layer.effect(
       ...(result.setupFingerprint === undefined
         ? {}
         : { setupFingerprint: result.setupFingerprint }),
+      ...(result.setupRunnerVersion === undefined
+        ? {}
+        : { setupRunnerVersion: result.setupRunnerVersion }),
       host: result.host,
     });
 

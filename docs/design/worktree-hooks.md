@@ -52,7 +52,8 @@ The optional `project.localCheck.setup` value `{ "source": "repository" }` resol
 same executable hook inside the merge check's isolated checkout. Legacy shell setup
 commands keep their original runner and a cleared value means the check has no setup.
 The check still qualifies the exact PR head, base and merged tree. Repository setup adds
-its runner version to the check identity, and a pass records the approved fingerprint.
+its runner version to the check identity. A pass records the approved fingerprint and the
+executed runner version. A restart preserves that version and only the current version qualifies.
 For a selected-source check, the hook's path, executable mode and Git blob must be in the
 approved selection. An omitted preferred hook fails before its bytes are read.
 

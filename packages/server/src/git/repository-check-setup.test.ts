@@ -1,17 +1,27 @@
 import { chmodSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
+import { HostId, ProjectId } from "@gram/contracts";
 import { PathProbe, ProcLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { WORKTREE_HOOK_VERSION } from "../host/worktree-hook-source.ts";
 import { localAppHeadersForTests } from "../http/local-app.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { SqlClient } from "../platform/unstable.ts";
 import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import { configured, fixture } from "./local-checks-fixture.ts";
-import { LocalCheckRunner, LocalChecks, LocalChecksLive, type LocalCheck } from "./local-checks.ts";
+import { configured, fixture, layer as localChecksLayer } from "./local-checks-fixture.ts";
+import {
+  LocalCheckRunner,
+  LocalChecks,
+  LocalChecksLive,
+  localCheckRunFor,
+  runIdOf,
+  type LocalCheck,
+} from "./local-checks.ts";
 import { eventually, removeDir, run, write } from "./test-repo.ts";
 
 describe.skipIf(process.platform === "win32")("repository setup for the local merge check", () => {
@@ -84,6 +94,7 @@ describe.skipIf(process.platform === "win32")("repository setup for the local me
           head,
           base,
           setupFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+          setupRunnerVersion: WORKTREE_HOOK_VERSION,
         });
         expect(readFileSync(result.log!, "utf8")).toBe(
           "Worktree setup .gram/setup\nprepared\nchecked\n",
@@ -93,5 +104,71 @@ describe.skipIf(process.platform === "win32")("repository setup for the local me
         });
       }).pipe(Effect.provide(layer));
     }),
+  );
+
+  it.live(
+    "qualifies only a pass recorded with the current repository setup runner after restart",
+    () =>
+      Effect.gen(function* () {
+        const { dir, repo, head, base } = fixture();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const machine = HostId.make("m-0123456789abcdef01234567");
+        const site = { hostId: machine, path: repo };
+        const projectId = ProjectId.make("fixture-project");
+        const wanted = localCheckRunFor(
+          { command: "fixture-check", setup: { source: "repository" } },
+          projectId,
+        )!;
+        const oldHead = "d".repeat(40);
+        const keyOf = (revision: string) =>
+          `machine:${machine}:${revision}:${base}:${runIdOf(wanted)}`;
+        const key = keyOf(head);
+        const prior = {
+          ...wanted,
+          head,
+          base,
+          tree: "c".repeat(40),
+          machine,
+          host: "fixture-host",
+          status: "passed",
+          startedAt: Date.now() - 100,
+          finishedAt: Date.now(),
+          setupFingerprint: "f".repeat(64),
+        };
+        const database = join(dir, "gram.db");
+        const store = ThreadStore.layerSqlite(database).pipe(Layer.orDie);
+        const layer = localChecksLayer(
+          database,
+          dir,
+          () => Effect.die("lookup ran a check"),
+          false,
+        );
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const old = JSON.stringify({
+            ...prior,
+            head: oldHead,
+            setupRunnerVersion: WORKTREE_HOOK_VERSION - 1,
+          });
+          const unversioned = JSON.stringify({ ...prior, setupRunnerVersion: undefined });
+          yield* sql`INSERT INTO local_checks (key, data) VALUES (${keyOf(oldHead) + "-previous"}, ${old}), (${key}, ${unversioned})`;
+        }).pipe(Effect.provide(store));
+        const lookup = (revision: string) =>
+          Effect.flatMap(LocalChecks, (checks) =>
+            checks.lookup(site, revision, base, projectId, wanted),
+          ).pipe(Effect.provide(layer));
+        expect(yield* lookup(oldHead)).toBeUndefined();
+        expect(yield* lookup(head)).toBeUndefined();
+
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const current = JSON.stringify({ ...prior, setupRunnerVersion: WORKTREE_HOOK_VERSION });
+          yield* sql`INSERT INTO local_checks (key, data) VALUES (${key}, ${current})`;
+        }).pipe(Effect.provide(store));
+        expect(yield* lookup(head)).toMatchObject({
+          status: "passed",
+          setupRunnerVersion: WORKTREE_HOOK_VERSION,
+        });
+      }),
   );
 });

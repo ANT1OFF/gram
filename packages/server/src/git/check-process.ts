@@ -31,6 +31,7 @@ export interface LocalCheckRun {
   readonly projectId?: string;
   readonly setup?: string;
   readonly repositorySetup?: true;
+  readonly setupRunnerVersion?: number;
   readonly timeoutMs?: number;
   /** Only `unavailable/v1`, for a stored recipe that can't be read; it never runs. */
   readonly profile?: string;
