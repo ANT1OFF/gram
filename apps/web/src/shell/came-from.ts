@@ -1,4 +1,4 @@
-import type { ThreadId, WorkspaceId } from "@gram/contracts";
+import { ThreadId, WorkspaceId } from "@gram/contracts";
 import { useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 
@@ -29,10 +29,10 @@ const isAside = (pathname: string) =>
 export const placeOf = (pathname: string): CameFrom | undefined => {
   const thread = THREAD.exec(pathname)?.[1];
   if (thread !== undefined)
-    return { kind: "thread", threadId: decodeURIComponent(thread) as ThreadId };
+    return { kind: "thread", threadId: ThreadId.make(decodeURIComponent(thread)) };
   const workspace = WORKSPACE_PAGE.exec(pathname)?.[1];
   if (workspace !== undefined)
-    return { kind: "workspace", workspaceId: decodeURIComponent(workspace) as WorkspaceId };
+    return { kind: "workspace", workspaceId: WorkspaceId.make(decodeURIComponent(workspace)) };
   return isAside(pathname) ? undefined : { kind: "nowhere" };
 };
 

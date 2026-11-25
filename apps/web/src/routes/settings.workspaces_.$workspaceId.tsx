@@ -1,4 +1,4 @@
-import type { WorkspaceId } from "@gram/contracts";
+import { WorkspaceId } from "@gram/contracts";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { WorkspaceSettingsPage } from "@/settings/workspace-page";
@@ -10,5 +10,5 @@ export const Route = createFileRoute("/settings/workspaces_/$workspaceId")({
 
 function WorkspaceSettingsRoute() {
   const { workspaceId } = Route.useParams();
-  return <WorkspaceSettingsPage workspaceId={workspaceId as WorkspaceId} />;
+  return <WorkspaceSettingsPage workspaceId={WorkspaceId.make(workspaceId)} />;
 }

@@ -12,6 +12,18 @@ const MAX_LINES = 500;
 const MAX_ENTRIES = 64;
 
 /** Shared bound for classification and grammar work on untrusted tool text. */
+/**
+ * A language name as shiki's grammars take it. Shiki's type lists only its bundled grammars, which
+ * this module can't check without loading shiki; a name it lacks fails to load and the code shows
+ * as plain text (`tokenize`).
+ */
+export function shikiLanguage(name: string): BundledLanguage;
+export function shikiLanguage(name: string | undefined): BundledLanguage | undefined;
+export function shikiLanguage(name: string | undefined): BundledLanguage | undefined {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- shiki checks the name when it loads the grammar, and any name it lacks shows as plain text
+  return name as BundledLanguage | undefined;
+}
+
 export const canHighlightCode = (code: string): boolean => {
   if (code.length > MAX_CODE_LENGTH) return false;
   const lines = code.split("\n");

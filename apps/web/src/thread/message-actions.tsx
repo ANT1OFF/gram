@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
-import type { MessageId, GramUIMessage, ThreadId, ThreadStatus } from "@gram/contracts";
+import { MessageId, type GramUIMessage, type ThreadId, type ThreadStatus } from "@gram/contracts";
 import {
   Copy,
   Ellipsis,
@@ -319,7 +319,7 @@ function MessageMenu({
       {dialog && (
         <ForkDialog
           threadId={threadId}
-          fromMessageId={message.id as MessageId}
+          fromMessageId={MessageId.make(message.id)}
           notice={dialog.notice}
           open
           onOpenChange={(open) => {
@@ -340,7 +340,7 @@ function useWait(threadId: ThreadId, message: GramUIMessage) {
   const add = async () => {
     setPending(true);
     try {
-      await api.addWait(threadId, message.id as MessageId);
+      await api.addWait(threadId, MessageId.make(message.id));
     } catch (error) {
       useThreadsStore.getState().applyEvent({
         type: "notify",
@@ -485,9 +485,9 @@ function RewindConfirm({
   const [error, setError] = useState<string>();
   const { threadId, message, isUser, support, busy } = rewind;
   const restoreFiles = support === "historyAndFiles" && files;
-  const messageId = message.id as MessageId;
 
   const confirm = async () => {
+    const messageId = MessageId.make(message.id);
     if (isUser) {
       useDraftStore.getState().startEdit(threadId, messageText(message), {
         messageId,
@@ -580,7 +580,7 @@ function useForkFromHere(
   const disabledReason =
     reason ?? (hasAgentIds(message) ? undefined : "This reply can't be forked from yet");
   const forkHere = async () => {
-    const result = await fork({ fromMessageId: message.id as MessageId });
+    const result = await fork({ fromMessageId: MessageId.make(message.id) });
     if (result === "needsWorktree") openDialog({ notice: WORKTREE_NOTICE });
   };
   const blocked = available ? disabledReason : (disabledReason ?? "Forking isn't available");

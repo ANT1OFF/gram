@@ -65,10 +65,10 @@ function fakeTimers() {
   return {
     pending,
     setTimer: (callback: () => void, ms: number) => {
-      pending.set(++next, { callback, ms });
-      return next;
+      const id = ++next;
+      pending.set(id, { callback, ms });
+      return () => pending.delete(id);
     },
-    clearTimer: (timer: unknown) => pending.delete(timer as number),
     fire() {
       const [id, entry] = [...pending][0]!;
       pending.delete(id);
@@ -94,7 +94,6 @@ describe("startUpdateWatch", () => {
       onResult: (check) => results.push(check),
       intervalMs: 1000,
       setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
     });
 
     await settle();
@@ -120,7 +119,6 @@ describe("startUpdateWatch", () => {
       check: () => new Promise((r) => (resolve = r)),
       onResult: (check) => results.push(check),
       setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
     });
     stop();
     resolve?.(AVAILABLE);

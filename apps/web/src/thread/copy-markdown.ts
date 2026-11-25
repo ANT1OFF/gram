@@ -1,4 +1,4 @@
-import type { GramUIMessage } from "@gram/contracts";
+import { fieldsOf, type GramUIMessage } from "@gram/contracts";
 
 import { isToolPart, toolNameOf, type AnyToolPart } from "./parts";
 
@@ -11,8 +11,8 @@ const str = (value: unknown): string | undefined =>
   typeof value === "string" && value.trim() !== "" ? value : undefined;
 
 const toolSubject = (part: AnyToolPart): string | undefined => {
-  const input = typeof part.input === "object" && part.input !== null ? part.input : {};
-  const field = (key: string) => str((input as Record<string, unknown>)[key]);
+  const input = fieldsOf(part.input);
+  const field = (key: string) => str(input.get(key));
   const subject =
     field("file_path") ??
     field("notebook_path") ??

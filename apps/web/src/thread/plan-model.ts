@@ -1,5 +1,6 @@
 import {
   planHeadline,
+  PlanStepId,
   planText,
   type PlanEdit,
   type PlanHeadline,
@@ -195,7 +196,7 @@ export const stripSteps = (
   };
   return {
     steps: (turnPlan ?? []).map((item, index) => ({
-      id: `todo-${index}` as PlanStep["id"],
+      id: PlanStepId.make(`todo-${index}`),
       text: item.status === "inProgress" ? (item.activeForm ?? item.content) : item.content,
       status: status[item.status],
       source: "agent",

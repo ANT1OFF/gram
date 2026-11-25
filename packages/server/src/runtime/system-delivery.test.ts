@@ -530,7 +530,7 @@ describe("system delivery", () => {
       const store = yield* ThreadStore;
       const { thread, session } = yield* createIdle;
       const asking = yield* Effect.forkScoped(
-        runtimes.requestApproval(thread.id, {
+        runtimes.requestApproval(thread.id, "anyone", {
           toolName: "mcp__gram__probe",
           displayName: "probe",
           input: {},
@@ -563,7 +563,7 @@ describe("system delivery", () => {
       const store = yield* ThreadStore;
       const { thread, session } = yield* createIdle;
       const asking = yield* Effect.forkScoped(
-        runtimes.requestApproval(thread.id, {
+        runtimes.requestApproval(thread.id, "anyone", {
           toolName: "mcp__gram__probe",
           displayName: "probe",
           input: {},

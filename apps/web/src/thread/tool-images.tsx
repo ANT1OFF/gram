@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   splitToolImageOutput,
   type InlineToolImage,
   type ThreadId,
@@ -27,18 +28,18 @@ export const ToolImagesContext = createContext<{
 function readImageSource(part: AnyToolPart): string | undefined {
   if (toolNameOf(part) !== "Read" || part.state !== "output-available") return undefined;
   const output = part.output;
-  const fields =
-    typeof output === "object" && output !== null ? (output as Record<string, unknown>) : undefined;
-  const image = fields?.["type"] === "image";
+  const fields = fieldsOf(output);
+  const image = fields.get("type") === "image";
   const viewedFile =
     part.type === "dynamic-tool" &&
     part.providerExecuted === true &&
-    fields !== undefined &&
-    Object.keys(fields).length === 0;
+    typeof output === "object" &&
+    output !== null &&
+    fields.size === 0;
   if (!image && !viewedFile) return undefined;
-  const input = part.input as Record<string, unknown> | undefined;
+  const imagePath = fields.get("path");
   const path =
-    image && typeof fields?.["path"] === "string" ? fields["path"] : input?.["file_path"];
+    image && typeof imagePath === "string" ? imagePath : fieldsOf(part.input).get("file_path");
   if (typeof path !== "string" || !/^(\/|[A-Za-z]:[\\/])/.test(path)) return undefined;
   if (viewedFile && !/\.(png|jpe?g|gif|webp|svg)$/i.test(path)) return undefined;
   return path;

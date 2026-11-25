@@ -8,6 +8,7 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
+import * as Schema from "effect/Schema";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { useApi } from "@/api/context";
 import { useServerSettings } from "@/settings-sync/store";
@@ -17,6 +18,10 @@ import {
   type NamedWorkspace,
   type WordParse,
 } from "./word-filters";
+
+const decodeWorkspaces = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String }))),
+);
 
 /** Parsing runs after the first search render. Editing never changes the original search text. */
 export function useWordFilters(query: string, workspaceKey: string, enabled: boolean) {
@@ -32,7 +37,7 @@ export function useWordFilters(query: string, workspaceKey: string, enabled: boo
     if (!enabled) return;
     const timer = setTimeout(() => {
       setIgnoreText(false);
-      const result = parseWordFilters(query, JSON.parse(workspaceKey) as NamedWorkspace[]);
+      const result = parseWordFilters(query, decodeWorkspaces(workspaceKey));
       const filters = result.filters.filter((filter) => !overrides.current.has(filter.field));
       for (const filter of overrides.current.values()) if (filter !== null) filters.push(filter);
       setParsed({ ...result, filters, query });
@@ -114,20 +119,18 @@ export function WordFilterControls({
       aria-label="Search filters"
     >
       {filters.map((filter) => {
-        const values =
+        const options =
           filter.field === "workspace"
-            ? workspaces.map((w) => w.id)
+            ? workspaces.map((w): PaletteFilter => ({ field: "workspace", value: w.id }))
             : filter.field === "kind"
-              ? PALETTE_KINDS
+              ? PALETTE_KINDS.map((value): PaletteFilter => ({ field: "kind", value }))
               : filter.field === "state"
-                ? PALETTE_STATES
-                : PALETTE_TIMES;
-        const choose = (value: string) =>
-          setFilters(
-            filters.map((current) =>
-              current.field === filter.field ? ({ ...current, value } as PaletteFilter) : current,
-            ),
-          );
+                ? PALETTE_STATES.map((value): PaletteFilter => ({ field: "state", value }))
+                : PALETTE_TIMES.map((value): PaletteFilter => ({ field: "time", value }));
+        const choose = (next: PaletteFilter | undefined) => {
+          if (next === undefined) return;
+          setFilters(filters.map((current) => (current.field === filter.field ? next : current)));
+        };
         return (
           <span
             key={filter.field}
@@ -142,23 +145,22 @@ export function WordFilterControls({
                   return;
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
-                  const index = values.findIndex((value) => value === filter.value);
-                  choose(
-                    values[
-                      (index + (event.key === "ArrowDown" ? 1 : -1) + values.length) % values.length
-                    ]!,
-                  );
+                  const index = options.findIndex((option) => option.value === filter.value);
+                  const step = event.key === "ArrowDown" ? 1 : -1;
+                  choose(options[(index + step + options.length) % options.length]);
                 }
                 if (event.key === "Backspace" || event.key === "Delete") {
                   event.preventDefault();
                   remove(filter.field);
                 }
               }}
-              onChange={(event) => choose(event.target.value)}
+              onChange={(event) =>
+                choose(options.find((option) => option.value === event.target.value))
+              }
             >
-              {values.map((value) => (
-                <option key={value} value={value}>
-                  {label({ ...filter, value } as PaletteFilter)}
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {label(option)}
                 </option>
               ))}
             </select>

@@ -1,10 +1,11 @@
+import * as Schema from "effect/Schema";
 import { createElement } from "react";
 
 import {
   modelSpeeds,
   type AgentKind,
   type AgentModel,
-  type PermissionMode,
+  PermissionMode,
   type SpeedMode,
   type SpeedState,
 } from "@gram/contracts";
@@ -89,6 +90,8 @@ export function effortSection({
   };
 }
 
+const isPermissionMode = Schema.is(PermissionMode);
+
 const modeGlyph = (mode: PermissionMode, size: string) =>
   createElement(MODE_ICONS[mode], {
     "aria-hidden": true,
@@ -124,7 +127,9 @@ export function modeSection({
       ...option,
       icon: modeGlyph(option.value, "size-icon-row"),
     })),
-    onChange: (next) => onChange(next as PermissionMode),
+    onChange: (next) => {
+      if (isPermissionMode(next)) onChange(next);
+    },
   };
 }
 

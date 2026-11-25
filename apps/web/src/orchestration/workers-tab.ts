@@ -1,9 +1,9 @@
-import type { ThreadId, WorkspaceId } from "@gram/contracts";
-import { useParams } from "@tanstack/react-router";
+import type { WorkspaceId } from "@gram/contracts";
 import { useMemo } from "react";
 
 import { useNow } from "@/lib/use-now";
 import { focusWhenRendered } from "@/shell/focus-regions";
+import { useRouteThreadId, useRouteWorkspaceId } from "@/shell/route-params";
 import { fitShell, useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -86,8 +86,8 @@ export function toggleWorkersTab(): void {
 
 function useListWorkspace(): WorkspaceId | undefined {
   const workspaces = useWorkspaces();
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
-  const routeWorkspace = useParams({ strict: false }).workspaceId as WorkspaceId | undefined;
+  const threadId = useRouteThreadId();
+  const routeWorkspace = useRouteWorkspaceId();
   const thread = useThreadsStore((s) =>
     threadId === undefined ? undefined : s.byId[threadId]?.thread,
   );

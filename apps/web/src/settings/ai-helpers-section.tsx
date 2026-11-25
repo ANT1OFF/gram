@@ -9,6 +9,7 @@ import {
   gatewayModelUsable,
   helperFallbackChoice,
   helperContextAllowed,
+  HelperContextScope,
   SUGGEST_COUNTS_DAYS,
   suggestKeepRate,
   type GatewayProfile,
@@ -21,6 +22,7 @@ import {
 } from "@gram/contracts";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { TriangleAlert } from "lucide-react";
 import { Fragment, useId, useState } from "react";
 
@@ -187,10 +189,8 @@ export function AiHelpersSection() {
     save({ helpers: patch }).catch((e: unknown) => setFailed({ key, message: errorMessage(e) }));
   };
   const errorOf = (key: HelpersKey) => (failed?.key === key ? failed.message : undefined);
-  const resetOf = (key: HelpersKey) =>
-    resetFor(settings, (patch) => apply(key, patch.helpers ?? {}))(
-      AI_HELPERS_DEFAULTS[key as keyof typeof AI_HELPERS_DEFAULTS],
-    );
+  const resetOf = (key: keyof typeof AI_HELPERS_DEFAULTS) =>
+    resetFor(settings, (patch) => apply(key, patch.helpers ?? {}))(AI_HELPERS_DEFAULTS[key]);
 
   const on = settings.helpers?.enabled !== false;
   const source = helperSource(settings);
@@ -520,13 +520,13 @@ export const withPick = (profile: GatewayProfile, slot: "primary" | "fallback", 
 
 const HELPER_PICK_KEY = ["helper-pick"] as const;
 
-type ContextScope = "off" | "opening" | "conversation";
+const isContextScope = Schema.is(HelperContextScope);
 
 /** Consent uses the same save queue as model picks, so whole-profile updates cannot race. */
 export const saveHelperContext = (
   api: Pick<Api, "listProfiles" | "upsertProfile">,
   profile: GatewayProfile,
-  scope: ContextScope,
+  scope: HelperContextScope,
 ): Promise<GatewayProfile> => {
   const next = profileSaves.then(async () => {
     const current = (await api.listProfiles()).find((p) => p.id === profile.id);
@@ -546,10 +546,10 @@ export const saveHelperContext = (
 function HelperContextPicker({ profile }: { profile: GatewayProfile }) {
   const api = useApi();
   const queryClient = useQueryClient();
-  const [pending, setPending] = useState<Exclude<ContextScope, "off">>();
+  const [pending, setPending] = useState<Exclude<HelperContextScope, "off">>();
   const save = useMutation({
     mutationKey: HELPER_PICK_KEY,
-    mutationFn: (scope: ContextScope) => saveHelperContext(api, profile, scope),
+    mutationFn: (scope: HelperContextScope) => saveHelperContext(api, profile, scope),
     onSuccess: async () => {
       setPending(undefined);
       await queryClient.invalidateQueries({ queryKey: ["profiles"] });
@@ -600,7 +600,8 @@ function HelperContextPicker({ profile }: { profile: GatewayProfile }) {
         value={scope}
         disabled={busy}
         onChange={(event) => {
-          const next = event.target.value as ContextScope;
+          const next = event.target.value;
+          if (!isContextScope(next)) return;
           if (next === "off") {
             setPending(undefined);
             save.mutate(next);
@@ -733,7 +734,7 @@ function HelperModelPicker({
           </Select>
         )}
         {picked != null && efforts.length > 1 && (
-          <Select
+          <Select<ReasoningVariant | typeof NO_CHOICE>
             disabled={saving}
             value={picked.effort ?? NO_CHOICE}
             items={efforts}
@@ -741,7 +742,7 @@ function HelperModelPicker({
               if (next === null) return;
               save.mutate({
                 model: picked.model,
-                ...(next === NO_CHOICE ? {} : { effort: next as ReasoningVariant }),
+                ...(next === NO_CHOICE ? {} : { effort: next }),
               });
             }}
           >

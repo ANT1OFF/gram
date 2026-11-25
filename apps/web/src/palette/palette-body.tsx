@@ -11,7 +11,7 @@ import {
   slotAgent,
 } from "@gram/contracts";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { ChevronDown, Search, X } from "lucide-react";
 import { createElement, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
@@ -33,6 +33,7 @@ import { openFeatureSheet } from "@/orchestration/feature-sheet-store";
 import { keepBeside } from "@/orchestration/beside-store";
 import { peek } from "@/orchestration/peek-store";
 import { StatusDot } from "@/orchestration/status-dot";
+import { useRouteThreadId, useRouteWorkspaceId } from "@/shell/route-params";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { showDoc } from "@/docs/doc-pane-store";
 import { useDocs } from "@/docs/doc-queries";
@@ -169,8 +170,8 @@ export function PaletteBody({
   const hostSettings = useEmbedShell((s) => s.settings);
   const workspaceNoun = useThreadsWorkspaceNoun();
   const threadsTitle = useThreadsTitle();
-  const params = useParams({ strict: false });
-  const currentId = params.threadId as ThreadId | undefined;
+  const currentId = useRouteThreadId();
+  const shownWorkspace = useRouteWorkspaceId();
   const byId = useThreadsStore((s) => s.byId);
   const statusDetail = useThreadsStore((s) => s.statusDetail);
   const needGroups = useDerivedAsks((s) => s.needsYou.groups);
@@ -195,7 +196,6 @@ export function PaletteBody({
     workspaces.some(
       ({ workspace }) => workspace.projectIds.length === 1 && workspace.homeProjectId === projectId,
     );
-  const shownWorkspace = params.workspaceId as WorkspaceId | undefined;
   const boardWorkspace = boardWorkspaceFor(
     currentThread ?? (shownWorkspace === undefined ? undefined : { workspaceId: shownWorkspace }),
     workspaces,
@@ -289,7 +289,9 @@ export function PaletteBody({
     steps,
   );
 
-  const workspaceNames = new Map(workspaces.map(({ workspace }) => [workspace.id, workspace.name]));
+  const workspaceNames = new Map<WorkspaceId | undefined, string>(
+    workspaces.map(({ workspace }) => [workspace.id, workspace.name]),
+  );
   const recent = Object.values(byId).toSorted(
     (a, b) => b.thread.lastActivityAt - a.thread.lastActivityAt,
   );
@@ -372,7 +374,7 @@ export function PaletteBody({
     id: `worker:${summary.thread.id}`,
     label: summary.thread.title,
     hint: `${summary.thread.spawnedBy?.feature ?? ""} · ${statusWord(summary, statusWords)}`,
-    keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId as WorkspaceId) ?? ""}`,
+    keywords: `${summary.thread.checkout.branch ?? ""} ${workspaceNames.get(summary.thread.workspaceId) ?? ""}`,
     dot: paletteDot(statusWord(summary, statusWords)),
     scope: threadScope(summary.thread),
     beside: () => {
@@ -560,7 +562,7 @@ export function PaletteBody({
         label: item.label,
         ...(group.label === undefined ? {} : { hint: group.label, keywords: group.label }),
         icon: "command" as const,
-        run: go(id, () => void navigate({ to: item.to as "/" })),
+        run: go(id, () => void navigate({ to: item.to })),
       };
     }),
   );
@@ -779,7 +781,7 @@ export function PaletteBody({
             }
             const threadId = await resumeSession(api, session, root, resumeModelFor(agent));
             void queryClient.invalidateQueries({ queryKey: sessionsQueryKey(root) });
-            useLayoutStore.getState().openThread(threadId as ThreadId);
+            useLayoutStore.getState().openThread(threadId);
             void navigate({ to: "/t/$threadId", params: { threadId } });
           })
           .catch((error: unknown) =>
@@ -969,7 +971,7 @@ export function PaletteBody({
       resumeSession(api, session, resumeRoot, resumeModelFor(session.agent)).then(
         (threadId) => {
           void queryClient.invalidateQueries({ queryKey: sessionsQueryKey(resumeRoot) });
-          useLayoutStore.getState().openThread(threadId as ThreadId);
+          useLayoutStore.getState().openThread(threadId);
           void navigate({ to: "/t/$threadId", params: { threadId } });
         },
         (error: unknown) =>

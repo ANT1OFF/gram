@@ -4,6 +4,7 @@ import {
   type SubagentUsageData,
   type GramUIMessage,
 } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { createElement, useId, useState, type ReactNode } from "react";
 
@@ -62,15 +63,9 @@ export function ToolCard(props: ToolCardProps) {
 }
 
 const answered = (output: unknown): unknown => {
-  const text =
-    typeof output === "string"
-      ? output
-      : Array.isArray(output) &&
-          output.length === 1 &&
-          record(output[0])["type"] === "text" &&
-          typeof record(output[0])["text"] === "string"
-        ? (record(output[0])["text"] as string)
-        : undefined;
+  const only = Array.isArray(output) && output.length === 1 ? record(output[0]) : {};
+  const inner = only["type"] === "text" ? only["text"] : undefined;
+  const text = typeof output === "string" ? output : typeof inner === "string" ? inner : undefined;
   if (text === undefined) return output;
   try {
     return JSON.parse(text) as unknown;
@@ -497,10 +492,8 @@ function TaskCard({
   );
 }
 
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+const record = (value: unknown): Readonly<Record<string, unknown>> =>
+  Predicate.isObject(value) ? value : {};
 
 const missingOutput = (output: unknown) =>
   output == null ||
@@ -559,8 +552,8 @@ function WebSearchCard({ part }: { part: ToolPartOf<"WebSearch"> }) {
 const json = (value: unknown) => JSON.stringify(value, null, 2);
 
 const nativeWebSummary = (input: unknown): string | undefined => {
-  if (typeof input !== "object" || input === null) return undefined;
-  const fields = input as Record<string, unknown>;
+  if (!Predicate.isObject(input)) return undefined;
+  const fields = input;
   if (Array.isArray(fields.queries) && fields.queries.length > 0) {
     return fields.queries.filter((query): query is string => typeof query === "string").join("; ");
   }

@@ -1,10 +1,10 @@
-import type {
-  DiffFile,
+import {
   DraftId,
-  GitState,
-  Thread,
-  ThreadId,
-  WorkerLedgerEntry,
+  type DiffFile,
+  type GitState,
+  type Thread,
+  type ThreadId,
+  type WorkerLedgerEntry,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -281,7 +281,7 @@ export function EmptyThread({ threadId }: { threadId: ThreadId }) {
   const resume = () => {
     carryDraft({
       text: resumeBrief(thread.title, report, pr),
-      draftId: crypto.randomUUID() as DraftId,
+      draftId: DraftId.make(crypto.randomUUID()),
       attachments: [],
     });
     if (worker && thread.workspaceId !== undefined) {

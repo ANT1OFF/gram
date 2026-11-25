@@ -1,26 +1,28 @@
-const WIDGET_TOKENS = {
-  "--fg": "--fg",
-  "--fg-muted": "--fg-muted",
-  "--bg": "--surface-2",
-  "--surface": "--surface-3",
-  "--border": "--border-subtle",
-  "--accent": "--accent",
-  "--success": "--success-text",
-  "--warning": "--warning-text",
-  "--danger": "--danger-text",
-  "--info": "--info-text",
-  "--font": "--font-ui",
-} as const;
+const WIDGET_TOKENS = [
+  ["--fg", "--fg"],
+  ["--fg-muted", "--fg-muted"],
+  ["--bg", "--surface-2"],
+  ["--surface", "--surface-3"],
+  ["--border", "--border-subtle"],
+  ["--accent", "--accent"],
+  ["--success", "--success-text"],
+  ["--warning", "--warning-text"],
+  ["--danger", "--danger-text"],
+  ["--info", "--info-text"],
+  ["--font", "--font-ui"],
+] as const;
 
-export type WidgetTheme = Readonly<Record<keyof typeof WIDGET_TOKENS, string>>;
+type WidgetToken = (typeof WIDGET_TOKENS)[number][0];
+
+export type WidgetTheme = Readonly<Record<WidgetToken, string>>;
 
 /** The page's current values for `WIDGET_TOKENS`; a token the theme leaves unset is dropped. */
 export const readWidgetTheme = (root: Element): Partial<WidgetTheme> => {
   const style = getComputedStyle(root);
-  const theme: Partial<Record<keyof typeof WIDGET_TOKENS, string>> = {};
-  for (const [name, source] of Object.entries(WIDGET_TOKENS)) {
+  const theme: Partial<Record<WidgetToken, string>> = {};
+  for (const [name, source] of WIDGET_TOKENS) {
     const value = style.getPropertyValue(source).trim();
-    if (value !== "") theme[name as keyof typeof WIDGET_TOKENS] = value;
+    if (value !== "") theme[name] = value;
   }
   return theme;
 };

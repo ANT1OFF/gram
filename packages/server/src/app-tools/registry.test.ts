@@ -520,7 +520,17 @@ const asks = (
     const store = yield* ThreadStore;
     const gate = makeApprovalGate(runtimes, store);
     const call = yield* Effect.forkScoped(
-      gate.approve(thread.id, what, {}, undefined, options.forced, options),
+      gate.approve(
+        thread.id,
+        what,
+        {},
+        undefined,
+        options.forced,
+        options,
+        undefined,
+        undefined,
+        "anyone",
+      ),
     );
     const card = yield* eventually(
       "the call to end or ask",
@@ -640,7 +650,17 @@ describe("the approval gate", () => {
       const thread = yield* threadAs("plain", "default");
       const gate = makeApprovalGate(runtimes, store);
       const call = yield* Effect.forkScoped(
-        gate.approve(thread.id, send, {}, "Send to “\u202egnp.exe”:\nhi\u200b there"),
+        gate.approve(
+          thread.id,
+          send,
+          {},
+          "Send to “\u202egnp.exe”:\nhi\u200b there",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "anyone",
+        ),
       );
       const card = yield* eventually(
         "the card",

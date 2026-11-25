@@ -3,9 +3,11 @@ import {
   derivePalette,
   isSceneId,
   sceneSvg,
+  SURFACES_IDS,
   type Palette,
-  type SurfacesId,
 } from "@gram/themes";
+
+import { oneOf } from "@/lib/one-of";
 
 const STYLE_ID = "gram-backdrop-style";
 const LAYER_ID = "gram-backdrop";
@@ -17,9 +19,10 @@ const rgba = (hex: string, alpha: number) => {
 
 /** The levels for `palette` over `scene`, as the variables theme/looks.css reads. */
 export function backdropCss(palette: Palette, scene: string, surfaces: string): string {
-  if (!isSceneId(scene)) return "";
+  const shown = oneOf(SURFACES_IDS, surfaces);
+  if (!isSceneId(scene) || shown === undefined) return "";
   const { colors } = derivePalette(palette);
-  const { scrim, alpha } = backdropLevels(colors, palette.mode, scene, surfaces as SurfacesId);
+  const { scrim, alpha } = backdropLevels(colors, palette.mode, scene, shown);
   return (
     `:root[data-backdrop="${scene}"] {` +
     ` --thread-bg: transparent;` +

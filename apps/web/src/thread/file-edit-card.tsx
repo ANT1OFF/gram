@@ -7,7 +7,7 @@ import {
 } from "@gram/contracts";
 import { ChevronRight } from "lucide-react";
 import { useId, useState, type MouseEvent } from "react";
-import type { BundledLanguage } from "shiki";
+import { shikiLanguage } from "@/lib/code-highlighting";
 
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
@@ -213,7 +213,7 @@ function FileEditRow({
                   budget={EDIT_ROW_BUDGET}
                   numbered={edit.numbered}
                   headers={false}
-                  language={languageFor(edit.path) as BundledLanguage | undefined}
+                  language={shikiLanguage(languageFor(edit.path))}
                 />
               </div>
             )}

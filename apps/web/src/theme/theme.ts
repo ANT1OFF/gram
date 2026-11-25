@@ -12,11 +12,13 @@ import {
   paletteFromSeeds,
   PRESET_PALETTES,
   resolvePalette,
+  SEED_TOKEN_KEYS,
   type Contrast,
   type Density,
   type LookId,
   type Mode,
   type Palette,
+  type SeedTokens,
 } from "@gram/themes";
 
 export type ModePref = "system" | Mode;
@@ -151,6 +153,9 @@ export function applyAttributes(root: Pick<Element, "setAttribute">, attrs: Them
   for (const [name, value] of Object.entries(attrs)) root.setAttribute(name, value);
 }
 
+const recordOf = (value: unknown): Readonly<Record<string, unknown>> =>
+  typeof value === "object" && value !== null ? Object.fromEntries(Object.entries(value)) : {};
+
 const oneOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
   typeof value === "string" && (values as readonly string[]).includes(value);
 
@@ -160,7 +165,7 @@ const oneOf = <T extends string>(values: readonly T[], value: unknown): value is
  */
 export function sanitizePrefs(input: unknown): Partial<ThemePrefs> {
   if (!input || typeof input !== "object") return {};
-  const raw = input as Record<string, unknown>;
+  const raw = recordOf(input);
   const out: Partial<ThemePrefs> = {};
   if (raw["look"] === DEFAULT_LOOK_ID) out.look = DEFAULT_LOOK_ID;
   if (typeof raw["palette"] === "string" && raw["palette"]) out.palette = raw["palette"];
@@ -177,13 +182,24 @@ export function sanitizePrefs(input: unknown): Partial<ThemePrefs> {
   return out;
 }
 
+const isSeedTokens = (value: unknown): value is SeedTokens => {
+  const seeds = recordOf(value);
+  return SEED_TOKEN_KEYS.every((key) => typeof seeds[key] === "string");
+};
+
 /** Keeps the stored custom palettes that still derive, rebuilt from their seeds. */
 export function sanitizePalettes(input: unknown): Palette[] {
   if (!Array.isArray(input)) return [];
   return input.flatMap((item: unknown) => {
+    const { seeds, id, name } = recordOf(item);
+    if (!isSeedTokens(seeds)) return [];
     try {
-      const p = item as Palette;
-      return [paletteFromSeeds(p.seeds, { id: p.id, name: p.name })];
+      return [
+        paletteFromSeeds(seeds, {
+          ...(typeof id === "string" && id !== "" ? { id } : {}),
+          ...(typeof name === "string" ? { name } : {}),
+        }),
+      ];
     } catch {
       return [];
     }

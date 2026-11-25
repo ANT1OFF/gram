@@ -57,7 +57,7 @@ export function NewEntryMenu({
       "data-testid": "new-entry",
       "data-entry": "host",
       className: pill ? PILL : NEW_ICON,
-      onClick: () => void navigate({ to: hosts.to as "/" }),
+      onClick: () => void navigate({ to: hosts.to }),
     };
     return (
       <Hint

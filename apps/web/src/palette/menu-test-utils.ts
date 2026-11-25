@@ -4,8 +4,8 @@ import { LABEL_WORD_CAP, labelWords, MENU_CAP } from "./menu-caps";
 
 /** An item's label as it reads, without its shortcut. */
 export const labelOf = (item: Element) => {
-  const copy = item.cloneNode(true) as Element;
-  copy.querySelectorAll("kbd").forEach((kbd) => kbd.remove());
+  const copy = item.cloneNode(true);
+  if (copy instanceof Element) copy.querySelectorAll("kbd").forEach((kbd) => kbd.remove());
   return copy.textContent?.trim() ?? "";
 };
 

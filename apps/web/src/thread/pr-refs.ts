@@ -3,6 +3,8 @@ import type { BoundPr, GitState, WorkerLedgerEntry } from "@gram/contracts";
 import { prLifecycleOf, prUrlOf, type PrLifecycle } from "@/components/pr-marks-model";
 import { identityOf, samePrIdentity, targetBadge } from "@/panels/pr-identity";
 
+import { isHastElement, isHastText, type HastElement, type HastNode, type HastText } from "./hast";
+
 interface KnownPr {
   readonly repo: string;
   readonly number: number;
@@ -149,20 +151,6 @@ export function resolvePrRef(ref: PrRef, index: PrRefIndex): PrRefTarget | undef
 /** The custom element a reference renders as; its component resolves it. */
 export const PR_REF_TAG = "pr-ref";
 
-interface HastText {
-  type: "text";
-  value: string;
-}
-
-interface HastElement {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  children: HastNode[];
-}
-
-type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
-
 const OPAQUE = new Set([
   "code",
   "pre",
@@ -221,27 +209,26 @@ function splitPrRefs(text: HastText): HastNode[] {
 const githubRef = (node: HastElement): PrRef | undefined => {
   const href = node.properties?.["href"];
   const match = typeof href === "string" ? GITHUB_URL.exec(href) : null;
-  return match === null || !isPrNumber(match[2]!)
+  return typeof href !== "string" || match === null || !isPrNumber(match[2]!)
     ? undefined
-    : { repo: match[1]!, number: Number(match[2]), url: href as string };
+    : { repo: match[1]!, number: Number(match[2]), url: href };
 };
 
 const visit = (node: HastNode): void => {
   if (!("children" in node) || node.children === undefined) return;
   const next: HastNode[] = [];
   for (const child of node.children) {
-    if (child.type === "text") {
-      next.push(...splitPrRefs(child as HastText));
+    if (isHastText(child)) {
+      next.push(...splitPrRefs(child));
       continue;
     }
-    if (child.type === "element") {
-      const element = child as HastElement;
-      const ref = element.tagName === "a" ? githubRef(element) : undefined;
+    if (isHastElement(child)) {
+      const ref = child.tagName === "a" ? githubRef(child) : undefined;
       if (ref !== undefined) {
-        next.push(refElement(ref, element.children));
+        next.push(refElement(ref, child.children));
         continue;
       }
-      if (!OPAQUE.has(element.tagName)) visit(element);
+      if (!OPAQUE.has(child.tagName)) visit(child);
     }
     next.push(child);
   }

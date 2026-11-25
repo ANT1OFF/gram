@@ -129,14 +129,24 @@ export const trayMenuOf = (
  * What the menus sent showed under `id`, newest first. A token names one scope and one fingerprint,
  * so every menu that has it showed the same ask; a token no menu has finds nothing.
  */
-export function shownIn<K extends "asks" | "workspaces">(
+export function shownIn(
   sent: readonly BuiltTrayMenu[],
-  kind: K,
+  kind: "asks",
   id: string,
-): (K extends "asks" ? ShownTrayAsk : ShownTrayWorkspace) | undefined {
+): ShownTrayAsk | undefined;
+export function shownIn(
+  sent: readonly BuiltTrayMenu[],
+  kind: "workspaces",
+  id: string,
+): ShownTrayWorkspace | undefined;
+export function shownIn(
+  sent: readonly BuiltTrayMenu[],
+  kind: "asks" | "workspaces",
+  id: string,
+): ShownTrayAsk | ShownTrayWorkspace | undefined {
   for (const menu of sent.toReversed()) {
     const shown = menu[kind].get(id);
-    if (shown !== undefined) return shown as K extends "asks" ? ShownTrayAsk : ShownTrayWorkspace;
+    if (shown !== undefined) return shown;
   }
   return undefined;
 }

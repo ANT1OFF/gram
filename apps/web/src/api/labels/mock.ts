@@ -1,11 +1,11 @@
-import type { Label, LabelId } from "@gram/contracts";
+import { LabelId, type Label } from "@gram/contracts";
 
 import type { MockWorld } from "../mock-world";
 import type { LabelsApi } from "./types";
 
 const SEED_LABELS: Label[] = [
-  { id: "l-urgent" as LabelId, name: "urgent", color: "#f7768e" },
-  { id: "l-review" as LabelId, name: "review", color: "#7aa2f7" },
+  { id: LabelId.make("l-urgent"), name: "urgent", color: "#f7768e" },
+  { id: LabelId.make("l-review"), name: "review", color: "#7aa2f7" },
 ];
 
 /** `LabelsApi` over two seeded labels; removing one takes it off the threads carrying it. */

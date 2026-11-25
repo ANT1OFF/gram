@@ -3,7 +3,7 @@ import {
   docTitle,
   hideDoc,
   type Doc,
-  type DocId,
+  DocId,
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -101,7 +101,9 @@ export function createDocsMock(world: MockWorld) {
     const doc: Doc =
       existing === undefined
         ? {
-            id: `${slug(input.title ?? "")}-${(++published).toString(16).padStart(6, "0")}` as DocId,
+            id: DocId.make(
+              `${slug(input.title ?? "")}-${(++published).toString(16).padStart(6, "0")}`,
+            ),
             workspaceId,
             title: docTitle(input.title ?? "Untitled"),
             authorThreadId: threadId,

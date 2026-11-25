@@ -30,7 +30,7 @@ const CAP_CHOICES = [
   { value: "8", label: "8" },
 ] as const;
 
-type CapChoice = (typeof CAP_CHOICES)[number]["value"];
+type CapChoice = "provider" | `${number}`;
 
 /**
  * Per workspace: where a worker runs when the orchestrator names no machine for it, and the most
@@ -51,7 +51,7 @@ export function WorkerPackingField({
   if (!hosted) return null;
   const packing = workerPackingOf(charter);
   const cap = charter.workersPerMachine;
-  const capValue = (cap === undefined ? "provider" : String(cap)) as CapChoice;
+  const capValue: CapChoice = cap === undefined ? "provider" : `${cap}`;
   const capOptions = CAP_CHOICES.some((choice) => choice.value === capValue)
     ? CAP_CHOICES
     : [...CAP_CHOICES, { value: capValue, label: String(cap) }];

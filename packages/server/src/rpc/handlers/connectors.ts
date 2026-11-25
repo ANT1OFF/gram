@@ -834,7 +834,8 @@ type CallHeaders = { readonly headers?: Readonly<Record<string, string | undefin
  * `handlers` as the RPC layer serves them: adding or removing a server runs a program or reaches a
  * service as the user, so only the local app's own connection may do it (`isLocalApp`, which the
  * transport stamps and no caller can forge). A paired phone's socket is refused. An approved
- * `mcp_server_propose` writes in-process, through `ConnectorConfigs`' writes, not through here.
+ * `mcp_server_propose` writes in-process, through `ConnectorConfigs`' writes, not through here; its
+ * card is held to the local app where the answer is taken (`ApprovalReach` `localApp`).
  */
 export const localAppConnectorWrites = <H extends object, A, E, RA, RE>(
   handlers: H & {

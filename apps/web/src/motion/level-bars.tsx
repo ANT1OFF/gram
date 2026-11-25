@@ -21,18 +21,22 @@ export const barScale = (index: 0 | 1 | 2, level: number, previous: number): num
 
 const scaleOf = (bar: SVGElement): number => Number(bar.dataset["scale"] ?? Number.NaN);
 
-const sources = new WeakMap<SVGElement, () => number>();
+const BARS = [0, 1, 2] as const;
+
+const sources = new WeakMap<Element, () => number>();
 
 const follow = onClock({
   step: (element) => {
-    const level = sources.get(element as SVGElement)?.() ?? 0;
-    element.querySelectorAll<SVGElement>(".gram-level-bar").forEach((bar, index) => {
-      const i = index as 0 | 1 | 2;
+    const level = sources.get(element)?.() ?? 0;
+    const bars = element.querySelectorAll<SVGElement>(".gram-level-bar");
+    for (const i of BARS) {
+      const bar = bars[i];
+      if (bar === undefined) continue;
       const previous = scaleOf(bar);
       const next = barScale(i, level, Number.isNaN(previous) ? REST[i] : previous);
       bar.dataset["scale"] = String(next);
       bar.style.scale = `1 ${next}`;
-    });
+    }
   },
   rest: (element) => {
     element.querySelectorAll<SVGElement>(".gram-level-bar").forEach((bar) => {

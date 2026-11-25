@@ -49,14 +49,17 @@ interface TerminalInternals {
 /** Takes over `terminal`'s render loop; call it once, right after `open`. */
 export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoop {
   const renderer = terminal.renderer!;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- ghostty-web keeps its render loop's state private; each field read through this shape is checked with typeof before use
   const internals = terminal as unknown as TerminalInternals;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the renderer's cursor phase is private too; it is used only once typeof says it is a boolean
   const phase = renderer as unknown as { cursorVisible?: unknown };
   const selection = internals.selectionManager;
   const requestRender = selection?.requestRender;
-  const start = internals.startRenderLoop;
-  const gated = typeof phase.cursorVisible === "boolean" && typeof requestRender === "function";
-  const sleeps =
-    gated && typeof start === "function" && typeof internals.animationFrameId === "number";
+  const start =
+    typeof internals.startRenderLoop === "function" ? internals.startRenderLoop : undefined;
+  const cursorVisible = phase.cursorVisible;
+  const gated = typeof cursorVisible === "boolean" && typeof requestRender === "function";
+  const sleeps = gated && start !== undefined && typeof internals.animationFrameId === "number";
 
   let redrawAll = false;
   let asked = true;
@@ -74,7 +77,7 @@ export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoo
       restart = undefined;
       if (running || disposed) return;
       running = true;
-      (start as () => void).call(terminal);
+      start?.call(terminal);
     });
   };
   const ask = () => {
@@ -87,7 +90,8 @@ export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoo
     queueMicrotask(() => {
       if (!stopping) return;
       stopping = false;
-      cancelAnimationFrame(internals.animationFrameId as number);
+      const frame = internals.animationFrameId;
+      if (typeof frame === "number") cancelAnimationFrame(frame);
       running = false;
     });
   };
@@ -110,7 +114,7 @@ export function quietRenderLoop(terminal: Terminal, visible: boolean): RenderLoo
     hoverRange(range);
   };
   if (gated) {
-    let lit = phase.cursorVisible as boolean;
+    let lit = cursorVisible;
     Object.defineProperty(renderer, "cursorVisible", {
       configurable: true,
       enumerable: true,

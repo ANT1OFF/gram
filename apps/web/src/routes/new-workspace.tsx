@@ -1,5 +1,6 @@
-import type { ProjectId, WorkspaceId } from "@gram/contracts";
+import { ProjectId, WorkspaceId } from "@gram/contracts";
 import { createFileRoute } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 
 import { NewWorkspaceSheet } from "@/orchestration/new-workspace";
 
@@ -14,17 +15,17 @@ export interface NewWorkspaceSearch {
   readonly read?: true;
 }
 
-const idParam = (value: unknown): string | undefined =>
-  typeof value === "string" && value !== "" ? value : undefined;
+const isWorkspaceId = Schema.is(WorkspaceId);
+const isProjectId = Schema.is(ProjectId);
 
 export const Route = createFileRoute("/new-workspace")({
   validateSearch: (search: Record<string, unknown>): NewWorkspaceSearch => {
-    const from = idParam(search["from"]);
-    const repo = idParam(search["repo"]);
+    const from = search["from"];
+    const repo = search["repo"];
     const read = search["read"] === true || search["read"] === "true";
     return {
-      ...(from === undefined ? {} : { from: from as WorkspaceId }),
-      ...(repo === undefined ? {} : { repo: repo as ProjectId }),
+      ...(isWorkspaceId(from) ? { from } : {}),
+      ...(isProjectId(repo) ? { repo } : {}),
       ...(read ? { read: true as const } : {}),
     };
   },

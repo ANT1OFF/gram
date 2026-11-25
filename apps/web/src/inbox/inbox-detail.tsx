@@ -72,11 +72,11 @@ function useInboxKeys(take: (event: KeyboardEvent) => boolean, enabled = true) {
   }, []);
 }
 
-const APPROVAL_VERBS: Readonly<Record<ApprovalShortcut, string>> = {
-  "approval.allow": "approval-allow",
-  "approval.always": "approval-always",
-  "approval.deny": "approval-deny",
-};
+const APPROVAL_VERBS: ReadonlyArray<readonly [ApprovalShortcut, string]> = [
+  ["approval.allow", "approval-allow"],
+  ["approval.always", "approval-always"],
+  ["approval.deny", "approval-deny"],
+];
 
 const approvalVerbPressed = (
   event: KeyboardEvent,
@@ -84,8 +84,8 @@ const approvalVerbPressed = (
 ): HTMLButtonElement | undefined => {
   const target = event.target instanceof Element ? event.target : null;
   if (target !== null && types(target)) return undefined;
-  for (const [shortcut, testId] of Object.entries(APPROVAL_VERBS)) {
-    if (shortcutOptionAt([{ shortcut: shortcut as ApprovalShortcut }], event) < 0) continue;
+  for (const [shortcut, testId] of APPROVAL_VERBS) {
+    if (shortcutOptionAt([{ shortcut }], event) < 0) continue;
     const button = root.querySelector<HTMLButtonElement>(
       `[data-testid="approval-card"] [data-testid="${testId}"]`,
     );

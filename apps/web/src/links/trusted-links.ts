@@ -1,4 +1,4 @@
-import { trustedHostsOf } from "@gram/contracts";
+import { fieldsOf, trustedHostsOf } from "@gram/contracts";
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -27,7 +27,7 @@ export const usePageTrustedLinks = create<PageTrustState>()(
       partialize: ({ hosts }) => ({ hosts }),
       merge: (persisted, current) => ({
         ...current,
-        hosts: trustedHostsOf((persisted as { hosts?: unknown } | undefined)?.hosts),
+        hosts: trustedHostsOf(fieldsOf(persisted).get("hosts")),
       }),
     },
   ),

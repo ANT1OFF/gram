@@ -13,6 +13,7 @@ import {
   canHighlightCode,
   createRawTokens,
   highlightCode,
+  shikiLanguage,
   type TokenizedCode,
 } from "@/lib/code-highlighting";
 import { paintEmbedded } from "@/lib/command-tokens";
@@ -290,7 +291,7 @@ export const useCommandTokens = (code: string, enabled = true) => {
         tokens[index] = result;
         setLayers({ scripts, tokens: [...tokens] });
       };
-      const cached = highlightCode(script.text, script.language as BundledLanguage, receive);
+      const cached = highlightCode(script.text, shikiLanguage(script.language), receive);
       if (cached) receive(cached);
     }
     return () => {
@@ -434,7 +435,7 @@ export const CodeBlockCopyButton = ({
         onCopy?.();
       }
     } catch (error) {
-      onError?.(error as Error);
+      onError?.(error instanceof Error ? error : new Error(String(error)));
     }
   }, [code, onCopy, onError, flash, isCopied]);
 

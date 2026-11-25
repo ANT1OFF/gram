@@ -4,6 +4,7 @@ import { useParams } from "@tanstack/react-router";
 import { readLast } from "@/orchestration/home";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useThreadsStore } from "@/stores/threads";
 
 import { useViewStore } from "./view-store";
@@ -35,7 +36,7 @@ export const viewSolo = (thread: Pick<Thread, "workspaceId"> | undefined): boole
  * route has, so over them the window is on that workspace.
  */
 export function useViewSolo(): boolean {
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   const chat = useViewStore((s) => s.view === "chat");
   const solo = useThreadsStore((s) =>
     viewSolo(threadId === undefined ? undefined : s.byId[threadId]?.thread),

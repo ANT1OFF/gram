@@ -1,4 +1,5 @@
 import { RemoteAccessStatus } from "@gram/contracts";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { serverUrl } from "@/api/server-base";
@@ -12,6 +13,9 @@ import { withOriginKey } from "../api/origin-key";
 export class PhoneAccessError extends Error {}
 
 const decodeStatus = Schema.decodeUnknownSync(RemoteAccessStatus);
+const decodePairingLink = Schema.decodeUnknownOption(
+  Schema.Struct({ url: Schema.String, expiresAt: Schema.Number }),
+);
 
 const post = async (path: string, body?: unknown): Promise<Response> =>
   fetch(
@@ -56,9 +60,8 @@ export const phoneAccess = {
     const response = await post("/remote/pair");
     if (response.status === 409) return "full";
     if (!response.ok) throw await refusal(response, "Couldn't make a pairing link");
-    const value = (await response.json()) as { url?: unknown; expiresAt?: unknown };
-    if (typeof value.url !== "string" || typeof value.expiresAt !== "number")
-      throw new PhoneAccessError("Couldn't make a pairing link");
-    return { url: value.url, expiresAt: value.expiresAt };
+    const link = decodePairingLink(await response.json());
+    if (Option.isNone(link)) throw new PhoneAccessError("Couldn't make a pairing link");
+    return link.value;
   },
 };

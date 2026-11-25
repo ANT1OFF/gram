@@ -1,4 +1,4 @@
-import type { MessageId } from "@gram/contracts";
+import { MessageId } from "@gram/contracts";
 
 import { resubscribing } from "../connection";
 import { isThreadNotFound } from "../errors";
@@ -21,7 +21,7 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
             client["thread.subscribe"]({
               threadId,
               ...(from === undefined ? {} : { afterRev: from.afterRev }),
-              ...(from?.from === undefined ? {} : { from: from.from as MessageId }),
+              ...(from?.from === undefined ? {} : { from: MessageId.make(from.from) }),
             }),
             s,
           );
@@ -31,7 +31,7 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
         { marker: { type: "subscribed" }, final: isThreadNotFound },
       ),
     threadHistory: (threadId, before) =>
-      run(client["thread.history"]({ threadId, before: before as MessageId })),
+      run(client["thread.history"]({ threadId, before: MessageId.make(before) })),
     createThread: (input) => run(client["thread.create"](input)),
     send: (threadId, input, options) =>
       runMessage(

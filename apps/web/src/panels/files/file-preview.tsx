@@ -2,7 +2,7 @@ import type { FsFile, ThreadId } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { FileCode, FolderOpen, History, SquareArrowUpRightExit, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import type { BundledLanguage } from "shiki";
+import { shikiLanguage } from "@/lib/code-highlighting";
 
 import { useApi } from "@/api/context";
 import { CodeBlockContent } from "@/components/ai-elements/code-block";
@@ -158,7 +158,7 @@ export function FilePreview({
     body = (
       <CodeBlockContent
         code={file.content}
-        language={(file.language ?? "text") as BundledLanguage}
+        language={shikiLanguage(file.language ?? "text")}
         showLineNumbers
         highlightLine={line}
         highlightEnd={end}

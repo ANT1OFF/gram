@@ -1,5 +1,6 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { useEffect, useRef } from "react";
 
 import { useApi } from "@/api/context";
@@ -11,6 +12,8 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { gridLayout, restoreGrid } from "./mapping";
 import { useServerSettings } from "./store";
+
+const isThreadId = Schema.is(ThreadId);
 
 const PERSIST_DEBOUNCE_MS = 500;
 
@@ -28,8 +31,8 @@ export function useGridSync() {
   const api = useApi();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const params = useParams({ strict: false });
-  const routeThread = params.threadId as ThreadId | undefined;
+  const { threadId } = useParams({ strict: false });
+  const routeThread = isThreadId(threadId) ? threadId : undefined;
   const settings = useServerSettings((s) => s.settings);
   const ready = useThreadsStore((s) => s.ready);
   const grid = useLayoutStore((s) => s.grid);

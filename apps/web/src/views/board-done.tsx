@@ -99,7 +99,7 @@ function DoneRow({
   const ended = useThreadsStore((s) =>
     first === undefined ? undefined : s.byId[first.threadId]?.thread.completedAt,
   );
-  const report = useLatestReport(row.card.workspaceId, first?.threadId ?? ("" as ThreadId));
+  const report = useLatestReport(row.card.workspaceId, first?.threadId);
   const outcome = pr?.state === "merged" ? "Merged" : "Done";
   const where = repos ? row.projects.join(" · ") : undefined;
   return (

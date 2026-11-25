@@ -8,7 +8,7 @@ import {
   RoutineTrigger,
   type ModelRef,
   type OrchestratorCharter,
-  type ProjectId,
+  ProjectId,
   type RoutineEventKind,
   type RoutineRun,
   type RoutineState,
@@ -258,7 +258,7 @@ export const routineOfForm = (
       ...(on === undefined ? { schedule: schedule! } : { on }),
       ...(form.target === "orchestrator" ? { target: "orchestrator" as const } : {}),
       ...(form.target === "worker" && form.project !== ""
-        ? { project: form.project as ProjectId }
+        ? { project: ProjectId.make(form.project) }
         : {}),
       ...(form.target === "worker" && model !== undefined ? { model } : {}),
       ...(editing?.off === true ? { off: true as const } : {}),

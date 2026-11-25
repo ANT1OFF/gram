@@ -12,6 +12,8 @@ interface HastElement {
 
 type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
 
+const isElement = (node: HastNode): node is HastElement => node.type === "element";
+
 const LOADING = ["src", "srcSet", "poster", "data", "background", "imageSrcSet", "href"] as const;
 const LOADS_HREF = new Set(["link", "image", "use", "feImage"]);
 const CANDIDATES = new Set(["srcSet", "imageSrcSet"]);
@@ -81,11 +83,11 @@ const visit = (node: HastNode): void => {
   if (!("children" in node) || node.children === undefined) return;
   const next: HastNode[] = [];
   for (const child of node.children) {
-    if (child.type !== "element") {
+    if (!isElement(child)) {
       next.push(child);
       continue;
     }
-    const tamed = tame(child as HastElement);
+    const tamed = tame(child);
     if (tamed === undefined) continue;
     visit(tamed);
     next.push(tamed);

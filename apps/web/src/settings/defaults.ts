@@ -65,7 +65,7 @@ export const restorePatch = (list: readonly DefaultSetting[]): SettingsPatch => 
       const before = merged[key];
       merged[key] =
         typeof value === "object" && value !== null && !Array.isArray(value)
-          ? { ...(before as object | undefined), ...value }
+          ? { ...(typeof before === "object" ? before : {}), ...value }
           : value;
     }
   }

@@ -1,5 +1,13 @@
-import { type OrchestratorLedger, type WorkspaceId, type WorkspaceState } from "@gram/contracts";
-import { useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { WorkspaceId, type OrchestratorLedger, type WorkspaceState } from "@gram/contracts";
+import {
+  queryOptions,
+  skipToken,
+  useQueries,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
+import * as Schema from "effect/Schema";
 import { useMemo } from "react";
 
 import { useApi } from "@/api/context";
@@ -38,15 +46,19 @@ export const useWorkspaces = (): readonly WorkspaceState[] => useWorkspacesQuery
  */
 export const stageHolds = createStageHolds();
 
-const ledgerQuery = (api: Api, workspaceId: WorkspaceId) => ({
-  queryKey: ["orchestratorLedger", workspaceId] as const,
-  queryFn: async () => {
-    const ledger = stageHolds.settle(await api.orchestratorLedger(workspaceId));
-    useAttentionStore.getState().setLedger(ledger);
-    return ledger;
-  },
-  retry: false,
-});
+const ledgerQuery = (api: Api, workspaceId: WorkspaceId | undefined) =>
+  queryOptions({
+    queryKey: ["orchestratorLedger", workspaceId ?? ""] as const,
+    queryFn:
+      workspaceId === undefined
+        ? skipToken
+        : async () => {
+            const ledger = stageHolds.settle(await api.orchestratorLedger(workspaceId));
+            useAttentionStore.getState().setLedger(ledger);
+            return ledger;
+          },
+    retry: false,
+  });
 
 const watches = new WeakMap<Api, LedgerWatch>();
 
@@ -70,15 +82,18 @@ const watchFor = (api: Api, queryClient: QueryClient): LedgerWatch => {
 export const ledgerStreamLive = (api: Api, workspaceId: WorkspaceId): boolean =>
   watches.get(api)?.isLive(workspaceId) === true;
 
+const isWorkspaceId = Schema.is(WorkspaceId);
+
 function useLedgerWatch(workspaceIds: readonly WorkspaceId[]) {
   const api = useApi();
   const queryClient = useQueryClient();
   const key = workspaceIds.join(" ");
   useSubscription(() => {
     const watch = watchFor(api, queryClient);
-    const releases = (key === "" ? [] : (key.split(" ") as WorkspaceId[])).map((id) =>
-      watch.retain(id),
-    );
+    const releases = key
+      .split(" ")
+      .filter(isWorkspaceId)
+      .map((id) => watch.retain(id));
     return () => releases.forEach((release) => release());
   }, [api, queryClient, key]);
 }
@@ -88,7 +103,7 @@ export function useOrchestratorLedger(workspaceId: WorkspaceId | undefined) {
   const api = useApi();
   useLedgerWatch(useMemo(() => (workspaceId === undefined ? [] : [workspaceId]), [workspaceId]));
   return useQuery({
-    ...ledgerQuery(api, workspaceId ?? ("" as WorkspaceId)),
+    ...ledgerQuery(api, workspaceId),
     enabled: workspaceId !== undefined,
   });
 }

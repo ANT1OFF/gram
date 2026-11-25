@@ -71,7 +71,7 @@ export function ThreadsPage() {
       workspaces.map((state) => [state.workspace.id as string, state.workspace.name]),
     );
     const needing = new Set(
-      groups.flatMap((group) => group.items.map((item) => item.threadId as string)),
+      groups.flatMap((group) => group.items.flatMap((item) => item.threadId ?? [])),
     );
     return threadListings(
       {

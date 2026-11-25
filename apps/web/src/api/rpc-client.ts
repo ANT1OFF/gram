@@ -7,6 +7,7 @@ import { RpcClientError } from "effect/rpc/RpcClientError";
 import * as Stream from "effect/Stream";
 
 import { RECONNECT_WAIT_MS, resubscribing, type ConnectionControl } from "./connection";
+import { tagOf } from "./errors";
 
 type GramClient = RpcClient.FromGroup<typeof GramRpcs, RpcClientError>;
 
@@ -92,7 +93,7 @@ export async function* untilGone<T>(
       try {
         yield* open(s);
       } catch (error) {
-        if (!FINAL_TAGS.includes((error as { _tag?: unknown } | null)?._tag)) throw error;
+        if (!FINAL_TAGS.includes(tagOf(error))) throw error;
         gone.abort();
       }
     },

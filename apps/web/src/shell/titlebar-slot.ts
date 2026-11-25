@@ -1,8 +1,8 @@
 import type { ThreadId } from "@gram/contracts";
-import { useParams } from "@tanstack/react-router";
 import { useLayoutEffect } from "react";
 import { create } from "zustand";
 
+import { useRouteThreadId } from "@/shell/route-params";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { threadRoleOf } from "@/thread/orchestration-model";
@@ -83,6 +83,10 @@ const floorOf = (barWidth: number): TitlebarFold => (barWidth < TITLEBAR_FOLD_PX
 
 const roomFor = (step: number, spare: number, tight: number) => (step <= FOLD_VIEW ? spare : tight);
 
+const isFold = (value: number): value is TitlebarFold =>
+  Number.isInteger(value) && value >= 0 && value <= FOLD_ALL;
+const asFold = (value: number): TitlebarFold => (isFold(value) ? value : FOLD_ALL);
+
 /**
  * How far the bar folds, from what it has now. Narrow, it folds at least the view's actions; with
  * anything spilling out of the bar or its place, a step further. Else it folds as far as its title
@@ -95,7 +99,7 @@ const roomFor = (step: number, spare: number, tight: number) => (step <= FOLD_VI
 export function nextFold(at: TitlebarFoldAt): TitlebarFold {
   const width = (fold: number) => at.widths[fold - 1] ?? 0;
   const floor = floorOf(at.barWidth);
-  if (at.overflow) return Math.min(Math.max(at.fold + 1, floor), FOLD_ALL) as TitlebarFold;
+  if (at.overflow) return asFold(Math.min(Math.max(at.fold + 1, floor), FOLD_ALL));
   let fold: number = at.fold;
   let spare = at.spare;
   let tight = at.tight ?? at.spare;
@@ -105,7 +109,7 @@ export function nextFold(at: TitlebarFoldAt): TitlebarFold {
     spare += width(step);
     tight += width(step);
   }
-  if (fold !== at.fold) return fold as TitlebarFold;
+  if (fold !== at.fold) return asFold(fold);
   while (
     fold > floor &&
     roomFor(fold, spare, tight) - width(fold) >= UNFOLD_SLACK_PX &&
@@ -115,7 +119,7 @@ export function nextFold(at: TitlebarFoldAt): TitlebarFold {
     tight -= width(fold);
     fold -= 1;
   }
-  return fold as TitlebarFold;
+  return asFold(fold);
 }
 
 /**
@@ -167,7 +171,7 @@ export const useTitlebarSlot = create<TitlebarSlotState>()((set) => ({
  * and Chat is the view. A second pane brings each pane's header back, and Board has its own.
  */
 export function useTitlebarThread(): ThreadId | undefined {
-  const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const route = useRouteThreadId();
   const alone = useLayoutStore((s) => (s.grid.panes.length === 1 ? s.grid.panes[0] : null));
   const chat = useViewStore((s) => s.view === "chat");
   return chat && route !== undefined && alone === route ? route : undefined;
@@ -179,7 +183,7 @@ export function useTitlebarThread(): ThreadId | undefined {
  * part of.
  */
 export function useSoloRoute(): boolean {
-  const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const route = useRouteThreadId();
   return useThreadsStore((s) => {
     const thread = route === undefined ? undefined : s.byId[route]?.thread;
     return thread !== undefined && threadRoleOf(thread) === undefined;
@@ -188,7 +192,7 @@ export function useSoloRoute(): boolean {
 
 /** The agent of the route's thread ("claude", "codex"), whose usage the title bar's meter shows. */
 export function useRouteAgent(): string | undefined {
-  const route = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const route = useRouteThreadId();
   return useThreadsStore((s) =>
     route === undefined ? undefined : s.byId[route]?.thread.model.agent,
   );

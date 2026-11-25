@@ -1,5 +1,5 @@
-import type { ThreadId, WorkspaceId } from "@gram/contracts";
-import { useParams, useRouterState } from "@tanstack/react-router";
+import type { WorkspaceId } from "@gram/contracts";
+import { useRouterState } from "@tanstack/react-router";
 import { useMemo } from "react";
 
 import { useEmbedPageGroup, useEmbedPageTitle } from "@/embed/slots";
@@ -12,6 +12,7 @@ import { orchestratorRowTitle } from "@/orchestration/tree-model";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
 import { useWorkerWaitings } from "@/orchestration/use-waiting-on";
 import { useWorkerTally } from "@/orchestration/use-workspace-statuses";
+import { useRouteThreadId } from "@/shell/route-params";
 import { threadStatusOf } from "@/sidebar/status";
 import { useThreadsStore } from "@/stores/threads";
 import { threadDisplayTitle } from "@/thread/thread-title";
@@ -30,6 +31,7 @@ export interface PhonePlace {
   readonly live?: boolean;
 }
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the tally hook runs on every render; without a workspace it gets an id no workspace has, and finds nothing
 const NO_WORKSPACE = "" as WorkspaceId;
 
 const PAGE_NAMES: readonly (readonly [RegExp, string])[] = [
@@ -67,7 +69,7 @@ export const phoneState = ({
  * the Board as its workspace's name over "Board", and any other page by its name.
  */
 export function usePhonePlace(): PhonePlace {
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   const embedTitle = useEmbedPageTitle();
   const embedGroup = useEmbedPageGroup();
   const hosted = useEmbedShell((s) => s.hosted);

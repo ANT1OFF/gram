@@ -134,7 +134,7 @@ describe("approval release survives diagnostic defects", () => {
         const { rt, store, thread } = yield* setup;
         const calls = [];
         for (let i = 0; i < 3; i++)
-          calls.push(yield* Effect.forkScoped(rt.requestApproval(thread.id, fields)));
+          calls.push(yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields)));
         const cards = yield* waitFor(
           "three cards",
           store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 3 && rs)),
@@ -171,7 +171,7 @@ describe("approval release survives diagnostic defects", () => {
         const h = harness();
         return Effect.gen(function* () {
           const { rt, store, thread } = yield* setup;
-          const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+          const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
           const card = yield* waitFor(
             "card",
             store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
@@ -204,7 +204,7 @@ describe("approval release survives diagnostic defects", () => {
       const h = harness();
       return Effect.gen(function* () {
         const { rt, store, thread } = yield* setup;
-        const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+        const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
         const card = yield* waitFor(
           "card",
           store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
@@ -238,7 +238,7 @@ describe("approval release survives diagnostic defects", () => {
       return Effect.gen(function* () {
         const { rt, store, thread } = yield* setup;
         h.inject(fault);
-        const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+        const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
         const card = yield* waitFor(
           "card",
           store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
@@ -260,8 +260,8 @@ describe("approval release survives diagnostic defects", () => {
       const h = harness();
       return Effect.gen(function* () {
         const { rt, store, thread } = yield* setup;
-        const first = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
-        const second = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+        const first = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
+        const second = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
         const cards = yield* waitFor(
           "two cards",
           store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 2 && rs)),
@@ -304,7 +304,7 @@ describe("orphan routing retains server-card ownership", () => {
           });
           const calls = [];
           for (let i = 0; i < 2; i++)
-            calls.push(yield* Effect.forkScoped(rt.requestApproval(thread.id, fields)));
+            calls.push(yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields)));
           const cards = yield* waitFor(
             "two cards",
             store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 2 && rs)),
@@ -374,7 +374,7 @@ describe("orphan routing retains server-card ownership", () => {
         const native = yield* (yield* FakeAgentControl).latest(thread.id);
         const calls = [];
         for (let i = 0; i < 2; i++)
-          calls.push(yield* Effect.forkScoped(rt.requestApproval(thread.id, fields)));
+          calls.push(yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields)));
         const cards = yield* waitFor(
           "two cards",
           store.listRequests(thread.id).pipe(Effect.map((rs) => rs.length === 2 && rs)),
@@ -410,7 +410,7 @@ describe("orphan routing retains server-card ownership", () => {
       const { rt, store, thread } = yield* setup;
       const fake = yield* FakeAgentControl;
       const session = yield* fake.latest(thread.id);
-      const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+      const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
       const card = yield* waitFor(
         "card",
         store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
@@ -456,7 +456,7 @@ describe("orphan routing retains server-card ownership", () => {
       const { rt, store, thread } = yield* setup;
       const fake = yield* FakeAgentControl;
       const old = yield* fake.latest(thread.id);
-      const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+      const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
       const card = yield* waitFor(
         "card",
         store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),
@@ -501,7 +501,7 @@ describe("orphan routing retains server-card ownership", () => {
       const first = harness(file);
       const saved = yield* Effect.gen(function* () {
         const { rt, store, thread } = yield* setup;
-        const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, fields));
+        const call = yield* Effect.forkScoped(rt.requestApproval(thread.id, "anyone", fields));
         const card = yield* waitFor(
           "card",
           store.listRequests(thread.id).pipe(Effect.map(([r]) => r)),

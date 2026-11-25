@@ -1,9 +1,18 @@
+import { fieldsOf, FolderListing, HostFolderChecked } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import { run, type RpcContext } from "../rpc-client";
 import { serverUrl } from "../server-base";
 import type { FilesApi } from "./types";
 import { withOriginKey } from "../origin-key";
 
-const machineFolders = async <A>(path: string, body: object): Promise<A> => {
+const decodeListing = Schema.decodeUnknownSync(FolderListing);
+const decodeChecked = Schema.decodeUnknownSync(HostFolderChecked);
+
+const machineFolders = async <A>(
+  decode: (value: unknown) => A,
+  path: string,
+  body: object,
+): Promise<A> => {
   const response = await fetch(
     serverUrl(path),
     withOriginKey({
@@ -15,15 +24,11 @@ const machineFolders = async <A>(path: string, body: object): Promise<A> => {
     }),
   );
   const value: unknown = await response.json().catch(() => undefined);
-  if (response.ok) return value as A;
-  const error =
-    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  if (response.ok) return decode(value);
+  const error = typeof value === "object" && value !== null ? value : {};
+  const message = fieldsOf(error).get("message");
   throw Object.assign(
-    new Error(
-      typeof error["message"] === "string"
-        ? error["message"]
-        : "Couldn't read that machine's folders.",
-    ),
+    new Error(typeof message === "string" ? message : "Couldn't read that machine's folders."),
     error,
   );
 };
@@ -33,12 +38,13 @@ export const filesRpc = ({ client }: RpcContext): FilesApi => ({
   browse: (path, limit) =>
     run(client["fs.browse"](limit === undefined ? { path } : { path, limit })),
   browseOn: (hostId, path, limit) =>
-    machineFolders("/machines/folders/browse", {
+    machineFolders(decodeListing, "/machines/folders/browse", {
       id: hostId,
       path,
       ...(limit === undefined ? {} : { limit }),
     }),
-  checkFolderOn: (hostId, path) => machineFolders("/machines/folders/check", { id: hostId, path }),
+  checkFolderOn: (hostId, path) =>
+    machineFolders(decodeChecked, "/machines/folders/check", { id: hostId, path }),
   fsList: (path, options = {}) => run(client["fs.list"]({ path, ...options })),
   fsFile: (path, options = {}) => run(client["fs.file"]({ path, ...options })),
   fsSearch: (threadId, query, options = {}) =>

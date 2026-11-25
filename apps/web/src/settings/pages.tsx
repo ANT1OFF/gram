@@ -581,6 +581,7 @@ export const SETTINGS_PAGES = settingsPagesFor(
 
 const GRAM_IDS = new Set(ALL_SETTINGS_PAGES.map((page) => page.id));
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a path under /settings/$page
 const hostPath = (id: string) => `/settings/${id}` as SettingsPath;
 
 const hostPage = (page: ShellSettingsPage): SettingsPage => ({

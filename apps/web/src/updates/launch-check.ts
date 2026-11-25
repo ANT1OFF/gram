@@ -41,8 +41,8 @@ export interface UpdateWatchOptions {
   readonly check: () => Promise<UpdateCheck>;
   readonly onResult: (check: UpdateCheck) => void;
   readonly intervalMs?: number;
-  readonly setTimer?: (callback: () => void, ms: number) => unknown;
-  readonly clearTimer?: (timer: unknown) => void;
+  /** Runs `callback` after `ms`; returns what cancels it. */
+  readonly setTimer?: (callback: () => void, ms: number) => () => void;
 }
 
 /**
@@ -51,11 +51,14 @@ export interface UpdateWatchOptions {
  */
 export function startUpdateWatch(options: UpdateWatchOptions): () => void {
   const intervalMs = options.intervalMs ?? UPDATE_CHECK_INTERVAL_MS;
-  const setTimer = options.setTimer ?? ((callback, ms) => setTimeout(callback, ms));
-  const clearTimer =
-    options.clearTimer ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>));
+  const setTimer =
+    options.setTimer ??
+    ((callback, ms) => {
+      const timer = setTimeout(callback, ms);
+      return () => clearTimeout(timer);
+    });
   let stopped = false;
-  let timer: unknown;
+  let cancel: (() => void) | undefined;
 
   const round = () => {
     options
@@ -67,13 +70,13 @@ export function startUpdateWatch(options: UpdateWatchOptions): () => void {
         () => {},
       )
       .finally(() => {
-        if (!stopped) timer = setTimer(round, intervalMs);
+        if (!stopped) cancel = setTimer(round, intervalMs);
       });
   };
   round();
 
   return () => {
     stopped = true;
-    if (timer !== undefined) clearTimer(timer);
+    cancel?.();
   };
 }

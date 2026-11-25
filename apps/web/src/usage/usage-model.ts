@@ -116,6 +116,13 @@ export function usageDays(data: Pick<UsageOverview, "from" | "to" | "rows">): Us
   return [...days].map(([day, d]) => ({ day, ...d }));
 }
 
+/** Each family's tokens over all of `days`. */
+export function familyTotalsOver(days: readonly UsageDay[]): FamilyTotals {
+  const sums = noFamilies();
+  for (const day of days) for (const family of FAMILIES) sums[family] += day.families[family];
+  return sums;
+}
+
 /** The families with any tokens, in their fixed order. */
 export const familiesIn = (days: readonly UsageDay[]): Family[] =>
   FAMILIES.filter((family) => days.some((day) => day.families[family] > 0));

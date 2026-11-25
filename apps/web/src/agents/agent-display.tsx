@@ -4,7 +4,7 @@ import type { ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { AGENT_LABEL, agentLabel } from "./agent-label";
+import { AGENT_LABEL, agentLabel, isAgentKind } from "./agent-label";
 import {
   type AgentMarkProps,
   AntigravityMark,
@@ -33,7 +33,7 @@ export const AGENT_DISPLAY: Readonly<Record<AgentKind, AgentDisplay>> = {
 };
 
 const displayOf = (agent: string): AgentDisplay | undefined =>
-  Object.hasOwn(AGENT_DISPLAY, agent) ? AGENT_DISPLAY[agent as AgentKind] : undefined;
+  isAgentKind(agent) ? AGENT_DISPLAY[agent] : undefined;
 
 /**
  * An agent's mark, in its provider's brand colour: Claude's orange, OpenAI's black or white. The

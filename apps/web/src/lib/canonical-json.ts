@@ -11,11 +11,10 @@ export const canonicalJson = (value: unknown): string => {
     return `[${value.map((item) => (jsonless(item) ? "null" : canonicalJson(item))).join(",")}]`;
   }
   if (typeof value === "object" && value !== null) {
-    const record = value as Readonly<Record<string, unknown>>;
-    const fields = Object.keys(record)
-      .filter((key) => !jsonless(record[key]))
-      .toSorted()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
+    const fields = Object.entries(value)
+      .filter(([, field]) => !jsonless(field))
+      .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, field]) => `${JSON.stringify(key)}:${canonicalJson(field)}`);
     return `{${fields.join(",")}}`;
   }
   return JSON.stringify(value) ?? "null";

@@ -72,7 +72,7 @@ const harness = (options: {
       getWorkspace: () => Effect.die("no workspace"),
     },
     runtimes: {
-      requestApproval: (_threadId, request) =>
+      requestApproval: (_threadId, _reach, request) =>
         Effect.sync(() => {
           world.cards.push(request);
           return answers.shift() ?? { kind: "approval", decision: "deny", scope: "once" };

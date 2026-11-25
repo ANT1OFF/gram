@@ -1,6 +1,7 @@
-import type { AgentKind, ProfileId } from "@gram/contracts";
+import { AgentKind, ProfileId } from "@gram/contracts";
 import { useMutation, useQueries } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 
 import { AgentIcon, agentLabel } from "@/agents/agent-display";
@@ -49,8 +50,12 @@ export interface ModelPick {
 const pickKey = (agent: AgentKind, profileId: ProfileId | undefined, model: string) =>
   JSON.stringify([agent, profileId ?? null, model]);
 
+const decodePickKey = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Tuple([AgentKind, Schema.NullOr(ProfileId), Schema.String])),
+);
+
 const parsePick = (key: string): ModelPick => {
-  const [agent, profileId, model] = JSON.parse(key) as [AgentKind, ProfileId | null, string];
+  const [agent, profileId, model] = decodePickKey(key);
   return profileId === null ? { agent, model } : { agent, profileId, model };
 };
 
@@ -135,7 +140,7 @@ function NoModels({ none }: { none: ShellModelsNone }) {
       <span className="min-w-0 whitespace-normal">{none.text}</span>
       {none.action !== undefined && (
         <Link
-          {...({ to: none.action.to } as unknown as { to: "/" })}
+          to={none.action.to}
           className="rounded-sm text-meta text-foreground underline underline-offset-2 outline-none hover:text-foreground/80 focus-visible:focus-ring"
         >
           {none.action.label}
