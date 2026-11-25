@@ -260,10 +260,18 @@ describe.skipIf(!hasGit)("GitCheckoutLive", () => {
           id: "thread-4" as ThreadId,
           currentCheckout: followed,
         };
-        expect(yield* checkouts.restore(follower, undefined)).toEqual({
+        const restored = yield* checkouts.restore(follower, undefined);
+        if (restored.kind !== "restored")
+          throw new Error("Expected the followed worktree to be restored");
+        expect(restored).toEqual({
           kind: "restored",
           source: "local",
+          worktreeSetup: {
+            generation: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            revision: run(followed.path, "rev-parse", "HEAD").trim(),
+          },
         });
+        expect(restored.worktreeSetup?.generation).not.toBe(followed.worktreeSetup?.generation);
         expect(fs.existsSync(followed.path)).toBe(true);
         const main = yield* checkouts
           .restore(threadAt({ kind: "main", path: root }), undefined)
