@@ -707,7 +707,7 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
           expect.objectContaining({ kind: "worktree", branch: answered.branch }),
         ]);
         expect(thread.additionalDirectories).toEqual([thread.extraCheckouts![0]!.path]);
-        const session = yield* eventually(
+        const opened = yield* eventually(
           "the first message sent to the agent",
           Effect.sync(() =>
             control.sessions.find(
@@ -717,7 +717,7 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
             ),
           ),
         );
-        yield* session.completeTurn();
+        yield* opened.completeTurn();
         expect(yield* store.listActorEvents()).toContainEqual(
           expect.objectContaining({
             action: "thread.create",
