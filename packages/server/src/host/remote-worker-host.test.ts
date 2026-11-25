@@ -20,7 +20,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import { makeRepo, removeDir, tempDir, write } from "../git/test-repo.ts";
+import { makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
 import { EventHub as EventHubTag } from "../events/event-hub.ts";
 import { ThreadStore as ThreadStoreTag } from "../persistence/thread-store.ts";
 import { ProcessRoots, type PortScan, ThreadPorts } from "../ports/service.ts";
@@ -226,6 +226,10 @@ describe("a joined machine's worker host", () => {
           branch: "feat/review-ownership",
           repoRoot: cloneAt(repos),
           cloneIdentity: cloneIdentityOf(URL),
+          worktreeSetup: {
+            generation: expect.stringMatching(/^[0-9a-f-]{36}$/),
+            revision: run(checkout.path, "rev-parse", "HEAD").trim(),
+          },
         });
       }).pipe(Effect.scoped, Effect.provide(Live)),
     );
