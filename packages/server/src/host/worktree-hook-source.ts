@@ -1,15 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { redactText, type Checkout, type WorktreeHookKind } from "@gram/contracts";
+import { hidesText, type Checkout, type WorktreeHookKind } from "@gram/contracts";
 import { git, realPath, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { isolatedGitOptions } from "../git/isolated-git.ts";
-import { redactUrlCredentials } from "./remote-url.ts";
 
 export const WORKTREE_HOOK_VERSION = 1;
 const MAX_SCRIPT_BYTES = 64 * 1024;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const ENTRY = /^([0-7]+) (tree|blob|commit) ([0-9a-f]+)\t(.+)$/;
-const HIDDEN_SCRIPT_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
 export interface WorktreeHookSource {
   readonly kind: WorktreeHookKind;
@@ -101,10 +99,8 @@ export const resolveWorktreeHook = (
         .update(script)
         .digest("hex");
       if (actual !== oid || script.includes("\0")) return invalid(`${path} must be UTF-8 text.`);
-      if (HIDDEN_SCRIPT_CHARACTERS.test(script.replace(/[\t\n]/g, "")))
+      if (hidesText(script))
         return invalid(`${path} contains characters Gram cannot show faithfully for approval.`);
-      if (redactText(redactUrlCredentials(script)) !== script)
-        return invalid(`${path} contains credential-like text Gram cannot show for approval.`);
       const shebang = script.split("\n", 1)[0] ?? "";
       const interpreter = /^#![ \t]*(\/[^\s]+)/.exec(shebang)?.[1];
       if (interpreter === undefined)
