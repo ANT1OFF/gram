@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema";
 import type { ThreadStore } from "../persistence/thread-store.ts";
 import type { AgentHosts } from "../runtime/agent-hosts.ts";
 import { selectableModels } from "../runtime/model-efforts.ts";
+import type { ApprovalReach } from "../runtime/answer-reach.ts";
 import type { ServerApprovalAnswer } from "../runtime/server-approvals.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import * as Predicate from "effect/Predicate";
@@ -25,9 +26,10 @@ export type ProposalNoun = "settings" | "workspace" | "MCP server";
 
 /**
  * Raises the card in `caller`'s thread and waits for the user, for `ttl` at most. Its only scope is
- * `once` and it offers no rule to remember, so an approval covers this card alone. Succeeds with
- * the user's approval; fails, saying nothing changed, when they declined, the card was withdrawn or
- * it expired.
+ * `once` and it offers no rule to remember, so an approval covers this card alone. `reach` is who
+ * may approve it, as they may make the change directly (`ApprovalReach`): a proposal of what only
+ * the local app or the deployment may change names it. Succeeds with the user's approval; fails,
+ * saying nothing changed, when they declined, the card was withdrawn or it expired.
  */
 export const askUser = (
   runtimes: Pick<ThreadRuntimesShape, "requestApproval">,
@@ -41,15 +43,21 @@ export const askUser = (
     readonly description: string;
   },
   logged: Record<string, unknown>,
+  reach?: ApprovalReach,
 ): Effect.Effect<ServerApprovalAnswer, AppToolError> =>
   Effect.gen(function* () {
     const answer = yield* runtimes
-      .requestApproval(caller, {
-        toolName: `mcp__gram__${tool}`,
-        ...card,
-        suggestions: [],
-        scopes: ["once"],
-      })
+      .requestApproval(
+        caller,
+        {
+          toolName: `mcp__gram__${tool}`,
+          ...card,
+          suggestions: [],
+          scopes: ["once"],
+        },
+        undefined,
+        reach,
+      )
       .pipe(
         Effect.timeoutOption(ttl),
         Effect.catchTag("ThreadNotFound", () =>

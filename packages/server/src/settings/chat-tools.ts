@@ -284,6 +284,7 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
                 description: settingsProposalSummary(card),
               },
               { scope: proposed.scope },
+              proposed.scope === "app" ? "deployment" : undefined,
             );
 
             const roleNow = yield* runtimes.audienceOf(caller);

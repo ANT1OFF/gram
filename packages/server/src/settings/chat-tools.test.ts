@@ -15,6 +15,7 @@ import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 import * as TestClock from "effect/testing/TestClock";
 import { AppToolRegistry } from "../app-tools/registry.ts";
+import { type AskAnswerDeps, answerAsk } from "../embedding/ask-answer.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import {
@@ -31,6 +32,8 @@ import {
   type World,
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { HttpServerRequest, HttpServerResponse } from "../platform/unstable.ts";
+import { DEPLOYMENT_APPROVAL } from "../runtime/answer-reach.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { settingsAppToolsLayer } from "./chat-tools.ts";
 
@@ -91,6 +94,28 @@ const answer = (threadId: ThreadId, card: ApprovalRequest, decision: "allow" | "
   Effect.gen(function* () {
     const runtimes = yield* ThreadRuntimes;
     yield* runtimes.respond(threadId, card.id, { kind: "approval", decision, scope: "once" });
+  });
+
+/** `decision` posted to `/asks/answer` by a member a fronting proxy signed in. */
+const answerAsMember = (threadId: ThreadId, card: ApprovalRequest, decision: "allow" | "deny") =>
+  Effect.gen(function* () {
+    const deps: AskAnswerDeps = { runtimes: yield* ThreadRuntimes, store: yield* ThreadStore };
+    const body = JSON.stringify({
+      threadId,
+      requestId: card.id,
+      answer: { kind: "approval", decision, scope: "once" },
+      ...(card.shown === undefined ? {} : { shown: card.shown }),
+    });
+    const request = HttpServerRequest.fromWeb(
+      new Request("http://127.0.0.1/asks/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      }),
+    );
+    const member = { id: "member-1", name: "M", role: "member" } as const;
+    const web = HttpServerResponse.toWeb(yield* answerAsk(deps, request, member, "signed"));
+    return { status: web.status, body: yield* Effect.promise(() => web.json()) };
   });
 
 /** A plain thread the user is chatting with, outside any workspace. */
@@ -415,6 +440,49 @@ describe("settings_propose", () => {
         const [audit] = yield* store.listSettingsAudit(1);
         expect(audit).toMatchObject({ threadId: plain.id, proposerRole: "plain", scope: "app" });
         expect(audit).not.toHaveProperty("workspaceId");
+      }),
+    ),
+  );
+
+  it.effect(
+    "refuses a signed-in member's approval of an app change, which is the deployment's",
+    () =>
+      inSettings((world) =>
+        Effect.gen(function* () {
+          const store = yield* ThreadStore;
+          const plain = yield* plainThread(world);
+          const asked = yield* call(plain.id, "plain", "settings_propose", {
+            changes: [{ op: "set", key: "appearance.mode", value: "light" }],
+          }).pipe(Effect.forkScoped);
+          const card = yield* cardIn(plain.id);
+          expect(yield* answerAsMember(plain.id, card, "allow")).toEqual({
+            status: 409,
+            body: { _tag: "InvalidState", message: DEPLOYMENT_APPROVAL },
+          });
+          yield* settle;
+          expect((yield* store.getSettings).appearance.mode).toBe("dark");
+          expect(yield* store.listSettingsAudit(5)).toEqual([]);
+          expect((yield* store.listRequests(plain.id)).map((each) => each.id)).toEqual([card.id]);
+          // The app's own answer still applies it.
+          yield* answer(plain.id, card, "allow");
+          yield* Fiber.join(asked);
+          expect((yield* store.getSettings).appearance.mode).toBe("light");
+        }),
+      ),
+  );
+
+  it.effect("takes a signed-in member's approval of a workspace change, which members make", () =>
+    inSettings((world) =>
+      Effect.gen(function* () {
+        const store = yield* ThreadStore;
+        const { thread, workspaceId } = yield* openOrchestrator(world);
+        const asked = yield* call(thread.id, "orchestrator", "settings_propose", {
+          changes: [{ op: "set", key: "workspace.maxConcurrentWorkers", value: 2 }],
+        }).pipe(Effect.forkScoped);
+        const answered = yield* answerAsMember(thread.id, yield* cardIn(thread.id), "allow");
+        expect(answered.status).toBe(200);
+        yield* Fiber.join(asked);
+        expect((yield* store.getWorkspace(workspaceId)).charter.maxConcurrentWorkers).toBe(2);
       }),
     ),
   );

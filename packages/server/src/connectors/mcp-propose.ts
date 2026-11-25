@@ -139,6 +139,7 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
                 description: mcpServerProposalSummary(card),
               },
               logged,
+              "localApp",
             );
 
             const roleNow = yield* runtimes.audienceOf(caller);
