@@ -10,7 +10,6 @@ import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Stream from "effect/Stream";
 import * as Fiber from "effect/Fiber";
-import * as Scope from "effect/Scope";
 import {
   AWAITS_MACHINE,
   RUNS_ON_SERVER,
@@ -68,19 +67,8 @@ import type { AgentEvents } from "./agent-events.ts";
 import type { ServerApprovals } from "./server-approvals.ts";
 import type { UsageLimitReadingsShape } from "../usage/limit-readings.ts";
 import { sharedFolderNote } from "../shared/note.ts";
-
-const scopedKeepingFailure = <A, E, R>(self: Effect.Effect<A, E, R>) =>
-  Effect.uninterruptibleMask((restore) =>
-    Effect.gen(function* () {
-      const scope = yield* Scope.make();
-      const exit = yield* restore(self.pipe(Scope.provide(scope))).pipe(Effect.exit);
-      const closed = yield* Scope.close(scope, exit).pipe(Effect.exit);
-      if (Exit.isSuccess(closed)) return yield* exit;
-      return yield* Effect.failCause(
-        Exit.isFailure(exit) ? Cause.combine(exit.cause, closed.cause) : closed.cause,
-      );
-    }),
-  );
+import { sessionWorktreeActivation, type makeWorktreeActivations } from "./worktree-activations.ts";
+import { scopedKeepingFailure } from "./session-scope.ts";
 
 const SETTLED: AgentEvent = { type: "status", status: "idle" };
 
@@ -93,6 +81,7 @@ export interface SessionLifecycleDeps {
   readonly checkouts: CheckoutServiceShape;
   readonly hosts: AgentHosts["Service"];
   readonly sessions: FiberMap.FiberMap<ThreadId>;
+  readonly worktreeActivations: ReturnType<typeof makeWorktreeActivations> | undefined;
   /** The decision hook, where one is configured: a session under it asks about every outward call. */
   readonly decisions: DecisionHookShape | undefined;
   readonly folderStops: FiberMap.FiberMap<ThreadId>;
@@ -141,6 +130,7 @@ export const makeSessionLifecycle = ({
   checkouts,
   hosts,
   sessions,
+  worktreeActivations,
   folderStops,
   recoveries,
   activityTimers,
@@ -548,8 +538,10 @@ export const makeSessionLifecycle = ({
       }
       rt.profileId = thread.model.profileId;
       rt.agent = thread.model.agent;
+      const hooks = sessionWorktreeActivation(worktreeActivations, rt, thread);
       yield* setStatus(rt, "starting");
       const lifetime = Effect.gen(function* () {
+        yield* hooks.beforeOpen;
         const dreamSupport =
           thread.role === "dream"
             ? dreamSupportFor(thread.model.agent, { kind: "implementation" })
@@ -669,6 +661,7 @@ export const makeSessionLifecycle = ({
             });
           }),
         );
+        yield* hooks.beforeAdmission(session.reattached === true);
         const moved = thread.transferredFrom;
         if (moved !== undefined && moved.seeded !== true && lost === undefined) {
           lost = yield* lostSessionContext(rt, thread.model.agent, moved.name);
@@ -684,6 +677,7 @@ export const makeSessionLifecycle = ({
         yield* locked(
           rt,
           Effect.gen(function* () {
+            hooks.admitted(session.reattached === true);
             rt.session = session;
             if (lost !== undefined) rt.lostSession = lost;
             rt.sessionBrowser = policy.browser === true && thread.role !== "dream";
@@ -750,6 +744,7 @@ export const makeSessionLifecycle = ({
       }).pipe(
         scopedKeepingFailure,
         Effect.onExit((exit) => {
+          hooks.ended();
           if (isShuttingDown() && Exit.isFailure(exit) && !Cause.hasInterruptsOnly(exit.cause))
             markShutdownFailed();
           return handleSessionExit(rt, exit).pipe(

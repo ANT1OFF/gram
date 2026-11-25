@@ -1561,6 +1561,30 @@ pays for at its start. A test (`packages/server/src/guide/agent-guide.test.ts`) 
 server and fails when the guide misses a tool any role is bound with, or a setting. Edits to the
 file are replaced at the next start.
 
+## Worktree setup and resume hooks
+
+Commit an executable script with a shebang at `.gram/setup` to prepare a worktree that Gram
+creates for a thread. Install locked project dependencies, generate code or copy an example
+configuration there. Setup runs once per new checkout and has a 20-minute limit. A restored
+worktree gets a new setup attempt. A worker runs `.gram/resume` before its first turn, after a
+wake and on a session restart. Keep resume short and safe to repeat. It has a 10-second limit.
+In a thread with more than one worktree, each repository supplies its own hooks. If a Gram
+path is absent, Gram looks for the corresponding `.agents/setup` or `.agents/resume` file.
+
+Hooks run from the checkout root using the machine's login-shell PATH, with stdin closed.
+`GRAM_WORKTREE` names that directory and `GRAM_SETUP=1` or `GRAM_RESUME=1` names the phase.
+Use foreground processes. Gram stops the process group after the hook. A script that detaches
+or starts a daemon can leave that group, so put ongoing services in a managed service or Preview.
+The hook inherits the account's file permissions. Gram supplies no agent or clone credentials
+in its environment.
+
+On a personal machine, the project folder must be trusted. Gram asks to run a new or changed
+committed hook and remembers the decision for that repository, hook and machine. On a hosted
+machine, the host provider's environment policy decides. The thread shows the latest result
+and its log. An unsuccessful hook leaves the worktree available so the worker can diagnose it.
+The worker's brief includes the setup failure and identifies missing prerequisites when Gram
+can distinguish them. [Worktree hook design](design/worktree-hooks.md)
+
 ## Project scripts
 
 A project's common commands (build, test, lint, dev) can be saved as project scripts and run

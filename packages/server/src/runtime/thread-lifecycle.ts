@@ -91,6 +91,7 @@ export interface ThreadLifecycleDeps {
   readonly setStatus: TurnLifecycle["setStatus"];
   readonly publishUpsert: TurnLifecycle["publishUpsert"];
   readonly cancelIdleTimer: TurnLifecycle["cancelIdleTimer"];
+  readonly cancelWorktreeWake: (threadId: ThreadId) => Effect.Effect<void>;
   readonly stopSession: TurnLifecycle["stopSession"];
   readonly failPendingDeliveries: TurnLifecycle["failPendingDeliveries"];
   readonly send: MessageQueue["send"];
@@ -121,6 +122,7 @@ export const makeThreadLifecycle = ({
   setStatus,
   publishUpsert,
   cancelIdleTimer,
+  cancelWorktreeWake,
   stopSession,
   failPendingDeliveries,
   send,
@@ -186,6 +188,7 @@ export const makeThreadLifecycle = ({
       );
       yield* Effect.gen(function* () {
         yield* cancelIdleTimer(rt);
+        yield* cancelWorktreeWake(threadId);
         yield* FiberMap.remove(recoveries, threadId);
         yield* stopSession(rt, "close");
         yield* locked(rt, failPendingDeliveries(rt, "ended"));

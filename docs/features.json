@@ -851,9 +851,25 @@
     {
       "name": "Worktrees",
       "purpose": "Worktrees and branches Gram makes for each thread, their storage and cleanup.",
-      "code": ["apps/web/src/worktrees/**", "packages/server/src/host/clone-*"],
-      "tests": ["packages/server/src/host/clone-worktrees.test.ts"],
-      "docs": ["docs/AGENTS_AND_FEATURES.md#worktree-storage-and-cleanup"]
+      "code": [
+        "apps/web/src/worktrees/**",
+        "apps/web/src/thread/worktree-hook-notice.tsx",
+        "packages/server/src/host/clone-*",
+        "packages/server/src/host/worktree-hook*.ts",
+        "packages/server/src/runtime/worktree-activations.ts",
+        "packages/server/src/runtime/worktree-hook-consent.ts"
+      ],
+      "tests": [
+        "apps/web/e2e/worktree-hooks.spec.ts",
+        "packages/server/src/host/clone-worktrees.test.ts",
+        "packages/server/src/host/worktree-hooks.test.ts",
+        "packages/server/src/runtime/worktree-activations.test.ts",
+        "packages/server/src/runtime/worktree-hook-consent.test.ts"
+      ],
+      "docs": [
+        "docs/AGENTS_AND_FEATURES.md#worktree-storage-and-cleanup",
+        "docs/AGENTS_AND_FEATURES.md#worktree-setup-and-resume-hooks"
+      ]
     },
     {
       "name": "Thread profiles",

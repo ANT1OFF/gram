@@ -11,7 +11,6 @@ import {
   AgentUnavailable,
   type ModelRef,
   type GitError,
-  type QueuedInput,
   type Thread,
   LOCAL_HOST_ID,
   type ThreadNotFound,
@@ -26,6 +25,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -39,7 +39,7 @@ import * as Queue from "effect/Queue";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
-import { samePath } from "@gram/git";
+import { PathProbe, Proc, samePath } from "@gram/git";
 import { McpTokens, mcpConnectionFor } from "../app-tools/mcp-tokens.ts";
 import { ServerConfig } from "../config.ts";
 import { TurnActivity } from "./turn-activity.ts";
@@ -54,6 +54,9 @@ import { ActivityTracker } from "./activity.ts";
 import type { AgentHosts } from "./agent-hosts.ts";
 import { restoreGateOf, WorkerHosts } from "../host/worker-host.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
+import { worktreeHooksOn } from "../host/worktree-hooks.ts";
+import { makeWorktreeActivations, makeWarmWorktreeWake } from "./worktree-activations.ts";
+import { makeIdleDelivery } from "./idle-delivery.ts";
 import { makeAccountScopes } from "./account-scopes.ts";
 import { ephemeralAccountScope } from "../usage/account-scope.ts";
 import { ownedRuntimes } from "./owned-runtimes.ts";
@@ -74,7 +77,6 @@ import { makeSessionPolicy } from "./session-policy.ts";
 import type { ResumeHold, QueueHold, TurnHold } from "./turn-holds.ts";
 import { makeSessionRestarts, makeRestartMethods } from "./session-restarts.ts";
 import { KeptSessions } from "./kept-sessions.ts";
-import { notInFlight } from "./user-input.ts";
 import { makeResumePlans, makeHistoryMethods } from "./history-plans.ts";
 import {
   type ServerApprovalRequest,
@@ -224,6 +226,9 @@ const make = Effect.gen(function* () {
   );
   const { scopeFor: accountScopeFor, quotaFor } = accountScopes;
   const config = yield* ServerConfig;
+  const hookProc = Option.getOrUndefined(yield* Effect.serviceOption(Proc));
+  const hookPath = Option.getOrUndefined(yield* Effect.serviceOption(PathProbe));
+  const worktreeWakes = yield* FiberMap.make<ThreadId>();
   const hooks = turnsHere(yield* TurnHooks, store);
   const sessions = yield* FiberMap.make<ThreadId>();
   let shuttingDown = false;
@@ -792,69 +797,25 @@ const make = Effect.gen(function* () {
         ),
       );
 
-  const becomeIdle = (rt: Runtime): Effect.Effect<void> =>
-    Effect.gen(function* () {
-      if (rt.reopening) return;
-      if ((yield* switchHold(rt)) !== undefined) {
-        yield* setStatus(rt, "idle");
-        return yield* pumpDeliveries(rt);
-      }
-      if (shuttingDown) return yield* setStatus(rt, "idle");
-      const launched = rt.reopenOnIdle ? undefined : rt.launch;
-      if (launched !== undefined && rt.session !== undefined) {
-        const turnId = yield* unusedTurn(rt, launched.turnId);
-        rt.launch = undefined;
-        rt.inFlight = { ...launched, turnId };
-        yield* persistQueue(rt);
-        const { started, refused } = yield* sendInFlight({
-          rt,
-          published: turnId === launched.turnId,
-        });
-        if (refused !== true) {
-          if (Exit.isSuccess(started)) return;
-          if (rt.turn !== undefined) yield* finishTurn(rt, "interrupted", "sendFailed");
-        }
-      }
-      yield* setStatus(rt, "idle");
-      if (rt.reopenOnIdle) {
-        if (rt.pendingRestart !== undefined) {
-          rt.restartMarker ??= rt.pendingRestart;
-          yield* setPendingRestart(rt, undefined);
-        }
-        return yield* reopenWhenIdle(rt);
-      }
-      if (stopHeld(rt)) return;
-      if (rt.limitWait !== undefined) return yield* startIdleTimer(rt);
-      if (yield* queueHeld(rt)) return yield* startIdleTimer(rt);
-      const archived = (item: QueuedInput | undefined) =>
-        item !== undefined && rt.noticeKeys.has(item.id)
-          ? store.getThread(rt.threadId).pipe(
-              Effect.map((thread) => thread.parked),
-              Effect.orElseSucceed(() => false),
-            )
-          : Effect.succeed(false);
-      const held = rt.session !== undefined && (yield* archived(rt.queue[0]));
-      const next = rt.session === undefined || held ? undefined : rt.queue.shift();
-      if (next !== undefined) {
-        rt.inFlight = { ...next, turnId: yield* unusedTurn(rt, next.turnId) };
-        yield* syncQueue(rt);
-      }
-      if (held) {
-        yield* startIdleTimer(rt);
-      } else if (next !== undefined && (yield* archived(next))) {
-        rt.inFlight = undefined;
-        rt.queue.unshift(notInFlight(next));
-        yield* syncQueue(rt);
-        yield* startIdleTimer(rt);
-      } else if (next !== undefined && rt.session !== undefined && rt.inFlight !== undefined) {
-        const { started, refused } = yield* sendInFlight({ rt });
-        if (refused === true) return yield* becomeIdle(rt);
-        if (Exit.isFailure(started)) return yield* Effect.failCause(started.cause);
-      } else if (rt.session === undefined || !(yield* deliverNext(rt, rt.session))) {
-        yield* startIdleTimer(rt);
-        yield* restartIfPending(rt);
-      }
-    });
+  const becomeIdle = makeIdleDelivery({
+    store,
+    setStatus,
+    switchHold,
+    pumpDeliveries,
+    isShuttingDown: () => shuttingDown,
+    unusedTurn,
+    persistQueue,
+    sendInFlight,
+    finishTurn,
+    setPendingRestart: (rt, reason) => setPendingRestart(rt, reason),
+    reopenWhenIdle: (rt) => reopenWhenIdle(rt),
+    queueHeld,
+    startIdleTimer,
+    startWorktreeWake: (rt, item) => startWorktreeWake(rt, item),
+    syncQueue,
+    deliverNext,
+    restartIfPending: (rt) => restartIfPending(rt),
+  });
 
   const { handleEvent, setBackground, setLapsedConnectors } = makeAgentEvents({
     rememberAccount: accountScopes.remember,
@@ -940,6 +901,28 @@ const make = Effect.gen(function* () {
     withSession,
     becomeIdle,
   });
+  const worktreeActivations =
+    hookProc === undefined
+      ? undefined
+      : makeWorktreeActivations({
+          local: worktreeHooksOn({
+            proc: hookProc,
+            loginPath: hookPath?.path ?? Effect.succeed(process.env["PATH"] ?? ""),
+            stagingRoot: join(config.dataDir, "worktree-hooks"),
+          }),
+          ...(remoteHosts === undefined ? {} : { remote: remoteHosts }),
+          dataDir: config.dataDir,
+          store,
+          publish: publishUpsert,
+          ask: requestApproval,
+        });
+  const startWorktreeWake = makeWarmWorktreeWake({
+    store,
+    worktreeActivations,
+    worktreeWakes,
+    setStatus,
+    becomeIdle,
+  });
   const { resumeOptions } = makeResumePlans({
     store,
   });
@@ -953,6 +936,7 @@ const make = Effect.gen(function* () {
     checkouts,
     hosts,
     sessions,
+    worktreeActivations,
     folderStops,
     recoveries,
     activityTimers,
@@ -991,6 +975,7 @@ const make = Effect.gen(function* () {
     currentAppTools: () => appTools,
   });
   const { claimClose, settleClose, guardHolds, restsNow, create } = makeThreadLifecycle({
+    cancelWorktreeWake: (threadId) => FiberMap.remove(worktreeWakes, threadId),
     eventSink,
     store,
     hub,

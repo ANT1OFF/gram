@@ -79,6 +79,7 @@ import { AwaitingMachine, MachineStarting, useMachineWait } from "./awaiting-mac
 import { WAIT_WORDS } from "./awaiting-machine-model";
 import { MachineChip } from "./machine-chip";
 import { FolderMissingNotice } from "./folder-missing-notice";
+import { WorktreeHookNotice } from "./worktree-hook-notice";
 import { LapsedConnectorsNotice } from "./lapsed-connectors-notice";
 import { MergedCleanupNotice } from "./merged-cleanup-notice";
 import { chaptersOf, sameChapters } from "./parts";
@@ -751,6 +752,7 @@ export function ThreadView({
               <LeftOpenNotice threadId={threadId} />
             </Suspense>
           )}
+          <WorktreeHookNotice thread={thread} />
           <FolderMissingNotice threadId={threadId} />
           <MergedCleanupNotice threadId={threadId} />
           <LapsedConnectorsNotice threadId={threadId} />

@@ -23,8 +23,6 @@ import {
   type UserInput,
   type TurnId,
   fenceWaitNote,
-  fromOwnOrchestrator,
-  fenceThreadMessage,
   type ThreadId,
   InvalidState,
   type ThreadNotFound,
@@ -46,7 +44,7 @@ import {
   clientInput,
   serverSetOf,
   withSender,
-  conversationHeader,
+  inputForAgent,
 } from "./user-input.ts";
 import type { AgentSession, SteerOptions } from "@gram/agents";
 import { randomUUID } from "node:crypto";
@@ -62,6 +60,7 @@ import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { LimitResume } from "./limit-resume.ts";
 import { isUndelivered } from "./undelivered.ts";
 import { SWITCH_HANDOFF_KEY, type SystemDelivery } from "./system-delivery.ts";
+import { isWorktreeWake } from "./worktree-activations.ts";
 
 /** What the queue and deliveries read and change beside a thread's `Runtime`. */
 export interface MessageQueueDeps {
@@ -210,35 +209,6 @@ export const makeMessageQueue = ({
     );
   };
 
-  const forAgent = (rt: Runtime, stored: UserInput): Effect.Effect<UserInput> => {
-    const { author: _, conversation, ...rest } = stored;
-    if (conversation !== undefined) {
-      return store.getThread(rt.threadId).pipe(
-        Effect.option,
-        Effect.map((thread) => ({
-          ...rest,
-          text: `${conversationHeader(
-            conversation,
-            (Option.getOrUndefined(thread)?.conversations ?? []).some(
-              (each) => each.id === conversation.id,
-            ),
-          )}\n${rest.text}`,
-        })),
-      );
-    }
-    const input = rest;
-    const origin = input.origin;
-    if (origin === undefined) return Effect.succeed(input);
-    return store.getThread(rt.threadId).pipe(
-      Effect.option,
-      Effect.map((thread) =>
-        fromOwnOrchestrator(origin, Option.getOrUndefined(thread)?.spawnedBy)
-          ? input
-          : { ...input, text: fenceThreadMessage(origin, input.text) },
-      ),
-    );
-  };
-
   const sendNow = (
     rt: Runtime,
     session: AgentSession,
@@ -275,11 +245,13 @@ export const makeMessageQueue = ({
         }),
       );
       const seed = rt.lostSession;
-      const forAgentInput = yield* forAgent(rt, input);
+      const hookNote = rt.worktreeHookNote;
+      const forAgentInput = yield* inputForAgent(store, rt.threadId, input);
+      const prelude = [seed, hookNote].filter((value) => value !== undefined).join("\n");
       const read =
-        seed === undefined || forAgentInput.text.trimStart().startsWith("/")
+        prelude === "" || forAgentInput.text.trimStart().startsWith("/")
           ? forAgentInput
-          : { ...forAgentInput, text: `${seed}\n${forAgentInput.text}` };
+          : { ...forAgentInput, text: `${prelude}\n${forAgentInput.text}` };
       const lost = yield* session.send(read, { messageId }).pipe(
         Effect.as(undefined),
         Effect.catchDefect((defect) =>
@@ -288,6 +260,8 @@ export const makeMessageQueue = ({
       );
       if (lost === undefined) {
         if (read !== forAgentInput && rt.lostSession === seed) rt.lostSession = undefined;
+        if (read !== forAgentInput && rt.worktreeHookNote === hookNote)
+          rt.worktreeHookNote = undefined;
         return turn.id;
       }
       if (rt.carrying?.turnId === turn.id) return yield* Effect.die(lost);
@@ -334,7 +308,7 @@ export const makeMessageQueue = ({
           delivery: options?.interrupt === true ? "interrupt" : "steer",
         },
       });
-      const read = yield* forAgent(rt, input);
+      const read = yield* inputForAgent(store, rt.threadId, input);
       const taken = yield* (
         options?.interrupt === true ? session.steer(read, options) : session.steer(read)
       ).pipe(
@@ -498,6 +472,7 @@ export const makeMessageQueue = ({
   const pumpDeliveries = (rt: Runtime): Effect.Effect<void> =>
     Effect.gen(function* () {
       if (rt.deliveries.size === 0 || isShuttingDown()) return;
+      if (rt.activeWorktreeHook === true) return;
       const change = yield* switchHold(rt);
       if (change !== undefined && change.phase !== "ready") return;
       const only = change?.handoff === undefined ? undefined : SWITCH_HANDOFF_KEY;
@@ -688,6 +663,7 @@ export const makeMessageQueue = ({
           if (typed) yield* endWaitForUser(rt);
           else if (yield* waitWithAccount(rt)) return yield* enqueue();
           else if (yield* queueHoldsFor(threadId)) return yield* enqueue();
+          if (rt.activeWorktreeHook === true) return yield* enqueue();
           if (noticeKey !== undefined) {
             for (const id of rt.noticeKeys.keys()) {
               if (!rt.queue.some((item) => item.id === id)) rt.noticeKeys.delete(id);
@@ -741,6 +717,11 @@ export const makeMessageQueue = ({
               }
               if (stopHeld(rt)) return yield* enqueue();
               if (rt.session !== undefined && rt.turn === undefined) {
+                if (isWorktreeWake(noticeKey)) {
+                  const result = yield* enqueue();
+                  yield* becomeIdle(rt);
+                  return result;
+                }
                 return yield* sendNow(rt, rt.session, input).pipe(
                   Effect.map((turnId) => ({ queued: false, turnId })),
                   Effect.tapError(() =>
@@ -819,6 +800,7 @@ export const makeMessageQueue = ({
     Effect.gen(function* () {
       if (
         (rt.queue.length === 0 && rt.launch === undefined) ||
+        rt.activeWorktreeHook === true ||
         stopHeld(rt) ||
         rt.closing ||
         rt.reserved ||
