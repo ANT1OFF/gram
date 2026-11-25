@@ -34,7 +34,12 @@ export const approveRepositoryCheck = (options: {
     const { store, dataDir, ask, threadId, projectId, host, machine, hook } = options;
     if (threadId === undefined || ask === undefined || projectId === undefined) return undefined;
     const thread = yield* store.getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
-    if (thread === undefined || thread.projectId !== projectId) return undefined;
+    if (
+      thread === undefined ||
+      thread.projectId !== projectId ||
+      thread.checkout.untrusted === true
+    )
+      return undefined;
     const trusted = store.listProjects.pipe(
       Effect.map((projects) => {
         const project = projects.find((each) => each.id === projectId);

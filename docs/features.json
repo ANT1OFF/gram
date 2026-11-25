@@ -526,6 +526,9 @@
         "packages/server/src/host/checks.ts",
         "packages/server/src/git/check-process.ts",
         "packages/server/src/git/local-checks.ts",
+        "packages/server/src/git/local-check-record.ts",
+        "packages/server/src/git/machine-check-run.ts",
+        "packages/server/src/git/repository-check-setup.ts",
         "packages/server/src/git/local-check-cancel.ts",
         "packages/server/src/git/merge-check-cancel.ts",
         "packages/server/src/launch-checks/**",
@@ -535,6 +538,7 @@
       "tests": [
         "packages/server/src/host/checks.test.ts",
         "packages/server/src/git/check-process.test.ts",
+        "packages/server/src/git/repository-check-setup.test.ts",
         "packages/server/src/git/local-check-cancel.test.ts",
         "packages/server/src/git/merge-check-cancel.test.ts",
         "packages/server/src/app-tools/pr-tools-local-check-cancel.test.ts"

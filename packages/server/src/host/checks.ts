@@ -7,7 +7,7 @@ import * as FiberMap from "effect/FiberMap";
 import type * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { hostname } from "node:os";
 import * as nodePath from "node:path";
 import { pathToFileURL } from "node:url";
@@ -16,6 +16,7 @@ import {
   type LocalCheckOutcome,
   type LocalCheckRun,
   markRetained,
+  RETAINED,
   readTail,
   spawnCheck,
 } from "../git/check-process.ts";
@@ -132,7 +133,12 @@ export const checksOn = (
     const sweep = Effect.sync(() => {
       if (swept) return;
       swept = true;
-      rmSync(work, { recursive: true, force: true });
+      if (!existsSync(work)) return;
+      for (const name of readdirSync(work)) {
+        const entry = nodePath.join(work, name);
+        if (!existsSync(nodePath.join(entry, RETAINED)))
+          rmSync(entry, { recursive: true, force: true });
+      }
     });
 
     const g = isolatedGit(proc);
