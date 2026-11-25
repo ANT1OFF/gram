@@ -1,6 +1,6 @@
 // A joined machine's host runs a project's check the way the main Gram runs its own: the head
 // merged onto its base in a repository of its own, nothing of the agent's checkout but its commits.
-import { existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { describe, expect, it } from "@effect/vitest";
@@ -162,6 +162,54 @@ describe.skipIf(!hasGit)("a joined machine's checks", () => {
       });
       expect(result).toMatchObject({ ok: false, tree: null, failure: { kind: "conflict" } });
       expect(ran).toBe(0);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live("pins the joined check's setup to its displayed fingerprint and merged revision", () =>
+    Effect.gen(function* () {
+      const { dir, worktree, base } = fixture();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const setup = join(worktree, ".gram", "setup");
+      write(setup, "#!/bin/sh\nprintf joined > setup-proof\n");
+      chmodSync(setup, 0o755);
+      run(worktree, "add", ".gram/setup");
+      run(worktree, "commit", "-qm", "joined repository setup");
+      const head = run(worktree, "rev-parse", "HEAD").trim();
+      let ran = 0;
+      const { connection } = yield* machine(dir, (src) =>
+        Effect.sync(() => {
+          ran++;
+          return { ok: readFileSync(join(src, "setup-proof"), "utf8") === "joined" };
+        }),
+      );
+      const request = {
+        id: "preview",
+        path: worktree,
+        head,
+        base,
+        command: "fixture-check",
+        timeoutMs: 60_000,
+      };
+      const preview = yield* connection.checks!.run({ ...request, repositorySetup: {} });
+      if (preview.setupApproval === undefined) throw new Error("Missing setup approval");
+      const { fingerprint, revision } = preview.setupApproval;
+      expect(ran).toBe(0);
+      expect(
+        yield* connection.checks!.run({
+          ...request,
+          id: "unapproved",
+          repositorySetup: { fingerprint, revision: "b".repeat(40) },
+        }),
+      ).toMatchObject({ ok: false });
+      expect(ran).toBe(0);
+      expect(
+        yield* connection.checks!.run({
+          ...request,
+          id: "approved",
+          repositorySetup: { fingerprint, revision },
+        }),
+      ).toMatchObject({ ok: true, setupFingerprint: fingerprint, mergedCommit: revision });
+      expect(ran).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(Live)),
   );
 

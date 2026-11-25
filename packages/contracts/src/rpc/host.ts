@@ -1,4 +1,6 @@
 import * as Schema from "effect/Schema";
+import { HostCheckResult, HostCheckRepositorySetup } from "./host-checks.ts";
+export { HostCheckResult, HostCheckFailure } from "./host-checks.ts";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import { AgentEvent } from "../agent.ts";
@@ -34,7 +36,6 @@ import { ProfileFile } from "../thread-profile.ts";
 import { FileImage } from "../thread-ui.ts";
 import { WorktreeList } from "../worktrees.ts";
 import {
-  InspectedWorktreeHook,
   WorktreeHookInspection,
   WorktreeHookOutcome,
   WorktreeHookRequest,
@@ -329,15 +330,6 @@ export class HostCommandFailed extends Schema.TaggedError<HostCommandFailed>()(
   },
 ) {}
 
-/** Why a check on the host didn't pass, as the control plane records it. */
-export const HostCheckFailure = Schema.Struct({
-  kind: Schema.Literals(["not-found", "timed-out", "exited", "stopped", "unstartable", "conflict"]),
-  command: Schema.optionalKey(Schema.String),
-  path: Schema.optionalKey(Schema.String),
-  exitCode: Schema.optionalKey(Schema.Number),
-  tail: Schema.optionalKey(Schema.String),
-});
-
 /**
  * A worktree on the host as it is now, read there for the control plane to compare with what it
  * recorded when it made it: never a grant of anything by itself.
@@ -351,24 +343,6 @@ export const HostRepoIdentity = Schema.Struct({
   branch: Schema.optionalKey(Schema.String),
 });
 export type HostRepoIdentity = typeof HostRepoIdentity.Type;
-
-/** How a check on the host ended, and what it checked. */
-export const HostCheckResult = Schema.Struct({
-  /** The tree of the head merged onto the base; null when they conflict. */
-  tree: Schema.NullOr(Schema.String),
-  /** The throwaway commit of that tree the check ran on. */
-  mergedCommit: Schema.optionalKey(Schema.String),
-  setupApproval: Schema.optionalKey(InspectedWorktreeHook),
-  setupFingerprint: Schema.optionalKey(Schema.String),
-  ok: Schema.Boolean,
-  reason: Schema.optionalKey(Schema.String),
-  failure: Schema.optionalKey(HostCheckFailure),
-  /** The end of the run's output, bounded. */
-  log: Schema.optionalKey(Schema.String),
-  /** The host machine's own name. */
-  host: Schema.String,
-});
-export type HostCheckResult = typeof HostCheckResult.Type;
 
 /** A new worktree, or the one the request reused. */
 export const HostCreatedWorktree = Schema.Struct({
@@ -906,11 +880,7 @@ export const HostRpcs = RpcGroup.make(
       base: Schema.String,
       command: Schema.String,
       setup: Schema.optionalKey(Schema.String),
-      repositorySetup: Schema.optionalKey(
-        Schema.Struct({
-          fingerprint: Schema.optionalKey(Schema.String),
-        }),
-      ),
+      repositorySetup: Schema.optionalKey(HostCheckRepositorySetup),
       timeoutMs: PositiveInt,
     },
     success: HostCheckResult,

@@ -32,13 +32,15 @@ export const approveRepositoryCheck = (options: {
 }) =>
   Effect.gen(function* () {
     const { store, dataDir, ask, threadId, projectId, host, machine, hook } = options;
-    if (threadId === undefined || ask === undefined || projectId === undefined) return false;
+    if (threadId === undefined || ask === undefined || projectId === undefined) return undefined;
     const thread = yield* store.getThread(threadId).pipe(Effect.orElseSucceed(() => undefined));
-    if (thread === undefined || thread.projectId !== projectId) return false;
+    if (thread === undefined || thread.projectId !== projectId) return undefined;
     const trusted = store.listProjects.pipe(
       Effect.map((projects) => {
         const project = projects.find((each) => each.id === projectId);
         return project !== undefined &&
+          typeof project.localCheck?.setup === "object" &&
+          project.localCheck.setup.source === "repository" &&
           projectFolderTrusted(
             project,
             host === LOCAL_HOST_ID ? folderBringsNothing(project.root) : () => false,
@@ -48,7 +50,7 @@ export const approveRepositoryCheck = (options: {
       }),
     );
     const project = yield* trusted;
-    if (project === undefined) return false;
+    if (project === undefined) return undefined;
     const consent = yield* worktreeHookConsent({
       ...hook,
       dataDir,
@@ -59,7 +61,9 @@ export const approveRepositoryCheck = (options: {
       kind: "setup",
       ask,
     });
-    return consent === "allow" && (yield* trusted) !== undefined;
+    return consent.decision === "allow" && (yield* trusted) !== undefined
+      ? consent.grant
+      : undefined;
   });
 
 /** Runs the checked-out repository hook under its own environment and the shared check deadline. */

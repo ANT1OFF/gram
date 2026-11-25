@@ -8,7 +8,7 @@ import {
   type Project,
   ProjectId,
   type ProjectLocalCheck,
-  ThreadId,
+  type ThreadId,
 } from "@gram/contracts";
 import {
   canonicalizeOrOwned,
@@ -25,12 +25,13 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FiberMap from "effect/FiberMap";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
+import { LocalCheck } from "./local-check-record.ts";
+export { LocalCheck } from "./local-check-record.ts";
 import {
   existsSync,
   mkdirSync,
@@ -53,7 +54,6 @@ import {
 } from "./selected-source.ts";
 import {
   LEADERLESS_WAITS,
-  LocalCheckFailure,
   markRetained,
   recordedGroup,
   recordedOutcome,
@@ -72,7 +72,7 @@ import { isProvisioned } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { resolveWorktreeHook, WORKTREE_HOOK_VERSION } from "../host/worktree-hook-source.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
-import type { HostCheckRequest } from "../host/checks.ts";
+import { machineCheckFailure, runMachineCheck } from "./machine-check-run.ts";
 import {
   approveRepositoryCheck,
   repositorySetupRefused,
@@ -86,14 +86,7 @@ import { evidenceBytes, removeEvidence } from "./check-evidence.ts";
 import { isolatedGitOptions, ranOn } from "./isolated-git.ts";
 import { makeAdmission } from "./keyed-lock.ts";
 import { makeCheckCancel, type CheckPr } from "./local-check-cancel.ts";
-import {
-  dirStat,
-  entries,
-  fileStat,
-  logLocalFailure,
-  logHostCheck,
-  withHostCheckDiagnostic,
-} from "./local-check-files.ts";
+import { dirStat, entries, fileStat, logLocalFailure, logHostCheck } from "./local-check-files.ts";
 
 export {
   diagnoseExit,
@@ -149,8 +142,6 @@ const SELECTED_CHECK_ISOLATION = "own-bare-repository/selected/1";
 export const MachineReattachMs = Context.Reference<number>("@gram/server/MachineReattachMs", {
   defaultValue: () => 2 * 60_000,
 });
-const MACHINE_POLL_MS = 2_000;
-const MACHINE_SLACK_MS = 10 * 60_000;
 
 /** The single neutral project setting to command conversion. */
 export const localCheckRunFor = (
@@ -223,87 +214,6 @@ export const runIdOf = (run: {
 
 const SHA = /^[a-f0-9]{40}$/;
 
-export const LocalCheck = Schema.Struct({
-  head: Schema.String,
-  base: Schema.String,
-  /** The tree of `head` merged onto `base`: what was checked. */
-  tree: Schema.String,
-  status: Schema.Literals(["running", "passed", "failed"]),
-  command: Schema.String,
-  preparation: Schema.optionalKey(
-    Schema.Struct({
-      manifest: Schema.String,
-      sha256: Schema.String,
-      inputConfigSha256: Schema.optionalKey(Schema.String),
-    }),
-  ),
-  omittedSources: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        path: Schema.String,
-        mode: Schema.String,
-        oid: Schema.String,
-        contents: Schema.Literal("NOT_READ_OR_VERIFIED"),
-      }),
-    ),
-  ),
-  /** `LOCAL_CHECK_ISOLATION` as the check ran. */
-  isolation: Schema.String,
-  projectId: Schema.optionalKey(Schema.String),
-  setup: Schema.optionalKey(Schema.String),
-  repositorySetup: Schema.optionalKey(Schema.Literal(true)),
-  setupFingerprint: Schema.optionalKey(Schema.String),
-  approvalThread: Schema.optionalKey(ThreadId),
-  timeoutMs: Schema.optionalKey(Schema.Number),
-  profile: Schema.optionalKey(Schema.String),
-  qualification: Schema.optionalKey(Schema.String),
-  /**
-   * A verify driver's recipe as Gram read it: its file's SHA-256, and the default-branch ref it
-   * was committed on when it ran without asking the user.
-   */
-  recipe: Schema.optionalKey(
-    Schema.Struct({ sha256: Schema.String, ref: Schema.optionalKey(Schema.String) }),
-  ),
-  mergedCommit: Schema.optionalKey(Schema.String),
-  /** The joined machine it ran on, by id, through its host; absent for this machine. */
-  machine: Schema.optionalKey(Schema.String),
-  startedAt: Schema.Number,
-  finishedAt: Schema.optionalKey(Schema.Number),
-  host: Schema.String,
-  /** Why it failed, in a line. */
-  reason: Schema.optionalKey(Schema.String),
-  /** Why it failed, for a reader to act on, when the run says. */
-  failure: Schema.optionalKey(LocalCheckFailure),
-  /** The run's output. */
-  log: Schema.optionalKey(Schema.String),
-  /**
-   * Set on a run Gram took back after it quit: `restarted` ran it again from the start, its
-   * process gone; `kept` found it still running, or ended, and kept its result.
-   */
-  afterQuit: Schema.optionalKey(Schema.Literals(["restarted", "kept"])),
-  /** The pull request it was run for, whose end cancels it (`local-check-cancel.ts`). */
-  pr: Schema.optionalKey(Schema.Struct({ repo: Schema.String, number: Schema.Number })),
-  /** Why Gram cancelled it, its result no longer counting; such a failure says nothing of the code. */
-  cancelled: Schema.optionalKey(Schema.String),
-  /** What a running check needs to be taken back after a quit; dropped once it ends. */
-  job: Schema.optionalKey(
-    Schema.Struct({
-      /** Gram's own bare repository the check's worktree belongs to. */
-      own: Schema.String,
-      /** The folder of the repository it was asked for, to read its configuration again. */
-      repoDir: Schema.String,
-      /** The worktree, once made. */
-      work: Schema.optionalKey(Schema.String),
-      /** Where the wrapper writes its exit status. */
-      status: Schema.optionalKey(Schema.String),
-      pid: Schema.optionalKey(Schema.Number),
-      processStart: Schema.optionalKey(Schema.String),
-      deadline: Schema.optionalKey(Schema.Number),
-      pathValue: Schema.optionalKey(Schema.String),
-    }),
-  ),
-});
-export type LocalCheck = typeof LocalCheck.Type;
 type CheckJobRecord = NonNullable<LocalCheck["job"]>;
 type RecordedJob = CheckJobRecord & {
   readonly pid: number;
@@ -316,6 +226,24 @@ const ended = (check: LocalCheck): LocalCheck => {
   const { job: _, ...rest } = check;
   return rest;
 };
+
+const endedAs = (
+  running: LocalCheck,
+  result: LocalCheckOutcome,
+  finishedAt: number,
+): LocalCheck => {
+  const { reason: _, failure: __, ...rest } = ended(running);
+  return {
+    ...rest,
+    status: result.ok ? "passed" : "failed",
+    finishedAt,
+    ...(result.ok || result.reason === undefined ? {} : { reason: result.reason }),
+    ...(result.ok || result.failure === undefined ? {} : { failure: result.failure }),
+  };
+};
+
+const timedOutLeft = (running: LocalCheck) =>
+  timedOut(running.log ?? "", running.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS);
 
 const lost = (reason: string): LocalCheckOutcome => ({
   ok: false,
@@ -1252,21 +1180,6 @@ export const LocalChecksLive = Layer.effect(
         yield* g(own, ["worktree", "prune"]);
       });
 
-    const endedAs = (
-      running: LocalCheck,
-      result: LocalCheckOutcome,
-      finishedAt: number,
-    ): LocalCheck => {
-      const { reason: _, failure: __, ...rest } = ended(running);
-      return {
-        ...rest,
-        status: result.ok ? "passed" : "failed",
-        finishedAt,
-        ...(result.ok || result.reason === undefined ? {} : { reason: result.reason }),
-        ...(result.ok || result.failure === undefined ? {} : { failure: result.failure }),
-      };
-    };
-
     const cancels = makeCheckCancel({ records, remember, fibers, removeWork, finish, endedAs });
 
     const check = (own: string, key: string, started: LocalCheck, wanted: LocalCheckRun) => {
@@ -1407,7 +1320,7 @@ export const LocalChecksLive = Layer.effect(
                     retain = true;
                     markRetained(dir);
                   };
-                  let run = wanted;
+                  let commandRun = wanted;
                   let setupOutput: string | undefined;
                   if (wanted.repositorySetup === true) {
                     const inspect = resolveWorktreeHook(dir, "setup", sha).pipe(
@@ -1421,27 +1334,30 @@ export const LocalChecksLive = Layer.effect(
                           : "No executable committed setup hook is in the checked source.",
                       );
                     const { path, script, fingerprint, revision } = found.source;
-                    if (
-                      !(yield* approveSetup(
-                        started,
-                        { status: "found", path, script, fingerprint, revision },
-                        LOCAL_HOST_ID,
-                        "This machine",
-                      ))
-                    )
+                    const grant = yield* approveSetup(
+                      started,
+                      { status: "found", path, script, fingerprint, revision },
+                      LOCAL_HOST_ID,
+                      "This machine",
+                    );
+                    if (grant?.host !== LOCAL_HOST_ID)
                       return repositorySetupRefused(
                         "Repository setup was not approved for this check.",
                       );
                     const fresh = yield* inspect;
-                    if (fresh.status !== "found" || fresh.source.fingerprint !== fingerprint)
+                    if (
+                      fresh.status !== "found" ||
+                      fresh.source.revision !== grant.revision ||
+                      fresh.source.fingerprint !== grant.fingerprint
+                    )
                       return repositorySetupRefused(
                         "The checked source no longer matches the approved setup hook.",
                       );
-                    yield* record({ ...current, setupFingerprint: fingerprint });
+                    yield* record({ ...current, setupFingerprint: grant.fingerprint });
                     const prelude = yield* runRepositoryCheckSetup({
                       checkout: dir,
                       source: fresh.source,
-                      fingerprint,
+                      fingerprint: grant.fingerprint,
                       log: started.log!,
                       stagingRoot: nodePath.join(dataDir, "worktree-hooks"),
                       loginPath: yield* (
@@ -1452,9 +1368,9 @@ export const LocalChecksLive = Layer.effect(
                     });
                     if (prelude.status === "failed") return prelude.outcome;
                     setupOutput = prelude.output;
-                    run = { ...wanted, timeoutMs: prelude.remaining };
+                    commandRun = { ...wanted, timeoutMs: prelude.remaining };
                   }
-                  const outcome = yield* runner.run(dir, started.log!, run, {
+                  const outcome = yield* runner.run(dir, started.log!, commandRun, {
                     head: started.head,
                     base: started.base,
                     tree: started.tree,
@@ -1593,137 +1509,14 @@ export const LocalChecksLive = Layer.effect(
       wanted: LocalCheckRun,
     ) => {
       const name = machineName(site.hostId);
-      let request: HostCheckRequest = {
-        id: randomUUID(),
-        path: site.path,
-        ...(site.repoRoot === undefined ? {} : { repoRoot: site.repoRoot }),
-        head: started.head,
-        base: started.base,
-        command: wanted.command,
-        ...(wanted.setup === undefined ? {} : { setup: wanted.setup }),
-        ...(wanted.repositorySetup === true ? { repositorySetup: {} } : {}),
-        timeoutMs: wanted.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS,
-      };
-      const failed = (
-        reason: string,
-        kind: LocalCheckFailure["kind"],
-      ): HostCheckResult & LocalCheckOutcome => ({
-        tree: null,
-        ok: false,
-        reason,
-        failure: { kind },
-        host: name,
-      });
-      const body = Effect.gen(function* () {
-        if (wanted.refusal !== undefined) return failed(wanted.refusal, "unstartable");
-        if (remoteHosts === undefined)
-          return failed(`${name} isn't joined to this Gram`, "unstartable");
-        let deadline = (yield* Clock.currentTimeMillis) + request.timeoutMs + MACHINE_SLACK_MS;
-        let away: number | undefined;
-        let asked = false;
-        for (;;) {
-          const now = yield* Clock.currentTimeMillis;
-          if (now >= deadline)
-            return failed(
-              `no word from ${name} on how its check ended, past its timeout; run local_check again`,
-              "stopped",
-            );
-          if (away !== undefined && now - away >= reattachMs)
-            return asked
-              ? failed(
-                  `the connection to ${name} dropped while its check ran and didn't come back in time, so how it ended is unknown; run local_check again`,
-                  "stopped",
-                )
-              : failed(
-                  `${name} is offline, so its check couldn't run; run local_check again once it is back`,
-                  "unstartable",
-                );
-          const connection = yield* remoteHosts.connection(site.hostId).pipe(Effect.option);
-          if (Option.isNone(connection)) {
-            away ??= now;
-            yield* Effect.sleep(Math.min(MACHINE_POLL_MS, reattachMs));
-            continue;
-          }
-          const checks = connection.value.checks;
-          if (checks === undefined)
-            return failed(
-              `${name}'s gram-host is older than this Gram and runs no local checks; run the install command there again to update it`,
-              "unstartable",
-            );
-          if (
-            wanted.repositorySetup === true &&
-            !hostServes(connection.value.hello, "repository-check-setup")
-          )
-            return failed(
-              `${name}'s host needs an update to run repository checks with setup.`,
-              "unstartable",
-            );
-          asked = true;
-          const answer = yield* checks.run(request).pipe(
-            Effect.timeoutOrElse({
-              duration: Duration.millis(Math.max(0, deadline - now)),
-              orElse: () =>
-                Effect.succeed(
-                  failed(
-                    `no word from ${name} on how its check ended, past its timeout; run local_check again`,
-                    "stopped",
-                  ),
-                ),
-            }),
-            Effect.exit,
-          );
-          if (Exit.isSuccess(answer)) {
-            const result = withHostCheckDiagnostic(answer.value);
-            const hook = result.setupApproval;
-            if (wanted.repositorySetup === true && hook !== undefined) {
-              if (
-                result.ok ||
-                request.repositorySetup?.fingerprint !== undefined ||
-                result.mergedCommit !== hook.revision ||
-                !SHA.test(hook.revision) ||
-                !/^[a-f0-9]{64}$/.test(hook.fingerprint)
-              )
-                return failed(
-                  `${name} returned an invalid repository setup preview.`,
-                  "unstartable",
-                );
-              if (!(yield* approveSetup(started, hook, site.hostId, name)))
-                return failed("Repository setup was not approved for this check.", "unstartable");
-              request = {
-                ...request,
-                id: randomUUID(),
-                repositorySetup: { fingerprint: hook.fingerprint },
-              };
-              deadline = (yield* Clock.currentTimeMillis) + request.timeoutMs + MACHINE_SLACK_MS;
-              away = undefined;
-              asked = false;
-              continue;
-            }
-            if (
-              wanted.repositorySetup === true &&
-              result.ok &&
-              (request.repositorySetup?.fingerprint === undefined ||
-                result.setupFingerprint !== request.repositorySetup.fingerprint)
-            )
-              return failed(`${name}'s pass named no approved repository setup.`, "unstartable");
-            return result.ok &&
-              (result.tree === null ||
-                !SHA.test(result.tree) ||
-                result.mergedCommit === undefined ||
-                !SHA.test(result.mergedCommit))
-              ? failed(`${name}'s pass named no merged tree and commit`, "unstartable")
-              : result;
-          }
-          const error = Cause.findErrorOption(answer.cause);
-          if (Option.isSome(error) && error.value._tag === "HostFailed")
-            return failed(`${name} couldn't run it: ${error.value.message}`, "unstartable");
-          if (Option.isNone(error)) return yield* Effect.failCause(answer.cause);
-          away = yield* Clock.currentTimeMillis;
-          yield* Effect.logInfo(
-            "local check: a joined machine's connection dropped mid-check",
-          ).pipe(Effect.annotateLogs({ hostId: site.hostId, head: started.head }));
-          yield* Effect.sleep(Math.min(MACHINE_POLL_MS, reattachMs));
-        }
+      const body = runMachineCheck({
+        site,
+        started,
+        wanted,
+        name,
+        remoteHosts,
+        reattachMs,
+        approveSetup,
       });
       return machineAdmission(site.hostId)
         .inTurn(
@@ -1735,7 +1528,13 @@ export const LocalChecksLive = Layer.effect(
         )
         .pipe(
           Effect.catchDefect((defect) =>
-            Effect.succeed(failed(`Gram's check failed to run: ${String(defect)}`, "unstartable")),
+            Effect.succeed(
+              machineCheckFailure(
+                name,
+                `Gram's check failed to run: ${String(defect)}`,
+                "unstartable",
+              ),
+            ),
           ),
           Effect.flatMap((result) =>
             Effect.gen(function* () {
@@ -1932,8 +1731,6 @@ export const LocalChecksLive = Layer.effect(
         yield* logLocalFailure(running.log, outcome);
         yield* finish(key, endedAs(running, outcome, yield* Clock.currentTimeMillis));
       });
-    const timedOutLeft = (running: LocalCheck) =>
-      timedOut(running.log ?? "", running.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS);
     const follow = (key: string, running: LocalCheck, job: RecordedJob, seen: boolean) =>
       Effect.gen(function* () {
         let verified = seen;

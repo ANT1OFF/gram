@@ -31,7 +31,9 @@ export interface HostCheckRequest {
   readonly base: string;
   readonly command: string;
   readonly setup?: string | undefined;
-  readonly repositorySetup?: { readonly fingerprint?: string } | undefined;
+  readonly repositorySetup?:
+    | { readonly fingerprint?: string; readonly revision?: string }
+    | undefined;
   readonly timeoutMs: number;
 }
 
@@ -288,7 +290,10 @@ export const checksOn = (
                       revision,
                     },
                   };
-                if (request.repositorySetup.fingerprint !== fingerprint)
+                if (
+                  request.repositorySetup.fingerprint !== fingerprint ||
+                  request.repositorySetup.revision !== revision
+                )
                   return result(
                     unstartable("The checked source no longer matches the approved setup hook."),
                     pin,
