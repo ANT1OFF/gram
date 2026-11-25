@@ -815,6 +815,7 @@ export interface HostConnection {
     readonly identify?: HostRepoIdentify | undefined;
   };
   readonly worktrees: HostWorktrees;
+  /** On RPC interruption the control plane records an unknown cleanup outcome; no reply is delivered. */
   readonly worktreeHooks?: HostWorktreeHooks<HostFailed | HostUnavailable>;
   readonly git: HostGitConnection;
   readonly terminals: HostTerminalsConnection;
