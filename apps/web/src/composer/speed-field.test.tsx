@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type AgentKind, type AgentModel } from "@gram/contracts";
+import type { AgentKind, AgentModel } from "@gram/contracts";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";

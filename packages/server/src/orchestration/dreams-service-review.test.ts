@@ -1,6 +1,6 @@
 // A finished dream's review: adoption by the user, forged output and conflicts.
 import { describe, expect, it } from "@effect/vitest";
-import { type RequestId, type ThreadId } from "@gram/contracts";
+import type { RequestId, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as fs from "node:fs";
 import * as nodePath from "node:path";

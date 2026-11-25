@@ -22,10 +22,10 @@ import * as FiberMap from "effect/FiberMap";
 import * as Option from "effect/Option";
 import { randomUUID } from "node:crypto";
 import { checkFreshTarget, checkSwitchTarget, turnNote } from "../../runtime/agent-switch.ts";
-import {
-  type ObservedTurnEnd,
-  type SystemDelivery,
-  type SystemDeliveryFailure,
+import type {
+  ObservedTurnEnd,
+  SystemDelivery,
+  SystemDeliveryFailure,
 } from "../../runtime/thread-runtimes.ts";
 import { visibleFeatures, type WorkerFacts } from "../ledger.ts";
 import { outboxAfterHandoff, type HandoffMarker, type SwitchBoot } from "../outbox.ts";
@@ -43,7 +43,7 @@ import {
   HANDOFF_UNSAVED_BOOT_REASON,
   switchCheckpointNote,
 } from "./handoff-words.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 
 /**

@@ -63,7 +63,7 @@ import {
   type LocalCheckRun,
 } from "./check-process.ts";
 import { ServerConfig } from "../config.ts";
-import { type CheckSite, type MachineCheckSite } from "./check-site.ts";
+import type { CheckSite, MachineCheckSite } from "./check-site.ts";
 import { isProvisioned } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";

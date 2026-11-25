@@ -1,9 +1,4 @@
-import {
-  type ClaudeSignIn,
-  type CodexSignIn,
-  type LaunchChecks,
-  type ToolCheck,
-} from "@gram/contracts";
+import type { ClaudeSignIn, CodexSignIn, LaunchChecks, ToolCheck } from "@gram/contracts";
 
 import { agentLabel } from "@/agents/agent-label";
 

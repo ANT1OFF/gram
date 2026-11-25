@@ -1,6 +1,6 @@
 // Orchestration service: restarts and handoffs.
 import { describe, expect, it } from "@effect/vitest";
-import { type OrchestrationDigest, type ThreadId, type TurnId } from "@gram/contracts";
+import type { OrchestrationDigest, ThreadId, TurnId } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";

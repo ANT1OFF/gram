@@ -23,6 +23,13 @@
     "react/set-state-in-effect": "error",
     "react/react-in-jsx-scope": "off",
     "typescript/consistent-type-imports": "error",
+    // `import { type A } from "x"` keeps "x" as a side-effect import: write `import type`.
+    "typescript/no-import-type-side-effects": "error",
+    // A switch over a union names every member, so a new one fails here until it is handled.
+    "typescript/switch-exhaustiveness-check": [
+      "error",
+      { "allowDefaultCaseForExhaustiveSwitch": true, "considerDefaultExhaustiveForUnions": true }
+    ],
     "typescript/no-explicit-any": "error",
     "no-unused-vars": [
       "error",

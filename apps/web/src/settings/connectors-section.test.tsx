@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type AgentConfiguredServers, type ConfiguredServer } from "@gram/contracts";
+import type { AgentConfiguredServers, ConfiguredServer } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { type AgentKind, type ModelRef, type ProfileId } from "@gram/contracts";
+import type { AgentKind, ModelRef, ProfileId } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";

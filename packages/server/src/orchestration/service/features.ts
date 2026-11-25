@@ -26,12 +26,7 @@ import {
 } from "../rules.ts";
 import { threadOwner } from "../../host/ownership.ts";
 import { workersOf, toolError, type OrchestrationKit } from "./kit.ts";
-import {
-  type StageInput,
-  type GroupInput,
-  type OrchestrationShape,
-  type WorkspaceStage,
-} from "./shape.ts";
+import type { StageInput, GroupInput, OrchestrationShape, WorkspaceStage } from "./shape.ts";
 
 type Refused = { readonly code: RefusalCode; readonly reason: string };
 

@@ -23,10 +23,10 @@ import {
   pauseResumePlan,
   spanText,
 } from "../../runtime/limit-wait.ts";
-import { type WorkerFacts } from "../ledger.ts";
+import type { WorkerFacts } from "../ledger.ts";
 import { dueAtPause } from "../worker-questions.ts";
 import { readOutbox as readStoredOutbox, type PauseResume } from "../outbox.ts";
-import { type PendingReason } from "../rules.ts";
+import type { PendingReason } from "../rules.ts";
 import {
   OUTBOX_UNREADABLE_DETAIL,
   workersOf,
@@ -36,7 +36,7 @@ import {
   heldByUser,
   type OrchestrationKit,
 } from "./kit.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import type { Features } from "./features.ts";
 import type { HandoffPart } from "./handoff.ts";
 

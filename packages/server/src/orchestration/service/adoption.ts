@@ -53,7 +53,7 @@ import {
   underKeysOf,
 } from "./kit.ts";
 import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
-import { type JoinInput, type AdoptPin, type OrchestrationShape } from "./shape.ts";
+import type { JoinInput, AdoptPin, OrchestrationShape } from "./shape.ts";
 import type { LedgerWatch } from "./ledger-watch.ts";
 import type { Projects } from "./projects.ts";
 import { folderIdentity, samePin } from "./adopt-pin.ts";

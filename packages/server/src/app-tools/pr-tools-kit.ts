@@ -21,7 +21,7 @@ import { GitStatePublisherLive } from "../git/publisher.ts";
 import { RunMonitorLive } from "../git/run-monitor.ts";
 import { makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
-import { type FakeAgentControlShape } from "../runtime/fake-agent.ts";
+import type { FakeAgentControlShape } from "../runtime/fake-agent.ts";
 import { RuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import {

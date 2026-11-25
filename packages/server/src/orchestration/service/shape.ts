@@ -1,53 +1,53 @@
-import { type MemoryQuestionsShape } from "./memory-questions.ts";
-import {
-  type AppToolError,
-  type InvalidState,
-  type NotFound,
-  type WorkspaceId,
-  type FeatureCards,
-  type AgentUnavailable,
-  type Autonomy,
-  type BriefPriority,
-  type OrchestratorHandoffReason,
-  type ModelRef,
-  type ReopenedMembership,
-  type RoutineState,
-  type OrchestratorCharter,
-  type PermissionMode,
-  type OrchestratorLedger,
-  type JoinTarget,
-  type Project,
-  type ProjectId,
-  type ReasoningVariant,
-  type Thread,
-  type ThreadId,
-  type ThreadNotFound,
-  type WorkerAnswer,
-  type WorkerQuestion,
-  type WithdrawnHow,
-  type AskQuestionInput,
-  type AnswerWorkerQuestionInput,
-  type DismissWorkerQuestionInput,
-  type WorkerReport,
-  type WorkerReportState,
-  type WorkerState,
-  type WorkspaceState,
-  type StartTaskInput,
-  type TaskModelSelection,
-  type SettingsRequirement,
-  type SettingsWrite,
-  type WorkerPlacement,
-  type UserInput,
+import type { MemoryQuestionsShape } from "./memory-questions.ts";
+import type {
+  AppToolError,
+  InvalidState,
+  NotFound,
+  WorkspaceId,
+  FeatureCards,
+  AgentUnavailable,
+  Autonomy,
+  BriefPriority,
+  OrchestratorHandoffReason,
+  ModelRef,
+  ReopenedMembership,
+  RoutineState,
+  OrchestratorCharter,
+  PermissionMode,
+  OrchestratorLedger,
+  JoinTarget,
+  Project,
+  ProjectId,
+  ReasoningVariant,
+  Thread,
+  ThreadId,
+  ThreadNotFound,
+  WorkerAnswer,
+  WorkerQuestion,
+  WithdrawnHow,
+  AskQuestionInput,
+  AnswerWorkerQuestionInput,
+  DismissWorkerQuestionInput,
+  WorkerReport,
+  WorkerReportState,
+  WorkerState,
+  WorkspaceState,
+  StartTaskInput,
+  TaskModelSelection,
+  SettingsRequirement,
+  SettingsWrite,
+  WorkerPlacement,
+  UserInput,
 } from "@gram/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
-import { type ClosedWorker, type SettingsAuditEntry } from "../../persistence/thread-store.ts";
-import { type WakeInput } from "../../wakes/thread-wakes.ts";
-import { type CreateThreadInput } from "../../runtime/thread-runtimes.ts";
-import { type RouteAlternative, type RouteOffer } from "../limit-pause.ts";
-import { type SentRequest } from "../outbox.ts";
+import type { ClosedWorker, SettingsAuditEntry } from "../../persistence/thread-store.ts";
+import type { WakeInput } from "../../wakes/thread-wakes.ts";
+import type { CreateThreadInput } from "../../runtime/thread-runtimes.ts";
+import type { RouteAlternative, RouteOffer } from "../limit-pause.ts";
+import type { SentRequest } from "../outbox.ts";
 import type { WorkerAdmissionHook } from "./worker-admitting.ts";
-import { type RosterEntry } from "../rules.ts";
+import type { RosterEntry } from "../rules.ts";
 
 /** A thread with authority, and the workspace it has it over. */
 export interface Authority {

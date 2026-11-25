@@ -4,7 +4,7 @@
 // anyone deciding it should. Lower a limit when its text shrinks; raise one only on purpose, in
 // the change that needs the room, and say so there.
 import { describe, expect, it } from "@effect/vitest";
-import { type AgentKind, type Autonomy, type ThreadId } from "@gram/contracts";
+import type { AgentKind, Autonomy, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AppToolRegistry } from "../app-tools/registry.ts";

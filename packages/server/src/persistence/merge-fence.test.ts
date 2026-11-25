@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { type ThreadId } from "@gram/contracts";
+import type { ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

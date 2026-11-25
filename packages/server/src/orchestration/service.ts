@@ -19,7 +19,7 @@ import { contextPct, workerErrorOf } from "./ledger.ts";
 import { makeIdleCompactor } from "./idle-compact.ts";
 import { contextNote, rosterOf, userHoldLapsesAt } from "./rules.ts";
 import { sameTaskModel } from "./task-selection.ts";
-import { type OrchestrationShape } from "./service/shape.ts";
+import type { OrchestrationShape } from "./service/shape.ts";
 import {
   makeOrchestrationKit,
   pausedFeatureOf,

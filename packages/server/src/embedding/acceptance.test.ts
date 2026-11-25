@@ -2,14 +2,14 @@
 // a refusal stops the action and says why, and the sink picks up after a restart with no gap.
 
 import { describe, expect, it } from "@effect/vitest";
-import {
-  type DecisionRequest,
-  type DecisionResponse,
-  type RequestId,
-  type SinkBatch,
-  type SinkEvent,
-  type Thread,
-  type ThreadId,
+import type {
+  DecisionRequest,
+  DecisionResponse,
+  RequestId,
+  SinkBatch,
+  SinkEvent,
+  Thread,
+  ThreadId,
 } from "@gram/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

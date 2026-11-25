@@ -43,7 +43,7 @@ import {
   underKeysOf,
   callerKey,
 } from "./kit.ts";
-import { type OrchestrationShape } from "./shape.ts";
+import type { OrchestrationShape } from "./shape.ts";
 import type { Digests } from "./digests.ts";
 
 /** What scheduled wakes take from the rest of the service. */

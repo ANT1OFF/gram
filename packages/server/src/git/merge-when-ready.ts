@@ -41,7 +41,7 @@ import { EventHub } from "../events/event-hub.ts";
 import { folderExists, ghFolderOf } from "../fs/folders.ts";
 import { mergeDelegationStands } from "../orchestration/rules.ts";
 import { Orchestration } from "../orchestration/service.ts";
-import { type MergeFence, type PendingMerge } from "../persistence/merge-fence.ts";
+import type { MergeFence, PendingMerge } from "../persistence/merge-fence.ts";
 import { ThreadStore, type ThreadUpdateContext } from "../persistence/thread-store.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { isBadgeOf } from "./extra-prs.ts";

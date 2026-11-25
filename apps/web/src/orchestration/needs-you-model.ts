@@ -1,12 +1,12 @@
-import {
-  type BabysitStopReason,
-  type OrchestratorLedger,
-  type ThreadId,
-  type ThreadSummary,
-  type SavedWork,
-  type ThreadError,
-  type WorkerError,
-  type WorkspaceId,
+import type {
+  BabysitStopReason,
+  OrchestratorLedger,
+  ThreadId,
+  ThreadSummary,
+  SavedWork,
+  ThreadError,
+  WorkerError,
+  WorkspaceId,
 } from "@gram/contracts";
 
 import { STOP_REASON_TEXT } from "@/panels/review/babysit-model";

@@ -2,7 +2,7 @@
 // hosted server: no network, and no machine is ever started.
 
 import { describe, expect, it } from "@effect/vitest";
-import { type ThreadId } from "@gram/contracts";
+import type { ThreadId } from "@gram/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
