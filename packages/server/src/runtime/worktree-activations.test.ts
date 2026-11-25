@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { eventually, makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
 import { markNewWorktree } from "../host/worktree-hook-source.ts";
+import { localAppHeadersForTests } from "../http/local-app.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
 import { FakeAgentControl } from "./fake-agent.ts";
@@ -34,6 +35,7 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
         const runtimes = yield* ThreadRuntimes;
         const store = yield* ThreadStore;
         const ui = makeRespondHandlers(store, runtimes);
+        const localApp = { headers: localAppHeadersForTests() };
         const agent = yield* FakeAgentControl;
         const model = { agent: "codex" as const, model: "gpt-6.1-sol" };
         const parent = yield* runtimes.create({
@@ -71,12 +73,15 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
           );
           expect(agent.sessions).toHaveLength(0);
           if (before.shown === undefined) throw new Error("Expected a keyed approval");
-          yield* ui["thread.respond"]({
-            threadId: worker.id,
-            requestId: before.id,
-            shown: before.shown,
-            answer: { kind: "approval", decision: "allow", scope: "once" },
-          });
+          yield* ui["thread.respond"](
+            {
+              threadId: worker.id,
+              requestId: before.id,
+              shown: before.shown,
+              answer: { kind: "approval", decision: "allow", scope: "once" },
+            },
+            localApp,
+          );
         }
         const session = yield* eventually(
           "first worker input",
@@ -133,12 +138,15 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
           store.listRequests(worker.id).pipe(Effect.map((cards) => cards[0])),
         );
         if (changed.shown === undefined) throw new Error("Missing changed-hook card key");
-        yield* ui["thread.respond"]({
-          threadId: worker.id,
-          requestId: changed.id,
-          shown: changed.shown,
-          answer: { kind: "approval", decision: "deny", scope: "once" },
-        });
+        yield* ui["thread.respond"](
+          {
+            threadId: worker.id,
+            requestId: changed.id,
+            shown: changed.shown,
+            answer: { kind: "approval", decision: "deny", scope: "once" },
+          },
+          localApp,
+        );
         yield* eventually(
           "wake after decline",
           Effect.sync(() => resumed.sent.length > 0),

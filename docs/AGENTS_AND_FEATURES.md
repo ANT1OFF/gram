@@ -1579,9 +1579,10 @@ The hook inherits the account's file permissions. Gram supplies no agent or clon
 in its environment.
 
 On a personal machine, the project folder must be trusted. Gram asks to run a new or changed
-committed hook and remembers the decision for that repository, hook and machine. On a hosted
-machine, the host provider's environment policy decides. The thread shows the latest result
-and its log. An unsuccessful hook leaves the worktree available so the worker can diagnose it.
+committed hook and remembers the decision for that repository, hook and machine. Answer in
+the local Gram app. Paired browsers can view the request. On a hosted machine, the host
+provider's environment policy decides. The thread shows the latest result and its log.
+An unsuccessful hook leaves the worktree available so the worker can diagnose it.
 The worker's brief includes the setup failure and identifies missing prerequisites when Gram
 can distinguish them. [Worktree hook design](design/worktree-hooks.md)
 

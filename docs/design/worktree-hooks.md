@@ -22,10 +22,10 @@ worker through server-authored context on its first brief, with raw output avail
 ## Trust and machine placement
 
 Personal hosts require project folder trust and an explicit decision for new hook content. The
-record is scoped to the user, host, repository, phase, path and fingerprint. The authenticated
-app approval must name the current card. Agent-side answers cannot clear it. Approval previews
-the committed script and scripts with invisible formatting are refused. The host rechecks the
-revision and fingerprint before execution.
+record is scoped to the user, host, repository, phase, path and fingerprint. Only the local Gram
+app can answer the current card. Paired browsers can view it. Approval previews the committed
+script and scripts with invisible formatting are refused. The host rechecks the revision and
+fingerprint before execution. A declined hook or unavailable consent is recorded as skipped.
 
 The environment owns system tools, network and credentials. Repository hooks prepare
 checkout-local dependencies and files with the tools the environment makes available.

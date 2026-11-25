@@ -195,24 +195,23 @@ export const makeWorktreeActivations = (deps: {
         fingerprint: inspection.fingerprint,
       };
       if (!location.hosted) {
-        const trusted = () =>
-          deps.store.listProjects.pipe(
-            Effect.map((current) => {
-              const folder = current.find((candidate) => candidate.id === project?.id);
-              return (
-                folder !== undefined &&
-                projectFolderTrusted(
-                  folder,
-                  location.host === LOCAL_HOST_ID ? folderBringsNothing(folder.root) : () => false,
-                )
-              );
-            }),
-          );
-        if (repository === undefined || !(yield* trusted()))
+        if (repository === undefined)
           return yield* mark(
             inspection.path,
-            outcome("skipped", "Trust the project folder to run this hook."),
+            outcome("skipped", "Gram could not identify this repository for hook consent."),
           );
+        const folderTrusted = deps.store.listProjects.pipe(
+          Effect.map((current) => {
+            const folder = current.find((candidate) => candidate.id === project?.id);
+            return (
+              folder !== undefined &&
+              projectFolderTrusted(
+                folder,
+                location.host === LOCAL_HOST_ID ? folderBringsNothing(folder.root) : () => false,
+              )
+            );
+          }),
+        );
         const consent = yield* worktreeHookConsent({
           dataDir: deps.dataDir,
           thread,
@@ -224,18 +223,10 @@ export const makeWorktreeActivations = (deps: {
           revision: inspection.revision,
           fingerprint: inspection.fingerprint,
           script: inspection.script,
+          folderTrusted,
           ask: deps.ask,
         });
-        if (consent.decision !== "allow" || !(yield* trusted()))
-          return yield* mark(
-            inspection.path,
-            outcome(
-              "skipped",
-              consent.decision === "deny"
-                ? "The user declined this hook revision."
-                : "Gram could not establish consent for this hook revision.",
-            ),
-          );
+        if (consent.decision !== "allow") return yield* mark(inspection.path, consent.result);
         grant = consent.grant;
       }
       const workspace =
