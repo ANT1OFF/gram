@@ -36,6 +36,9 @@ const toggleAllActivity = async (page: Page) => {
 };
 
 test("updates in a row are one row that opens on each, by click and by key", async ({ page }) => {
+  // The updates are dated just before now; a fixed midday keeps their range within one day, so it
+  // reads as times alone (one that crosses midnight leads with its date).
+  await page.clock.setFixedTime(new Date("2026-06-15T12:00:00Z"));
   await openRealistic(page);
   await page.evaluate(() => window.gramMock!.simulateDigestStream());
   // The quiet update before the merge and the merge's own update stood one under the other.
