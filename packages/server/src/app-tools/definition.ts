@@ -9,6 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
 import type { DecisionQuestion } from "../embedding/decision-hook.ts";
+import type { ApprovalReach } from "../runtime/answer-reach.ts";
 
 type ToolInput = Schema.Codec<unknown, unknown>;
 
@@ -129,6 +130,12 @@ export interface AppToolDefinition<S extends ToolInput = ToolInput, T = S["Type"
    * such as an issue on a shared repo that may carry context from the conversation.
    */
   readonly alwaysAsks?: true;
+  /**
+   * Who may approve this tool's card (`ApprovalReach`): `deployment` for a call that does what only
+   * the deployment may do directly, `localApp` for what only the local app may. Absent, anyone who
+   * may answer the thread, as for work on the thread itself: a push or a pull request.
+   */
+  readonly approvalReach?: ApprovalReach;
   /**
    * What a decision hook is asked before this call, where one is configured (`embedding/guard.ts`):
    * the outward action the call is, with what is known of it. Asked after `resolve` and before

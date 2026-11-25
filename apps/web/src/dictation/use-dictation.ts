@@ -1,6 +1,7 @@
 import {
   dictationCleanupOf,
   dictationSoundVolumeOf,
+  isSpeechPerformance,
   keepMicrophoneReadyOf,
   microphoneOpensUnasked,
   openSpeechSession,
@@ -70,7 +71,7 @@ export interface DictationControls {
   cancel(): void;
 }
 
-const STOPS = Object.keys(SPEECH_MODEL_FOR_STOP) as SpeechPerformance[];
+const STOPS = Object.keys(SPEECH_MODEL_FOR_STOP).filter(isSpeechPerformance);
 
 const STOPPED = {
   ok: false,

@@ -276,7 +276,7 @@ export const makeHeldSpawns = (kit: OrchestrationKit, deps: HeldSpawnsDeps) => {
         ...(limit.resetsAt === undefined ? {} : { resetsAt: limit.resetsAt }),
       };
       const decision = yield* runtimes
-        .requestApproval(callerId, {
+        .requestApproval(callerId, "anyone", {
           toolName: LIMIT_PAUSE_TOOL,
           displayName: "new workers",
           input,

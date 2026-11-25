@@ -6,7 +6,7 @@ import {
   isFolderProject,
   sendKeyOf,
   type CheckoutRequest,
-  type DraftId,
+  DraftId,
   type PermissionMode,
   type Project,
   type WorkspaceState,
@@ -247,7 +247,7 @@ function ConfiguredNewThreadDraft() {
   const [carried] = useState(carriedDraft);
   useEffect(dropCarriedDraft, []);
   const [prompt, setPrompt] = useState(carried?.text ?? "");
-  const [draftId] = useState(() => carried?.draftId ?? (crypto.randomUUID() as DraftId));
+  const [draftId] = useState(() => carried?.draftId ?? DraftId.make(crypto.randomUUID()));
   const attachments = useAttachments({ draftId }, carried?.attachments);
   const mentionFolder = onMachine
     ? ""
@@ -536,7 +536,8 @@ function ConfiguredNewThreadDraft() {
                     if (event.dataTransfer.types.includes("Files")) setDragging(true);
                   }}
                   onDragLeave={(event) => {
-                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    const into = event.relatedTarget;
+                    if (!(into instanceof Node && event.currentTarget.contains(into))) {
                       setDragging(false);
                     }
                   }}

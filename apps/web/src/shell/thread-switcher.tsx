@@ -1,5 +1,5 @@
 import type { ThreadId } from "@gram/contracts";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { AgentIcon } from "@/agents/agent-display";
@@ -10,6 +10,7 @@ import { releasesChord } from "@/dictation/push-to-talk";
 import { effectiveKeys } from "@/keyboard/bindings-store";
 import { isMac, parseKeys, useShortcut } from "@/keyboard/registry";
 import { cn } from "@/lib/utils";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useListedThreads } from "@/sidebar/listed";
 import { threadStatusOf } from "@/sidebar/status";
 import { useLayoutStore } from "@/stores/layout";
@@ -59,7 +60,7 @@ export function useOpenThread() {
 export function ThreadSwitcher() {
   const api = useApi();
   const navigate = useNavigate();
-  const params = useParams({ strict: false });
+  const routeThreadId = useRouteThreadId();
   const open = useOpenThread();
   const byId = useListedThreads();
   const [cycle, setCycle] = useState<{ order: ThreadId[]; index: number }>();
@@ -143,7 +144,7 @@ export function ThreadSwitcher() {
     label: "New one-off thread",
     group: "Navigation",
     run: () => {
-      const threadId = (params.threadId as ThreadId | undefined) ?? focusedThreadId();
+      const threadId = routeThreadId ?? focusedThreadId();
       const checkout = threadId ? byId[threadId]?.thread.checkout : undefined;
       prefillDraftProject(checkout ? (checkout.repoRoot ?? checkout.path) : undefined);
       void navigate({ to: "/new" });

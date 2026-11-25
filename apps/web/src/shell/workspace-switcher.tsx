@@ -96,7 +96,7 @@ export function useWorkspaceKeys(): void {
 
 const moveFocus = (event: KeyboardEvent<HTMLElement>) => {
   const items = [...event.currentTarget.querySelectorAll<HTMLElement>(`[${ITEM}]`)];
-  const active = items.indexOf(document.activeElement as HTMLElement);
+  const active = items.findIndex((item) => item === document.activeElement);
   const next = listIndexForKey(event.key, Math.max(active, 0), items.length);
   if (next === undefined || event.key === "PageUp" || event.key === "PageDown") return;
   event.preventDefault();

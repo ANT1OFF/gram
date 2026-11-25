@@ -235,7 +235,9 @@ export function HistoryBody({ onPicked }: { onPicked: () => void }) {
   };
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown" && event.key !== "Enter") return;
-    if (event.key === "Enter" && (event.target as HTMLElement).dataset["historyFilter"]) return;
+    const { target } = event;
+    if (event.key === "Enter" && target instanceof HTMLElement && target.dataset["historyFilter"])
+      return;
     const next = listIndexForKey(event.key, activeIndex, rows.length);
     if (next !== undefined) {
       event.preventDefault();

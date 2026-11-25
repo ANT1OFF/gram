@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   GRID_SHAPES,
   overviewSectionsValue,
   type Palette as ContractPalette,
@@ -6,7 +7,7 @@ import {
   type LayoutSettings,
   type OverviewOptionalSection,
   type OverviewSidebar,
-  type PaletteId,
+  PaletteId,
   type PanelTab,
   type Settings,
   type SettingsPatch,
@@ -23,7 +24,7 @@ export type Appearance = Settings["appearance"];
 export function appearanceFromPrefs(prefs: ThemePrefs): Appearance {
   return {
     look: prefs.look,
-    paletteId: prefs.palette as PaletteId,
+    paletteId: PaletteId.make(prefs.palette),
     mode: prefs.mode,
     density: prefs.density,
     contrast: prefs.contrast === "system" ? "standard" : prefs.contrast,
@@ -107,10 +108,9 @@ export function settingsPatch(
   next: SyncedSettings,
 ): SettingsPatch | undefined {
   const appearance: Partial<Appearance> = {};
-  for (const key of Object.keys(next.appearance ?? {}) as (keyof Appearance)[]) {
-    if (next.appearance?.[key] !== prev.appearance?.[key]) {
-      Object.assign(appearance, { [key]: next.appearance?.[key] });
-    }
+  const before = fieldsOf(prev.appearance);
+  for (const [key, value] of Object.entries(next.appearance ?? {})) {
+    if (value !== before.get(key)) Object.assign(appearance, { [key]: value });
   }
   const patch: SettingsPatch = {
     ...(Object.keys(appearance).length > 0 ? { appearance } : {}),
@@ -134,10 +134,10 @@ export const toThemePalette = (palette: ContractPalette): Palette => ({
 });
 
 const toContractPalette = (palette: Palette): ContractPalette => ({
-  id: palette.id as PaletteId,
+  id: PaletteId.make(palette.id),
   name: palette.name,
   mode: palette.mode,
-  ...(palette.pairId ? { pairId: palette.pairId as PaletteId } : {}),
+  ...(palette.pairId ? { pairId: PaletteId.make(palette.pairId) } : {}),
   seeds: {
     bg: palette.seeds.bg,
     surface: palette.seeds.surface,
@@ -164,7 +164,7 @@ export function paletteOps(synced: readonly Palette[], local: readonly Palette[]
   const after = new Set(local.map((p) => p.id));
   return {
     upsert: local.filter((p) => before.get(p.id) !== key(p)).map(toContractPalette),
-    remove: synced.filter((p) => !after.has(p.id)).map((p) => p.id as PaletteId),
+    remove: synced.filter((p) => !after.has(p.id)).map((p) => PaletteId.make(p.id)),
   };
 }
 

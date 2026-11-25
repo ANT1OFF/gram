@@ -119,7 +119,7 @@ export function toolLabel(tool: string, phase: ToolPhase, title?: string): ToolL
     const verbs = BUILT_IN[tool];
     return raw(verbs === undefined ? tool : verbs[done]);
   }
-  const [, server, name] = mcp as unknown as [string, string, string];
+  const [, server = "", name = ""] = mcp;
   if (server === "gram") {
     const verbs = GRAM_TOOLS[name];
     return raw(verbs === undefined ? words(name.replace(/^browser_/, "Browser ")) : verbs[done]);

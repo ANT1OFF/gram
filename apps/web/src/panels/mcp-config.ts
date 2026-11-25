@@ -103,10 +103,13 @@ export function configFromDraft(draft: McpDraft): Parsed {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const stringMap = (value: unknown): Record<string, string> | undefined =>
-  isRecord(value) && Object.values(value).every((v) => typeof v === "string")
-    ? (value as Record<string, string>)
+const stringMap = (value: unknown): Record<string, string> | undefined => {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value);
+  return entries.every((entry): entry is [string, string] => typeof entry[1] === "string")
+    ? Object.fromEntries(entries)
     : undefined;
+};
 
 /**
  * A pasted server: one entry (`{"type": "http", "url": …}`, named by the form) or a `.mcp.json`

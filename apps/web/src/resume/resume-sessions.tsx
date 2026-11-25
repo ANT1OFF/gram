@@ -1,4 +1,10 @@
-import type { AgentKind, AgentSessionSummary, ModelRef, SessionPreview } from "@gram/contracts";
+import type {
+  AgentKind,
+  AgentSessionSummary,
+  ModelRef,
+  SessionPreview,
+  ThreadId,
+} from "@gram/contracts";
 import { useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { GitBranch, History, Trash2 } from "lucide-react";
@@ -104,7 +110,7 @@ export async function resumeSession(
   session: ResumableSession,
   projectRoot: string,
   model: ModelRef | undefined,
-): Promise<string> {
+): Promise<ThreadId> {
   if (session.threadId) return session.threadId;
   if (model === undefined) {
     throw new Error(`Select an available ${agentLabel(session.agent)} model before resuming.`);
@@ -128,10 +134,10 @@ export async function resumeSession(
 export function useShowResumed(projectRoot?: string) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  return (threadId: string) => {
+  return (threadId: ThreadId) => {
     if (projectRoot !== undefined)
       void queryClient.invalidateQueries({ queryKey: sessionsQueryKey(projectRoot) });
-    useLayoutStore.getState().openThread(threadId as never);
+    useLayoutStore.getState().openThread(threadId);
     void navigate({ to: "/t/$threadId", params: { threadId } });
   };
 }

@@ -278,6 +278,7 @@ export const settingsAppToolsLayer = (options: SettingsToolsOptions = {}) =>
               tool,
               ttl,
               "settings",
+              proposed.scope === "app" ? "deployment" : "anyone",
               {
                 displayName: "Change settings",
                 input: card,

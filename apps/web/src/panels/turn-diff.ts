@@ -1,4 +1,5 @@
-import type { GramUIMessage, TurnId } from "@gram/contracts";
+import { TurnId, type GramUIMessage } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 
 export interface TurnOption {
   turnId: TurnId;
@@ -69,5 +70,10 @@ export const turnTarget = (turnId: TurnId): string => `turn:${turnId}`;
  */
 export const BRANCH_TARGET = "scope:branch";
 
-export const targetTurnId = (target: string): TurnId | undefined =>
-  target.startsWith("turn:") ? (target.slice("turn:".length) as TurnId) : undefined;
+const isTurnId = Schema.is(TurnId);
+
+export const targetTurnId = (target: string): TurnId | undefined => {
+  if (!target.startsWith("turn:")) return undefined;
+  const turnId = target.slice("turn:".length);
+  return isTurnId(turnId) ? turnId : undefined;
+};

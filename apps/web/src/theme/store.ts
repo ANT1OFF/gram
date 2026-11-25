@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import type { Palette } from "@gram/themes";
 import { createStore, useStore } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
@@ -43,11 +44,10 @@ export function createThemeStore(storage?: StateStorage) {
           customPalettes: state.customPalettes,
         }),
         merge: (persisted, current) => {
-          const raw = (persisted ?? {}) as Record<string, unknown>;
           return {
             ...current,
-            ...sanitizePrefs(raw),
-            customPalettes: sanitizePalettes(raw["customPalettes"]),
+            ...sanitizePrefs(persisted),
+            customPalettes: sanitizePalettes(fieldsOf(persisted).get("customPalettes")),
           };
         },
       },

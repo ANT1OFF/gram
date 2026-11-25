@@ -231,6 +231,9 @@ export const ReviewAppToolsLive = Layer.effectDiscard(
         description,
         false,
         claims,
+        undefined,
+        undefined,
+        "anyone",
       );
 
     const prReviewState = defineAppTool({

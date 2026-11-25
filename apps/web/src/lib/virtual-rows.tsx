@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-virtual";
 import {
   Fragment,
+  useCallback,
   useLayoutEffect,
   useRef,
   useState,
@@ -147,7 +148,10 @@ export function VirtualRows<T>({
   children: (item: T, index: number, place: RowPlace) => ReactNode;
 }) {
   "use no memo";
-  const root = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLElement>(null);
+  const setRoot = useCallback((node: HTMLElement | null) => {
+    root.current = node;
+  }, []);
   const scroller = useRef<HTMLElement | null>(null);
   const [margin, setMargin] = useState(0);
   const [focused, setFocused] = useState<string>();
@@ -308,7 +312,7 @@ export function VirtualRows<T>({
 
   return (
     <List
-      ref={root as never}
+      ref={setRoot}
       {...{ [VIRTUAL_LIST]: "" }}
       aria-label={label}
       className={cn("relative w-full shrink-0", className)}

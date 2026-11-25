@@ -24,6 +24,7 @@ import { flushSync } from "react-dom";
 
 import { useApi } from "@/api/context";
 import { Button } from "@/components/ui/button";
+import { oneOf } from "@/lib/one-of";
 import { cn } from "@/lib/utils";
 import { Expand } from "@/motion";
 import { AddRepository } from "@/new-thread/add-repository";
@@ -424,7 +425,8 @@ function Basics({
             value={workspace.homeProjectId}
             disabled={changes.busy || adding}
             onChange={(event) => {
-              const homeProjectId = event.target.value as ProjectId;
+              const homeProjectId = oneOf(workspace.projectIds, event.target.value);
+              if (homeProjectId === undefined) return;
               const result = validateWorkspaceDraft(
                 { ...draftOfWorkspace(workspace), homeProjectId },
                 workspace.id,

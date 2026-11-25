@@ -55,8 +55,8 @@ export function taskSummary({
   return {
     where: `Runs in ${workspace}`,
     who: `Planned by the ${workspace} orchestrator`,
-    approval: known(MERGE_APPROVAL, autonomy as Autonomy) ?? level.label,
-    merge: known(PLAN_MERGE, autonomy as Autonomy) ?? level.description.replace(/\.$/, ""),
+    approval: known(MERGE_APPROVAL, autonomy) ?? level.label,
+    merge: known(PLAN_MERGE, autonomy) ?? level.description.replace(/\.$/, ""),
   };
 }
 
@@ -96,7 +96,7 @@ export function TaskAuthorityLine({
     | undefined;
 }) {
   const level = presentAutonomy(autonomy);
-  const icon = known(AUTONOMY_ICON, autonomy as Autonomy) ?? Shield;
+  const icon = known(AUTONOMY_ICON, autonomy) ?? Shield;
   const summary = taskSummary({ workspace, autonomy });
   const showMerge = !usePersonMerges();
   return (

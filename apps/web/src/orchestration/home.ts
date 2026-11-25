@@ -1,13 +1,14 @@
 import {
   openAtLaunchOf,
+  ThreadId,
+  WorkspaceId,
   type OpenAtLaunch,
-  type ThreadId,
   type ThreadSummary,
   type Workspace,
-  type WorkspaceId,
   type WorkspaceState,
 } from "@gram/contracts";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { useEffect, useState } from "react";
 
 import { useApi } from "@/api/context";
@@ -15,6 +16,7 @@ import { errorMessage } from "@/api/errors";
 import { appPathname } from "@/lib/app-path";
 import { useExternalSync } from "@/lib/effects";
 import { useServerSettings } from "@/settings-sync/store";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
@@ -23,11 +25,14 @@ import { useWorkspacesQuery } from "./use-orchestration";
 
 const LAST_KEY = "gram.lastOrchestratorWorkspace";
 const LAST_THREAD_KEY = "gram.lastThread";
+const isWorkspaceId = Schema.is(WorkspaceId);
+const isThreadId = Schema.is(ThreadId);
 
 /** The workspace whose orchestrator the window showed last, across launches. */
 export const readLast = (): WorkspaceId | undefined => {
   try {
-    return (localStorage.getItem(LAST_KEY) ?? undefined) as WorkspaceId | undefined;
+    const last = localStorage.getItem(LAST_KEY);
+    return isWorkspaceId(last) ? last : undefined;
   } catch {
     return undefined;
   }
@@ -41,7 +46,8 @@ const writeLast = (workspaceId: WorkspaceId) => {
 
 const readLastThread = (): ThreadId | undefined => {
   try {
-    return (localStorage.getItem(LAST_THREAD_KEY) ?? undefined) as ThreadId | undefined;
+    const last = localStorage.getItem(LAST_THREAD_KEY);
+    return isThreadId(last) ? last : undefined;
   } catch {
     return undefined;
   }
@@ -95,7 +101,7 @@ export function launchThread(
 
 /** Remembers whose orchestrator, and which thread, the window shows, for the next launch. */
 export function useRememberOrchestrator(): void {
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   const { workspaces } = useWorkspacesQuery();
   const shown = workspaces.find(
     ({ workspace }) => threadId !== undefined && workspace.orchestratorThreadId === threadId,

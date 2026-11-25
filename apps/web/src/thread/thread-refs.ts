@@ -1,3 +1,5 @@
+import { hastTextOf, isHastElement, type HastElement, type HastNode } from "./hast";
+
 const THREAD_UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 
 const FRAGMENT_ID = /^[A-Za-z\d][\w-]{0,127}$/;
@@ -57,45 +59,25 @@ export function splitThreadLinks(text: string): ThreadTextSegment[] {
 /** The custom element a possible thread link renders as; its component resolves it. */
 export const THREAD_REF_TAG = "thread-ref";
 
-interface HastText {
-  type: "text";
-  value: string;
-}
-
-interface HastElement {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  children: HastNode[];
-}
-
-type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
-
 const OPAQUE = new Set(["code", "pre", "kbd", "samp"]);
-
-const textOf = (node: HastNode): string =>
-  node.type === "text"
-    ? (node as HastText).value
-    : ((node as { children?: HastNode[] }).children ?? []).map(textOf).join("");
 
 const visit = (node: HastNode): void => {
   if (!("children" in node) || node.children === undefined) return;
   node.children = node.children.map((child) => {
-    if (child.type !== "element") return child;
-    const element = child as HastElement;
-    if (element.tagName === "a") {
-      const href = element.properties?.["href"];
+    if (!isHastElement(child)) return child;
+    if (child.tagName === "a") {
+      const href = child.properties?.["href"];
       const id = typeof href === "string" ? threadLinkId(href) : undefined;
-      if (id === undefined) return element;
+      if (id === undefined) return child;
       return {
         type: "element",
         tagName: THREAD_REF_TAG,
-        properties: { dataThreadId: id, dataLabel: textOf(element) },
-        children: [element],
+        properties: { dataThreadId: id, dataLabel: hastTextOf(child) },
+        children: [child],
       } satisfies HastElement;
     }
-    if (!OPAQUE.has(element.tagName)) visit(element);
-    return element;
+    if (!OPAQUE.has(child.tagName)) visit(child);
+    return child;
   });
 };
 

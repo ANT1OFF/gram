@@ -158,7 +158,7 @@ export const devServerTools = (deps: DevServerDeps): ReadonlyArray<AppToolDefini
               const key = `${threadId}\u0000${launch.fingerprint}`;
               if (!allowed.has(key)) {
                 const answer = yield* runtimes
-                  .requestApproval(threadId, {
+                  .requestApproval(threadId, "anyone", {
                     toolName: `mcp__gram__${tool}`,
                     displayName: tool,
                     input: {

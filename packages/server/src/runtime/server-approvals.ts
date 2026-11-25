@@ -41,8 +41,7 @@ import {
   requestActions,
 } from "../embedding/hooked-requests.ts";
 import { KEYLESS_ANSWER } from "./card-key.ts";
-import { cameFromLocalApp } from "./ui-approval.ts";
-import { WORKTREE_HOOK_APPROVAL } from "./worktree-hook-consent.ts";
+import { type ApprovalReach, reachRefusal } from "./answer-reach.ts";
 
 /** Why one answer of `respondMany` wasn't given, in words a row of the inbox can show. */
 export const respondFailure = (cause: Cause.Cause<unknown>): string => {
@@ -59,7 +58,6 @@ export type ServerApprovalAnswer = ApprovalAnswer & {
   readonly resolution?: AppToolApprovalResolution;
   /** The signed-in person who answered, where the server knows one (`embedding/person.ts`). */
   readonly answeredBy?: string;
-  readonly uiVerified?: true;
 };
 
 export interface ServerApprovalRequest {
@@ -67,6 +65,8 @@ export interface ServerApprovalRequest {
   readonly toolName: string;
   /** Best-effort snapshot at request creation; resolution must not depend on database access. */
   readonly permissionMode?: PermissionMode;
+  /** Who may answer it, beyond reaching its thread. */
+  readonly reach: ApprovalReach;
   readonly shown?: string;
   readonly answer: Deferred.Deferred<ServerApprovalAnswer>;
 }
@@ -205,7 +205,12 @@ export const makeServerApprovals = ({
       }
     });
 
-  const requestApproval: ThreadRuntimesShape["requestApproval"] = (threadId, fields, decided) =>
+  const requestApproval: ThreadRuntimesShape["requestApproval"] = (
+    threadId,
+    reach,
+    fields,
+    decided,
+  ) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       const request: ApprovalRequest = {
@@ -224,6 +229,7 @@ export const makeServerApprovals = ({
             threadId,
             toolName: fields.toolName,
             answer,
+            reach,
             ...(request.shown === undefined ? {} : { shown: request.shown }),
             ...(thread === undefined ? {} : { permissionMode: thread.mode }),
           });
@@ -323,15 +329,18 @@ export const makeServerApprovals = ({
                 status: rt.status,
               });
             }
-            const uiVerified =
-              pending.shown !== undefined &&
-              pending.shown === shown &&
-              (yield* cameFromLocalApp(threadId, requestId, shown));
-            if (pending.toolName === WORKTREE_HOOK_APPROVAL && !uiVerified) {
+            if (
+              pending.reach === "localAppOnly" &&
+              (pending.shown === undefined || pending.shown !== shown)
+            )
               return yield* new InvalidState({
-                message: "Answer this worktree hook approval from its card in the local Gram app.",
+                message: "Answer from the current approval card.",
                 threadId,
+                status: rt.status,
               });
+            const refused = yield* reachRefusal(pending.reach, answer.decision);
+            if (refused !== undefined) {
+              return yield* new InvalidState({ message: refused, threadId, status: rt.status });
             }
             serverRequests.delete(requestId);
             const answeredBy = yield* ActingPerson;
@@ -366,7 +375,6 @@ export const makeServerApprovals = ({
                     ...(!failed && answer.message !== undefined ? { message: answer.message } : {}),
                     resolution,
                     ...(failed || answeredBy === undefined ? {} : { answeredBy }),
-                    ...(!failed && uiVerified ? { uiVerified: true as const } : {}),
                   });
                 }),
               ),

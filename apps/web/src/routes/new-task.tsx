@@ -1,5 +1,6 @@
-import type { WorkspaceId } from "@gram/contracts";
+import { WorkspaceId } from "@gram/contracts";
 import { createFileRoute } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 
 import { NewTaskDraft } from "@/composer/new-task-draft";
 
@@ -8,12 +9,12 @@ export interface NewTaskSearch {
   readonly workspace?: WorkspaceId;
 }
 
+const isWorkspaceId = Schema.is(WorkspaceId);
+
 export const Route = createFileRoute("/new-task")({
   validateSearch: (search: Record<string, unknown>): NewTaskSearch => {
     const workspace = search["workspace"];
-    return typeof workspace === "string" && workspace !== ""
-      ? { workspace: workspace as WorkspaceId }
-      : {};
+    return isWorkspaceId(workspace) ? { workspace } : {};
   },
   component: NewTaskPage,
 });

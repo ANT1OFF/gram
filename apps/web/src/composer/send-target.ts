@@ -1,10 +1,12 @@
 import {
   embeddingOn,
   type HostedDeviceView,
-  type HostedMachine,
+  HostedMachine,
   hostedMachineReady,
   NO_MACHINE_RUNNING,
 } from "@gram/contracts";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { useCallback, useMemo, useState } from "react";
 
 import { serverUrl } from "@/api/server-base";
@@ -66,29 +68,32 @@ export function useSendTargets(): readonly SendTarget[] {
 }
 
 /** What `/threads/send-check` answers, as read here. */
-export interface SendCheck {
-  readonly repository?: string;
-  readonly orchestrator: boolean;
+export const SendCheck = Schema.Struct({
+  repository: Schema.optionalKey(Schema.String),
+  orchestrator: Schema.Boolean,
   /** What a thread started there now opens on, when the server said. */
-  readonly model?: { readonly agent: string; readonly model: string };
-  readonly local: {
-    readonly current?: string;
-    readonly base?: { readonly branch: string; readonly sha: string };
-    readonly ahead: number;
-    readonly uncommitted: { readonly count: number; readonly first?: string };
-  };
+  model: Schema.optionalKey(Schema.Struct({ agent: Schema.String, model: Schema.String })),
+  local: Schema.Struct({
+    current: Schema.optionalKey(Schema.String),
+    base: Schema.optionalKey(Schema.Struct({ branch: Schema.String, sha: Schema.String })),
+    ahead: Schema.Number,
+    uncommitted: Schema.Struct({ count: Schema.Number, first: Schema.optionalKey(Schema.String) }),
+  }),
   /** Absent when the server couldn't be asked: the send is still the server's to refuse. */
-  readonly reach?: {
-    readonly repository?: string;
-    readonly reach: "yes" | "no" | "unknown";
-    readonly reason?: string;
-  };
+  reach: Schema.optionalKey(
+    Schema.Struct({
+      repository: Schema.optionalKey(Schema.String),
+      reach: Schema.Literals(["yes", "no", "unknown"]),
+      reason: Schema.optionalKey(Schema.String),
+    }),
+  ),
   /**
    * The person's own machine there, when the server starts one from here; `unoffered` when it
    * doesn't, and absent when it couldn't be asked.
    */
-  readonly machine?: HostedMachine | "unoffered";
-}
+  machine: Schema.optionalKey(Schema.Union([HostedMachine, Schema.Literal("unoffered")])),
+});
+export type SendCheck = typeof SendCheck.Type;
 
 /** Whether a send there starts the person's machine first: the server offers it, and it isn't up. */
 export const sendStartsMachine = (check: SendCheck | undefined): boolean =>
@@ -250,17 +255,19 @@ export const checkSend = async (input: {
     },
     "Couldn't check where the task goes.",
   );
-  if (typeof answer !== "object" || answer === null || !("local" in answer))
-    throw new SendWorkError("Couldn't check where the task goes.");
-  return answer as SendCheck;
+  const check = Schema.decodeUnknownOption(SendCheck)(answer);
+  if (Option.isNone(check)) throw new SendWorkError("Couldn't check where the task goes.");
+  return check.value;
 };
 
 /** How a start of the person's machine there stands, as `/threads/send-machine` answers. */
-export type MachineProgress =
-  | { readonly state: "unoffered" }
-  | { readonly state: "starting"; readonly phase: string }
-  | { readonly state: "ready"; readonly phase: string }
-  | { readonly state: "failed"; readonly why: string };
+export const MachineProgress = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("unoffered") }),
+  Schema.Struct({ state: Schema.Literal("starting"), phase: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("ready"), phase: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("failed"), why: Schema.String }),
+]);
+export type MachineProgress = typeof MachineProgress.Type;
 
 /**
  * Starts the person's own machine there unless it runs, and says how it stands. Asked again while
@@ -274,11 +281,9 @@ export const startSendMachine = async (
     { target: { origin: target.origin, workspaceId: target.workspaceId } },
     "Couldn't start your machine there.",
   );
-  const state =
-    typeof answer === "object" && answer !== null && "state" in answer ? answer.state : undefined;
-  if (state !== "unoffered" && state !== "starting" && state !== "ready" && state !== "failed")
-    throw new SendWorkError("Couldn't start your machine there.");
-  return answer as MachineProgress;
+  const progress = Schema.decodeUnknownOption(MachineProgress)(answer);
+  if (Option.isNone(progress)) throw new SendWorkError("Couldn't start your machine there.");
+  return progress.value;
 };
 
 /** What New task says while the machine starts, by the phase the server named. */

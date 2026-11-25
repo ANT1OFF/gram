@@ -27,6 +27,7 @@ export function useSettingsLink(to: SettingsEntry = "/settings") {
  */
 export function settingsTarget(to: SettingsEntry, pathname: string): SettingsEntry {
   if (to !== "/settings" || !isSettingsPath(pathname)) return to;
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the open page's path routes too
   return (/^\/settings\/[^/]+/.exec(pathname)?.[0] ?? to) as SettingsEntry;
 }
 

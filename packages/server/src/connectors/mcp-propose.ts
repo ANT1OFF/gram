@@ -133,6 +133,7 @@ export const mcpProposeAppToolsLayer = (options: McpProposeToolOptions = {}) =>
               TOOL,
               ttl,
               "MCP server",
+              "localApp",
               {
                 displayName: card.action === "replace" ? "Replace MCP server" : "Add MCP server",
                 input: card,

@@ -1,7 +1,9 @@
+import { fieldsOf } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import type { NavigationDefaults } from "@/embed/contract";
+import { oneOf } from "@/lib/one-of";
 
 /** What marks the main navigation's region (the dock, or an auto-hidden sidebar). */
 export const NAV_REGION = "data-nav-region";
@@ -75,12 +77,12 @@ export function navigationLayout(
 }
 
 function sanitizePicked(raw: unknown): NavigationPrefs {
-  const r = (raw ?? {}) as Record<string, unknown>;
+  const r = fieldsOf(raw);
+  const position = oneOf(NAVIGATION_POSITIONS, r.get("position"));
+  const autoHide = r.get("autoHide");
   return {
-    ...(NAVIGATION_POSITIONS.includes(r["position"] as NavigationPosition)
-      ? { position: r["position"] as NavigationPosition }
-      : {}),
-    ...(typeof r["autoHide"] === "boolean" ? { autoHide: r["autoHide"] } : {}),
+    ...(position === undefined ? {} : { position }),
+    ...(typeof autoHide === "boolean" ? { autoHide } : {}),
   };
 }
 
@@ -107,7 +109,7 @@ export const useNavigationStore = create<NavigationState>()(
       partialize: ({ picked }) => ({ picked }),
       merge: (persisted, current) => ({
         ...current,
-        picked: sanitizePicked((persisted as { picked?: unknown } | undefined)?.picked),
+        picked: sanitizePicked(fieldsOf(persisted).get("picked")),
       }),
     },
   ),

@@ -1,10 +1,10 @@
-import type {
-  ShellCheck,
-  TerminalEvent,
+import {
   TerminalId,
-  TerminalInfo,
-  TerminalOpened,
-  ThreadId,
+  type ShellCheck,
+  type TerminalEvent,
+  type TerminalInfo,
+  type TerminalOpened,
+  type ThreadId,
 } from "@gram/contracts";
 
 import { createChannel, type Channel } from "../channel";
@@ -38,7 +38,7 @@ export class MockTerminals {
   #seq = 0;
 
   open(input: TerminalOpenInput, defaultCwd: string, run?: MockScriptRun): TerminalOpened {
-    const terminalId = `term-${++this.#seq}` as TerminalId;
+    const terminalId = TerminalId.make(`term-${++this.#seq}`);
     const cwd = run?.cwd ?? input.cwd ?? defaultCwd;
     const shell = input.shell ?? "/bin/zsh";
     this.#terminals.set(terminalId, {

@@ -188,8 +188,9 @@ function withWords(lines: DiffLine[]): DiffLine[] {
     while (at < out.length && out[at]!.kind === "add") at++;
     const count = Math.min(addStart - delStart, at - addStart);
     for (let k = 0; k < count && pairs < MAX_WORD_PAIRS; k++, pairs++) {
-      const del = out[delStart + k] as Extract<DiffLine, { kind: "del" }>;
-      const add = out[addStart + k] as Extract<DiffLine, { kind: "add" }>;
+      const del = out[delStart + k];
+      const add = out[addStart + k];
+      if (del?.kind !== "del" || add?.kind !== "add") continue;
       const spans = wordSpans(del.text, add.text);
       if (spans === undefined) continue;
       out[delStart + k] = { ...del, spans: spans.before };

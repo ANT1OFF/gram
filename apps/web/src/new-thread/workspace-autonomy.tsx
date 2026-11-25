@@ -30,7 +30,7 @@ export const workspaceAutonomyLabel = (autonomy: string): string =>
 export const autonomySummary = (
   autonomy: string,
   lines: Readonly<Record<Autonomy, string>> = AUTONOMY_LINE,
-): string => known(lines, autonomy as Autonomy) ?? presentAutonomy(autonomy).description;
+): string => known(lines, autonomy) ?? presentAutonomy(autonomy).description;
 
 /**
  * The New form's word on the workspace's autonomy where work starts: "Workspace: full autonomy ▾",

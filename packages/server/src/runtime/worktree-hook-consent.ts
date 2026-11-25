@@ -13,7 +13,7 @@ import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 const consentLock = makeKeyedLock<string>();
 
-export const WORKTREE_HOOK_APPROVAL = "mcp__gram__worktree_hook";
+const WORKTREE_HOOK_APPROVAL = "mcp__gram__worktree_hook";
 
 export interface WorktreeHookGrant {
   readonly host: string;
@@ -87,7 +87,7 @@ export const worktreeHookConsent = (options: {
         if (prior === "allow") return allowed;
         if (prior === "deny") return denied;
         if (prior !== undefined) return unavailable;
-        const answer = yield* ask(thread.id, {
+        const answer = yield* ask(thread.id, "localAppOnly", {
           toolName: WORKTREE_HOOK_APPROVAL,
           displayName: kind === "setup" ? "Worktree setup hook" : "Worktree resume hook",
           description:
@@ -97,11 +97,7 @@ export const worktreeHookConsent = (options: {
           scopes: ["once"],
           shown: randomUUID(),
         });
-        if (
-          answer.uiVerified !== true ||
-          answer.resolution?.origin !== "user" ||
-          answer.answeredBy !== thread.startedBy
-        )
+        if (answer.resolution?.origin !== "user" || answer.answeredBy !== thread.startedBy)
           return unavailable;
         if (!(yield* folderTrusted)) return untrusted;
         yield* Effect.try(() => file.write(answer.decision));

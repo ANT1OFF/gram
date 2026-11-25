@@ -12,7 +12,7 @@ const PAUSE_AT_CHOICES = [
   { value: "95", label: "95%" },
 ] as const;
 
-type PauseChoice = (typeof PAUSE_AT_CHOICES)[number]["value"];
+type PauseChoice = "off" | `${number}`;
 
 const withPauseAt = (charter: OrchestratorCharter, choice: PauseChoice): OrchestratorCharter => {
   const { pauseAtLimitPct: _, ...rest } = charter;
@@ -35,7 +35,7 @@ export function PauseAtLimitField({
   const limits = useUsageLimits((s) => s.limits);
   const tightest = tightestLimit(limits, latestReadingAt(limits));
   const pct = charter.pauseAtLimitPct;
-  const value = (pct === undefined ? "off" : String(pct)) as PauseChoice;
+  const value: PauseChoice = pct === undefined ? "off" : `${pct}`;
   const options = PAUSE_AT_CHOICES.some((choice) => choice.value === value)
     ? PAUSE_AT_CHOICES
     : [...PAUSE_AT_CHOICES, { value, label: `${pct}%` }];

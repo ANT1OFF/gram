@@ -1,4 +1,5 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import { lazy, Suspense, useState } from "react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,6 +17,8 @@ const TerminalPanel = lazy(() =>
   import("@/panels/terminal/terminal-panel").then((m) => ({ default: m.TerminalPanel })),
 );
 
+const isThreadId = Schema.is(ThreadId);
+
 const TABS: readonly { readonly value: ShellThreadPanelTab; readonly label: string }[] = [
   { value: "diff", label: "Diff" },
   { value: "pr", label: "Pull request" },
@@ -26,13 +29,14 @@ const TABS: readonly { readonly value: ShellThreadPanelTab; readonly label: stri
 export const ShellThreadPanel: ShellThreadPanelComponent = ({ threadId, tab, onTabChange }) => {
   const [own, setOwn] = useState<ShellThreadPanelTab>("diff");
   const shown = tab ?? own;
-  const id = threadId as ThreadId;
-  const known = useThreadsStore((s) => !s.ready || s.byId[id] !== undefined);
+  const id = isThreadId(threadId) ? threadId : undefined;
+  const known = useThreadsStore((s) => id !== undefined && (!s.ready || s.byId[id] !== undefined));
   return (
     <Tabs
       value={shown}
       onValueChange={(value) => {
-        const next = value as ShellThreadPanelTab;
+        const next = TABS.find((entry) => entry.value === value)?.value;
+        if (next === undefined) return;
         setOwn(next);
         onTabChange?.(next);
       }}
@@ -47,7 +51,7 @@ export const ShellThreadPanel: ShellThreadPanelComponent = ({ threadId, tab, onT
         ))}
       </TabsList>
       <Suspense fallback={null}>
-        {!known ? (
+        {!known || id === undefined ? (
           <PanelMessage>This thread no longer exists.</PanelMessage>
         ) : (
           <>

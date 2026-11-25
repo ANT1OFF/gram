@@ -177,11 +177,21 @@ export const addWorkerModel = (
 ): readonly WorkerModel[] =>
   models.some((each) => sameSlot(each, model)) ? models : [...models, model];
 
-/** A worker model with `note` as what it is for; a blank note is no note. */
-export const withUseFor = <T extends WorkerModel>(model: T, note: string): T => {
-  const { useFor: _was, ...rest } = model;
+const noteOf = (note: string): { readonly useFor?: string } => {
   const trimmed = note.trim();
-  return (trimmed === "" ? rest : { ...rest, useFor: trimmed }) as T;
+  return trimmed === "" ? {} : { useFor: trimmed };
+};
+
+/** A worker model with `note` as what it is for; a blank note is no note. */
+export const withUseFor = (model: WorkerModel, note: string): WorkerModel => {
+  const { useFor: _was, ...rest } = model;
+  return { ...rest, ...noteOf(note) };
+};
+
+/** `withUseFor` for a pinned model, which stays one. */
+export const pinnedWithUseFor = (model: PinnedWorkerModel, note: string): PinnedWorkerModel => {
+  const { useFor: _was, ...rest } = model;
+  return { ...rest, ...noteOf(note) };
 };
 
 /** The roster with entry `index`'s note replaced. */

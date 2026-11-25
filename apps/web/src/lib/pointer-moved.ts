@@ -18,6 +18,8 @@ let movedAt = Number.NEGATIVE_INFINITY;
 let movedOver: EventTarget | null = null;
 let listening = false;
 
+const MOVES = ["pointermove", "mousemove", "pointerover", "mouseover", "pointerdown"] as const;
+
 const record = (event: MouseEvent) => {
   const { clientX: x, clientY: y } = event;
   const kind = event.type.startsWith("pointer") ? "pointer" : "mouse";
@@ -33,8 +35,7 @@ const record = (event: MouseEvent) => {
 export function trackPointerMoves(): void {
   if (listening || typeof window === "undefined") return;
   listening = true;
-  for (const type of ["pointermove", "mousemove", "pointerover", "mouseover", "pointerdown"])
-    window.addEventListener(type, record as EventListener, { capture: true, passive: true });
+  for (const type of MOVES) window.addEventListener(type, record, { capture: true, passive: true });
 }
 
 /**

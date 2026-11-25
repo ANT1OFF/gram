@@ -11,6 +11,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
+import * as Predicate from "effect/Predicate";
 import { useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -501,12 +502,9 @@ function Detail({
   onReveal: (messageId: string) => void;
 }) {
   const part = step.part;
+  const given = Predicate.hasProperty(part?.input, "command") ? part.input.command : undefined;
   const command =
-    part === undefined
-      ? undefined
-      : typeof (part.input as { command?: unknown } | undefined)?.command === "string"
-        ? (part.input as { command: string }).command
-        : textOf(part.input);
+    part === undefined ? undefined : typeof given === "string" ? given : textOf(part.input);
   const output =
     part === undefined
       ? undefined

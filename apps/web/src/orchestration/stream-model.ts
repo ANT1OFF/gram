@@ -6,6 +6,7 @@ import {
   type OrchestrationDigest,
   type StreamLine,
 } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 import { formatStamp } from "@/lib/time";
 import { digestTitle } from "@/thread/orchestration-model";
@@ -94,8 +95,8 @@ export const spawnedFeatures = (message: GramUIMessage): readonly string[] => {
   const features: string[] = [];
   for (const part of message.parts) {
     if (!isToolPart(part) || !toolNameOf(part).endsWith("spawn_worker")) continue;
-    const input = part.input as { readonly feature?: unknown } | undefined;
-    if (typeof input?.feature === "string" && input.feature !== "") features.push(input.feature);
+    const feature = Predicate.hasProperty(part.input, "feature") ? part.input.feature : undefined;
+    if (typeof feature === "string" && feature !== "") features.push(feature);
   }
   return features;
 };

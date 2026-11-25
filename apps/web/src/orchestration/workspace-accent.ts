@@ -1,4 +1,4 @@
-import type { WorkspaceId } from "@gram/contracts";
+import { fieldsOf, type WorkspaceId } from "@gram/contracts";
 import type { CSSProperties } from "react";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -19,20 +19,30 @@ const HUE: ReadonlyMap<string, number> = new Map(
   WORKSPACE_ACCENTS.map((accent) => [accent.id, accent.hue]),
 );
 
+declare module "react" {
+  interface CSSProperties {
+    "--accent-hue"?: number | undefined;
+  }
+}
+
+/** The colour on offer named `value`, if it is one. */
+export const accentOf = (value: unknown): WorkspaceAccentId | undefined =>
+  WORKSPACE_ACCENTS.find((accent) => accent.id === value)?.id;
+
 /** Only the workspaces whose stored colour is one still on offer. */
 export const knownAccents = (raw: unknown): Record<string, WorkspaceAccentId> => {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
   return Object.fromEntries(
-    Object.entries(raw as Record<string, unknown>).filter(
-      (entry): entry is [string, WorkspaceAccentId] =>
-        typeof entry[1] === "string" && HUE.has(entry[1]),
-    ),
+    Object.entries(raw).flatMap(([workspace, stored]) => {
+      const accent = accentOf(stored);
+      return accent === undefined ? [] : [[workspace, accent] as const];
+    }),
   );
 };
 
 /** What an element in a workspace's colour carries: its hue, for `.gram-accent-*` to paint. */
 export const accentStyle = (accent: WorkspaceAccentId | undefined): CSSProperties | undefined =>
-  accent === undefined ? undefined : ({ "--accent-hue": HUE.get(accent) } as CSSProperties);
+  accent === undefined ? undefined : { "--accent-hue": HUE.get(accent) };
 
 interface WorkspaceAccentState {
   byWorkspace: Readonly<Record<string, WorkspaceAccentId>>;
@@ -57,9 +67,7 @@ export const useWorkspaceAccents = create<WorkspaceAccentState>()(
       partialize: ({ byWorkspace }) => ({ byWorkspace }),
       merge: (persisted, current) => ({
         ...current,
-        byWorkspace: knownAccents(
-          (persisted as { byWorkspace?: unknown } | undefined)?.byWorkspace,
-        ),
+        byWorkspace: knownAccents(fieldsOf(persisted).get("byWorkspace")),
       }),
     },
   ),

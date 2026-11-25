@@ -6,14 +6,18 @@ export const ON_DEMAND_STOP_PATH = "/machines/on-demand/stop";
 export const ON_DEMAND_STATUS_PATH = "/machines/on-demand/status";
 export const ON_DEMAND_PREFERENCES_PATH = "/machines/on-demand/preferences";
 
-export type OnDemandPhase =
-  | "starting"
-  | "booting"
-  | "joining"
-  | "ready"
-  | "stopping"
-  | "stopped"
-  | "failed";
+const ON_DEMAND_PHASES = [
+  "starting",
+  "booting",
+  "joining",
+  "ready",
+  "stopping",
+  "stopped",
+  "failed",
+] as const;
+export type OnDemandPhase = (typeof ON_DEMAND_PHASES)[number];
+const isPhase = (value: unknown): value is OnDemandPhase =>
+  ON_DEMAND_PHASES.some((phase) => phase === value);
 
 /** One option of a choice the deployment offers before a machine starts, such as a size. */
 export interface OnDemandOption {
@@ -85,11 +89,11 @@ export const parseStatus = (value: unknown): OnDemandStatus | undefined => {
       : {}),
     ...(progress !== undefined &&
     typeof progress["hostKey"] === "string" &&
-    typeof progress["phase"] === "string"
+    isPhase(progress["phase"])
       ? {
           progress: {
             hostKey: progress["hostKey"],
-            phase: progress["phase"] as OnDemandPhase,
+            phase: progress["phase"],
             ...(typeof progress["step"] === "string" ? { step: progress["step"] } : {}),
             ...(typeof progress["message"] === "string" ? { message: progress["message"] } : {}),
             at: typeof progress["at"] === "number" ? progress["at"] : 0,

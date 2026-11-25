@@ -29,7 +29,7 @@ export function useHostAttention(): HostAttention | undefined {
     count,
     words: attentionWords(count, attention.label),
     open: () => {
-      if (attention.to !== undefined) void navigate({ to: attention.to as "/" });
+      if (attention.to !== undefined) void navigate({ to: attention.to });
       else if (attention.onOpen !== undefined) attention.onOpen();
       else showInbox();
     },

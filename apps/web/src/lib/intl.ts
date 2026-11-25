@@ -14,7 +14,7 @@ export function dateTimeFormat(
   const key = keyOf(locales, options);
   let format = dateFormats.get(key);
   if (format === undefined) {
-    format = new Intl.DateTimeFormat(locales as string | string[] | undefined, options);
+    format = new Intl.DateTimeFormat(locales, options);
     dateFormats.set(key, format);
   }
   return format;
@@ -28,7 +28,7 @@ export function numberFormat(
   const key = keyOf(locales, options);
   let format = numberFormats.get(key);
   if (format === undefined) {
-    format = new Intl.NumberFormat(locales as string | string[] | undefined, options);
+    format = new Intl.NumberFormat(locales, options);
     numberFormats.set(key, format);
   }
   return format;

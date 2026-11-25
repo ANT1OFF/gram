@@ -284,7 +284,7 @@ function NowCell({
 /** A worker's latest report from its workspace's ledger, if it has made one. */
 export function useLatestReport(
   workspaceId: WorkspaceId,
-  threadId: ThreadId,
+  threadId: ThreadId | undefined,
 ): { readonly summary: string; readonly at: number } | undefined {
   const { data: ledger } = useOrchestratorLedger(workspaceId);
   return useMemo(() => {

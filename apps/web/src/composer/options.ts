@@ -1,4 +1,5 @@
-import type { PermissionMode, ReasoningVariant } from "@gram/contracts";
+import { ReasoningVariant, type PermissionMode } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import {
   FilePen,
   ListChecks,
@@ -104,6 +105,12 @@ export const EFFORT_OPTIONS: readonly PickerOption<ReasoningVariant>[] = [
 
 /** The effort pickers' "no explicit effort" value, which leaves the level to the model. */
 export const DEFAULT_EFFORT = "default";
+
+const isReasoningVariant = Schema.is(ReasoningVariant);
+
+/** The effort an effort picker's row stands for: none for `DEFAULT_EFFORT`, the model's own. */
+export const pickedVariant = (value: string): ReasoningVariant | undefined =>
+  isReasoningVariant(value) ? value : undefined;
 
 /** The effort pickers' first row: no explicit effort, so the model's own default applies. */
 export const DEFAULT_EFFORT_OPTION = {

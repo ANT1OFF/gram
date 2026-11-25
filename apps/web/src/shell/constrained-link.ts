@@ -39,7 +39,9 @@ export function linkIsConstrained(
 /** `linkIsConstrained` for the window this runs in. */
 export function thisLinkIsConstrained(): boolean {
   if (typeof performance === "undefined" || typeof navigator === "undefined") return false;
-  const downloads = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+  const downloads = performance
+    .getEntriesByType("resource")
+    .filter((entry) => entry instanceof PerformanceResourceTiming);
   return linkIsConstrained(
     downloads,
     (navigator as Navigator & { connection?: ConnectionHint }).connection,

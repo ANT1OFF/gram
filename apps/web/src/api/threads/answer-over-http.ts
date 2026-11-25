@@ -1,4 +1,10 @@
-import type { RequestAnswer, RespondManyResult } from "@gram/contracts";
+import {
+  fieldsOf,
+  type RequestAnswer,
+  type RequestId,
+  type RespondManyResult,
+  type ThreadId,
+} from "@gram/contracts";
 
 import { serverUrl } from "../server-base";
 import { withOriginKey } from "../origin-key";
@@ -17,8 +23,8 @@ export const isAnswerOverHttp = (error: unknown): boolean =>
 
 /** One answer, posted. A refusal throws the server's `{_tag, message}`, as the socket's would. */
 export const postAnswer = async (
-  threadId: string,
-  requestId: string,
+  threadId: ThreadId,
+  requestId: RequestId,
   answer: RequestAnswer,
   shown?: string,
 ): Promise<void> => {
@@ -39,10 +45,10 @@ export const postAnswer = async (
   );
   if (response.ok) return;
   const value: unknown = await response.json().catch(() => undefined);
-  const error =
-    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const error = typeof value === "object" && value !== null ? value : {};
+  const message = fieldsOf(error).get("message");
   throw Object.assign(
-    new Error(typeof error["message"] === "string" ? error["message"] : "The answer wasn't taken."),
+    new Error(typeof message === "string" ? message : "The answer wasn't taken."),
     error,
   );
 };
@@ -50,8 +56,8 @@ export const postAnswer = async (
 /** Each answer posted in turn, as the socket's `thread.respondMany` would take them. */
 export const postAnswers = async (
   answers: ReadonlyArray<{
-    threadId: string;
-    requestId: string;
+    threadId: ThreadId;
+    requestId: RequestId;
     answer: RequestAnswer;
     shown?: string | undefined;
   }>,
@@ -60,14 +66,14 @@ export const postAnswers = async (
   for (const { threadId, requestId, answer, shown } of answers) {
     try {
       await postAnswer(threadId, requestId, answer, shown);
-      results.push({ threadId, requestId, ok: true } as RespondManyResult);
+      results.push({ threadId, requestId, ok: true });
     } catch (error) {
       results.push({
         threadId,
         requestId,
         ok: false,
         error: error instanceof Error ? error.message : String(error),
-      } as RespondManyResult);
+      });
     }
   }
   return results;

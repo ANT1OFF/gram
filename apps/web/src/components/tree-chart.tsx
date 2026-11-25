@@ -300,7 +300,8 @@ export function TreeChart({
         className="relative cursor-grab overflow-auto rounded-lg border border-edge-group bg-card active:cursor-grabbing"
         style={{ height }}
         onPointerDown={(event) => {
-          if ((event.target as Element).closest("button, a, input")) return;
+          const target = event.target;
+          if (target instanceof Element && target.closest("button, a, input")) return;
           const box = frame.current;
           if (box === null) return;
           drag.current = {

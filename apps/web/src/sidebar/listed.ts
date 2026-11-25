@@ -17,10 +17,12 @@ const listedGit = (summary: ThreadSummary): string => {
 
 const listsAs = (shown: ThreadSummary, next: ThreadSummary): boolean => {
   if (shown === next) return true;
-  const keys = Object.keys(next) as Array<keyof ThreadSummary>;
-  if (keys.length !== Object.keys(shown).length) return false;
+  const before: Readonly<Record<string, unknown>> = shown;
+  const after: Readonly<Record<string, unknown>> = next;
+  const keys = Object.keys(after);
+  if (keys.length !== Object.keys(before).length) return false;
   for (const key of keys) {
-    if (key !== "git" && shown[key] !== next[key]) return false;
+    if (key !== "git" && before[key] !== after[key]) return false;
   }
   return listedGit(shown) === listedGit(next);
 };

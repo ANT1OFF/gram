@@ -1,6 +1,6 @@
 import {
   PAGE_TITLE_MAX,
-  type PageId,
+  PageId,
   type PageMeta,
   type ThreadId,
   type WorkspaceId,
@@ -8,6 +8,14 @@ import {
 
 import type { MockWorld } from "../mock-world";
 import type { PagesApi } from "./types";
+
+const pageSlug = (title: string) =>
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48)
+    .replace(/-+$/, "") || "page";
 
 const fileTitle = (path: string) =>
   (path.split("#")[0]!.split("/").at(-1) ?? "page")
@@ -50,7 +58,7 @@ export function createPagesMock(world: MockWorld) {
       const title = fileTitle(path);
       const at = Date.now();
       const page: PageMeta = {
-        id: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "page"}-${(++pinned).toString(16).padStart(6, "0")}` as PageId,
+        id: PageId.make(`${pageSlug(title)}-${(++pinned).toString(16).padStart(6, "0")}`),
         workspaceId,
         title,
         version: 1,

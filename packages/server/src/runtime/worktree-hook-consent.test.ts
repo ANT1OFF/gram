@@ -18,7 +18,6 @@ const answerFor = (decision: "allow" | "deny", answeredBy = thread.startedBy) =>
   scope: "once" as const,
   decision,
   answeredBy,
-  uiVerified: true as const,
   resolution: {
     threadId: thread.id,
     requestId: RequestId.make("fixture-request"),
@@ -55,7 +54,7 @@ describe("worktree hook consent", () => {
         const inputs = yield* fixture;
         const revisedScript = "#!/bin/sh\nexit 1\n";
         let asked = 0;
-        const ask: ThreadRuntimesShape["requestApproval"] = (_id, card) =>
+        const ask: ThreadRuntimesShape["requestApproval"] = (_id, _reach, card) =>
           Effect.sync(() => {
             expect(card.scopes).toEqual(["once"]);
             expect(card.input).toMatchObject({
@@ -169,27 +168,35 @@ describe("worktree hook consent", () => {
           store.listRequests(personThread.id).pipe(Effect.map((requests) => requests[0])),
         );
         if (card.shown === undefined) throw new Error("Expected a keyed worktree hook approval");
+        const ui = makeRespondHandlers(store, rt);
+        const paired = { headers: { [LOCAL_APP_HEADER]: "forged-local-marker" } };
+        const local = { headers: localAppHeadersForTests() };
         const answer = {
           kind: "approval" as const,
           decision: "allow" as const,
           scope: "once" as const,
         };
-        const blocked = yield* rt
-          .respond(personThread.id, card.id, answer, card.shown)
-          .pipe(Effect.flip);
-        expect(blocked._tag).toBe("InvalidState");
-        const ui = makeRespondHandlers(store, rt);
         const response = {
           threadId: personThread.id,
           requestId: card.id,
           answer,
           shown: card.shown,
         };
-        const paired = yield* ui["thread.respond"](response, {
-          headers: { [LOCAL_APP_HEADER]: "forged-local-marker" },
-        }).pipe(Effect.flip);
-        expect(paired._tag).toBe("InvalidState");
-        const local = { headers: localAppHeadersForTests() };
+        for (const decision of ["allow", "deny"] as const) {
+          const attempted = { ...answer, decision };
+          const agentAnswer = yield* rt
+            .respond(personThread.id, card.id, attempted, card.shown)
+            .pipe(Effect.flip);
+          expect(agentAnswer._tag).toBe("InvalidState");
+          const pairedAnswer = yield* ui["thread.respond"](
+            { ...response, answer: attempted },
+            paired,
+          ).pipe(Effect.flip);
+          expect(pairedAnswer._tag).toBe("InvalidState");
+        }
+        expect(yield* ui["thread.respondMany"]({ answers: [response] }, paired)).toMatchObject([
+          { ok: false },
+        ]);
         const stale = yield* ui["thread.respond"](
           { ...response, shown: "different-card" },
           local,

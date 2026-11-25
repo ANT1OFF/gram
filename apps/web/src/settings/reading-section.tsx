@@ -6,7 +6,7 @@ import {
   type TranscriptWidth,
 } from "@gram/contracts";
 import { Minus, Plus } from "lucide-react";
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 
 import { errorMessage } from "@/api/errors";
 import { Message, MessageContent } from "@/components/ai-elements/message";
@@ -140,7 +140,7 @@ function SizeStepper({ value, onChange }: { value: number; onChange: (next: numb
 }
 
 function ReadingPreview({ size, width }: { size: number; width: TranscriptWidth }) {
-  const vars = readingVars({ textSize: size, width }) as CSSProperties;
+  const vars = readingVars({ textSize: size, width });
   return (
     <div
       data-testid="reading-preview"

@@ -1,6 +1,8 @@
 import { presentableUrl, redactText, type ServerEvent, type ThreadId } from "@gram/contracts";
 import { create } from "zustand";
 
+import { oneOf } from "@/lib/one-of";
+
 type Notification = Extract<ServerEvent, { type: "notify" }>;
 interface NotificationEntry {
   readonly id: string;
@@ -21,7 +23,7 @@ export const HISTORY_LIMIT = 100;
 export const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const DIAGNOSTIC_COOLDOWN_MS = 10 * 60 * 1000;
 const MAX_STORED_BYTES = 512_000;
-const KINDS = new Set(["info", "done", "needsInput", "error"]);
+const KINDS: readonly Notification["kind"][] = ["info", "done", "needsInput", "error"];
 const digest = (value: unknown): value is string =>
   typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const timestamp = (value: unknown, now: number): value is number =>
@@ -58,22 +60,22 @@ export function restoreNotifications(raw: string | null, now: number): Retained 
     const value: unknown = JSON.parse(raw);
     if (typeof value !== "object" || value === null || !("version" in value) || value.version !== 1)
       return empty;
-    const state = value as { entries?: unknown; quiet?: unknown };
+    const stored = "entries" in value ? value.entries : undefined;
+    const storedQuiet = "quiet" in value ? value.quiet : undefined;
+    const candidates: readonly unknown[] = Array.isArray(stored) ? stored : [];
     const entries: NotificationEntry[] = [];
     const ids = new Set<string>();
-    for (const candidate of Array.isArray(state.entries)
-      ? state.entries.slice(0, HISTORY_LIMIT * 2)
-      : []) {
+    for (const candidate of candidates.slice(0, HISTORY_LIMIT * 2)) {
       if (typeof candidate !== "object" || candidate === null) continue;
-      const c = candidate as Record<string, unknown>;
+      const c: Readonly<Record<string, unknown>> = Object.fromEntries(Object.entries(candidate));
       const title = text(c.title, 320);
+      const kind = oneOf(KINDS, c.kind);
       if (
         !title ||
         typeof c.id !== "string" ||
         c.id.length > 128 ||
         ids.has(c.id) ||
-        typeof c.kind !== "string" ||
-        !KINDS.has(c.kind) ||
+        kind === undefined ||
         !timestamp(c.lastSeen, now) ||
         typeof c.firstSeen !== "number" ||
         !Number.isFinite(c.firstSeen) ||
@@ -91,11 +93,11 @@ export function restoreNotifications(raw: string | null, now: number): Retained 
       const source = text(c.source, 120);
       entries.push({
         id: c.id,
-        kind: c.kind as Notification["kind"],
+        kind,
         title,
         ...(body ? { body } : {}),
         ...(source ? { source } : {}),
-        ...(c.kind === "info" && digest(c.diagnosticKey) ? { diagnosticKey: c.diagnosticKey } : {}),
+        ...(kind === "info" && digest(c.diagnosticKey) ? { diagnosticKey: c.diagnosticKey } : {}),
         threadIds: Array.isArray(c.threadIds)
           ? [...new Set(c.threadIds.filter(threadId))].slice(-8)
           : [],
@@ -106,8 +108,8 @@ export function restoreNotifications(raw: string | null, now: number): Retained 
       });
     }
     const quiet: Record<string, number> = {};
-    if (typeof state.quiet === "object" && state.quiet !== null)
-      for (const [key, at] of Object.entries(state.quiet).slice(0, HISTORY_LIMIT * 2))
+    if (typeof storedQuiet === "object" && storedQuiet !== null)
+      for (const [key, at] of Object.entries(storedQuiet).slice(0, HISTORY_LIMIT * 2))
         if (digest(key) && timestamp(at, now)) quiet[key] = at;
     return {
       entries: entries.toSorted((a, b) => b.lastSeen - a.lastSeen).slice(0, HISTORY_LIMIT),

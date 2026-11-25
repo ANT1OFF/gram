@@ -48,7 +48,8 @@ const watch = (element: Spinner) => {
   }
   observer ??= new IntersectionObserver((entries) => {
     for (const entry of entries) {
-      const target = entry.target as Spinner;
+      const target = entry.target;
+      if (!(target instanceof HTMLElement || target instanceof SVGElement)) continue;
       if (entry.isIntersecting && attached.has(target)) onScreen.add(target);
       else onScreen.delete(target);
     }

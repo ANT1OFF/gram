@@ -95,7 +95,7 @@ export function MessageOriginLabel({ origin }: { origin: MessageOrigin }) {
     const to = place.path.replace("$threadId", encodeURIComponent(origin.threadId));
     return (
       <Link
-        {...({ to } as unknown as { to: "/" })}
+        to={to}
         data-testid="message-origin"
         data-place={place.name}
         className={`group/origin ${row} rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&:hover>span.truncate]:underline`}
@@ -156,9 +156,7 @@ export function AskedByLink({ askedBy }: { askedBy: AskedBy }) {
         </Link>
       ) : (
         <Link
-          {...({
-            to: place.path.replace("$threadId", encodeURIComponent(askedBy.threadId)),
-          } as unknown as { to: "/" })}
+          to={place.path.replace("$threadId", encodeURIComponent(askedBy.threadId))}
           data-testid="message-asked-by"
           data-place={place.name}
           className={link}

@@ -1,5 +1,4 @@
 import type { ApprovalRequest, ThreadId } from "@gram/contracts";
-import { useParams } from "@tanstack/react-router";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -13,6 +12,7 @@ import { briefTitle, type NeedsYouItem } from "@/orchestration/needs-you-items";
 import { kindOf } from "@/orchestration/needs-you-row";
 import { useNeedsYouJump, useNeedsYouList } from "@/orchestration/use-needs-you";
 import { OutboundLink } from "@/panels/outbound-link";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useThreadFeed } from "@/stores/feeds";
 import { REVIEW_STRIP_WIDTH, reviewStripWidth, useLayoutStore } from "@/stores/layout";
 import type { ThreadFeedState } from "@/stores/thread-feed";
@@ -51,7 +51,7 @@ export const latestSaid = (
  */
 export function ReviewStrip({ side }: { side: "left" | "right" }) {
   const windowWidth = useLayoutStore((s) => s.windowWidth);
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   const width = reviewStripWidth(windowWidth);
   return (
     <div

@@ -178,9 +178,10 @@ export async function createTerminal(
       { capture: true },
     );
 
-    const selection = (
-      made as unknown as { selectionManager?: { copyToClipboard?: (text: string) => unknown } }
-    ).selectionManager;
+    const selection =
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- ghostty-web keeps its selection manager private; this only turns off its own clipboard copy when it has one
+      (made as unknown as { selectionManager?: { copyToClipboard?: (text: string) => unknown } })
+        .selectionManager;
     if (selection !== undefined) selection.copyToClipboard = () => {};
 
     const loop = quietRenderLoop(made, visible);
