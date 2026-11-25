@@ -16,7 +16,7 @@ import type {
   ShellNavigationPlacement,
   ShellPlacement,
 } from "./contract";
-import { useGroupFold } from "./folded";
+import { foldName, useGroupFold } from "./folded";
 import {
   itemName,
   currentDestination,
@@ -318,7 +318,7 @@ function EmbedGroup({
                 type="button"
                 {...{ [OVERVIEW_STOP]: "" }}
                 data-testid="embed-navigation-toggle"
-                aria-label={hidden === undefined ? group.label : `${group.label}, ${hidden}`}
+                aria-label={foldName(group.label, fold.open, hidden)}
                 aria-expanded={fold.open}
                 aria-controls={rows}
                 onClick={fold.toggle}
@@ -554,6 +554,17 @@ export function useEmbedPageTitle(): string | undefined {
   return path === undefined
     ? undefined
     : (titles[path] ?? (path === "/threads" ? threads : undefined));
+}
+
+/**
+ * The page's name for the browser tab an embedding app titles: the title bar's (`useEmbedPageTitle`),
+ * else the section of Gram's own the window is in, such as Settings.
+ */
+export function useEmbedDocumentName(): string | undefined {
+  const title = useEmbedPageTitle();
+  const path = useMatches({ select: (matches) => matches.at(-1)?.fullPath as string | undefined });
+  if (title !== undefined) return title;
+  return path === "/settings" || path?.startsWith("/settings/") === true ? "Settings" : undefined;
 }
 
 /**

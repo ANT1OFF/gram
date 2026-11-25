@@ -436,7 +436,7 @@ export const MAX_LINES = {
     "apps/desktop/scripts/fixtures/web-preview.mjs": 961,
     "apps/desktop/src/main/index.ts": 1229,
     "apps/desktop/src/main/update/native-updates.test.ts": 1310,
-    "apps/web/e2e-embed/embed.spec.ts": 1427,
+    "apps/web/e2e-embed/embed.spec.ts": 1405,
     "apps/web/e2e/orchestration.spec.ts": 1618,
     "apps/web/e2e/overview-sidebar.spec.ts": 1349,
     "apps/web/pr-shots/shots.ts": 6399,

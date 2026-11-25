@@ -515,9 +515,10 @@ function HistoryRow({
         {active && (
           <span
             data-testid="history-action"
+            title={`${action} (${keyLabel("⏎")})`}
             className="flex items-center gap-1 text-foreground phone:hidden"
           >
-            {action}
+            {action !== "Open" && <span data-testid="history-action-word">{action}</span>}
             <kbd className={cn(KEY_CAP, "phone:hidden")}>{keyLabel("⏎")}</kbd>
           </span>
         )}

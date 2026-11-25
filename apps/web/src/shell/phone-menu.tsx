@@ -13,7 +13,7 @@ import {
   usePathname,
 } from "@/embed/slots";
 import type { ShellNavigationGroup } from "@/embed/contract";
-import { useGroupFold } from "@/embed/folded";
+import { foldName, useGroupFold } from "@/embed/folded";
 import {
   headingTo,
   hiddenCount,
@@ -125,7 +125,7 @@ function PhoneGroup({
               type="button"
               {...{ [OVERVIEW_STOP]: "" }}
               data-testid="embed-navigation-toggle"
-              aria-label={hidden === undefined ? group.label : `${group.label}, ${hidden}`}
+              aria-label={foldName(group.label, fold.open, hidden)}
               aria-expanded={fold.open}
               aria-controls={rows}
               onClick={fold.toggle}

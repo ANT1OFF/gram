@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 import type { ShellDocument } from "@/embed/contract";
-import { useEmbedPageTitle } from "@/embed/slots";
+import { useEmbedDocumentName } from "@/embed/slots";
 import { useEmbedShell } from "@/embed/store";
 import { needsYouCount, useDerivedAsks } from "@/orchestration/needs-you-store";
 
@@ -33,7 +33,7 @@ export const titleFor = (
  */
 export function useNeedsYouTitle() {
   const shellDocument = useEmbedShell((s) => s.document);
-  const page = useEmbedPageTitle();
+  const page = useEmbedDocumentName();
   useEffect(() => {
     const sync = () => {
       document.title = titleFor(needsYouCount(), shellDocument, page);

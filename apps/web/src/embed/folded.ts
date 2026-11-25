@@ -44,3 +44,13 @@ export function useGroupFold(group: ShellNavigationGroup) {
   const open = groupOpen(group, kept);
   return { foldable: foldable(group), open, toggle: () => set(group.id, !open) };
 }
+
+/** A heading's fold button's name, apart from the heading's own link: "Expand Team, 3". */
+export const foldName = (
+  label: string | undefined,
+  open: boolean,
+  hidden: number | undefined,
+): string | undefined =>
+  label === undefined
+    ? undefined
+    : `${open ? "Collapse" : "Expand"} ${label}${hidden === undefined ? "" : `, ${hidden}`}`;

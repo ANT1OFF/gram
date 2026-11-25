@@ -234,3 +234,66 @@ test("the switcher can be kept to the title bar, out of the navigation", async (
   await expect(page.getByTestId("shell-titlebar").getByTestId("embed-switcher")).toHaveCount(1);
   expect(errors).toEqual([]);
 });
+
+test("a window narrowed to a phone's width folds the open sidebar into its menu", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const errors = await mounted(page, "/govern/policies");
+  await page.evaluate(() => {
+    const look = (window as unknown as { fixtureSidebar: unknown }).fixtureSidebar;
+    (window as unknown as { embed: { update(next: object): void } }).embed.update({
+      sidebar: look,
+    });
+  });
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("overview-sidebar")).toHaveCount(0);
+  const page390 = await box(page, "embed-page");
+  expect(page390.x).toBe(0);
+  expect(page390.width).toBe(390);
+  const menu = page.getByTestId("phone-menu");
+  await expect(menu).toHaveAttribute("aria-expanded", "false");
+  await menu.click();
+  await expect(page.getByTestId("phone-drawer")).toBeVisible();
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("phone-drawer")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(page.getByTestId("overview-sidebar")).toBeVisible();
+  await expect(page.getByTestId("phone-menu")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("places that arrive after the sidebar fade out above its foot", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const errors = await mounted(page);
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      embed: { update(next: object): void };
+      fixtureSidebar: object;
+    };
+    w.embed.update({ sidebar: w.fixtureSidebar, navigation: [] });
+  });
+  await expect(page.getByTestId("embed-navigation-main")).toHaveCount(0);
+  await page.evaluate(() => {
+    const items = Array.from({ length: 30 }, (_, i) => ({
+      id: `p${i}`,
+      label: `Place ${i}`,
+      to: `/govern/people?i=${i}`,
+    }));
+    (window as unknown as { embed: { update(next: object): void } }).embed.update({
+      navigation: [{ id: "many", label: "Many", placement: "main", items }],
+    });
+  });
+  const list = page.getByTestId("embed-navigation-main").locator("..");
+  await expect
+    .poll(() => list.evaluate((el) => (el as HTMLElement).style.getPropertyValue("--fade-bottom")))
+    .toBe("20px");
+  const listBottom = (await list.boundingBox())!;
+  const foot = await box(page, "overview-roomy-foot");
+  expect(listBottom.y + listBottom.height).toBeLessThanOrEqual(foot.y + 0.5);
+  expect(errors).toEqual([]);
+});
