@@ -32,7 +32,6 @@ import {
 } from "../orchestration/test-harness.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
-import { waitFor } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { addRoutine, editRoutine, ranAfter, routineNow, stageState, stateOf } from "./test-kit.ts";
 
@@ -133,7 +132,7 @@ const workersAt = (id: string, n: number) =>
 const briefOf = (threadId: ThreadId) =>
   Effect.gen(function* () {
     const fake = yield* FakeAgentControl;
-    return yield* waitFor(
+    return yield* waitReal(
       "the routine worker's brief",
       Effect.sync(() => fake.sessions.find((s) => s.options.threadId === threadId)?.sent[0]?.text),
     );
