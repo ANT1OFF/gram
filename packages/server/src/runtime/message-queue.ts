@@ -60,7 +60,7 @@ import type { TurnLifecycle } from "./turn-lifecycle.ts";
 import type { LimitResume } from "./limit-resume.ts";
 import { isUndelivered } from "./undelivered.ts";
 import { SWITCH_HANDOFF_KEY, type SystemDelivery } from "./system-delivery.ts";
-import { isWorktreeWake } from "./worktree-activations.ts";
+import { hasWorkerWorktree, isWorktreeWake } from "./worktree-activations.ts";
 
 /** What the queue and deliveries read and change beside a thread's `Runtime`. */
 export interface MessageQueueDeps {
@@ -602,7 +602,9 @@ export const makeMessageQueue = ({
             return yield* new InvalidState({ message: RUNS_ON_SERVER, threadId });
           const awaiting = yield* awaitsMachine(rt);
           if (!awaiting) yield* refuseMissingFolder(rt);
-          if (noticeKey !== undefined && (yield* store.getThread(threadId)).parked) {
+          const noticeThread =
+            noticeKey === undefined ? undefined : yield* store.getThread(threadId);
+          if (noticeThread?.parked) {
             return yield* new InvalidState({ message: "the thread is archived", threadId });
           }
           const enqueue = () =>
@@ -717,7 +719,7 @@ export const makeMessageQueue = ({
               }
               if (stopHeld(rt)) return yield* enqueue();
               if (rt.session !== undefined && rt.turn === undefined) {
-                if (isWorktreeWake(noticeKey)) {
+                if (noticeThread && isWorktreeWake(noticeKey) && hasWorkerWorktree(noticeThread)) {
                   const result = yield* enqueue();
                   yield* becomeIdle(rt);
                   return result;

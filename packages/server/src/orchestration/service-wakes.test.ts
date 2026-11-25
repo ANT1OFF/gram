@@ -696,7 +696,10 @@ describe.skipIf(!hasGit)("orchestration service", () => {
           // The wrap-up turn its silent stop earned ends first: a notice waits for a turn's end.
           yield* completeTurn(worker.session);
           // Gram's own messages into the thread are not the user stepping in.
+          const sent = worker.session.sent.length;
           yield* runtimes.sendNotice(worker.thread.id, "ci:o/r#7", { text: "CI passed on #7" });
+          yield* waitSent(worker.thread.id, sent + 1);
+          expect(worker.session.sent[sent]?.text).toBe("CI passed on #7");
           yield* completeTurn(worker.session);
           expect(yield* held).toBe(false);
           // That turn ended without a report too, so a wrap-up follows; it is no hold either.

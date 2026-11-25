@@ -9,6 +9,7 @@ import {
   type ServerEvent,
   type Thread,
   type ThreadId,
+  type TurnId,
   type WorkerPendingRequest,
   type WorkerReport,
   type WorkspaceState,
@@ -92,7 +93,7 @@ export const makeLedgerWatch = (
     eventSink,
   } = kit;
 
-  const survey = (state: WorkspaceState, persistCost: boolean) =>
+  const survey = (state: WorkspaceState, persistCost: boolean, endedTurn?: TurnId) =>
     Effect.gen(function* () {
       yield* deps.reconcileQuestions(state.workspace.id);
       const now = yield* Clock.currentTimeMillis;
@@ -144,15 +145,22 @@ export const makeLedgerWatch = (
                   base,
                   projects.get(thread.projectId),
                 );
+          const status = yield* runtimes
+            .status(thread.id)
+            .pipe(Effect.orElseSucceed((): WorkerFacts["status"] => "cold"));
+          const lastTurn = yield* store.lastTurn(thread.id);
+          const reopeningAfterTurn =
+            status === "starting" &&
+            endedTurn !== undefined &&
+            endedTurn === lastTurn?.id &&
+            (yield* runtimes.summaryOf(thread.id))?.queue.length === 0;
           return {
             thread,
             wakes: wakesOf(outbox, thread.id),
             project: projects.get(thread.projectId),
-            status: yield* runtimes
-              .status(thread.id)
-              .pipe(Effect.orElseSucceed((): WorkerFacts["status"] => "cold")),
+            status: reopeningAfterTurn ? "idle" : status,
             usage: yield* store.lastTurnUsage(thread.id),
-            lastTurn: yield* store.lastTurn(thread.id),
+            lastTurn,
             pendingRequests,
             completedReason: yield* store.getCompletedReason(thread.id),
             git: yield* publisher.stateFor(effectiveCheckout(thread).path),

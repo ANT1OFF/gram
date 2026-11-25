@@ -301,7 +301,7 @@ export const makeObservers = (kit: OrchestrationKit, deps: ObserversDeps) => {
         pending.push("question");
       if ((live?.pendingRequests.length ?? 0) > 0) pending.push("request");
       if (due(pending, true) === undefined) return false;
-      const row = (yield* survey(state, false)).features
+      const row = (yield* survey(state, false, end.turnId)).features
         .flatMap((feature) => feature.workers)
         .find((worker) => worker.threadId === thread.id);
       const why = due(pending, row?.quiet?.kind === "turnEnded");
