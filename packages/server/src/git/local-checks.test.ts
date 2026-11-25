@@ -193,6 +193,83 @@ describe.skipIf(!hasGit)("Gram's own local checks", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.live.skipIf(process.platform !== "linux")(
+    "refuses repository setup omitted from the selected check source",
+    () =>
+      Effect.gen(function* () {
+        const dir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+        const repo = makeRepo(dir);
+        for (const [path, body] of [
+          [".gram/setup", "#!/bin/sh\nexit 91\n"],
+          [".agents/setup", "#!/bin/sh\nexit 0\n"],
+        ] as const) {
+          const file = nodePath.join(repo, path);
+          write(file, body);
+          chmodSync(file, 0o755);
+        }
+        run(repo, "add", ".gram/setup", ".agents/setup");
+        run(repo, "commit", "-qm", "fixture hooks");
+        run(repo, "checkout", "-qb", "feature");
+        write(nodePath.join(repo, "feature.txt"), "feature\n");
+        run(repo, "add", "feature.txt");
+        run(repo, "commit", "-qm", "feature");
+        const head = run(repo, "rev-parse", "HEAD").trim();
+        run(repo, "checkout", "-q", "main");
+        write(nodePath.join(repo, "base.txt"), "base\n");
+        run(repo, "add", "base.txt");
+        run(repo, "commit", "-qm", "base");
+        const base = run(repo, "rev-parse", "HEAD").trim();
+        const tree = fixtureTree(dir, repo, base, head);
+        const entries = run(repo, "ls-tree", "-r", "-z", "--full-tree", tree)
+          .split("\0")
+          .filter(Boolean)
+          .map((line) => {
+            const [metadata, path] = line.split("\t");
+            const [mode, , oid] = metadata!.split(" ");
+            return { path, mode, oid, selected: path !== ".gram/setup" };
+          });
+        const manifest = nodePath.join(dir, "selected.json");
+        const raw = JSON.stringify({
+          schema: "gram.selected-source/v1",
+          head,
+          base,
+          tree,
+          entries,
+        });
+        write(manifest, raw);
+        let ran = 0;
+        const result = yield* Effect.gen(function* () {
+          yield* configured(repo, {
+            command: "fixture-check",
+            preparation: { manifest, sha256: createHash("sha256").update(raw).digest("hex") },
+            setup: { source: "repository" },
+          });
+          return yield* checked(repo, head, base);
+        }).pipe(
+          Effect.provide(
+            layer(
+              nodePath.join(dir, "selected.db"),
+              dir,
+              () =>
+                Effect.sync(() => {
+                  ran++;
+                  return { ok: true };
+                }),
+              false,
+            ),
+          ),
+        );
+        expect(result).toMatchObject({
+          status: "failed",
+          failure: { kind: "unstartable" },
+          reason: expect.stringContaining("outside the selected check source"),
+        });
+        expect(result?.setupFingerprint).toBeUndefined();
+        expect(ran).toBe(0);
+      }),
+  );
+
   // Selected-source preparation runs only on Linux; the test after these checks it refuses elsewhere.
   it.live.skipIf(process.platform !== "linux")(
     "prepares only an approved merged-tree selection and refuses substitutions",

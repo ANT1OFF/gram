@@ -70,11 +70,12 @@ import { ServerConfig } from "../config.ts";
 import type { CheckSite, MachineCheckSite } from "./check-site.ts";
 import { isProvisioned } from "../host/paired-machines.ts";
 import { RemoteHosts } from "../host/remote-hosts.ts";
-import { resolveWorktreeHook, WORKTREE_HOOK_VERSION } from "../host/worktree-hook-source.ts";
+import { WORKTREE_HOOK_VERSION } from "../host/worktree-hook-source.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { machineCheckFailure, runMachineCheck } from "./machine-check-run.ts";
 import {
   approveRepositoryCheck,
+  inspectRepositoryCheckSetup,
   repositorySetupRefused,
   runRepositoryCheckSetup,
 } from "./repository-check-setup.ts";
@@ -1323,7 +1324,7 @@ export const LocalChecksLive = Layer.effect(
                   let commandRun = wanted;
                   let setupOutput: string | undefined;
                   if (wanted.repositorySetup === true) {
-                    const inspect = resolveWorktreeHook(dir, "setup", sha).pipe(
+                    const inspect = inspectRepositoryCheckSetup(dir, sha, selection).pipe(
                       Effect.provideService(Proc, proc),
                     );
                     const found = yield* inspect;

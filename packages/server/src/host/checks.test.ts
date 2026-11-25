@@ -43,7 +43,12 @@ const fixture = () => {
 };
 
 /** The machine's host serving `runner`'s checks on one end of a stream, and the connection. */
-const machine = (dir: string, runner: HostCheckRunner, serves = HOST_SERVES) =>
+const machine = (
+  dir: string,
+  runner: HostCheckRunner,
+  serves = HOST_SERVES,
+  hostedHooks?: Parameters<typeof checksOn>[5],
+) =>
   Effect.gen(function* () {
     const { host, control } = yield* streamPair;
     const proc = yield* Proc;
@@ -66,7 +71,14 @@ const machine = (dir: string, runner: HostCheckRunner, serves = HOST_SERVES) =>
           terminals: yield* terminalsOnHost,
           sessions: yield* sessionsOnHost(noAgents),
           scan: Effect.succeed({ listening: new Map(), children: new Map() }),
-          checks: yield* checksOn(proc, join(dir, "checks"), runner),
+          checks: yield* checksOn(
+            proc,
+            join(dir, "checks"),
+            runner,
+            undefined,
+            undefined,
+            hostedHooks,
+          ),
         });
       }).pipe(Effect.scoped, Effect.ensuring(Effect.sync(() => host.destroy()))),
     );
@@ -209,6 +221,58 @@ describe.skipIf(!hasGit)("a joined machine's checks", () => {
           repositorySetup: { fingerprint, revision },
         }),
       ).toMatchObject({ ok: true, setupFingerprint: fingerprint, mergedCommit: revision });
+      expect(ran).toBe(1);
+    }).pipe(Effect.scoped, Effect.provide(Live)),
+  );
+
+  it.live("enforces disabled hosted policy on preview and pinned repository setup requests", () =>
+    Effect.gen(function* () {
+      const { dir, worktree, base } = fixture();
+      yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
+      const setup = join(worktree, ".gram", "setup");
+      write(setup, "#!/bin/sh\nprintf hosted > setup-proof\n");
+      chmodSync(setup, 0o755);
+      run(worktree, "add", ".gram/setup");
+      run(worktree, "commit", "-qm", "hosted repository setup");
+      const head = run(worktree, "rev-parse", "HEAD").trim();
+      const request = {
+        id: "fixture-setup",
+        path: worktree,
+        head,
+        base,
+        command: "fixture-check",
+        timeoutMs: 60_000,
+      };
+      const personal = yield* machine(join(dir, "personal"), () =>
+        Effect.die("preview executed a command"),
+      );
+      const preview = yield* personal.connection.checks!.run({ ...request, repositorySetup: {} });
+      if (preview.setupApproval === undefined) throw new Error("Missing setup preview");
+      const { fingerprint, revision } = preview.setupApproval;
+      let ran = 0;
+      const hosted = yield* machine(
+        join(dir, "hosted"),
+        (src) =>
+          Effect.sync(() => {
+            expect(existsSync(join(src, "setup-proof"))).toBe(false);
+            ran++;
+            return { ok: true };
+          }),
+        HOST_SERVES,
+        { enabled: false },
+      );
+      for (const [id, repositorySetup] of [
+        ["preview", {}],
+        ["pinned", { fingerprint, revision }],
+      ] as const) {
+        const result = yield* hosted.connection.checks!.run({ ...request, id, repositorySetup });
+        expect(result).toMatchObject({ ok: false, tree: null, failure: { kind: "unstartable" } });
+        expect(result.setupApproval).toBeUndefined();
+      }
+      expect(ran).toBe(0);
+      expect(
+        yield* hosted.connection.checks!.run({ ...request, id: "legacy", setup: "true" }),
+      ).toMatchObject({ ok: true });
       expect(ran).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(Live)),
   );

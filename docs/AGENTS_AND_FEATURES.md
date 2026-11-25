@@ -1030,8 +1030,8 @@ When setup uses `{ "source": "repository" }`, Gram resolves the same
 [worktree setup hook](#worktree-setup-and-resume-hooks) from the exact merged tree. Gram
 asks for hook consent on that machine and runs the approved hook with the earlier of
 its 20-minute cap or the check deadline. The hook must pass before the check command
-starts. A missing, refused or failed hook leaves the check unqualified. A passing
-result records the hook fingerprint. Existing shell setup values keep their behavior.
+starts. For a selected-source check, the hook must be in the approved selection. A missing,
+refused or failed hook leaves the check unqualified. A passing result records the hook fingerprint. Existing shell setup values keep their behavior.
 An unset value leaves the check without setup. Worker setup results and hosted caches
 cannot stand in for a check's setup.
 

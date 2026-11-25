@@ -7,12 +7,35 @@ import {
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { runWorktreeHook } from "../host/worktree-hook-runner.ts";
-import type { WorktreeHookSource } from "../host/worktree-hook-source.ts";
+import { resolveWorktreeHook, type WorktreeHookSource } from "../host/worktree-hook-source.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { worktreeHookConsent } from "../runtime/worktree-hook-consent.ts";
 import type { ThreadRuntimesShape } from "../runtime/thread-runtimes-shape.ts";
 import { folderBringsNothing, projectFolderTrusted } from "../settings/folder-trust.ts";
 import type { LocalCheckOutcome } from "./check-process.ts";
+import type { SelectedSource } from "./selected-source.ts";
+
+export const inspectRepositoryCheckSetup = (
+  checkout: string,
+  revision: string,
+  selection?: readonly SelectedSource[],
+) => {
+  const selected =
+    selection === undefined
+      ? undefined
+      : new Map(selection.filter((entry) => entry.selected).map((entry) => [entry.path, entry]));
+  return resolveWorktreeHook(
+    checkout,
+    "setup",
+    revision,
+    selected === undefined
+      ? undefined
+      : ({ path, mode, oid }) => {
+          const entry = selected.get(path);
+          return entry?.mode === mode && entry.oid === oid;
+        },
+  );
+};
 
 export const repositorySetupRefused = (reason: string): LocalCheckOutcome => ({
   ok: false,
@@ -76,6 +99,7 @@ export const runRepositoryCheckSetup = (options: {
   readonly source: WorktreeHookSource;
   readonly fingerprint: string;
   readonly loginPath: string;
+  readonly publicVariables?: Readonly<Record<string, string>>;
   readonly stagingRoot: string;
   readonly log: string;
   readonly timeoutMs?: number;
@@ -88,6 +112,9 @@ export const runRepositoryCheckSetup = (options: {
       approvedFingerprint: options.fingerprint,
       stagingRoot: options.stagingRoot,
       loginPath: options.loginPath,
+      ...(options.publicVariables === undefined
+        ? {}
+        : { publicVariables: options.publicVariables }),
       budgetMs: timeout,
       interrupted: (result) =>
         Effect.sync(() => {

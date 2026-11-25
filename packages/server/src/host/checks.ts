@@ -22,6 +22,7 @@ import {
 } from "../git/check-process.ts";
 import { runRepositoryCheckSetup } from "../git/repository-check-setup.ts";
 import { resolveWorktreeHook } from "./worktree-hook-source.ts";
+import { HOST_WORKTREE_HOOKS_DISABLED, type hostedHooksFrom } from "./worktree-hooks.ts";
 
 /** What the control plane asks the host to check. */
 export interface HostCheckRequest {
@@ -115,6 +116,7 @@ export const checksOn = (
   runner: HostCheckRunner = liveRunner,
   now: () => number = Date.now,
   loginPath: Effect.Effect<string> = Effect.sync(() => process.env["PATH"] ?? ""),
+  hostedHooks?: ReturnType<typeof hostedHooksFrom>,
 ): Effect.Effect<HostChecks, never, Scope.Scope> =>
   Effect.gen(function* () {
     const fibers = yield* FiberMap.make<string>();
@@ -164,6 +166,8 @@ export const checksOn = (
           ...(more.log === undefined || more.log === "" ? {} : { log: more.log }),
           host,
         });
+        if (request.repositorySetup !== undefined && hostedHooks?.enabled === false)
+          return result(unstartable(HOST_WORKTREE_HOOKS_DISABLED));
         const source =
           (yield* commonDirOf(request.path)) ??
           (request.repoRoot === undefined ? undefined : yield* commonDirOf(request.repoRoot));
@@ -313,6 +317,9 @@ export const checksOn = (
                   log,
                   stagingRoot: nodePath.join(dir, "hook-staging"),
                   loginPath: yield* loginPath,
+                  ...(hostedHooks?.publicVariables === undefined
+                    ? {}
+                    : { publicVariables: hostedHooks.publicVariables }),
                   retain: () => {
                     retain = true;
                     markRetained(src);

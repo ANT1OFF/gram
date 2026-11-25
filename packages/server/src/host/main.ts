@@ -206,6 +206,7 @@ const hostService = (
     );
     const folders = foldersOn(proc);
     const loginPath = (yield* PathProbe).path;
+    const hostedHooks = provisioned ? hostedHooksFrom(process.env) : undefined;
     const machineMcp =
       hostId === LOCAL_HOST_ID
         ? { server: undefined }
@@ -228,6 +229,7 @@ const hostService = (
       undefined,
       undefined,
       loginPath,
+      hostedHooks,
     );
     const repos = reposOn(proc, hostRepos());
     if (hostId !== LOCAL_HOST_ID)
@@ -328,7 +330,7 @@ const hostService = (
         proc,
         loginPath,
         stagingRoot: join(diskOf ?? hostHome(), "worktree-hooks"),
-        ...(provisioned ? { hosted: hostedHooksFrom(process.env) } : {}),
+        ...(hostedHooks === undefined ? {} : { hosted: hostedHooks }),
         ...(hostId === LOCAL_HOST_ID
           ? {}
           : {

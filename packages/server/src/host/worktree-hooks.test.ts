@@ -44,6 +44,22 @@ describe.skipIf(process.platform === "win32")("committed worktree hooks", () => 
         const selected = yield* resolveWorktreeHook(repo, "setup");
         expect(selected).toMatchObject({ status: "found", source: { path: ".gram/setup" } });
         if (selected.status !== "found") throw new Error("Missing fixture hook");
+        const proc = yield* Proc;
+        const blobReads: string[] = [];
+        const traced = Proc.of({
+          run: (bin, args, options) => {
+            if (bin === "git" && args[0] === "cat-file") blobReads.push(args.at(-1)!);
+            return proc.run(bin, args, options);
+          },
+        });
+        const omitted = yield* resolveWorktreeHook(
+          repo,
+          "setup",
+          selected.source.revision,
+          ({ path }) => path === ".agents/setup",
+        ).pipe(Effect.provideService(Proc, traced));
+        expect(omitted.status).toBe("invalid");
+        expect(blobReads).toEqual([]);
         run(repo, "rm", ".gram/setup");
         write(join(repo, ".gram", "tracked.txt"), "keep the directory\n");
         symlinkSync("../.agents/setup", join(repo, ".gram", "setup"));
