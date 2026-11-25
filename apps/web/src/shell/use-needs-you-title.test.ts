@@ -14,7 +14,7 @@ import { titleFor, useNeedsYouTitle } from "./use-needs-you-title";
 const at = vi.hoisted(() => ({ page: undefined as string | undefined }));
 
 // The page's name as the title bar has it, which the embed slots' own tests cover.
-vi.mock("@/embed/slots", () => ({ useEmbedPageTitle: () => at.page }));
+vi.mock("@/embed/slots", () => ({ useEmbedDocumentName: () => at.page }));
 
 const summary = (id: string, status: ThreadStatus, parked = false): ThreadSummary => ({
   status,

@@ -118,16 +118,23 @@ export function useCompletions(
   return query.data.entries.filter((entry) => entry.name.toLowerCase().startsWith(leaf));
 }
 
-/** The user's home folder (on `hostId`, else here), from listing `~/`, for showing it as `~`. */
+/**
+ * The user's home folder (on `hostId`, else here), from listing `~/`, for showing it as `~`. On
+ * `hostId`, a refusal (a person who may not list that machine's folders) is kept as no home, so
+ * each page that shows the path does not ask again.
+ */
 export function useHome(hostId?: HostId): string | undefined {
   const { browse } = useBrowsing(hostId);
   const { data } = useQuery({
     queryKey: hostId === undefined ? ["fs.home"] : ["fs.home", hostId],
-    queryFn: async () => (await browse("~/", 1)).path,
+    queryFn: async () =>
+      hostId === undefined
+        ? (await browse("~/", 1)).path
+        : ((await browse("~/", 1).catch(() => null))?.path ?? null),
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
-  return data;
+  return data ?? undefined;
 }
 
 /**

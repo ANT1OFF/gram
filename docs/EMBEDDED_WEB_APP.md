@@ -224,8 +224,8 @@ shortcuts. Change either through `update`.
 
 **The tab, in your name.** `document: { title: ({ name, needsYou }) => string }` writes the
 browser tab's whole title, in place of Gram's "(2) Gram". `name` is the page's name as the title bar
-says it (an added page's, the home's, the threads page's; undefined on Gram's other pages, a
-thread's among them) and `needsYou` is Gram's count of its threads that need the person. It is
+says it (an added page's, the home's, the threads page's; "Settings" on any Settings page;
+undefined on Gram's other pages, a thread's among them) and `needsYou` is Gram's count of its threads that need the person. It is
 called again whenever either changes; one that throws leaves Gram's own title. Change it through
 `update({ document })`, say once your organisation's name is known. The favicon is your page's to
 bring, in its own `index.html`.

@@ -5,7 +5,8 @@ const FADE = 20;
 /**
  * A scrolling list's edges, told to its own style: `--fade-top` and `--fade-bottom` are the fade's
  * length while rows lie past that edge, shrinking to 0 at the list's end, for a mask to read. It follows the
- * list's scrolling and its own and its rows' changes of size. Off, it sets nothing.
+ * list's scrolling and its own and its rows' changes of size, rows added later among them. Off, it
+ * sets nothing.
  */
 export function useScrollFade(on: boolean): RefObject<HTMLDivElement | null> {
   const ref = useRef<HTMLDivElement>(null);
@@ -22,9 +23,16 @@ export function useScrollFade(on: boolean): RefObject<HTMLDivElement | null> {
     const observer = new ResizeObserver(read);
     observer.observe(list);
     for (const child of list.children) observer.observe(child);
+    const added = new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes) if (node instanceof Element) observer.observe(node);
+      read();
+    });
+    added.observe(list, { childList: true });
     return () => {
       list.removeEventListener("scroll", read);
       observer.disconnect();
+      added.disconnect();
       list.style.removeProperty("--fade-top");
       list.style.removeProperty("--fade-bottom");
     };

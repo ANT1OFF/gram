@@ -131,6 +131,11 @@ test("History filters by title and repo as you type, and by kind with its chips"
   await chip(page, "Archived").click();
   await expect(row(page, "t-grpc")).toBeVisible();
   expect(new Set(await attrs(page, "data-archived"))).toEqual(new Set(["true"]));
+  // The cursor row says one outcome: Enter's plain open is its key alone, not a second status.
+  const cursor = rows(page).and(page.locator('[aria-selected="true"]'));
+  await expect(cursor.getByTestId("history-outcome")).toHaveText("archived");
+  await expect(cursor.getByTestId("history-action")).toBeVisible();
+  await expect(cursor.getByTestId("history-action-word")).toHaveCount(0);
 
   await chip(page, "Imported").click();
   await expect(rows(page).first()).toBeVisible();
@@ -140,7 +145,7 @@ test("History filters by title and repo as you type, and by kind with its chips"
   await expect(rows(page)).toHaveCount(1);
   // Its status says what it is; what Enter does is the cursor row's action, apart from it.
   await expect(rows(page).first().getByTestId("history-outcome")).toHaveText("imported");
-  await expect(rows(page).first().getByTestId("history-action")).toHaveText(/^Resume/);
+  await expect(rows(page).first().getByTestId("history-action-word")).toHaveText("Resume");
 
   // The chip is kept for the next opening.
   await page.keyboard.press("Escape");

@@ -493,7 +493,8 @@ export interface ShellToolCard {
 export interface ShellDocumentPage {
   /**
    * The name of the page the window is on, as the title bar says it: an added page's, the home's,
-   * or the page of every thread's. Undefined on Gram's other pages, a thread's among them.
+   * or the page of every thread's; "Settings" on any Settings page. Undefined on Gram's other
+   * pages, a thread's among them.
    */
   readonly name: string | undefined;
   /** How many things need the person, by Gram's own count of its threads: 0 when nothing does. */
