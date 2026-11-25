@@ -6,7 +6,7 @@ import { worktreeHookConsent } from "./worktree-hook-consent.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
 
 const thread = { id: ThreadId.make("fixture-thread"), startedBy: "fixture-person" };
-const decision = (decision: "allow" | "deny", answeredBy = thread.startedBy) => ({
+const answerFor = (decision: "allow" | "deny", answeredBy = thread.startedBy) => ({
   kind: "approval" as const,
   scope: "once" as const,
   decision,
@@ -48,7 +48,7 @@ describe("worktree hook consent", () => {
             expect(card.scopes).toEqual(["once"]);
             expect(card.input).toMatchObject({ machine: inputs.machine, path: inputs.path });
             asked++;
-            return decision(asked === 1 ? "allow" : "deny");
+            return answerFor(asked === 1 ? "allow" : "deny");
           });
         const first = worktreeHookConsent({ ...inputs, ask });
         expect(yield* Effect.all([first, first], { concurrency: "unbounded" })).toEqual([
@@ -69,13 +69,13 @@ describe("worktree hook consent", () => {
       expect(
         yield* worktreeHookConsent({
           ...inputs,
-          ask: () => Effect.succeed(decision("allow", "different-person")),
+          ask: () => Effect.succeed(answerFor("allow", "different-person")),
         }),
       ).toBe("unavailable");
       expect(
         yield* worktreeHookConsent({
           ...inputs,
-          ask: () => Effect.succeed(decision("deny")),
+          ask: () => Effect.succeed(answerFor("deny")),
         }),
       ).toBe("deny");
     }),
