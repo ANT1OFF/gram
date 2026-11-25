@@ -9,6 +9,7 @@ import {
   WORKSPACE_UPDATE_TOOL,
   WorkspaceProposalCard,
   approvalHidesText,
+  fieldsOf,
   revealHidden,
   revealValue,
   type ApprovalRequest,
@@ -387,7 +388,7 @@ const sendDetails = (input: ApprovalRequest["input"]): ApprovalDetails | undefin
 
 /** The folded details of an app tool's card. A spawn missing its project or brief reads as JSON. */
 export const approvalDetails = (request: ApprovalRequest): ApprovalDetails => {
-  const input = revealValue(request.input) as ApprovalRequest["input"];
+  const input: ApprovalRequest["input"] = Object.fromEntries(fieldsOf(revealValue(request.input)));
   const json: ApprovalDetails = { kind: "json", text: JSON.stringify(input, null, 2) };
   if (request.toolName === `${APP_TOOL_PREFIX}report_issue`) return issueDetails(input) ?? json;
   if (request.toolName === SEND_WORKER) return sendDetails(input) ?? json;

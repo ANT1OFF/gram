@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Picker } from "@/composer/picker";
+import { Picker, type PickerOption } from "@/composer/picker";
 import { ModelCombobox } from "@/composer/model-picker";
 import { EFFORT_OPTIONS } from "@/composer/options";
 import { cn } from "@/lib/utils";
@@ -246,7 +246,7 @@ function LocalProviderRows({
   const efforts = EFFORT_OPTIONS.filter(
     (row) => model?.supportsEffort && model.efforts?.includes(row.value),
   );
-  const effortOptions = [
+  const effortOptions: PickerOption<ReasoningVariant | "automatic">[] = [
     {
       value: "automatic",
       label: model === undefined ? "Effort unavailable" : automaticEffortLabel(model),
@@ -347,9 +347,7 @@ function LocalProviderRows({
           focused={false}
           value={savedEffort ?? "automatic"}
           options={effortOptions}
-          onChange={(value) =>
-            onSave({ [effortKey]: value === "automatic" ? null : (value as ReasoningVariant) })
-          }
+          onChange={(value) => onSave({ [effortKey]: value === "automatic" ? null : value })}
           icon={<Brain aria-hidden className="size-icon-row" />}
         />
       </SettingRow>

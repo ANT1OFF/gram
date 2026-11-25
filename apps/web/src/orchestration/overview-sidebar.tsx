@@ -2,7 +2,7 @@ import {
   type FeatureCardHeld,
   type OrchestratorLedger,
   type Thread,
-  type ThreadId,
+  ThreadId,
   type ThreadSummary,
   type WorkspaceId,
   type WorkspaceState,
@@ -44,6 +44,7 @@ import { revealVirtualRow, virtualRowOf, VirtualRows } from "@/lib/virtual-rows"
 import { PresenceItem, PresenceList } from "@/motion";
 import { focusLost } from "@/lib/use-return-focus";
 import { focusSidebar, overviewStops } from "@/shell/focus-regions";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useOpenThread } from "@/shell/thread-switcher";
 import { UpdatePill } from "@/updates/update-pill";
 import { useSwitchWorkspace } from "@/shell/workspace-switcher";
@@ -184,7 +185,7 @@ export function useOverviewFeatures(workspaceId: WorkspaceId): readonly Overview
     const running: RunningWorker[] = [];
     for (let i = 0; i + 2 < flat.length; i += 3) {
       running.push({
-        threadId: flat[i] as ThreadId,
+        threadId: ThreadId.make(flat[i]!),
         title: flat[i + 1]!,
         feature: flat[i + 2]!,
       });
@@ -216,7 +217,7 @@ export const overviewKeys = (event: KeyboardEvent<HTMLElement>) => {
   if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return;
   const stops = overviewStops(event.currentTarget);
   const active = document.activeElement;
-  let from = stops.indexOf(active as HTMLElement);
+  let from = stops.findIndex((stop) => stop === active);
   if (from === -1 && active !== null && event.currentTarget.contains(active)) {
     from = stops.findLastIndex(
       (stop) => (stop.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
@@ -268,7 +269,7 @@ export const viewedSection = (
 };
 
 function useRevealViewed() {
-  const viewed = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const viewed = useRouteThreadId();
   const section = useThreadsStore((s) =>
     viewedSection(viewed === undefined ? undefined : s.byId[viewed]?.thread),
   );

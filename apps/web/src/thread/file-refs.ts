@@ -1,5 +1,7 @@
 import { findFileRefs, hrefFileRef, parseFileRef, type FileRef } from "@gram/contracts";
 
+import { hastTextOf, isHastElement, isHastText, type HastNode, type HastText } from "./hast";
+
 const WINDOWS_ABSOLUTE = /^[A-Za-z]:[\\/]/;
 
 const normal = (path: string) => path.replaceAll("\\", "/").replace(/\/+$/, "");
@@ -32,20 +34,6 @@ export function positionLabel(ref: Pick<FileRef, "line" | "endLine" | "column">)
 /** The custom element a reference renders as; its component resolves it. */
 export const FILE_REF_TAG = "file-ref";
 
-interface HastText {
-  type: "text";
-  value: string;
-}
-
-interface HastElement {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  children: HastNode[];
-}
-
-type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
-
 const OPAQUE = new Set(["pre", "kbd", "samp", "pr-ref", "thread-ref", FILE_REF_TAG]);
 
 const refElement = (ref: FileRef, children: HastNode[], kind: "code" | "text" | "link") => ({
@@ -60,11 +48,6 @@ const refElement = (ref: FileRef, children: HastNode[], kind: "code" | "text" | 
   },
   children,
 });
-
-const textOf = (node: HastNode): string =>
-  node.type === "text"
-    ? (node as HastText).value
-    : ((node as { children?: HastNode[] }).children ?? []).map(textOf).join("");
 
 function splitFileRefs(text: HastText): HastNode[] {
   const found = findFileRefs(text.value);
@@ -84,24 +67,23 @@ const visit = (node: HastNode): void => {
   if (!("children" in node) || node.children === undefined) return;
   const next: HastNode[] = [];
   for (const child of node.children) {
-    if (child.type === "text") {
-      next.push(...splitFileRefs(child as HastText));
+    if (isHastText(child)) {
+      next.push(...splitFileRefs(child));
       continue;
     }
-    if (child.type === "element") {
-      const element = child as HastElement;
-      if (element.tagName === "code") {
-        const ref = parseFileRef(textOf(element));
-        next.push(ref === undefined ? element : refElement(ref, [element], "code"));
+    if (isHastElement(child)) {
+      if (child.tagName === "code") {
+        const ref = parseFileRef(hastTextOf(child));
+        next.push(ref === undefined ? child : refElement(ref, [child], "code"));
         continue;
       }
-      if (element.tagName === "a") {
-        const href = element.properties?.["href"];
+      if (child.tagName === "a") {
+        const href = child.properties?.["href"];
         const ref = typeof href === "string" ? hrefFileRef(href) : undefined;
-        next.push(ref === undefined ? element : refElement(ref, element.children, "link"));
+        next.push(ref === undefined ? child : refElement(ref, child.children, "link"));
         continue;
       }
-      if (!OPAQUE.has(element.tagName)) visit(element);
+      if (!OPAQUE.has(child.tagName)) visit(child);
     }
     next.push(child);
   }

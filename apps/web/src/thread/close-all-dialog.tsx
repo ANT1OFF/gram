@@ -1,4 +1,3 @@
-import type { ThreadId } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
@@ -20,7 +19,7 @@ export function CloseAllThreadsDialog({ onClose }: { onClose: () => void }) {
   const submit = async () => {
     setPending(true);
     setError(undefined);
-    const ids = Object.keys(useThreadsStore.getState().byId) as ThreadId[];
+    const ids = Object.values(useThreadsStore.getState().byId).map((summary) => summary.thread.id);
     let failed = 0;
     for (const id of ids) {
       try {

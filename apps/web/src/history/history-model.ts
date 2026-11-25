@@ -1,12 +1,12 @@
 import {
   mergedAndDone,
+  ThreadId,
   threadPrBadges,
   type AgentKind,
   type AgentSessionSummary,
   type FinishedWorker,
   type OrchestratorLedger,
   type Project,
-  type ThreadId,
   type ThreadSummary,
   type WorkspaceId,
 } from "@gram/contracts";
@@ -319,7 +319,7 @@ export const sessionRoots = (
 
 /** The thread a row opens, when it is one of Gram's own. */
 export const historyThreadId = (entry: HistoryEntry): ThreadId | undefined =>
-  entry.kind === "imported" ? undefined : (entry.threadId as ThreadId);
+  entry.kind === "imported" ? undefined : ThreadId.make(entry.threadId);
 
 /** How many finished chats the sidebar's Done lists before the rest are History's. */
 export const RECENT_DONE = 3;

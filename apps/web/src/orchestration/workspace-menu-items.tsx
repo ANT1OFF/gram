@@ -19,11 +19,11 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 import { useMoveTargets } from "./move-targets";
 import { setWorkspacePaused } from "./pause-workspace";
 import {
+  accentOf,
   accentStyle,
   useWorkspaceAccent,
   useWorkspaceAccents,
   WORKSPACE_ACCENTS,
-  type WorkspaceAccentId,
 } from "./workspace-accent";
 
 const NONE = "none";
@@ -40,9 +40,7 @@ function ColourMenuItems({ workspaceId }: { workspaceId: WorkspaceState["workspa
         <ContextMenuRadioGroup
           value={accent ?? NONE}
           onValueChange={(value: string) =>
-            useWorkspaceAccents
-              .getState()
-              .setAccent(workspaceId, value === NONE ? undefined : (value as WorkspaceAccentId))
+            useWorkspaceAccents.getState().setAccent(workspaceId, accentOf(value))
           }
         >
           <ContextMenuRadioItem value={NONE} closeOnClick data-testid="menu-workspace-colour-none">

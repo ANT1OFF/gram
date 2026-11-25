@@ -10,13 +10,14 @@ import {
   type ModelRef,
   type OrchestratorCharter,
   type PinnedWorkerModel,
-  type ReasoningVariant,
+  ReasoningVariant,
   type RosterModel,
   type TierRef,
   type WorkerModel,
 } from "@gram/contracts";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { Star, TriangleAlert, X } from "lucide-react";
 import { useId, useState } from "react";
 import { flushSync } from "react-dom";
@@ -60,7 +61,7 @@ import {
   harnessNotes,
   withDefaultWorker,
   withOrchestratorModel,
-  withUseFor,
+  pinnedWithUseFor,
   withWorkerModels,
   withWorkerNote,
   workerModelIssues,
@@ -90,6 +91,7 @@ const START: AgentChoice = {
 const NOTE_PLACEHOLDER = "Use it for… e.g. reviews, bug hunts, audits, tightly scoped changes";
 
 const DEFAULT_EFFORT = "default";
+const isReasoningVariant = Schema.is(ReasoningVariant);
 
 const modelName = (model: ModelRef): string => `${agentLabel(model.agent)} ${model.model}`;
 
@@ -163,13 +165,11 @@ function EffortField({
       className="h-7 rounded-md border border-input bg-transparent px-1.5 text-reading outline-none focus-visible:ring-2 focus-visible:ring-ring"
       value={model.variant ?? DEFAULT_EFFORT}
       disabled={disabled}
-      onChange={(event) =>
-        onChange(
-          event.target.value === DEFAULT_EFFORT
-            ? undefined
-            : (event.target.value as ReasoningVariant),
-        )
-      }
+      onChange={(event) => {
+        const next = event.target.value;
+        if (next === DEFAULT_EFFORT) onChange(undefined);
+        else if (isReasoningVariant(next)) onChange(next);
+      }}
     >
       <option value={DEFAULT_EFFORT}>Default effort</option>
       {options.map((option) => (
@@ -457,7 +457,7 @@ export function RosterEditor({
           },
     )
     .filter((issue) => issue !== undefined);
-  const candidate = choice.model === "" ? undefined : withUseFor(choiceModel(choice), note);
+  const candidate = choice.model === "" ? undefined : pinnedWithUseFor(choiceModel(choice), note);
   const candidateIssue = useWorkerModelIssues({
     ...charter,
     workerModels: candidate === undefined ? views : [...views, candidate],
@@ -678,7 +678,7 @@ export function RosterEditor({
                       onChange(
                         withWorkerModels(
                           charter,
-                          addWorkerModel(models, withUseFor(choiceModel(choice), note)),
+                          addWorkerModel(models, pinnedWithUseFor(choiceModel(choice), note)),
                         ),
                       );
                       setAdding(false);

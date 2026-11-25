@@ -1,10 +1,10 @@
 import {
   MCP_TARGET_LABEL,
+  MCP_TARGET_SCOPES,
   type AgentConfiguredServers,
   type ClaudeAiSource,
   type ConfiguredServer,
   type ConnectorSignIn,
-  type McpScope,
   type McpTarget,
 } from "@gram/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { oneOf } from "@/lib/one-of";
 import { agoText, formatMessageTime } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { CommandText } from "@/launch-checks/command-text";
@@ -261,10 +262,12 @@ export function ConnectorsSettings() {
   const remove = (target: McpTarget, server: ConfiguredServer, folderCwd: string | undefined) =>
     action.mutate(async () => {
       setRemoving(undefined);
+      const scope = oneOf(MCP_TARGET_SCOPES[target], server.scope);
+      if (scope === undefined) return;
       await api.removeConnector({
         ...(folderCwd === undefined ? {} : { cwd: folderCwd }),
         name: server.name,
-        scope: server.scope as McpScope,
+        scope,
         target,
       });
       setNotice(`Removed ${server.name} from ${MCP_TARGET_LABEL[target]}.`);

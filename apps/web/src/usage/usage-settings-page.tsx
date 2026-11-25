@@ -67,6 +67,10 @@ const PERIODS = [
   { value: "7", label: "7 days" },
   { value: "30", label: "30 days" },
 ] as const;
+const PERIOD_DAYS = { "7": 7, "30": 30 } as const satisfies Record<
+  (typeof PERIODS)[number]["value"],
+  LimitHistoryDays
+>;
 
 const CARD = "flex flex-col rounded-lg border border-edge bg-card px-4 py-3.5";
 
@@ -107,8 +111,8 @@ export function UsageSettingsPage() {
           <OptionGroup
             label="History period"
             options={PERIODS}
-            value={String(days) as (typeof PERIODS)[number]["value"]}
-            onChange={(value) => setDays(Number(value) as LimitHistoryDays)}
+            value={`${days}` as const}
+            onChange={(value) => setDays(PERIOD_DAYS[value])}
           />
         </div>
       </div>

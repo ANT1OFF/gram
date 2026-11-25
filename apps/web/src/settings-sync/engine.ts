@@ -2,10 +2,12 @@ import {
   applySettingsPatch,
   overviewHiddenOf,
   overviewSidebarOf,
+  SettingsPatch,
   type Settings,
-  type SettingsPatch,
 } from "@gram/contracts";
 import type { Palette } from "@gram/themes";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import type { StoreApi } from "zustand";
 
 import { isNotImplemented } from "@/api/errors";
@@ -21,6 +23,8 @@ import {
   toThemePalette,
   type SyncedSettings,
 } from "./mapping";
+
+const decodeUnsynced = Schema.decodeUnknownOption(Schema.fromJsonString(SettingsPatch));
 
 type SettingsSyncApi = Pick<
   Api,
@@ -112,7 +116,7 @@ export function createSettingsSync(options: SettingsSyncOptions) {
   const readUnsynced = (): SettingsPatch | undefined => {
     try {
       const raw = storage.getItem(UNSYNCED_SETTINGS_KEY);
-      return raw === null ? undefined : (JSON.parse(raw) as SettingsPatch);
+      return raw === null ? undefined : Option.getOrUndefined(decodeUnsynced(raw));
     } catch {
       return undefined;
     }

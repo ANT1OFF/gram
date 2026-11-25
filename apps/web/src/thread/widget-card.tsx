@@ -2,7 +2,7 @@ import type { WidgetData } from "@gram/contracts";
 import { useMemo, useSyncExternalStore } from "react";
 
 import { Dialog } from "./dialog-shell";
-import { readWidgetTheme, svgDataUrl, themedSvg } from "./widget-svg";
+import { readWidgetTheme, svgDataUrl, themedSvg, type WidgetTheme } from "./widget-svg";
 
 const subscribeToTheme = (onChange: () => void) => {
   const observer = new MutationObserver(onChange);
@@ -11,7 +11,17 @@ const subscribeToTheme = (onChange: () => void) => {
   return () => observer.disconnect();
 };
 
-const themeSnapshot = () => JSON.stringify(readWidgetTheme(document.documentElement));
+let shownTheme: { readonly key: string; readonly theme: Partial<WidgetTheme> } = {
+  key: "{}",
+  theme: {},
+};
+
+const themeSnapshot = (): Partial<WidgetTheme> => {
+  const theme = readWidgetTheme(document.documentElement);
+  const key = JSON.stringify(theme);
+  if (key !== shownTheme.key) shownTheme = { key, theme };
+  return shownTheme.theme;
+};
 
 /**
  * A chart or diagram from the `show_widget` app tool. It is an `<img>`, never inline markup: there an
@@ -19,10 +29,7 @@ const themeSnapshot = () => JSON.stringify(readWidgetTheme(document.documentElem
  */
 export function WidgetCard({ widget }: { widget: WidgetData }) {
   const theme = useSyncExternalStore(subscribeToTheme, themeSnapshot);
-  const src = useMemo(
-    () => svgDataUrl(themedSvg(widget.svg, JSON.parse(theme) as Record<string, string>)),
-    [widget.svg, theme],
-  );
+  const src = useMemo(() => svgDataUrl(themedSvg(widget.svg, theme)), [widget.svg, theme]);
   return (
     <figure
       data-testid="widget"

@@ -1,4 +1,4 @@
-import type { ThreadId } from "@gram/contracts";
+import { fieldsOf, type ThreadId } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -12,7 +12,7 @@ type Snoozes = Readonly<Record<string, number>>;
 /** Only snoozes still running at `now`, as thread id → epoch ms they end, the latest kept. */
 export const liveSnoozes = (raw: unknown, now: number): Record<string, number> => {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const live = Object.entries(raw as Record<string, unknown>).filter(
+  const live = Object.entries(raw).filter(
     (entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] > now,
   );
   return Object.fromEntries(live.toSorted((a, b) => a[1] - b[1]).slice(-SNOOZE_LIMIT));
@@ -44,7 +44,7 @@ export const useStuckSnoozes = create<StuckSnoozeState>()(
       partialize: ({ until }) => ({ until }),
       merge: (persisted, current) => ({
         ...current,
-        until: liveSnoozes((persisted as { until?: unknown } | undefined)?.until, Date.now()),
+        until: liveSnoozes(fieldsOf(persisted).get("until"), Date.now()),
       }),
     },
   ),

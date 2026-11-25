@@ -12,6 +12,7 @@ import {
 } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import * as Predicate from "effect/Predicate";
 import { Check, GitMerge, TriangleAlert, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -810,7 +811,7 @@ function Review({
       })
       .then(done)
       .catch(async (e: unknown) => {
-        if ((e as { _tag?: unknown } | null)?._tag === "InvalidState") {
+        if (Predicate.isTagged(e, "InvalidState")) {
           await review.refetch();
           setResolutions({});
           setRefreshed(errorMessage(e));

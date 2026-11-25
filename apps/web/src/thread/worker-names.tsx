@@ -1,24 +1,15 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
 import { Link } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import type { ReactNode } from "react";
 
 import { useBesideLink } from "@/orchestration/beside-link";
 
+import { isHastElement, isHastText, type HastNode, type HastText } from "./hast";
+
 export const WORKER_REF_TAG = "worker-ref";
 
-interface HastText {
-  type: "text";
-  value: string;
-}
-
-interface HastElement {
-  type: "element";
-  tagName: string;
-  properties?: Record<string, unknown>;
-  children: HastNode[];
-}
-
-type HastNode = HastText | HastElement | { type: string; children?: HastNode[] };
+const isThreadId = Schema.is(ThreadId);
 
 export interface WorkerNameRef {
   readonly threadId: ThreadId;
@@ -93,11 +84,11 @@ export const rehypeWorkerNames = (names: readonly WorkerNameRef[]) => {
     if (pattern === undefined || !("children" in node) || node.children === undefined) return;
     const next: HastNode[] = [];
     for (const child of node.children) {
-      if (child.type === "text") {
-        next.push(...split(child as HastText, pattern, byTitle));
+      if (isHastText(child)) {
+        next.push(...split(child, pattern, byTitle));
         continue;
       }
-      if (child.type === "element" && !OPAQUE.has((child as HastElement).tagName)) visit(child);
+      if (isHastElement(child) && !OPAQUE.has(child.tagName)) visit(child);
       next.push(child);
     }
     node.children = next;
@@ -112,8 +103,8 @@ function WorkerRef({
   "data-thread-id"?: string;
   children?: ReactNode;
 }) {
-  if (id === undefined) return <>{children}</>;
-  return <WorkerRefLink threadId={id as ThreadId}>{children}</WorkerRefLink>;
+  if (!isThreadId(id)) return <>{children}</>;
+  return <WorkerRefLink threadId={id}>{children}</WorkerRefLink>;
 }
 
 function WorkerRefLink({ threadId, children }: { threadId: ThreadId; children?: ReactNode }) {

@@ -3,6 +3,7 @@ import {
   accentColor,
   SCENES,
   sceneSvg,
+  SURFACES_IDS,
   type AccentId,
   type Mode,
   type SceneId,
@@ -13,7 +14,14 @@ import { useId, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SegmentSlab } from "@/motion/segment-slab";
-import type { BackdropPref, SidebarIconsPref, SidebarPref, ThemePrefs } from "@/theme/theme";
+import {
+  SIDEBAR_ICON_PREFS,
+  SIDEBAR_PREFS,
+  type BackdropPref,
+  type SidebarIconsPref,
+  type SidebarPref,
+  type ThemePrefs,
+} from "@/theme/theme";
 import { switchTheme } from "@/theme/transition";
 
 import { OPTION_GROUP, SEGMENT, SEGMENT_ROOMY, SEGMENT_SLAB, SettingRow } from "./fields";
@@ -58,6 +66,7 @@ export function LookRows({ prefs, mode }: { prefs: ThemePrefs; mode: Mode }) {
           description="How much of the picture shows through cards, the sidebar and the title bar."
           keywords={["transparency", "frosted", "glass", "see-through"]}
           value={prefs.surfaces ?? "solid"}
+          options={SURFACES_IDS}
           labels={SURFACE_LABELS}
           onSelect={(surfaces) => switchTheme({ surfaces })}
         />
@@ -67,6 +76,7 @@ export function LookRows({ prefs, mode }: { prefs: ThemePrefs; mode: Mode }) {
         description="Flush with the window's edges, or a panel with round corners set in from them."
         keywords={["corners", "inset", "round"]}
         value={prefs.sidebar ?? "flush"}
+        options={SIDEBAR_PREFS}
         labels={SIDEBAR_LABELS}
         onSelect={(sidebar) => switchTheme({ sidebar })}
       />
@@ -75,6 +85,7 @@ export function LookRows({ prefs, mode }: { prefs: ThemePrefs; mode: Mode }) {
         description="In their row's colour, or all in the accent."
         keywords={["icon colour", "icon color"]}
         value={prefs.sidebarIcons ?? "plain"}
+        options={SIDEBAR_ICON_PREFS}
         labels={ICON_LABELS}
         onSelect={(sidebarIcons) => switchTheme({ sidebarIcons })}
       />
@@ -200,6 +211,7 @@ function Choice<T extends string>({
   description,
   keywords,
   value,
+  options,
   labels,
   onSelect,
 }: {
@@ -207,6 +219,7 @@ function Choice<T extends string>({
   description: string;
   keywords: readonly string[];
   value: T;
+  options: readonly T[];
   labels: Record<T, string>;
   onSelect: (value: T) => void;
 }) {
@@ -214,7 +227,7 @@ function Choice<T extends string>({
   return (
     <SettingRow label={label} description={description} keywords={keywords}>
       <div role="group" aria-label={label} className={OPTION_GROUP}>
-        {(Object.keys(labels) as T[]).map((option) => (
+        {options.map((option) => (
           <Button
             key={option}
             size="sm"

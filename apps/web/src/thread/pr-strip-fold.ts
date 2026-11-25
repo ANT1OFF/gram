@@ -1,4 +1,4 @@
-import type { ThreadId } from "@gram/contracts";
+import { fieldsOf, type ThreadId } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -32,7 +32,7 @@ export const usePrStripFold = create<PrStripFoldState>()(
       partialize: ({ expanded }) => ({ expanded }),
       merge: (persisted, current) => ({
         ...current,
-        expanded: sanitize((persisted as { expanded?: unknown } | undefined)?.expanded),
+        expanded: sanitize(fieldsOf(persisted).get("expanded")),
       }),
     },
   ),
