@@ -1,5 +1,6 @@
 import {
   cloneFolderOf,
+  GitError,
   notARepositoryMessage,
   parseRepoRemote,
   remoteKey,
@@ -90,12 +91,9 @@ export function createProjectsMock(world: MockWorld) {
         );
       }
       if (remote.repo === "missing") {
-        throw Object.assign(
-          new Error(
-            `Couldn't clone ${label}: GraphQL: Could not resolve to a Repository with the name '${label}'.`,
-          ),
-          { _tag: "GitError" },
-        );
+        throw new GitError({
+          message: `Couldn't clone ${label}: GraphQL: Could not resolve to a Repository with the name '${label}'.`,
+        });
       }
       addMockRepo(target);
       clones.set(target, remoteKey(remote));

@@ -2,7 +2,8 @@ import {
   effectiveCheckout,
   type Checkout,
   InvalidState,
-  type RestoreWorktreeResult,
+  WorktreeBranchGone,
+  WorktreeRestored,
   type Thread,
   type ThreadId,
   hostOf,
@@ -50,11 +51,7 @@ export const restoreThreadWorktree = (threadId: ThreadId, fromPr: boolean) =>
     const restored = yield* checkouts.restore(thread, fromPr ? pr?.number : undefined);
     const branch = checkout.branch ?? "";
     if (restored.kind === "branchGone") {
-      return {
-        _tag: "branchGone",
-        branch,
-        ...(pr === undefined ? {} : { pr }),
-      } satisfies RestoreWorktreeResult;
+      return WorktreeBranchGone.make({ branch, ...(pr === undefined ? {} : { pr }) });
     }
     const setup = restored.worktreeSetup;
     if (setup !== undefined || checkout.worktreeSetup !== undefined) {
@@ -79,10 +76,5 @@ export const restoreThreadWorktree = (threadId: ThreadId, fromPr: boolean) =>
       yield* publisher.sync;
       yield* publisher.refresh(checkout.path, { remote: true });
     }
-    return {
-      _tag: "restored",
-      path: checkout.path,
-      branch,
-      source: restored.source,
-    } satisfies RestoreWorktreeResult;
+    return WorktreeRestored.make({ path: checkout.path, branch, source: restored.source });
   });

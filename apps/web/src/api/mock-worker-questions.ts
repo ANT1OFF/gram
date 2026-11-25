@@ -1,11 +1,12 @@
 import {
+  type GramUIMessage,
   isOpenQuestion,
+  NotFound,
+  type ThreadId,
   workerAnswerMessage,
   workerDismissMessage,
-  workerRevisedAnswerMessage,
-  type GramUIMessage,
-  type ThreadId,
   type WorkerQuestion,
+  workerRevisedAnswerMessage,
   type WorkspaceId,
 } from "@gram/contracts";
 
@@ -39,10 +40,10 @@ export const closeWorkerQuestion = async (
   const all = deps.questionsOf.get(workspaceId) ?? [];
   const question = all.find((each) => each.id.toLowerCase() === questionId.toLowerCase());
   if (question === undefined) {
-    throw Object.assign(new Error(`There is no question ${questionId} in this workspace.`), {
-      _tag: "NotFound",
+    throw new NotFound({
       entity: "question",
       id: questionId,
+      message: `There is no question ${questionId} in this workspace.`,
     });
   }
   const replaces = "answer" in close ? close.replaces : undefined;

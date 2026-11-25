@@ -11,7 +11,10 @@ import {
   type MediaAccess,
 } from "./microphone.ts";
 import type { SpeechModelStore } from "./models.ts";
-import { fieldsOf } from "@gram/contracts";
+import { fieldsOf, FsError } from "@gram/contracts";
+import * as Schema from "effect/Schema";
+
+const encodeFsError = Schema.encodeSync(FsError);
 
 export * from "./host.ts";
 export * from "./microphone.ts";
@@ -96,11 +99,12 @@ function installModels(ipc: ShellIpc, models: ModelAccess): void {
             watchId,
             answer: {
               ok: false,
-              error: {
-                _tag: "FsError",
-                path: "",
-                message: "Voice model store unavailable during update recovery",
-              },
+              error: encodeFsError(
+                new FsError({
+                  path: "",
+                  message: "Voice model store unavailable during update recovery",
+                }),
+              ),
             },
           } satisfies SpeechModelChangedPayload);
       });

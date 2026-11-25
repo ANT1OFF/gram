@@ -2,9 +2,10 @@ import {
   checkoutRoots,
   distinctiveTerm,
   effectiveCheckout,
+  type FsPreview,
+  InvalidState,
   isCredentialPath,
   previewFileKind,
-  type FsPreview,
   type ThreadId,
 } from "@gram/contracts";
 
@@ -71,7 +72,7 @@ const writtenBy = (
   return content;
 };
 
-const invalid = (message: string) => Object.assign(new Error(message), { _tag: "InvalidState" });
+const invalid = (message: string) => new InvalidState({ message });
 
 /** `FilesApi` over the mock's fixture tree, scoped to threads' checkouts as the server scopes it. */
 export function createFilesMock(world: MockWorld): FilesApi & FilesMockControls {

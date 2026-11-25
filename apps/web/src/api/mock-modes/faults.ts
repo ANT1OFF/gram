@@ -49,18 +49,22 @@ const failureOf = (kind: Exclude<FaultKind, "slow">, method: string): Error => {
   switch (kind) {
     case "server":
       return Object.assign(new Error("The Gram server had a problem (503 Service Unavailable)"), {
+        // oxlint-disable-next-line anti-slop/no-manual-tagged-construction -- stands in for a transport failure, which no contract class names
         _tag: "ServerError",
         status: 503,
         method,
       });
     case "network":
       return Object.assign(new Error("Lost the connection to the Gram server"), {
+        // oxlint-disable-next-line anti-slop/no-manual-tagged-construction -- shaped like the transport's error; mock mode never reaches the RPC client that checks its class
         _tag: "RpcClientError",
+        // oxlint-disable-next-line anti-slop/no-manual-tagged-construction -- the reason the transport gives a closed socket
         reason: { _tag: "SocketCloseError" },
         method,
       });
     case "timeout":
       return Object.assign(new Error("The Gram server didn't answer in time"), {
+        // oxlint-disable-next-line anti-slop/no-manual-tagged-construction -- stands in for a transport failure, which no contract class names
         _tag: "TimeoutError",
         method,
       });

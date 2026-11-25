@@ -71,6 +71,12 @@ import {
   normalizeThreadPrs,
   NotFound,
   ThreadNotFound,
+  InvalidState,
+  GitError,
+  CheckoutInUse,
+  WorktreeDirty,
+  WorktreeBranchGone,
+  WorktreeRestored,
   FEED_WINDOW_TURNS,
   recentTurns,
   applyUserEdit,
@@ -288,7 +294,7 @@ type AgentKindOption = Parameters<Api["listModels"]>[0];
 
 class Interrupted extends Error {}
 
-const refuse = (message: string) => Object.assign(new Error(message), { _tag: "InvalidState" });
+const refuse = (message: string) => new InvalidState({ message });
 
 const stampSubagentStart = (
   starts: Map<string, number>,
@@ -1186,16 +1192,16 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     if (input.checkout.kind === "existingWorktree") {
       const { threads } = await this.checkoutUsers(input.checkout.path);
       if (threads.length > 0) {
-        throw Object.assign(new Error("a thread is already open in that checkout"), {
-          _tag: "CheckoutInUse",
+        throw new CheckoutInUse({
           path: input.checkout.path,
+          message: "a thread is already open in that checkout",
         });
       }
     }
     if (input.checkout.kind === "machineFolder") return this.#createOnMachine(input, model);
     const project = this.#openProject(input.projectRoot);
     if (input.checkout.kind === "newWorktree" && !isMockRepo(project.root)) {
-      throw Object.assign(new Error("repoPath is not a git repository"), { _tag: "GitError" });
+      throw new GitError({ message: "repoPath is not a git repository" });
     }
     const branch = input.checkout.kind === "newWorktree" ? input.checkout.branch : "main";
     const path =
@@ -2501,7 +2507,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const { checkout } = runtime.summary.thread;
     const branch = checkout.branch ?? "";
     if (missing.branchGone !== undefined && fromPr !== true) {
-      return { _tag: "branchGone", branch, pr: missing.branchGone };
+      return WorktreeBranchGone.make({ branch, pr: missing.branchGone });
     }
     this.#missingFolders.delete(threadId);
     this.#goneFolders.delete(pathKey(checkout.path));
@@ -2518,12 +2524,11 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     const restored: GitState = { ...git, changedFiles: 0 };
     runtime.summary = { ...runtime.summary, git: restored };
     this.#emit({ type: "git.state", threadId, state: restored });
-    return {
-      _tag: "restored",
+    return WorktreeRestored.make({
       path: checkout.path,
       branch,
       source: missing.branchGone === undefined ? "local" : "pr",
-    };
+    });
   }
 
   /** Calls from the last `closeThread`, for tests. */
@@ -2543,11 +2548,7 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     }
     const dirty = runtime.summary.git?.changedFiles ?? 0;
     if (options.removeWorktree && !options.removeWorktree.force && dirty > 0) {
-      throw Object.assign(new Error(`${checkout.path} has uncommitted changes`), {
-        _tag: "WorktreeDirty",
-        path: checkout.path,
-        changedFiles: dirty,
-      });
+      throw new WorktreeDirty({ path: checkout.path, changedFiles: dirty });
     }
     this.#closed.remember(runtime.summary.thread);
     if (options.removeWorktree || this.#missingFolders.has(threadId)) {
@@ -2596,9 +2597,9 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
       (r) => pathKey(r.summary.thread.checkout.path) === pathKey(checkout.path),
     );
     if (holder !== undefined && checkout.kind === "worktree") {
-      throw Object.assign(new Error("a thread is already open in that checkout"), {
-        _tag: "CheckoutInUse",
+      throw new CheckoutInUse({
         path: checkout.path,
+        message: "a thread is already open in that checkout",
       });
     }
     const thread: Thread = {

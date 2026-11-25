@@ -1,9 +1,10 @@
 import {
+  type Attachment,
   helperOn,
+  InvalidState,
   PROMPT_HISTORY_LIMIT,
   PROMPT_HISTORY_THREADS,
   promptsFromMessages,
-  type Attachment,
   type RequestId,
   type ThreadId,
   type ThreadSuggestions,
@@ -60,9 +61,7 @@ export function createComposerMock(world: MockWorld, persist: boolean) {
           ),
         );
       if (!referenced) {
-        throw Object.assign(new Error("That file isn't attached to this thread"), {
-          _tag: "InvalidState",
-        });
+        throw new InvalidState({ message: "That file isn't attached to this thread" });
       }
       const stored = path === MOCK_TOOL_IMAGE.path ? MOCK_TOOL_IMAGE.base64 : undefined;
       return readMockAttachment(path, uploads.get(path) ?? stored);

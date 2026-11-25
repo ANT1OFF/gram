@@ -1,5 +1,4 @@
 import {
-  searchSnippet,
   type FileImage,
   type FsEntry,
   type FsFile,
@@ -9,6 +8,9 @@ import {
   type FsResolveResult,
   type FsSearchMatch,
   type FsSearchResult,
+  InvalidState,
+  NotFound,
+  searchSnippet,
 } from "@gram/contracts";
 
 type MockNode =
@@ -232,9 +234,8 @@ const sizeOf = (node: MockNode) =>
   node.kind === "file" ? (node.size ?? new TextEncoder().encode(node.content ?? "").length) : 0;
 
 const notFound = (path: string) =>
-  Object.assign(new Error(`Not found: ${path}`), { _tag: "NotFound", entity: "file", id: path });
-const invalidState = (message: string) =>
-  Object.assign(new Error(message), { _tag: "InvalidState" });
+  new NotFound({ entity: "file", id: path, message: `Not found: ${path}` });
+const invalidState = (message: string) => new InvalidState({ message });
 
 /**
  * `fs.list` over the seeded checkouts: folders first; dotfiles and git-ignored entries only when

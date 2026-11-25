@@ -1,12 +1,13 @@
 import {
   checkoutRoots,
   effectiveCheckout,
-  OUTPUTS_PAGE,
-  OUTPUTS_PAGE_MAX,
+  type FileImage,
+  InvalidState,
+  type OutputKind,
   outputKindOf,
   outputMediaType,
-  type FileImage,
-  type OutputKind,
+  OUTPUTS_PAGE,
+  OUTPUTS_PAGE_MAX,
   type OutputSource,
   type Thread,
   type ThreadId,
@@ -137,7 +138,7 @@ export function pageMockOutputs(
   );
   const start = options.cursor === undefined ? 0 : Number(options.cursor);
   if (!Number.isInteger(start) || start < 0) {
-    throw Object.assign(new Error("That isn't a page of this list"), { _tag: "InvalidState" });
+    throw new InvalidState({ message: "That isn't a page of this list" });
   }
   const limit = Math.min(options.limit ?? OUTPUTS_PAGE, OUTPUTS_PAGE_MAX);
   const end = start + limit;

@@ -1,4 +1,10 @@
-import { customModelsOf, withCustomModels, type AgentKind, type AgentModel } from "@gram/contracts";
+import {
+  type AgentKind,
+  type AgentModel,
+  AgentUnavailable,
+  customModelsOf,
+  withCustomModels,
+} from "@gram/contracts";
 
 import { createMockGateways } from "../mock-gateways";
 import type { MockWorld } from "../mock-world";
@@ -54,10 +60,7 @@ export function createProfilesMock(world: MockWorld, agents: readonly AgentKind[
     },
     listModels: async (agent, profileId) => {
       if (agents !== undefined && !agents.includes(agent))
-        throw Object.assign(new Error(`This mock has no ${agent} adapter.`), {
-          _tag: "AgentUnavailable",
-          agent,
-        });
+        throw new AgentUnavailable({ agent, message: `This mock has no ${agent} adapter.` });
       const custom = customModelsOf(await world.settings(), agent);
       if (agent !== "claude" || profileId !== undefined) {
         const listed = await gateways.listAgentModels(agent, profileId);

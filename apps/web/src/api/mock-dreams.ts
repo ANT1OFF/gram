@@ -5,24 +5,26 @@ import {
   type DreamMerge,
   type DreamPlan,
   type DreamReview,
+  FsError,
+  type GramUIMessage,
   type ImportPreview,
   type MemoryFileInfo,
+  memoryUpdateModeOf,
   type MemoryVersionInfo,
   type MemoryWrite,
   type ModelRef,
+  NotFound,
   type PermissionMode,
   type Project,
-  QUESTIONS_FILE,
-  type QuestionEdit,
   type ProjectId,
-  type GramUIMessage,
+  type QuestionEdit,
+  QUESTIONS_FILE,
   type Thread,
   type ThreadId,
   type ThreadSummary,
   type UsageSummary,
   type WorkspaceId,
   type WorkspaceState,
-  memoryUpdateModeOf,
 } from "@gram/contracts";
 
 import { failDreamSoon } from "./mock-dream-fails";
@@ -98,11 +100,10 @@ const TOKENS_PER_ITEM = 320;
 
 const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
 
-const notFound = (entity: string, id: string) =>
-  Object.assign(new Error(`That ${entity} no longer exists.`), { _tag: "NotFound", entity, id });
+const notFound = (entity: NotFound["entity"], id: string) =>
+  new NotFound({ entity, id, message: `That ${entity} no longer exists.` });
 
-const fsError = (path: string, message: string) =>
-  Object.assign(new Error(message), { _tag: "FsError", path, message });
+const fsError = (path: string, message: string) => new FsError({ path, message });
 
 const pathProblem = (path: string): string | undefined => {
   if (path === "") return "Name a memory file, e.g. decisions.md";
@@ -321,7 +322,7 @@ export function createMockDreams(host: MockDreamsHost) {
     async restore(workspaceId: WorkspaceId, version: string): Promise<void> {
       const memory = memoryOf(workspaceId);
       if (!memory.versions.some((kept) => kept.version === version)) {
-        throw notFound("memory version", version);
+        throw notFound("file", version);
       }
       memory.current = version;
       changed(workspaceId);
