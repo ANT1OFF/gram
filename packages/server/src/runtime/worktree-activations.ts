@@ -21,7 +21,7 @@ import type { HostWorktreeHooks } from "../host/worktree-hooks.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { folderBringsNothing, projectFolderTrusted } from "../settings/folder-trust.ts";
 import type { ThreadRuntimesShape } from "./thread-runtimes-shape.ts";
-import { worktreeHookConsent } from "./worktree-hook-consent.ts";
+import { type WorktreeHookGrant, worktreeHookConsent } from "./worktree-hook-consent.ts";
 
 const owned = (thread: Thread) =>
   [thread.checkout, ...(thread.extraCheckouts ?? [])].filter(
@@ -188,6 +188,12 @@ export const makeWorktreeActivations = (deps: {
                   candidate.originIdentity === checkout.cloneIdentity),
             );
       const repository = checkout.cloneIdentity ?? project?.id;
+      let grant: WorktreeHookGrant = {
+        host: location.host,
+        path: inspection.path,
+        revision: inspection.revision,
+        fingerprint: inspection.fingerprint,
+      };
       if (!location.hosted) {
         const trusted = () =>
           deps.store.listProjects.pipe(
@@ -215,20 +221,22 @@ export const makeWorktreeActivations = (deps: {
           repository,
           kind,
           path: inspection.path,
+          revision: inspection.revision,
           fingerprint: inspection.fingerprint,
           script: inspection.script,
           ask: deps.ask,
         });
-        if (consent !== "allow" || !(yield* trusted()))
+        if (consent.decision !== "allow" || !(yield* trusted()))
           return yield* mark(
             inspection.path,
             outcome(
               "skipped",
-              consent === "deny"
+              consent.decision === "deny"
                 ? "The user declined this hook revision."
                 : "Gram could not establish consent for this hook revision.",
             ),
           );
+        grant = consent.grant;
       }
       const workspace =
         thread.workspaceId === undefined
@@ -256,7 +264,11 @@ export const makeWorktreeActivations = (deps: {
             );
           if (!stillOwned) return undefined;
           const reachable = yield* hostFor(checkout);
-          if (reachable === undefined || reachable.hosted !== location.hosted)
+          if (
+            reachable === undefined ||
+            reachable.host !== grant.host ||
+            reachable.hosted !== location.hosted
+          )
             return yield* mark(inspection.path, unavailable());
           yield* record(thread, checkout, kind, inspection.path, { status: "running" });
           const budgetMs = deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
@@ -264,8 +276,8 @@ export const makeWorktreeActivations = (deps: {
           const run = reachable.hooks.run(
             {
               ...request,
-              revision: inspection.revision,
-              fingerprint: inspection.fingerprint,
+              revision: grant.revision,
+              fingerprint: grant.fingerprint,
               ...(budgetMs === undefined ? {} : { budgetMs }),
               ...(!location.hosted || kind !== "setup"
                 ? {}

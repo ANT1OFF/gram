@@ -7,6 +7,7 @@ import * as Layer from "effect/Layer";
 import { eventually, makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
 import { markNewWorktree } from "../host/worktree-hook-source.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
+import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
 import { FakeAgentControl } from "./fake-agent.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
@@ -32,6 +33,7 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
       yield* Effect.gen(function* () {
         const runtimes = yield* ThreadRuntimes;
         const store = yield* ThreadStore;
+        const ui = makeRespondHandlers(store, runtimes);
         const agent = yield* FakeAgentControl;
         const model = { agent: "codex" as const, model: "gpt-6.1-sol" };
         const parent = yield* runtimes.create({
@@ -68,10 +70,12 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
               ),
           );
           expect(agent.sessions).toHaveLength(0);
-          yield* runtimes.respond(worker.id, before.id, {
-            kind: "approval",
-            decision: "allow",
-            scope: "once",
+          if (before.shown === undefined) throw new Error("Expected a keyed approval");
+          yield* ui["thread.respond"]({
+            threadId: worker.id,
+            requestId: before.id,
+            shown: before.shown,
+            answer: { kind: "approval", decision: "allow", scope: "once" },
           });
         }
         const session = yield* eventually(
