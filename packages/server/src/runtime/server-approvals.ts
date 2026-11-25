@@ -41,7 +41,7 @@ import {
   requestActions,
 } from "../embedding/hooked-requests.ts";
 import { KEYLESS_ANSWER } from "./card-key.ts";
-import { cameFromUi } from "./ui-approval.ts";
+import { cameFromLocalApp } from "./ui-approval.ts";
 import { WORKTREE_HOOK_APPROVAL } from "./worktree-hook-consent.ts";
 
 /** Why one answer of `respondMany` wasn't given, in words a row of the inbox can show. */
@@ -326,10 +326,10 @@ export const makeServerApprovals = ({
             const uiVerified =
               pending.shown !== undefined &&
               pending.shown === shown &&
-              (yield* cameFromUi(threadId, requestId, shown));
+              (yield* cameFromLocalApp(threadId, requestId, shown));
             if (pending.toolName === WORKTREE_HOOK_APPROVAL && !uiVerified) {
               return yield* new InvalidState({
-                message: "Answer this worktree hook approval from its card in the Gram app.",
+                message: "Answer this worktree hook approval from its card in the local Gram app.",
                 threadId,
               });
             }

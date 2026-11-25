@@ -6,9 +6,10 @@ import {
   type ThreadId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import { isLocalApp } from "../../http/local-app.ts";
 import type { ThreadStoreShape } from "../../persistence/thread-store.ts";
 import { KEYLESS_ANSWER, keylessRefusal } from "../../runtime/card-key.ts";
-import { withUiApproval } from "../../runtime/ui-approval.ts";
+import { withLocalAppApproval } from "../../runtime/ui-approval.ts";
 import type { ThreadRuntimesShape } from "../../runtime/thread-runtimes-shape.ts";
 
 export { KEYLESS_ANSWER };
@@ -21,27 +22,28 @@ export const makeRespondHandlers = (
   const keyless = (threadId: ThreadId, requestId: RequestId, shown: string | undefined) =>
     keylessRefusal(store, threadId, requestId, shown);
   return {
-    "thread.respond": ({
-      threadId,
-      requestId,
-      answer,
-      shown,
-    }: {
-      readonly threadId: ThreadId;
-      readonly requestId: RequestId;
-      readonly answer: RequestAnswer;
-      readonly shown?: string;
-    }) =>
-      Effect.andThen(keyless(threadId, requestId, shown), (refused) =>
-        refused === undefined
-          ? withUiApproval(
-              runtimes.respond(threadId, requestId, answer, shown),
-              threadId,
-              requestId,
-              shown,
-            )
-          : Effect.fail(new InvalidState({ message: refused, threadId })),
-      ),
+    "thread.respond": (
+      {
+        threadId,
+        requestId,
+        answer,
+        shown,
+      }: {
+        readonly threadId: ThreadId;
+        readonly requestId: RequestId;
+        readonly answer: RequestAnswer;
+        readonly shown?: string;
+      },
+      call?: { readonly headers?: Readonly<Record<string, string | undefined>> },
+    ) =>
+      Effect.andThen(keyless(threadId, requestId, shown), (refused) => {
+        if (refused !== undefined)
+          return Effect.fail(new InvalidState({ message: refused, threadId }));
+        const response = runtimes.respond(threadId, requestId, answer, shown);
+        return isLocalApp(call?.headers)
+          ? withLocalAppApproval(response, threadId, requestId, shown)
+          : response;
+      }),
     "thread.respondMany": ({
       answers,
     }: {

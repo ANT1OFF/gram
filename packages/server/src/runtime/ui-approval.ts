@@ -8,12 +8,15 @@ interface AnsweredCard {
   readonly shown: string;
 }
 
-const UiApproval = Context.Reference<AnsweredCard | undefined>("@gram/server/UiApproval", {
-  defaultValue: () => undefined,
-});
+const LocalAppApproval = Context.Reference<AnsweredCard | undefined>(
+  "@gram/server/LocalAppApproval",
+  {
+    defaultValue: () => undefined,
+  },
+);
 
-/** A single card named by the admitted app connection, or the fronted UI's signed answer. */
-export const withUiApproval = <A, E, R>(
+/** A single card named by the authenticated local app connection. */
+export const withLocalAppApproval = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   threadId: ThreadId,
   requestId: RequestId,
@@ -21,10 +24,14 @@ export const withUiApproval = <A, E, R>(
 ) =>
   shown === undefined
     ? effect
-    : effect.pipe(Effect.provideService(UiApproval, { threadId, requestId, shown }));
+    : effect.pipe(Effect.provideService(LocalAppApproval, { threadId, requestId, shown }));
 
-export const cameFromUi = (threadId: ThreadId, requestId: RequestId, shown: string | undefined) =>
-  UiApproval.pipe(
+export const cameFromLocalApp = (
+  threadId: ThreadId,
+  requestId: RequestId,
+  shown: string | undefined,
+) =>
+  LocalAppApproval.pipe(
     Effect.map(
       (card) =>
         card !== undefined &&

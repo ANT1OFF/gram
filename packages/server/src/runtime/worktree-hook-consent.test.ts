@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { removeDir, tempDir } from "../git/test-repo.ts";
 import { worktreeHookFingerprint } from "../host/worktree-hook-source.ts";
+import { LOCAL_APP_HEADER, localAppHeadersForTests } from "../http/local-app.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG, waitFor } from "./test-harness.ts";
@@ -42,6 +43,7 @@ const fixture = Effect.gen(function* () {
     revision: "a".repeat(40),
     fingerprint: worktreeHookFingerprint(".gram/setup", script),
     script,
+    folderTrusted: Effect.succeed(true),
   };
 });
 
@@ -79,17 +81,20 @@ describe("worktree hook consent", () => {
           grant,
         ]);
         expect(asked).toBe(1);
-        expect(yield* worktreeHookConsent({ ...inputs, script: revisedScript, ask })).toEqual({
-          decision: "unavailable",
-        });
+        expect(yield* worktreeHookConsent({ ...inputs, script: revisedScript, ask })).toMatchObject(
+          {
+            decision: "unavailable",
+            result: { status: "skipped" },
+          },
+        );
         const changed = worktreeHookConsent({
           ...inputs,
           script: revisedScript,
           fingerprint: worktreeHookFingerprint(inputs.path, revisedScript),
           ask,
         });
-        expect(yield* changed).toEqual({ decision: "deny" });
-        expect(yield* changed).toEqual({ decision: "deny" });
+        expect(yield* changed).toMatchObject({ decision: "deny", result: { status: "skipped" } });
+        expect(yield* changed).toMatchObject({ decision: "deny", result: { status: "skipped" } });
         expect(asked).toBe(2);
       }),
   );
@@ -102,17 +107,44 @@ describe("worktree hook consent", () => {
           ...inputs,
           ask: () => Effect.succeed(answerFor("allow", "different-person")),
         }),
-      ).toEqual({ decision: "unavailable" });
+      ).toMatchObject({ decision: "unavailable", result: { status: "skipped" } });
       expect(
         yield* worktreeHookConsent({
           ...inputs,
           ask: () => Effect.succeed(answerFor("deny")),
         }),
-      ).toEqual({ decision: "deny" });
+      ).toMatchObject({ decision: "deny", result: { status: "skipped" } });
     }),
   );
 
-  it.effect("keeps hook consent pending when an agent-side answer names the current card", () =>
+  it.effect("requires current folder trust even for a remembered decision", () =>
+    Effect.gen(function* () {
+      const inputs = yield* fixture;
+      let trusted = false;
+      let asked = 0;
+      const approve = worktreeHookConsent({
+        ...inputs,
+        folderTrusted: Effect.sync(() => trusted),
+        ask: () =>
+          Effect.sync(() => {
+            asked++;
+            return answerFor("allow");
+          }),
+      });
+      for (const folderTrusted of [false, true, false]) {
+        trusted = folderTrusted;
+        const result = yield* approve;
+        if (trusted) {
+          expect(result.decision).toBe("allow");
+        } else {
+          expect(result).toMatchObject({ decision: "unavailable", result: { status: "skipped" } });
+        }
+      }
+      expect(asked).toBe(1);
+    }),
+  );
+
+  it.effect("keeps hook consent pending for agent and paired-browser answers", () =>
     Effect.gen(function* () {
       const inputs = yield* fixture;
       yield* Effect.gen(function* () {
@@ -145,27 +177,27 @@ describe("worktree hook consent", () => {
         const blocked = yield* rt
           .respond(personThread.id, card.id, answer, card.shown)
           .pipe(Effect.flip);
-        expect(blocked).toMatchObject({
-          message: expect.stringContaining("from its card in the Gram app"),
-        });
-        expect(yield* store.listRequests(personThread.id)).toEqual([card]);
-        expect(pending.pollUnsafe()).toBeUndefined();
+        expect(blocked._tag).toBe("InvalidState");
         const ui = makeRespondHandlers(store, rt);
-        const stale = yield* ui["thread.respond"]({
-          threadId: personThread.id,
-          requestId: card.id,
-          answer,
-          shown: "different-card",
-        }).pipe(Effect.flip);
-        expect(stale).toMatchObject({
-          message: expect.stringContaining("from its card in the Gram app"),
-        });
-        yield* ui["thread.respond"]({
+        const response = {
           threadId: personThread.id,
           requestId: card.id,
           answer,
           shown: card.shown,
-        });
+        };
+        const paired = yield* ui["thread.respond"](response, {
+          headers: { [LOCAL_APP_HEADER]: "forged-local-marker" },
+        }).pipe(Effect.flip);
+        expect(paired._tag).toBe("InvalidState");
+        const local = { headers: localAppHeadersForTests() };
+        const stale = yield* ui["thread.respond"](
+          { ...response, shown: "different-card" },
+          local,
+        ).pipe(Effect.flip);
+        expect(stale._tag).toBe("InvalidState");
+        expect(yield* store.listRequests(personThread.id)).toEqual([card]);
+        expect(pending.pollUnsafe()).toBeUndefined();
+        yield* ui["thread.respond"](response, local);
         expect(yield* Fiber.join(pending)).toMatchObject({ decision: "allow" });
       }).pipe(
         Effect.provide(
