@@ -14,8 +14,8 @@ export const createAppRouter = (
   options: { basepath?: string | undefined; extra?: readonly AnyRoute[] | undefined } = {},
 ) => {
   if (options.extra !== undefined && options.extra.length > 0) {
-    const own = Object.values((routeTree.children ?? {}) as Record<string, AnyRoute>);
-    (routeTree as unknown as AnyRoute).addChildren([...own, ...options.extra]);
+    const own: readonly AnyRoute[] = Object.values(routeTree.children ?? {});
+    routeTree.addChildren([...own, ...options.extra]);
   }
   return createRouter({
     routeTree,

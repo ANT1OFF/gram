@@ -1,4 +1,4 @@
-import type { ThreadId } from "@gram/contracts";
+import { fieldsOf, type ThreadId } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -63,9 +63,8 @@ interface FilesState {
 const EMPTY: ThreadFiles = { expanded: [], selected: undefined, line: undefined };
 
 const sanitizeShares = (raw: unknown): Record<string, number> => {
-  const entries = Object.entries((raw ?? {}) as Record<string, unknown>).flatMap(
-    ([threadId, share]) =>
-      typeof share === "number" ? [[threadId, clampShare(share)] as const] : [],
+  const entries = [...fieldsOf(raw)].flatMap(([threadId, share]) =>
+    typeof share === "number" ? [[threadId, clampShare(share)] as const] : [],
   );
   return Object.fromEntries(entries.slice(-SHARE_LIMIT));
 };
@@ -163,7 +162,7 @@ export const useFilesStore = create<FilesState>()(
       partialize: ({ treeShare }) => ({ treeShare }),
       merge: (persisted, current) => ({
         ...current,
-        treeShare: sanitizeShares((persisted as { treeShare?: unknown } | undefined)?.treeShare),
+        treeShare: sanitizeShares(fieldsOf(persisted).get("treeShare")),
       }),
     },
   ),

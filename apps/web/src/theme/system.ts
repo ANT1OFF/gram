@@ -15,11 +15,15 @@ const QUERIES = {
 } as const satisfies Record<keyof SystemPrefs, string>;
 
 function createBrowserSystemSource(win: Window): SystemSource {
-  const lists = Object.entries(QUERIES).map(
-    ([key, query]) => [key, win.matchMedia(query)] as const,
-  );
-  const read = () =>
-    Object.fromEntries(lists.map(([key, mql]) => [key, mql.matches])) as unknown as SystemPrefs;
+  const dark = win.matchMedia(QUERIES.prefersDark);
+  const reduced = win.matchMedia(QUERIES.prefersReducedMotion);
+  const contrast = win.matchMedia(QUERIES.prefersMoreContrast);
+  const lists = [dark, reduced, contrast];
+  const read = (): SystemPrefs => ({
+    prefersDark: dark.matches,
+    prefersReducedMotion: reduced.matches,
+    prefersMoreContrast: contrast.matches,
+  });
   let snapshot = read();
   return {
     get: () => snapshot,
@@ -28,9 +32,9 @@ function createBrowserSystemSource(win: Window): SystemSource {
         snapshot = read();
         onChange();
       };
-      for (const [, mql] of lists) mql.addEventListener("change", listener);
+      for (const mql of lists) mql.addEventListener("change", listener);
       return () => {
-        for (const [, mql] of lists) mql.removeEventListener("change", listener);
+        for (const mql of lists) mql.removeEventListener("change", listener);
       };
     },
   };

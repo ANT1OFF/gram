@@ -7,7 +7,7 @@ import {
   type RequestId,
   type ThreadId,
   type ThreadSuggestions,
-  type TurnId,
+  TurnId,
   type UserInput,
 } from "@gram/contracts";
 
@@ -136,7 +136,7 @@ export function createComposerMock(world: MockWorld, persist: boolean) {
     suggest(threadId: ThreadId) {
       const replies = armed.get(threadId);
       if (replies === undefined) return;
-      const suggestions = { threadId, turnId: world.ids() as TurnId, replies };
+      const suggestions = { threadId, turnId: TurnId.make(world.ids()), replies };
       suggested.set(threadId, suggestions);
       world.emit({ type: "thread.suggestions", ...suggestions });
     },

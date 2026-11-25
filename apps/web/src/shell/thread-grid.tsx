@@ -1,5 +1,6 @@
-import { GRID_SHAPES, type ThreadId } from "@gram/contracts";
+import { GRID_SHAPES, ThreadId } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { Maximize2, Minimize2, SquareDashed, X } from "lucide-react";
 import {
   useState,
@@ -22,6 +23,7 @@ import { ThreadView } from "@/thread/thread-view";
 import { hasPaneDrag, hasThreadDrag, PANE_DRAG_TYPE, THREAD_DRAG_TYPE } from "./drag";
 import { focusPaneComposer } from "./pane-focus";
 
+const isThreadId = Schema.is(ThreadId);
 const INSTANT = { duration: 0 };
 const KEYBOARD_STEP = 0.05;
 const FULL = "minmax(0,1fr)";
@@ -144,8 +146,8 @@ function Pane({
       swapPanes(Number(pane), index);
       return;
     }
-    const dropped = event.dataTransfer.getData(THREAD_DRAG_TYPE) as ThreadId;
-    if (!dropped) return;
+    const dropped = event.dataTransfer.getData(THREAD_DRAG_TYPE);
+    if (!isThreadId(dropped)) return;
     event.preventDefault();
     if (!focusOtherWindow(dropped)) openInPane(dropped, index);
   };
@@ -170,7 +172,8 @@ function Pane({
       onFocusCapture={() => focusPane(index)}
       onDragOver={onDragOver}
       onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropping(false);
+        const into = event.relatedTarget;
+        if (!(into instanceof Node && event.currentTarget.contains(into))) setDropping(false);
       }}
       onDrop={onDrop}
     >

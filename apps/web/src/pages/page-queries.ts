@@ -4,13 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/api/context";
 
 /** Every pages query of a workspace sits under this, so `pages.changed` refetches them all. */
-export const pagesListKey = (workspaceId: WorkspaceId) => ["pages", workspaceId, "list"] as const;
+export const pagesListKey = (workspaceId: WorkspaceId | undefined) =>
+  ["pages", workspaceId, "list"] as const;
 
 /** The workspace's pinned pages, newest pin first; idle without a workspace. */
 export function usePages(workspaceId: WorkspaceId | undefined) {
   const api = useApi();
   return useQuery({
-    queryKey: pagesListKey(workspaceId ?? ("" as WorkspaceId)),
+    queryKey: pagesListKey(workspaceId),
     queryFn: () => api.listPages(workspaceId!),
     enabled: workspaceId !== undefined,
     retry: false,

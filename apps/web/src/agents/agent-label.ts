@@ -13,6 +13,9 @@ export const AGENT_LABEL: Readonly<Record<AgentKind, string>> = {
   antigravity: "Antigravity",
 };
 
+/** Whether `agent` is a kind this build knows. */
+export const isAgentKind = (agent: string): agent is AgentKind => Object.hasOwn(AGENT_LABEL, agent);
+
 /** An agent's name; a kind this build doesn't know shows as itself. */
 export const agentLabel = (agent: string): string =>
-  Object.hasOwn(AGENT_LABEL, agent) ? AGENT_LABEL[agent as AgentKind] : agent;
+  isAgentKind(agent) ? AGENT_LABEL[agent] : agent;

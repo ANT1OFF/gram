@@ -1,4 +1,4 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/t/$threadId")({
 
 function ThreadPage() {
   const { threadId } = Route.useParams();
-  const id = threadId as ThreadId;
+  const id = ThreadId.make(threadId);
   const api = useApi();
   const navigate = useNavigate();
   const unread = useThreadsStore((s) => s.byId[id]?.thread.unread ?? false);

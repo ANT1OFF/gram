@@ -84,7 +84,8 @@
         "packages/server/src/**",
         "packages/shell/src/**",
         "packages/themes/src/**",
-        "apps/desktop/src/**"
+        "apps/desktop/src/**",
+        "apps/web/src/**"
       ],
       "rules": {
         "typescript/no-unsafe-type-assertion": "error"
@@ -363,10 +364,31 @@
     },
     {
       "files": [
+        "apps/web/src/thread/**",
+        "apps/web/src/orchestration/**",
+        "apps/web/src/new-thread/**",
+        "apps/web/src/reviews/**",
+        "apps/web/src/history/**",
+        "apps/web/src/threads/**",
+        "apps/web/src/inbox/**",
+        "apps/web/src/sidebar/**",
+        "apps/web/src/views/**",
+        "apps/web/src/usage/**",
+        "apps/web/src/settings/**",
+        "apps/web/src/settings-sync/**"
+      ],
+      "rules": {
+        // Mid-migration: these folders' assertions are cleared in the change that follows.
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
+      "files": [
         "**/testing.ts",
         "**/testing/**",
         "**/*.testing.ts",
         "**/test-utils.ts",
+        "**/test-utils.tsx",
         "**/test-harness.ts",
         "**/test-kit.ts",
         "**/*-service-kit.ts",
@@ -374,10 +396,14 @@
         "**/*-test-fixtures.ts",
         "**/*-fixtures.ts",
         "**/*-harness.ts",
-        "**/*-fake.ts"
+        "**/*-fake.ts",
+        "apps/web/src/api/mock.ts",
+        "apps/web/src/api/mock-*.ts",
+        "apps/web/src/api/mock-*/**"
       ],
       "rules": {
-        // Fixture loaders and fakes for tests read recordings as the types they were recorded as.
+        // Fixture loaders, fakes and the web app's mock backend build or read recordings as the
+        // types they stand for.
         "typescript/no-unsafe-type-assertion": "off"
       }
     },

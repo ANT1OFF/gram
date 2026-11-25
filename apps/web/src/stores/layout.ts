@@ -1,4 +1,5 @@
 import {
+  fieldsOf,
   GRID_SHAPES,
   loopbackUrl,
   OVERVIEW_HIDDEN_BY_DEFAULT,
@@ -18,6 +19,8 @@ import {
 } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+
+import { oneOf } from "@/lib/one-of";
 
 export type RightPanelTab = PanelTab;
 
@@ -537,23 +540,24 @@ const OVERVIEW_SIDEBAR_MODES: readonly OverviewSidebar[] = ["open", "compact", "
 
 /** Stored side-panel state; malformed values are dropped so the defaults apply. */
 export function sanitizeSidePanels(raw: unknown): Partial<SidePanels> {
-  const r = (raw ?? {}) as Record<string, unknown>;
-  const flag = (key: keyof SidePanels) => (typeof r[key] === "boolean" ? { [key]: r[key] } : {});
+  const r = fieldsOf(raw);
+  const flag = (key: "panelOpen" | "focusMode") => {
+    const value = r.get(key);
+    return typeof value === "boolean" ? { [key]: value } : {};
+  };
+  const sidebarWidth = r.get("sidebarWidth");
+  const panelWidth = r.get("panelWidth");
+  const panelTab = oneOf(PANEL_TABS, r.get("panelTab"));
+  const overviewSidebar = oneOf(OVERVIEW_SIDEBAR_MODES, r.get("overviewSidebar"));
   return {
-    ...(typeof r["sidebarWidth"] === "number"
-      ? { sidebarWidth: clampWidth(r["sidebarWidth"], SIDEBAR_WIDTH) }
+    ...(typeof sidebarWidth === "number"
+      ? { sidebarWidth: clampWidth(sidebarWidth, SIDEBAR_WIDTH) }
       : {}),
     ...flag("panelOpen"),
-    ...(typeof r["panelWidth"] === "number"
-      ? { panelWidth: clampWidth(r["panelWidth"], PANEL_WIDTH) }
-      : {}),
-    ...(PANEL_TABS.includes(r["panelTab"] as RightPanelTab)
-      ? { panelTab: r["panelTab"] as RightPanelTab }
-      : {}),
+    ...(typeof panelWidth === "number" ? { panelWidth: clampWidth(panelWidth, PANEL_WIDTH) } : {}),
+    ...(panelTab === undefined ? {} : { panelTab }),
     ...flag("focusMode"),
-    ...(OVERVIEW_SIDEBAR_MODES.includes(r["overviewSidebar"] as OverviewSidebar)
-      ? { overviewSidebar: r["overviewSidebar"] as OverviewSidebar }
-      : {}),
+    ...(overviewSidebar === undefined ? {} : { overviewSidebar }),
   };
 }
 
@@ -626,18 +630,18 @@ const LEGACY_REST_SECTIONS: readonly string[] = ["pullRequests", "doneToday"];
  * open before At rest took them in leaves At rest open.
  */
 export function sanitizeOverviewView(raw: unknown): Partial<OverviewView> {
-  const r = (raw ?? {}) as Record<string, unknown>;
-  const folded = r["overviewFolded"];
-  const stored: unknown = r["overviewUnfolded"];
+  const r = fieldsOf(raw);
+  const folded = r.get("overviewFolded");
+  const stored = r.get("overviewUnfolded");
   const unfolded = Array.isArray(stored)
     ? stored.filter((section): section is string => typeof section === "string")
     : undefined;
   if (unfolded?.some((section) => LEGACY_REST_SECTIONS.includes(section))) unfolded.push("rest");
-  const hidden = r["overviewHidden"];
-  const before = r["overviewBeforeHide"] as OverviewSidebar;
-  const grouping = r["doneGrouping"] as DoneGrouping;
+  const hidden = r.get("overviewHidden");
+  const before = oneOf(OVERVIEW_SIDEBAR_MODES, r.get("overviewBeforeHide"));
+  const grouping = oneOf(DONE_GROUPINGS, r.get("doneGrouping"));
   return {
-    ...(DONE_GROUPINGS.includes(grouping) ? { doneGrouping: grouping } : {}),
+    ...(grouping === undefined ? {} : { doneGrouping: grouping }),
     ...(Array.isArray(folded)
       ? {
           overviewFolded: OVERVIEW_SECTIONS.filter(
@@ -655,9 +659,7 @@ export function sanitizeOverviewView(raw: unknown): Partial<OverviewView> {
     ...(Array.isArray(hidden)
       ? { overviewHidden: OVERVIEW_OPTIONAL_SECTIONS.filter((section) => hidden.includes(section)) }
       : {}),
-    ...(before !== "hidden" && OVERVIEW_SIDEBAR_MODES.includes(before)
-      ? { overviewBeforeHide: before }
-      : {}),
+    ...(before === undefined || before === "hidden" ? {} : { overviewBeforeHide: before }),
   };
 }
 
@@ -692,24 +694,20 @@ export interface ReviewRequestsView {
 
 /** Stored PR-list view state; a field of the wrong type leaves its default in place. */
 export function sanitizeReviewRequestsView(raw: unknown): Partial<ReviewRequestsView> {
-  const r = (raw ?? {}) as Record<string, unknown>;
-  const view = <P extends "reviewRequests" | "openPrs">(prefix: P) => {
-    const collapsed = r[`${prefix}Collapsed`];
-    const grouped = r[`${prefix}Grouped`];
-    const repos = r[`${prefix}CollapsedRepos`];
-    const placement = r[`${prefix}Placement`] as ReviewRequestsPlacement;
-    return {
-      ...(REVIEW_REQUESTS_PLACEMENTS.includes(placement)
-        ? { [`${prefix}Placement`]: placement }
-        : {}),
-      ...(typeof collapsed === "boolean" ? { [`${prefix}Collapsed`]: collapsed } : {}),
-      ...(typeof grouped === "boolean" ? { [`${prefix}Grouped`]: grouped } : {}),
-      ...(Array.isArray(repos)
-        ? { [`${prefix}CollapsedRepos`]: repos.filter((repo) => typeof repo === "string") }
-        : {}),
-    } as Partial<ReviewRequestsView>;
-  };
-  return { ...view("reviewRequests"), ...view("openPrs") };
+  const r = fieldsOf(raw);
+  const out: Partial<ReviewRequestsView> = {};
+  for (const prefix of ["reviewRequests", "openPrs"] as const) {
+    const placement = oneOf(REVIEW_REQUESTS_PLACEMENTS, r.get(`${prefix}Placement`));
+    const collapsed = r.get(`${prefix}Collapsed`);
+    const grouped = r.get(`${prefix}Grouped`);
+    const repos = r.get(`${prefix}CollapsedRepos`);
+    if (placement !== undefined) out[`${prefix}Placement` as const] = placement;
+    if (typeof collapsed === "boolean") out[`${prefix}Collapsed` as const] = collapsed;
+    if (typeof grouped === "boolean") out[`${prefix}Grouped` as const] = grouped;
+    if (Array.isArray(repos))
+      out[`${prefix}CollapsedRepos` as const] = repos.filter((repo) => typeof repo === "string");
+  }
+  return out;
 }
 
 /** The Board's folds, and the overview's folded orchestrators, as they were left. */
@@ -723,7 +721,7 @@ export const overviewFoldKey = (workspaceId: string): string => `overview:${work
 
 /** Stored fold state; a field of the wrong type leaves its default in place. */
 export function sanitizeWorkspacesView(raw: unknown): Partial<WorkspacesView> {
-  const nodes = ((raw ?? {}) as Record<string, unknown>)["workspacesCollapsedNodes"];
+  const nodes = fieldsOf(raw).get("workspacesCollapsedNodes");
   return Array.isArray(nodes)
     ? {
         workspacesCollapsedNodes: nodes.filter((node) => typeof node === "string"),
@@ -742,7 +740,7 @@ export interface BoardFilters {
  * when the Board also had lanes is left behind: the grid is its only layout.
  */
 export function sanitizeBoardFilters(raw: unknown): Partial<BoardFilters> {
-  const shown = ((raw ?? {}) as Record<string, unknown>)["boardArchivedShown"];
+  const shown = fieldsOf(raw).get("boardArchivedShown");
   return Array.isArray(shown)
     ? { boardArchivedShown: shown.filter((id) => typeof id === "string") }
     : {};
@@ -765,17 +763,20 @@ export interface DiffView {
 }
 
 export function sanitizeDiffView(raw: unknown): Partial<DiffView> {
-  const r = (raw ?? {}) as Record<string, unknown>;
-  const layout = r["diffLayout"];
-  const flag = (key: "diffTreeShown" | "diffWrap" | "diffIgnoreWhitespace") =>
-    typeof r[key] === "boolean" ? { [key]: r[key] } : {};
+  const r = fieldsOf(raw);
+  const layout = r.get("diffLayout");
+  const reviewWidth = r.get("reviewWidth");
+  const flag = (key: "diffTreeShown" | "diffWrap" | "diffIgnoreWhitespace") => {
+    const value = r.get(key);
+    return typeof value === "boolean" ? { [key]: value } : {};
+  };
   return {
     ...(layout === "unified" || layout === "split" ? { diffLayout: layout } : {}),
     ...flag("diffTreeShown"),
     ...flag("diffWrap"),
     ...flag("diffIgnoreWhitespace"),
-    ...(typeof r["reviewWidth"] === "number"
-      ? { reviewWidth: clampWidth(r["reviewWidth"], PANEL_WIDTH) }
+    ...(typeof reviewWidth === "number"
+      ? { reviewWidth: clampWidth(reviewWidth, PANEL_WIDTH) }
       : {}),
   };
 }

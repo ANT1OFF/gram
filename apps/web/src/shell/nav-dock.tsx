@@ -3,7 +3,7 @@ import { History, Inbox, PanelLeft, Search, Settings } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 
 import { useHostAttention } from "@/embed/attention";
-import { ItemIcon, linkTo, MARK_GROUND, spokenStatus, useCurrentDestination } from "@/embed/slots";
+import { ItemIcon, MARK_GROUND, spokenStatus, useCurrentDestination } from "@/embed/slots";
 import { navigationAt, shownCount, useEmbedShell, useThreadsListed } from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
@@ -98,7 +98,7 @@ function PlaceItems() {
       return (
         <Link
           key={`${group.id}:${item.id}`}
-          {...linkTo(item.to)}
+          to={item.to}
           {...{ [DOCK_ITEM]: "" }}
           data-testid="nav-dock-place"
           aria-label={count === undefined ? name : `${name}, ${count}`}
@@ -170,7 +170,7 @@ export function NavDock({ edge }: { edge: "top" | "bottom" }) {
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         const items = [...(bar.current?.querySelectorAll<HTMLElement>(`[${DOCK_ITEM}]`) ?? [])];
-        const index = items.indexOf(document.activeElement as HTMLElement);
+        const index = items.findIndex((item) => item === document.activeElement);
         if (index === -1) return;
         event.preventDefault();
         const step = event.key === "ArrowRight" ? 1 : -1;

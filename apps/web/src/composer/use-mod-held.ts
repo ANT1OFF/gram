@@ -4,7 +4,13 @@ import { useSubscription } from "@/lib/effects";
 
 import type { HeldDelivery } from "./send-action";
 
-const heldOf = (event: KeyboardEvent): HeldDelivery =>
+interface Modifiers {
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly altKey: boolean;
+}
+
+const heldOf = (event: Modifiers): HeldDelivery =>
   event.metaKey || event.ctrlKey ? "interrupt" : event.altKey ? "queue" : undefined;
 
 /**
@@ -31,8 +37,4 @@ export function useHeldDelivery(active: boolean): HeldDelivery {
 }
 
 /** The delivery a click's own modifiers pick, as `useHeldDelivery` reads them from the keyboard. */
-export const clickDelivery = (event: {
-  readonly metaKey: boolean;
-  readonly ctrlKey: boolean;
-  readonly altKey: boolean;
-}): HeldDelivery => heldOf(event as KeyboardEvent);
+export const clickDelivery = (event: Modifiers): HeldDelivery => heldOf(event);

@@ -1,4 +1,4 @@
-import type { ServerEvent, ThreadId } from "@gram/contracts";
+import type { ServerEvent } from "@gram/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   CircleAlert,
@@ -124,10 +124,11 @@ export function Toasts() {
       <PresenceList>
         {visible.map((n, index) => {
           const kind = KIND[n.kind];
-          const open = n.threadId
+          const threadId = n.threadId;
+          const open = threadId
             ? () => {
                 dismiss(n);
-                void navigate({ to: "/t/$threadId", params: { threadId: n.threadId as ThreadId } });
+                void navigate({ to: "/t/$threadId", params: { threadId } });
               }
             : undefined;
           return (

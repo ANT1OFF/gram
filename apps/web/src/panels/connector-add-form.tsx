@@ -39,6 +39,8 @@ const SCOPES: { value: McpScope; label: string }[] = [
 
 const TARGETS: ReadonlyArray<McpTarget> = ["claude", "codex"];
 
+type ParsedServer = Exclude<ReturnType<typeof configFromDraft>, { error: string }>;
+
 const FIELD =
   "w-full rounded-md border border-input bg-transparent px-2 py-1 font-mono text-meta outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
@@ -146,14 +148,14 @@ export function AddConnectorForm({
   const set = (patch: Partial<McpDraft>) => setDraft((current) => ({ ...current, ...patch }));
 
   const add = useMutation({
-    mutationFn: (server: Exclude<ReturnType<typeof configFromDraft>, { error: string }>) =>
+    mutationFn: ({ server, to }: { server: ParsedServer; to: [McpTarget, ...McpTarget[]] }) =>
       api.addConnector({
         ...(threadId === undefined ? {} : { threadId }),
         ...(threadId === undefined && cwd !== undefined ? { cwd } : {}),
         scope,
         name: server.name,
         config: server.config,
-        targets: targets as [McpTarget, ...McpTarget[]],
+        targets: to,
       }),
     onSuccess: (result) => {
       const where =
@@ -179,12 +181,13 @@ export function AddConnectorForm({
   const submit = () => {
     const parsed = mode === "json" ? configFromJson(json, draft.name) : configFromDraft(draft);
     const blocked = "error" in parsed ? parsed.error : targetProblem(targets, parsed.config.type);
-    if ("error" in parsed || blocked !== undefined) {
+    const [first, ...rest] = targets;
+    if ("error" in parsed || blocked !== undefined || first === undefined) {
       setProblem(blocked);
       return;
     }
     setProblem(undefined);
-    add.mutate(parsed);
+    add.mutate({ server: parsed, to: [first, ...rest] });
   };
 
   const error = problem ?? (add.error ? errorMessage(add.error) : undefined);

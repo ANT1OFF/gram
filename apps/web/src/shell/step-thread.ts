@@ -1,4 +1,4 @@
-import type { ThreadId, ThreadSummary } from "@gram/contracts";
+import { ThreadId, type ThreadSummary } from "@gram/contracts";
 
 import { useThreadsStore } from "@/stores/threads";
 
@@ -59,14 +59,14 @@ export function stepThread(
     const keys = rows.map((row) => rowKey(row)!);
     const next = rows[stepIndex(keys, currentKey(current), delta)];
     if (next === undefined) return;
-    if (next.dataset.threadId) open(next.dataset.threadId as ThreadId);
+    if (next.dataset.threadId) open(ThreadId.make(next.dataset.threadId));
     else next.click();
     return;
   }
   const recent = Object.values(byId)
     .filter((summary): summary is ThreadSummary => summary !== undefined)
     .toSorted((a, b) => b.thread.lastActivityAt - a.thread.lastActivityAt)
-    .map((summary) => summary.thread.id as string);
+    .map((summary) => summary.thread.id);
   const next = recent[stepIndex(recent, currentId, delta)];
-  if (next !== undefined && next !== currentId) open(next as ThreadId);
+  if (next !== undefined && next !== currentId) open(next);
 }

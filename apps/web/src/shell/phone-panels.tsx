@@ -1,11 +1,10 @@
-import type { ThreadId } from "@gram/contracts";
-import { useParams } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
 
 import { openThreadPanel } from "@/components/git-badges";
 import { cn } from "@/lib/utils";
 import { ROUND } from "@/shell/phone-button-style";
 import { usePhonePlace } from "@/shell/phone-title";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useWorkspacePlaces } from "@/shell/titlebar-path";
 import { useLayoutStore, type RightPanelTab } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -32,7 +31,7 @@ export const PHONE_SEGMENT =
  * tap each. A changed file count stands beside Diff, so the row says there is something to read.
  */
 export function PhonePanelRow() {
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   const changed = useThreadsStore((s) =>
     threadId === undefined ? 0 : (s.byId[threadId]?.git?.changedFiles ?? 0),
   );

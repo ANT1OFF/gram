@@ -1,5 +1,6 @@
 import { run, untilGone, iterate, type RpcContext } from "../rpc-client";
 import type { AgentRuntimeApi } from "./types";
+import { tagOf } from "../errors";
 
 /** `AgentRuntimeApi` over the RPC client. */
 export const agentRuntimeRpc = ({ client, connection }: RpcContext): AgentRuntimeApi => ({
@@ -11,7 +12,7 @@ export const agentRuntimeRpc = ({ client, connection }: RpcContext): AgentRuntim
       (s) => iterate(client["agentRuntime.watchInstall"]({ agent }), s),
       connection,
       signal,
-      (error) => (error as { _tag?: unknown } | null)?._tag === "RuntimeInstallRefused",
+      (error) => tagOf(error) === "RuntimeInstallRefused",
     ),
   installRuntime: (agent, version) => run(client["agentRuntime.install"]({ agent, version })),
   cancelRuntimeInstall: (agent) => run(client["agentRuntime.cancel"]({ agent })),

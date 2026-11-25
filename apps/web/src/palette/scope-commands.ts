@@ -1,4 +1,4 @@
-import type { MessageId, ThreadId, WorkspaceId } from "@gram/contracts";
+import { MessageId, type ThreadId, type WorkspaceId } from "@gram/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -57,6 +57,7 @@ export interface ScopeCommands {
   readonly sections: readonly PaletteSection[];
 }
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the thread hooks run on every render; without a thread they get an id no thread has, and find nothing
 const NO_THREAD = "" as ThreadId;
 
 const shortcut = (id: string) => {
@@ -332,7 +333,10 @@ export function useScopeCommands(
                     .byId[id]?.waits?.some((item) => item.messageId === lastReply.id);
                   if (kept === true) fail("The last reply already waits on you.");
                   else {
-                    attempt("add it to Waiting on you", api.addWait(id, lastReply.id as MessageId));
+                    attempt(
+                      "add it to Waiting on you",
+                      api.addWait(id, MessageId.make(lastReply.id)),
+                    );
                   }
                 },
               },

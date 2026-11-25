@@ -18,12 +18,10 @@ const STORAGE_KEY = "gram.theme";
 
 function storedState(): Record<string, unknown> {
   try {
-    const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as {
-      state?: unknown;
-    };
-    return stored.state !== null && typeof stored.state === "object"
-      ? (stored.state as Record<string, unknown>)
-      : {};
+    const stored: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
+    const state =
+      typeof stored === "object" && stored !== null && "state" in stored ? stored.state : undefined;
+    return typeof state === "object" && state !== null ? { ...state } : {};
   } catch {
     return {};
   }

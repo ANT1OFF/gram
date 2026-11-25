@@ -77,6 +77,15 @@ export const HANDSHAKE_TAG = "app.handshake" satisfies GramRpcTag;
 const unknownTag = (cause: Cause.Cause<unknown>, tag: string): boolean =>
   Cause.squash(cause) === `Unknown request tag: ${tag}`;
 
+const isRpcTag = (key: string): key is GramRpcTag => GramRpcs.requests.has(key);
+const isCallable = (value: unknown): value is (...args: unknown[]) => unknown =>
+  typeof value === "function";
+
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a stream tag's call is a Stream
+const asStream = (answer: unknown) => answer as Stream.Stream<unknown, unknown>;
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- any other tag's call is an Effect
+const asEffect = (answer: unknown) => answer as Effect.Effect<unknown, unknown>;
+
 const STREAMS: ReadonlySet<string> = new Set(
   [...GramRpcs.requests.values()]
     .filter((rpc) => RpcSchema.isStreamSchema(rpc.successSchema))
@@ -110,7 +119,7 @@ export function gateClient<C extends object>(
           Stream.unwrap(
             Effect.map(waitReady, () =>
               served.serves(tag)
-                ? (call(...args) as Stream.Stream<unknown, unknown>).pipe(
+                ? asStream(call(...args)).pipe(
                     Stream.catchCause((cause) => Stream.failCause(strike(cause))),
                   )
                 : Stream.fail(missing()),
@@ -119,7 +128,7 @@ export function gateClient<C extends object>(
       : (...args: unknown[]) =>
           Effect.flatMap(waitReady, () =>
             served.serves(tag)
-              ? (call(...args) as Effect.Effect<unknown, unknown>).pipe(
+              ? asEffect(call(...args)).pipe(
                   Effect.catchCause((cause) => Effect.failCause(strike(cause))),
                 )
               : Effect.fail(missing()),
@@ -129,11 +138,10 @@ export function gateClient<C extends object>(
     get(target, key, receiver) {
       // oxlint-disable-next-line anti-slop/no-reflect-get -- a Proxy trap forwards through Reflect
       const value: unknown = Reflect.get(target, key, receiver);
-      if (typeof key !== "string" || typeof value !== "function" || !GramRpcs.requests.has(key))
-        return value;
+      if (typeof key !== "string" || !isCallable(value) || !isRpcTag(key)) return value;
       let call = calls.get(key);
       if (call === undefined) {
-        call = gated(key as GramRpcTag, value as (...args: unknown[]) => unknown);
+        call = gated(key, value);
         calls.set(key, call);
       }
       return call;

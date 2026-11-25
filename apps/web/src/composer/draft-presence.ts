@@ -1,4 +1,5 @@
-import type { ThreadId } from "@gram/contracts";
+import { ThreadId } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import { useEffect } from "react";
 
 import { useApi } from "@/api/context";
@@ -6,11 +7,12 @@ import { useDraftStore } from "@/stores/drafts";
 
 const DRAFT_REPORT_MS = 30_000;
 
+const isThreadId = Schema.is(ThreadId);
+
 /** The threads whose composer holds more than whitespace. */
-export const draftedThreads = (text: Readonly<Record<string, string>>): string[] =>
+export const draftedThreads = (text: Readonly<Record<string, string>>): ThreadId[] =>
   Object.entries(text)
-    .filter(([, value]) => value.trim() !== "")
-    .map(([threadId]) => threadId)
+    .flatMap(([threadId, value]) => (isThreadId(threadId) && value.trim() !== "" ? [threadId] : []))
     .toSorted();
 
 /**
@@ -18,9 +20,11 @@ export const draftedThreads = (text: Readonly<Record<string, string>>): string[]
  * `DRAFT_REPORT_MS` while there are any, and once more, empty, as it goes. Idle compaction never
  * runs on a thread with one. Thread ids only; the text stays in the window.
  */
-export function draftPresenceReporter(send: (threadIds: readonly string[]) => Promise<void>) {
+export function draftPresenceReporter<Id extends string>(
+  send: (threadIds: readonly Id[]) => Promise<void>,
+) {
   let last: string | undefined;
-  const report = (threadIds: readonly string[], force = false) => {
+  const report = (threadIds: readonly Id[], force = false) => {
     const key = threadIds.join("\n");
     if (!force && key === last) return;
     if (force && threadIds.length === 0 && last === "") return;
@@ -50,8 +54,8 @@ export function useDraftPresence(): void {
   const api = useApi();
   useEffect(() => {
     const id = windowId();
-    const reporter = draftPresenceReporter((threadIds) =>
-      api.composerDrafts(id, threadIds as readonly ThreadId[]),
+    const reporter = draftPresenceReporter((threadIds: readonly ThreadId[]) =>
+      api.composerDrafts(id, threadIds),
     );
     const current = () => draftedThreads(useDraftStore.getState().text);
     reporter.report(current());

@@ -1,4 +1,4 @@
-import type { AgentKind } from "@gram/contracts";
+import { fieldsOf, type AgentKind } from "@gram/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -36,7 +36,7 @@ export const useModelFavourites = create<ModelFavouritesState>()(
       partialize: ({ keys }) => ({ keys }),
       merge: (persisted, current) => ({
         ...current,
-        keys: sanitize((persisted as { keys?: unknown } | undefined)?.keys),
+        keys: sanitize(fieldsOf(persisted).get("keys")),
       }),
     },
   ),

@@ -6,8 +6,10 @@ import {
   type SpeechMode,
   type SpeechOpenRequest,
   type SpeechPerformance,
-  type SpeechServerMessage,
 } from "@gram/contracts";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 
 type DictationErrorCode =
   | SpeechErrorCode
@@ -22,9 +24,29 @@ export type DictationState =
   | { readonly phase: "stopping" }
   | { readonly phase: "error"; readonly code: DictationErrorCode; readonly message: string };
 
-type DictationServerMessage =
-  | Exclude<SpeechServerMessage, { readonly type: "error" }>
-  | { readonly type: "error"; readonly code: DictationErrorCode; readonly message: string };
+const ERROR_CODES: Readonly<Record<DictationErrorCode, true>> = {
+  "model-missing": true,
+  "model-load-failed": true,
+  unavailable: true,
+  crashed: true,
+  superseded: true,
+  "invalid-message": true,
+  stopped: true,
+  "microphone-denied": true,
+  "microphone-unavailable": true,
+  timeout: true,
+};
+
+const isErrorCode = (code: string): code is DictationErrorCode => Object.hasOwn(ERROR_CODES, code);
+
+const ServerMessage = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("ready") }),
+  Schema.Struct({ type: Schema.Literal("partial"), text: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("final"), text: Schema.String, reason: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("error"), code: Schema.String, message: Schema.String }),
+]);
+type DictationServerMessage = typeof ServerMessage.Type;
+const decodeServerMessage = Schema.decodeUnknownOption(ServerMessage);
 
 /** The page's end of a session's port, as `MessagePort` is. */
 export interface DictationPort {
@@ -111,7 +133,7 @@ const STOP_TIMEOUT_MS = 5_000;
 export const STOP_TAIL_MS = 200;
 
 const captureError = (error: unknown): { code: DictationErrorCode; message: string } => {
-  const name = (error as { name?: unknown } | null)?.name;
+  const name = Predicate.isObject(error) ? error["name"] : undefined;
   if (name === "NotAllowedError" || name === "SecurityError")
     return {
       code: "microphone-denied",
@@ -153,7 +175,10 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
   let capture: Capture | undefined;
   let partial = "";
   let level = 0;
-  const listener = (event: MessageEvent) => onMessage(event.data as DictationServerMessage);
+  const listener = (event: MessageEvent) => {
+    const message = decodeServerMessage(event.data);
+    if (Option.isSome(message)) onMessage(message.value);
+  };
   let stopTimer: ReturnType<typeof setTimeout> | undefined;
   let generation = 0;
 
@@ -200,7 +225,11 @@ export function createDictation(deps: DictationDeps, events: DictationEvents): D
         if (message.reason === "stop") end({ phase: "idle" });
         return;
       case "error":
-        return end({ phase: "error", code: message.code, message: message.message });
+        return end({
+          phase: "error",
+          code: isErrorCode(message.code) ? message.code : "unavailable",
+          message: message.message,
+        });
     }
   };
 

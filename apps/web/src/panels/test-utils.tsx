@@ -15,18 +15,21 @@ import type { Api } from "@/api/types";
 
 async function* emptyThreadFeed(): AsyncGenerator<never> {}
 
+function withPanelCalls(api: Partial<Api>): Partial<Api> {
+  const fake = Object.create(api) as Partial<Api>;
+  return Object.assign(fake, {
+    ...("threadFeed" in api ? {} : { threadFeed: emptyThreadFeed }),
+    ...("served" in api ? {} : { served: servedAllBut() }),
+  });
+}
+
 /** Renders `ui` inside a fresh query client (no retries) and the given api. */
 export function renderWithApi(ui: ReactNode, api: Partial<Api>): RenderResult {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const provided =
-    "threadFeed" in api && "served" in api
-      ? api
-      : Object.assign(Object.create(api) as Partial<Api>, {
-          ...("threadFeed" in api ? {} : { threadFeed: emptyThreadFeed }),
-          ...("served" in api ? {} : { served: servedAllBut() }),
-        });
+  const provided = "threadFeed" in api && "served" in api ? api : withPanelCalls(api);
+  const fake = provided as Api;
   return render(
-    <ApiProvider api={provided as Api}>
+    <ApiProvider api={fake}>
       <QueryClientProvider client={client}>{ui}</QueryClientProvider>
     </ApiProvider>,
   );

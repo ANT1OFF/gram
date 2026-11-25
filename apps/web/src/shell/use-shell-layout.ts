@@ -1,11 +1,11 @@
-import type { ThreadId } from "@gram/contracts";
-import { useParams, useRouterState } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import { useLayoutEffect } from "react";
 
 import { useWindowLights } from "@/desktop/window-lights";
 import { panelOffered, useEmbedShell } from "@/embed/store";
 import { usePhone } from "@/lib/use-phone";
 import { useServerSettings } from "@/settings-sync/store";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useWindowWidth } from "@/shell/side-resize";
 import {
   chatBarStart,
@@ -42,7 +42,7 @@ export function useShellLayout() {
   const panelLeft = useServerSettings((s) => s.settings?.panel.side === "left");
   const { width: windowWidth, resizing: windowResizing } = useWindowWidth();
   const lightsInset = useWindowLights((s) => s.inset);
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   const hasThread = threadId !== undefined;
   const threadQuiet = useThreadsStore((s) => {
     const git = threadId === undefined ? undefined : s.byId[threadId]?.git;

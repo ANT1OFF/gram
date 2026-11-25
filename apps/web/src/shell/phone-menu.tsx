@@ -6,7 +6,6 @@ import { createElement, useEffect, useId, useRef, useState } from "react";
 import {
   EmbedSwitcher,
   ItemIcon,
-  linkTo,
   MARK_GROUND,
   MarkStatus,
   useCurrentDestination,
@@ -100,7 +99,7 @@ function PhoneGroup({
       {page !== undefined ? (
         <h2 data-testid="embed-navigation-heading" className="flex min-w-0 items-center pr-3.5">
           <Link
-            {...linkTo(page)}
+            to={page}
             {...{ [OVERVIEW_STOP]: "" }}
             data-testid="embed-navigation-heading-link"
             data-glide-skip=""
@@ -188,7 +187,7 @@ function PhoneGroup({
           return (
             <li key={item.id}>
               <Link
-                {...linkTo(item.to)}
+                to={item.to}
                 {...{ [OVERVIEW_STOP]: "" }}
                 data-testid="embed-navigation-item"
                 aria-current={current ? "page" : undefined}

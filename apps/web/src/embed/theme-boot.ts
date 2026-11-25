@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import { PRESET_PALETTES, resolvePalette, type Palette } from "@gram/themes";
 
 import { hostPalettes, type HostTheme } from "@/theme/host-theme";
@@ -18,22 +19,22 @@ export const bootTheme = (
   theme?: HostTheme,
   defaults?: LookDefaults,
 ): void => {
-  let state: { mode?: unknown; palette?: unknown; motion?: unknown } = {};
+  let state: ReadonlyMap<string, unknown> = new Map();
   try {
-    const stored = JSON.parse(storage?.getItem("gram.theme") ?? "{}") as { state?: typeof state };
-    state = stored.state ?? {};
+    const stored: unknown = JSON.parse(storage?.getItem("gram.theme") ?? "{}");
+    state = fieldsOf(fieldsOf(stored).get("state"));
   } catch (_unreadableStorageBootsTheDefaults) {}
-  let mode: "light" | "dark" = state.mode === "light" ? "light" : "dark";
-  if (state.mode === "system") mode = prefersLight() ? "light" : "dark";
-  const stored =
-    typeof state.palette === "string" && state.palette !== "" ? state.palette : "neutral-dark";
+  const chosen = state.get("mode");
+  let mode: "light" | "dark" = chosen === "light" ? "light" : "dark";
+  if (chosen === "system") mode = prefersLight() ? "light" : "dark";
+  const palette = state.get("palette");
+  const motion = state.get("motion");
+  const stored = typeof palette === "string" && palette !== "" ? palette : "neutral-dark";
   root.dataset["look"] ??= "glass";
   root.dataset["mode"] = mode;
   root.dataset["palette"] = pairedPalette(paletteToRender(stored, theme, defaults), mode, theme);
   root.dataset["motion"] =
-    typeof state.motion === "string" && /^(reduced|off)$/.test(state.motion)
-      ? state.motion
-      : "system";
+    typeof motion === "string" && /^(reduced|off)$/.test(motion) ? motion : "system";
   root.setAttribute("data-theme-booting", "");
 };
 

@@ -1,4 +1,4 @@
-import { embeddingOn, type ThreadId } from "@gram/contracts";
+import { embeddingOn, ThreadId } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createRoute,
@@ -9,6 +9,7 @@ import {
   useRouterState,
   type AnyRoute,
 } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -17,6 +18,7 @@ import { setServerBase } from "@/api/server-base";
 import type { Api } from "@/api/types";
 import { installKeyboard } from "@/keyboard/registry";
 import { setAppBasePath, appBasePath } from "@/lib/app-path";
+import { PanelMessage } from "@/panels/panel-message";
 import { keepAppearanceOn } from "@/settings-sync";
 import { createAppRouter } from "@/router";
 import { ThreadView } from "@/thread/thread-view";
@@ -37,6 +39,8 @@ import { installHostTheme } from "@/theme/host-theme";
 import { installLookDefaults } from "@/theme/look-defaults";
 
 import { bootTheme } from "./theme-boot";
+
+const isThreadId = Schema.is(ThreadId);
 
 function ShellPage({ route }: { route: ShellRoute }) {
   const params: Readonly<Record<string, string>> = useParams({ strict: false });
@@ -171,7 +175,7 @@ export const mountGram: MountGram = async (options) => {
           ...("models" in next ? { models: next.models ?? {} } : {}),
         });
       },
-      navigate: (to) => router.navigate({ to: to as "/" }),
+      navigate: (to) => router.navigate({ to }),
       unmount: () => {
         stopKeyboard();
         root.unmount();
@@ -187,7 +191,7 @@ export const mountGram: MountGram = async (options) => {
 
 /** A link for the embedding app's pages and switcher: it moves the window, never reloads it. */
 export const ShellLink: ShellLinkComponent = ({ to, className, children }) => (
-  <Link {...({ to } as unknown as { to: "/" })} {...(className === undefined ? {} : { className })}>
+  <Link to={to} {...(className === undefined ? {} : { className })}>
     {children}
   </Link>
 );
@@ -195,15 +199,19 @@ export const ShellLink: ShellLinkComponent = ({ to, className, children }) => (
 /** A thread for the embedding app's pages: beside what the page shows, as a worker's is in a dock. */
 export const ShellThread: ShellThreadComponent = ({ threadId, placeholder }) => (
   <div className="flex h-full min-h-0 flex-col" data-testid="shell-thread">
-    <ThreadView
-      key={threadId}
-      threadId={threadId as ThreadId}
-      focused
-      beside={{
-        header: null,
-        ...(placeholder === undefined ? {} : { placeholder }),
-      }}
-    />
+    {isThreadId(threadId) ? (
+      <ThreadView
+        key={threadId}
+        threadId={threadId}
+        focused
+        beside={{
+          header: null,
+          ...(placeholder === undefined ? {} : { placeholder }),
+        }}
+      />
+    ) : (
+      <PanelMessage>This thread no longer exists.</PanelMessage>
+    )}
   </div>
 );
 
@@ -217,7 +225,7 @@ export const useShellLocation: UseShellLocation = () => {
     pathname,
     navigate: (to, options) =>
       navigate({
-        to: to as "/",
+        to,
         ...(options?.replace === true ? { replace: true } : {}),
       }),
   };

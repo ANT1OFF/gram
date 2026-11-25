@@ -1,3 +1,8 @@
+const isPlainObject = (value: object): value is Readonly<Record<string, unknown>> => {
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+};
+
 const sameData = (a: unknown, b: unknown): boolean => {
   if (Object.is(a, b)) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
@@ -15,15 +20,11 @@ const sameData = (a: unknown, b: unknown): boolean => {
     for (const [key, value] of a) if (!b.has(key) || !sameData(value, b.get(key))) return false;
     return true;
   }
-  const proto = Object.getPrototypeOf(a) as unknown;
-  if ((proto !== Object.prototype && proto !== null) || Object.getPrototypeOf(b) !== proto) {
-    return false;
-  }
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
+  if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
   const keys = Object.keys(a);
   if (keys.length !== Object.keys(b).length) return false;
-  const left = a as Record<string, unknown>;
-  const right = b as Record<string, unknown>;
-  return keys.every((key) => Object.hasOwn(right, key) && sameData(left[key], right[key]));
+  return keys.every((key) => Object.hasOwn(b, key) && sameData(a[key], b[key]));
 };
 
 /**

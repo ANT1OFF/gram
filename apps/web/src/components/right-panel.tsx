@@ -1,5 +1,4 @@
-import type { ThreadId, ThreadSummary, WorkspaceId } from "@gram/contracts";
-import { useParams } from "@tanstack/react-router";
+import type { ThreadSummary, WorkspaceId } from "@gram/contracts";
 import {
   AppWindow,
   Bell,
@@ -31,6 +30,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { useSubscription } from "@/lib/effects";
 import { cn } from "@/lib/utils";
+import { useRouteThreadId } from "@/shell/route-params";
 import { useNotificationHistory, unreadNotifications } from "@/stores/notifications";
 import { PreviewSuggestionNotice } from "@/panels/preview-suggestion";
 import { useReviewRequests } from "@/reviews/review-requests";
@@ -126,8 +126,7 @@ const NOT_ORCHESTRATOR_VIEWS: ReadonlySet<ShownTab> = new Set([
  * panel, which isn't mounted while hidden.
  */
 export function useShowPanelRequests() {
-  const params = useParams({ strict: false });
-  const threadId = params.threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   const requestPanel = useLayoutStore((s) => s.requestPanel);
   const previewPane = useFeature("previewPane");
   const serverPage = useServerBrowser();
@@ -156,8 +155,7 @@ export function RightPanel() {
   const pagesHere = workspaceId !== undefined && (pinnedHere || storedTab === "pages");
   const notificationCount = useNotificationHistory(unreadNotifications);
   const reviewCount = useReviewRequests().data?.requests.length ?? 0;
-  const params = useParams({ strict: false });
-  const routeThreadId = params.threadId as ThreadId | undefined;
+  const routeThreadId = useRouteThreadId();
   const routeIsOrchestrator = useThreadsStore(
     (s) => routeThreadId === undefined || s.byId[routeThreadId]?.thread.spawnedBy === undefined,
   );
@@ -291,7 +289,14 @@ export function RightPanel() {
             orchestrator={
               workersOnly || views.length === 0
                 ? undefined
-                : { views, label: ownLabel, onPick: (value) => setTab(value as ShownTab) }
+                : {
+                    views,
+                    label: ownLabel,
+                    onPick: (value) => {
+                      const view = views.find((each) => each.value === value);
+                      if (view !== undefined) setTab(view.value);
+                    },
+                  }
             }
           />
         </Suspense>
@@ -632,7 +637,7 @@ const terminalsBusyText = (processes: ThreadSummary["terminalProcesses"]): strin
     : `${processes.map((p) => p.command).join(" and ")} running`;
 
 function useRouteWorkspace(): WorkspaceId | undefined {
-  const threadId = useParams({ strict: false }).threadId as ThreadId | undefined;
+  const threadId = useRouteThreadId();
   return useThreadsStore((s) =>
     threadId === undefined ? undefined : (s.byId[threadId]?.thread.workspaceId ?? undefined),
   );

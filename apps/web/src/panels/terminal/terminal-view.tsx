@@ -1,4 +1,5 @@
 import type { TerminalId, ThreadId } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 
@@ -28,12 +29,11 @@ import {
 } from "./terminal-find-bar";
 import { monoFont, useTerminalSearchColors, useTerminalTheme } from "./terminal-theme";
 import { terminalProblem } from "./terminals-store";
-import {
-  createTerminal,
-  type TerminalFindResults,
-  type TerminalHandle,
-  type TerminalTheme,
-} from "./ghostty-loader";
+import { createTerminal, type TerminalFindResults, type TerminalHandle } from "./ghostty-loader";
+
+const decodeTheme = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
+);
 
 const RESIZE_DEBOUNCE_MS = 80;
 const DEFAULT_FONT_SIZE = 12;
@@ -165,7 +165,7 @@ export function TerminalView({
     void (async () => {
       try {
         handle = await createTerminal(element, {
-          theme: JSON.parse(themeKey) as TerminalTheme,
+          theme: decodeTheme(themeKey),
           fontFamily: monoFont(),
           fontSize: latest.current.fontSize,
           onResize: sendGrid,
