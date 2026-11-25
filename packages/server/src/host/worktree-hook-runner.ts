@@ -65,7 +65,6 @@ interface HookRunnerOptions {
   readonly loginPath: string;
   readonly base?: NodeJS.ProcessEnv;
   readonly publicVariables?: Readonly<Record<string, string>>;
-  /** An enclosing activation or qualification can share and shorten the deadline. */
   readonly budgetMs?: number;
 }
 
@@ -131,7 +130,6 @@ const startHook = (bin: string, cwd: string, env: Record<string, string>, timeou
       resolve({ kind: "exit", code, signal });
     });
   });
-  // A process that inherited these pipes must not delay group cleanup before its parent exits.
   const closed = new Promise<void>((resolve) => void child.once("close", () => resolve()));
   const cleanup = async () => {
     abort?.();
