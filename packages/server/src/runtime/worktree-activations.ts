@@ -71,17 +71,31 @@ const saved = (thread: Thread, checkout: Checkout, kind: WorktreeHookKind) =>
   );
 
 export const worktreeNotice = (items: readonly ThreadWorktreeHook[]): string | undefined => {
-  const notes = items.flatMap(({ checkout, kind, path, result }) =>
-    result.status === "failed" || result.status === "skipped"
-      ? [
-          `${sanitizeHookText(basename(checkout)).slice(0, 100)} ${path ?? kind}: ${result.reason ?? "The hook did not run."}`,
-        ]
-      : [],
-  );
+  const notes = items.flatMap(({ checkout, kind, path, result }) => {
+    if (result.status !== "failed" && result.status !== "skipped") return [];
+    const reason =
+      result.failure === "missing-tool"
+        ? "A required tool is unavailable on the hook's machine."
+        : (result.reason ?? "The hook did not run.");
+    return [`${sanitizeHookText(basename(checkout)).slice(0, 100)} ${path ?? kind}: ${reason}`];
+  });
   return notes.length === 0
     ? undefined
     : `Gram worktree status. See Worktree hooks in the thread for details.\n${notes.join("\n")}`;
 };
+
+const hookEntry = (
+  checkout: Checkout,
+  kind: WorktreeHookKind,
+  path: string | undefined,
+  result: ThreadWorktreeHook["result"],
+): ThreadWorktreeHook => ({
+  checkout: checkout.path,
+  kind,
+  generation: checkout.worktreeSetup?.generation ?? "existing",
+  ...(path === undefined ? {} : { path }),
+  result: storedResult(result),
+});
 
 export const makeWorktreeActivations = (deps: {
   readonly local: HostWorktreeHooks;
@@ -113,21 +127,8 @@ export const makeWorktreeActivations = (deps: {
       };
     });
 
-  const record = (
-    thread: Thread,
-    checkout: Checkout,
-    kind: WorktreeHookKind,
-    path: string | undefined,
-    result: ThreadWorktreeHook["result"],
-  ) => {
-    const entry = {
-      checkout: checkout.path,
-      kind,
-      generation: checkout.worktreeSetup?.generation ?? "existing",
-      ...(path === undefined ? {} : { path }),
-      result: storedResult(result),
-    } satisfies ThreadWorktreeHook;
-    return deps.store
+  const persist = (thread: Thread, entry: ThreadWorktreeHook) =>
+    deps.store
       .updateThread(thread.id, (current) => ({
         ...current,
         worktreeHooks: [
@@ -139,9 +140,20 @@ export const makeWorktreeActivations = (deps: {
       }))
       .pipe(
         Effect.tap(deps.publish),
-        Effect.as(entry),
-        Effect.orElseSucceed(() => entry),
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+        Effect.catchDefect(() => Effect.succeed(false)),
       );
+
+  const record = (
+    thread: Thread,
+    checkout: Checkout,
+    kind: WorktreeHookKind,
+    path: string | undefined,
+    result: ThreadWorktreeHook["result"],
+  ) => {
+    const entry = hookEntry(checkout, kind, path, result);
+    return persist(thread, entry).pipe(Effect.as(entry));
   };
 
   const plan = (thread: Thread, checkout: Checkout, kind: WorktreeHookKind) =>
@@ -261,7 +273,17 @@ export const makeWorktreeActivations = (deps: {
             reachable.hosted !== location.hosted
           )
             return yield* mark(inspection.path, unavailable());
-          yield* record(thread, checkout, kind, inspection.path, { status: "running" });
+          const running = hookEntry(checkout, kind, inspection.path, { status: "running" });
+          const recorded = yield* persist(thread, running);
+          if (kind === "setup" && !recorded)
+            return yield* mark(
+              inspection.path,
+              outcome(
+                "failed",
+                "Setup did not start because Gram could not save its running status.",
+                "interrupted",
+              ),
+            );
           const budgetMs = deadline === undefined ? undefined : Math.max(0, deadline - Date.now());
           let cleanupReported = false;
           const run = reachable.hooks.run(
@@ -320,6 +342,7 @@ export const makeWorktreeActivations = (deps: {
   const setup = (thread: Thread) =>
     Effect.gen(function* () {
       const items: ThreadWorktreeHook[] = [];
+      const firstInput = thread.agentSessionId === undefined || thread.agentSessionUnused === true;
       for (const checkout of owned(thread)) {
         if (checkout.worktreeSetup === undefined) continue;
         const previous = saved(thread, checkout, "setup");
@@ -328,7 +351,9 @@ export const makeWorktreeActivations = (deps: {
             ? yield* finish(yield* plan(thread, checkout, "setup"))
             : previous.result.status === "running"
               ? yield* record(thread, checkout, "setup", previous.path, interrupted())
-              : previous;
+              : firstInput
+                ? previous
+                : undefined;
         if (item !== undefined) items.push(item);
       }
       return items;

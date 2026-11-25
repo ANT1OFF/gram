@@ -1,17 +1,19 @@
 import { chmodSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
+import { RequestId } from "@gram/contracts";
 import { ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { eventually, makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
-import { markNewWorktree } from "../host/worktree-hook-source.ts";
+import { markNewWorktree, worktreeHookFingerprint } from "../host/worktree-hook-source.ts";
 import { localAppHeadersForTests } from "../http/local-app.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
 import { FakeAgentControl } from "./fake-agent.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG } from "./test-harness.ts";
 import { ThreadRuntimes } from "./thread-runtimes.ts";
+import { makeWorktreeActivations } from "./worktree-activations.ts";
 
 describe.skipIf(process.platform === "win32")("worktree hook activation", () => {
   it.live("sends setup failure in the first brief and runs resume again before a warm wake", () =>
@@ -20,7 +22,10 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
       yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dir)));
       const repo = makeRepo(dir);
       for (const [kind, script] of [
-        ["setup", "printf s >> attempts\necho fixture-setup-failed\nexit 31"],
+        [
+          "setup",
+          "printf s >> attempts\necho 'sh: fixture-setup-failed: command not found' >&2\nexit 127",
+        ],
         ["resume", "printf r >> attempts"],
       ]) {
         const path = join(repo, ".gram", kind!);
@@ -72,6 +77,10 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
               ),
           );
           expect(agent.sessions).toHaveLength(0);
+          if (phase === "setup") {
+            const duplicate = yield* runtimes.startSession(worker.id).pipe(Effect.flip);
+            expect(duplicate._tag).toBe("InvalidState");
+          }
           if (before.shown === undefined) throw new Error("Expected a keyed approval");
           yield* ui["thread.respond"](
             {
@@ -87,7 +96,9 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
           "first worker input",
           Effect.sync(() => agent.sessions.find((candidate) => candidate.sent.length > 0)),
         );
-        expect(session.sent[0]?.text).toContain("The hook exited with status 31.");
+        expect(session.sent[0]?.text).toContain(
+          "A required tool is unavailable on the hook's machine.",
+        );
         expect(session.sent[0]?.text).toContain("Fixture brief");
         expect(session.sent[0]?.text).not.toContain("fixture-setup-failed");
         const setup = (yield* store.getThread(worker.id)).worktreeHooks?.find(
@@ -95,9 +106,14 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
         );
         expect(setup?.result).toMatchObject({
           status: "failed",
-          exitCode: 31,
-          log: "fixture-setup-failed\n",
+          failure: "missing-tool",
+          exitCode: 127,
+          reason: expect.stringContaining("fixture-setup-failed"),
+          log: "sh: fixture-setup-failed: command not found\n",
         });
+        expect(readFileSync(join(checkout, "attempts"), "utf8")).toBe("sr");
+        yield* runtimes.steer(worker.id, { text: "Fixture steer" });
+        expect(session.steered).toEqual([{ text: "Fixture steer" }]);
         expect(readFileSync(join(checkout, "attempts"), "utf8")).toBe("sr");
         yield* session.completeTurn();
         yield* eventually(
@@ -152,6 +168,7 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
           Effect.sync(() => resumed.sent.length > 0),
         );
         expect(resumed.sent[0]?.text).toContain("The user declined this hook revision.");
+        expect(resumed.sent[0]?.text).not.toContain(".gram/setup");
         const resume = (yield* store.getThread(worker.id)).worktreeHooks?.find(
           (each) => each.kind === "resume",
         );
@@ -165,5 +182,104 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
         ),
       );
     }),
+  );
+
+  it.effect(
+    "interrupts setup when its start cannot be recorded or an earlier start was interrupted",
+    () =>
+      Effect.gen(function* () {
+        const dataDir = tempDir();
+        yield* Effect.addFinalizer(() => Effect.sync(() => removeDir(dataDir)));
+        yield* Effect.gen(function* () {
+          const runtimes = yield* ThreadRuntimes;
+          const store = yield* ThreadStore;
+          const revision = "a".repeat(40);
+          const path = ".gram/setup";
+          const script = "#!/bin/sh\nexit 0\n";
+          let failWrite = true;
+          let ran = 0;
+          const activations = makeWorktreeActivations({
+            dataDir,
+            store: {
+              ...store,
+              updateThread: (...args) =>
+                Effect.suspend(() => {
+                  if (!failWrite) return store.updateThread(...args);
+                  failWrite = false;
+                  return Effect.die("fixture storage failure");
+                }),
+            },
+            local: {
+              inspect: () =>
+                Effect.succeed({
+                  status: "found",
+                  path,
+                  revision,
+                  script,
+                  fingerprint: worktreeHookFingerprint(path, script),
+                }),
+              run: () =>
+                Effect.sync(() => {
+                  ran++;
+                  return { status: "passed", durationMs: 0, log: "" };
+                }),
+            },
+            publish: () => Effect.void,
+            ask: (threadId) =>
+              Effect.succeed({
+                kind: "approval",
+                decision: "allow",
+                scope: "once",
+                uiVerified: true,
+                resolution: {
+                  threadId,
+                  requestId: RequestId.make("fixture-approval"),
+                  origin: "user",
+                  reason: "approved",
+                  resolvedAt: 0,
+                },
+              }),
+          });
+          const checkout = {
+            kind: "worktree" as const,
+            path: join(dataDir, "worker"),
+            worktreeSetup: { generation: "fixture-generation", revision },
+          };
+          const thread = yield* runtimes.create({
+            projectRoot: dataDir,
+            checkout,
+            mode: "default",
+            model: { agent: "codex", model: "gpt-6.1-sol" },
+            deferOpen: true,
+          });
+          yield* store.setProjectFolderTrust(thread.projectId, true);
+          const [first] = yield* activations.setup(thread);
+          expect(first?.result).toMatchObject({ status: "failed", failure: "interrupted" });
+          expect(ran).toBe(0);
+          const afterFailure = yield* store.getThread(thread.id);
+          expect(afterFailure.worktreeHooks).toEqual([first]);
+          yield* activations.setup(afterFailure);
+          expect(ran).toBe(0);
+
+          const interrupted = yield* store.updateThread(thread.id, (current) => ({
+            ...current,
+            worktreeHooks: [
+              {
+                checkout: checkout.path,
+                kind: "setup",
+                generation: checkout.worktreeSetup.generation,
+                path,
+                result: { status: "running" },
+              },
+            ],
+          }));
+          const [recovered] = yield* activations.setup(interrupted);
+          expect(recovered?.result).toMatchObject({ status: "failed", failure: "interrupted" });
+          expect((yield* store.getThread(thread.id)).worktreeHooks).toEqual([recovered]);
+          expect(ran).toBe(0);
+        }).pipe(
+          Effect.provide(makeRuntimeTestLayer(undefined, undefined, { ...TEST_CONFIG, dataDir })),
+        );
+      }),
   );
 });
