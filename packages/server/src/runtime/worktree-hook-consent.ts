@@ -39,7 +39,7 @@ export const worktreeHookConsent = (options: {
           displayName: kind === "setup" ? "Worktree setup hook" : "Worktree resume hook",
           description:
             "Allow this committed hook and the repository commands it calls on this machine? Gram remembers this decision for these hook contents.",
-          input: { machine, repository, path, script },
+          input: { command: script, machine, repository, path },
           suggestions: [],
           scopes: ["once"],
         });

@@ -46,7 +46,11 @@ describe("worktree hook consent", () => {
         const ask: ThreadRuntimesShape["requestApproval"] = (_id, card) =>
           Effect.sync(() => {
             expect(card.scopes).toEqual(["once"]);
-            expect(card.input).toMatchObject({ machine: inputs.machine, path: inputs.path });
+            expect(card.input).toMatchObject({
+              command: inputs.script,
+              machine: inputs.machine,
+              path: inputs.path,
+            });
             asked++;
             return answerFor(asked === 1 ? "allow" : "deny");
           });
