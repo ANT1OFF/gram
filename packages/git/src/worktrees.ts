@@ -545,7 +545,11 @@ export interface RestoreWorktreeRequest {
 
 /** What `restoreWorktree` did: `branchGone` changed nothing, since no branch was found to restore. */
 export type RestoredWorktree =
-  | { readonly kind: "restored"; readonly source: "local" | "origin" | "pr" }
+  | {
+      readonly kind: "restored";
+      readonly source: "local" | "origin" | "pr";
+      readonly worktreeSetup?: NonNullable<Checkout["worktreeSetup"]>;
+    }
   | { readonly kind: "branchGone" };
 
 /**

@@ -1,9 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { hidesText, type Checkout, type WorktreeHookKind } from "@gram/contracts";
 import { git, realPath, type Proc } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { isolatedGitOptions } from "../git/isolated-git.ts";
-
-export type WorktreeHookKind = "setup" | "resume";
 
 export const WORKTREE_HOOK_VERSION = 1;
 const MAX_SCRIPT_BYTES = 64 * 1024;
@@ -26,6 +25,24 @@ export type WorktreeHookLookup =
   | { readonly status: "invalid"; readonly reason: string };
 
 const invalid = (reason: string): WorktreeHookLookup => ({ status: "invalid", reason });
+
+export const worktreeHookFingerprint = (path: string, script: string): string =>
+  createHash("sha256")
+    .update(JSON.stringify([WORKTREE_HOOK_VERSION, path, "100755", script]))
+    .digest("hex");
+
+export const markNewWorktree = (path: string) =>
+  git(path, ["rev-parse", "--verify", "HEAD^{commit}"], isolatedGitOptions()).pipe(
+    Effect.map((out) => {
+      const revision = out.stdout.trim();
+      return out.status === 0 && !out.truncated && OID.test(revision) ? revision : undefined;
+    }),
+    Effect.orElseSucceed(() => undefined),
+    Effect.map((revision): NonNullable<Checkout["worktreeSetup"]> => ({
+      generation: randomUUID(),
+      ...(revision === undefined ? {} : { revision }),
+    })),
+  );
 
 /** A checkout's actual Git objects, with ref overrides, replace objects and lazy fetching off. */
 export const resolveWorktreeHook = (
@@ -82,12 +99,13 @@ export const resolveWorktreeHook = (
         .update(script)
         .digest("hex");
       if (actual !== oid || script.includes("\0")) return invalid(`${path} must be UTF-8 text.`);
-      const interpreter = /^#![ \t]*(\/[^\s]+)/.exec(script)?.[1];
+      if (hidesText(script))
+        return invalid(`${path} contains characters Gram cannot show faithfully for approval.`);
+      const shebang = script.split("\n", 1)[0] ?? "";
+      const interpreter = /^#![ \t]*(\/[^\s]+)/.exec(shebang)?.[1];
       if (interpreter === undefined)
         return invalid(`${path} needs a shebang with an absolute interpreter path.`);
-      const fingerprint = createHash("sha256")
-        .update(JSON.stringify([WORKTREE_HOOK_VERSION, path, "100755", script]))
-        .digest("hex");
+      const fingerprint = worktreeHookFingerprint(path, script);
       return {
         status: "found",
         source: { kind, path, revision, tree, fingerprint, script, interpreter },

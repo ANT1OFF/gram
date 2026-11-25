@@ -3,6 +3,7 @@ import {
   isValidGitRefCharset,
   remoteGit,
   Proc,
+  type CreatedWorktree,
   type ProcShape,
   WorktreeError,
   type Worktrees,
@@ -11,6 +12,7 @@ import * as Effect from "effect/Effect";
 import { HOST_REPO_GIT_ENV } from "./repos.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
 import { withCloneLock } from "./clone-lock.ts";
+import { markNewWorktree } from "./worktree-hook-source.ts";
 
 const tip = (repo: string, ref: string) =>
   git(repo, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${ref}^{commit}`]).pipe(
@@ -20,6 +22,13 @@ const tip = (repo: string, ref: string) =>
         : undefined,
     ),
   );
+
+const createdWithSetup = (created: CreatedWorktree) =>
+  created.reused || created.checkout.kind !== "worktree"
+    ? Effect.succeed(created.checkout)
+    : markNewWorktree(created.checkout.path).pipe(
+        Effect.map((worktreeSetup) => ({ ...created.checkout, worktreeSetup })),
+      );
 
 /** Joined clones must honor an explicit base, including branches absent from a narrow refspec.
  * Keep this at the host boundary: its refs and credentials decide, never the main checkout's. */
@@ -94,18 +103,28 @@ export const cloneWorktrees = (
     });
   return {
     ...worktrees,
+    restore: (request) =>
+      Effect.gen(function* () {
+        const restored = yield* worktrees.restore(request);
+        if (restored.kind === "branchGone") return restored;
+        const worktreeSetup = yield* markNewWorktree(request.worktreeDir);
+        return { ...restored, worktreeSetup };
+      }).pipe(Effect.provideService(Proc, proc)),
     create: (request) =>
       withCloneLock(
         request.repoPath,
         Effect.gen(function* () {
-          if (request.base === undefined) return yield* worktrees.create(request);
+          if (request.base === undefined) {
+            const created = yield* worktrees.create(request);
+            return { ...created, checkout: yield* createdWithSetup(created) };
+          }
           const base = yield* resolveBase(request.repoPath, request.base);
           const existing =
             request.branch === undefined
               ? undefined
               : yield* tip(request.repoPath, `refs/heads/${request.branch}`);
           const created = yield* worktrees.create({ ...request, base: base.oid });
-          const { base: _base, ...checkout } = created.checkout;
+          const { base: _base, ...checkout } = yield* createdWithSetup(created);
           return {
             ...created,
             checkout: existing === undefined ? { ...checkout, base: base.ref } : checkout,

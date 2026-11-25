@@ -1,9 +1,11 @@
 import {
   effectiveCheckout,
+  type Checkout,
   InvalidState,
   type RestoreWorktreeResult,
   type Thread,
   type ThreadId,
+  hostOf,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -53,6 +55,22 @@ export const restoreThreadWorktree = (threadId: ThreadId, fromPr: boolean) =>
         branch,
         ...(pr === undefined ? {} : { pr }),
       } satisfies RestoreWorktreeResult;
+    }
+    const setup = restored.worktreeSetup;
+    if (setup !== undefined || checkout.worktreeSetup !== undefined) {
+      const sameCheckout = (candidate: Checkout) =>
+        candidate.path === checkout.path &&
+        hostOf(candidate) === hostOf(checkout) &&
+        candidate.worktreeSetup?.generation === checkout.worktreeSetup?.generation;
+      const withSetup = ({ worktreeSetup: _, ...candidate }: Checkout): Checkout =>
+        setup === undefined ? candidate : { ...candidate, worktreeSetup: setup };
+      yield* store.updateThread(threadId, (current) =>
+        current.currentCheckout !== undefined && sameCheckout(current.currentCheckout)
+          ? { ...current, currentCheckout: withSetup(current.currentCheckout) }
+          : sameCheckout(current.checkout)
+            ? { ...current, checkout: withSetup(current.checkout) }
+            : current,
+      );
     }
     yield* Effect.logInfo("worktree restored").pipe(
       Effect.annotateLogs({ threadId, source: restored.source }),

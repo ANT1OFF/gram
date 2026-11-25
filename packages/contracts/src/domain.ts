@@ -36,6 +36,7 @@ import {
 import { RunWatch } from "./run-watch.ts";
 import { ReviewVerdict } from "./review.ts";
 import { CompactionActivity, ThreadStatus } from "./thread-status.ts";
+import { ThreadWorktreeHook } from "./worktree-hooks.ts";
 
 import { AgentKind } from "./agent-kind.ts";
 export { AgentKind };
@@ -363,6 +364,13 @@ export const Checkout = Schema.Struct({
    * aren't loaded, and its tracked rules are never offered back to the main checkout.
    */
   untrusted: Schema.optionalKey(Schema.Boolean),
+  /** A checkout physically created by Gram, with the revision as it was created. */
+  worktreeSetup: Schema.optionalKey(
+    Schema.Struct({
+      generation: Schema.String,
+      revision: Schema.optionalKey(Schema.String),
+    }),
+  ),
 });
 export type Checkout = typeof Checkout.Type;
 
@@ -1070,6 +1078,8 @@ export const Thread = Schema.Struct({
    * no other thread is opened on them and so closing the worker can release them.
    */
   extraCheckouts: Schema.optionalKey(Schema.Array(Checkout)),
+  /** The latest hook outcome for each worktree and phase. */
+  worktreeHooks: Schema.optionalKey(Schema.Array(ThreadWorktreeHook)),
   /**
    * Branches observed in held worker worktrees, scoped by machine and path; checkout moves grant no
    * ownership. One recorded before `hostId` was can't say which machine it was seen on.

@@ -33,6 +33,12 @@ import { TerminalEvent, TerminalInfo, TerminalOpened } from "../terminal.ts";
 import { ProfileFile } from "../thread-profile.ts";
 import { FileImage } from "../thread-ui.ts";
 import { WorktreeList } from "../worktrees.ts";
+import {
+  WorktreeHookInspection,
+  WorktreeHookOutcome,
+  WorktreeHookRequest,
+  WorktreeHookRun,
+} from "../worktree-hooks.ts";
 import { PositiveInt } from "./shared.ts";
 import {
   HostBusy,
@@ -374,6 +380,7 @@ export const HostRestoredWorktree = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("restored"),
     source: Schema.Literals(["local", "origin", "pr"]),
+    worktreeSetup: Checkout.fields.worktreeSetup,
   }),
   Schema.Struct({ kind: Schema.Literal("branchGone") }),
 ]);
@@ -849,6 +856,16 @@ export const HostRpcs = RpcGroup.make(
     },
     success: HostCreatedWorktree,
     error: worktreeErrors,
+  }),
+  Rpc.make("host.worktreeHooks.inspect", {
+    payload: WorktreeHookRequest.fields,
+    success: WorktreeHookInspection,
+    error: HostFailed,
+  }),
+  Rpc.make("host.worktreeHooks.run", {
+    payload: WorktreeHookRun.fields,
+    success: WorktreeHookOutcome,
+    error: HostFailed,
   }),
   Rpc.make("host.worktrees.remove", {
     payload: {

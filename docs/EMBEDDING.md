@@ -616,6 +616,28 @@ it, as they start their own:
 A change of a workspace's environment applies from its machine's next start. Pausing it when idle,
 waking it and reclaiming it later are the provider's.
 
+#### Worktree hooks in an environment
+
+Set `GRAM_HOST_WORKTREE_HOOKS=1` in the provisioned host's launch configuration to allow
+repository worktree hooks. The host must run as an unprivileged account. Keep the checkout and
+hook process inside that environment's filesystem, credential and network rules, and put the
+host state on a private executable volume so Gram can stage the approved hook. Gram resolves
+the host's login-shell PATH and injects no service or agent credentials into the hook's
+environment. The hook runs as the host's account and can access the files available to it.
+The host can supply
+non-secret data as `GRAM_HOOK_PUBLIC_*` variables. The workspace's environment picker grants
+access to environments under the provider's existing policy.
+
+The optional preparation interface for a future provider integration in
+[`worktree-hooks.ts`](../packages/server/src/host/worktree-hooks.ts) accepts a trusted provider
+adapter. The adapter can run the same setup contract under the environment policy during its
+build, stop the job and keep portable checkout outputs. It returns a versioned reusable result
+after it applies those outputs to a checkout. The host compares the result with the repository,
+workspace and checkout identity from its authenticated control plane. It also matches the source
+revision, environment and policy revisions, input key and expiry.
+The initial input key covers the committed tree and the execution platform. A miss falls back
+to execution in the worktree. Setup preparation and artifact storage live with the provider.
+
 ## Memory updates on a headless server
 
 A headless server runs memory updates as the desktop app does, from the same Settings, with Review

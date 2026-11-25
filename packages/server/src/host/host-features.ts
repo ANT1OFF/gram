@@ -23,4 +23,5 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "dream-sessions",
   "stop-going",
   "loopback-tunnels",
+  "worktree-hooks",
 ];
