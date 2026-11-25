@@ -128,7 +128,9 @@ const machinesListed = (
  * Each worker on another machine with that machine's name and whether it is dialled in, so the
  * orchestrator reads where a worker runs on its row rather than matching ids.
  */
-export const withMachines = <W extends { readonly hostId?: HostId | undefined }>(
+export const withMachines = <
+  W extends { readonly hostId?: HostId | undefined; readonly threadId?: ThreadId },
+>(
   workers: ReadonlyArray<W>,
   machines: ReadonlyArray<{
     readonly id: string;
@@ -147,7 +149,7 @@ export const withMachines = <W extends { readonly hostId?: HostId | undefined }>
     const machine =
       worker.hostId === undefined ? undefined : machines.find((m) => m.id === worker.hostId);
     if (machine === undefined) return worker;
-    const mine = (worker as { readonly threadId?: ThreadId }).threadId;
+    const mine = worker.threadId;
     const packing = mine === undefined ? undefined : sharers?.packingOf(mine);
     const others = (sharers?.on(machine.id) ?? []).filter((id) => id !== mine);
     return {

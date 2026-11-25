@@ -13,6 +13,7 @@ import { releaseFence, seatRefusedWords, type SeatHolds } from "./worker-packing
 import { charterOf, workerMachineSourceFor, type WorkerSandboxDeps } from "./worker-placed.ts";
 import { occupantKey, type WorkerPlacementService } from "./worker-placement.ts";
 
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a holder no thread has: it matches no claim and names no orchestrator
 const NOBODY = "" as ThreadId;
 const UNDECIDED =
   "Whether this thread has a place on its machine couldn't be decided now, so its session wasn't opened. Try again in a moment.";

@@ -63,11 +63,11 @@ export interface Authority {
 export interface RoutineRef {
   readonly id: string;
   readonly name: string;
-  readonly manual?: true | undefined;
-  readonly generation?: number | undefined;
-  readonly scheduleKey?: string | undefined;
+  readonly manual?: true;
+  readonly generation?: number;
+  readonly scheduleKey?: string;
   /** An event routine's run: the events it delivers, as its brief says them (fenced). */
-  readonly event?: string | undefined;
+  readonly event?: string;
 }
 
 /**

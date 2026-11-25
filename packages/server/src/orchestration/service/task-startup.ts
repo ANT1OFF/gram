@@ -3,7 +3,6 @@ import {
   InvalidState,
   type ModelRef,
   type OrchestratorCharter,
-  type ProjectId,
   type StartTaskInput,
   type TaskModelSelection,
   defaultSlotOf,
@@ -78,18 +77,18 @@ export const makeTaskStartup = (kit: OrchestrationKit) => {
   const taskContext = (input: Pick<StartTaskInput, "target" | "autonomy">) =>
     Effect.gen(function* () {
       const settings = yield* store.getSettings;
+      const { target } = input;
       const state =
-        "workspaceId" in input.target
-          ? yield* store.getWorkspace(input.target.workspaceId)
+        "workspaceId" in target
+          ? yield* store.getWorkspace(target.workspaceId)
           : yield* projectWorkspaceOf(
               yield* store.listWorkspaces,
-              (input.target as { projectId: ProjectId }).projectId,
+              target.projectId,
               yield* store.listProjects,
             );
       if (state !== undefined) yield* admitWorkspaceReader(state);
-      const projectIds = state?.workspace.projectIds ?? [
-        (input.target as { projectId: ProjectId }).projectId,
-      ];
+      const projectIds =
+        state?.workspace.projectIds ?? ("projectId" in target ? [target.projectId] : []);
       yield* projectsOf(projectIds);
       if (
         state !== undefined &&

@@ -26,6 +26,7 @@ import {
   withWorkspaceEnvironment,
 } from "@gram/contracts";
 import { samePath } from "@gram/git";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -215,7 +216,7 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
                 message: "A workspace with that name already exists.",
               });
             }
-            const projectIds = [...new Set(input.projectIds)] as unknown as typeof input.projectIds;
+            const projectIds = Arr.dedupe(input.projectIds);
             if (!projectIds.includes(input.homeProjectId)) {
               return yield* new InvalidState({
                 message: "The home project has to be one of the workspace's projects.",
@@ -298,7 +299,8 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
         ) {
           return yield* new InvalidState({ message: "A workspace with that name already exists." });
         }
-        if (change.projects.length === 0) {
+        const projects = change.projects;
+        if (!Arr.isReadonlyArrayNonEmpty(projects)) {
           return yield* new InvalidState({ message: "A workspace keeps at least one project." });
         }
         const register = change.projects.flatMap((each) => ("root" in each ? [each] : []));
@@ -357,12 +359,10 @@ export const makeWorkspaces = (kit: OrchestrationKit, deps: WorkspacesDeps) => {
           register,
           roots,
           next: (current, registered) => {
-            const ids = change.projects.map((each) =>
+            const ids = Arr.map(projects, (each) =>
               "projectId" in each ? each.projectId : registered[register.indexOf(each)]!.id,
             );
-            const projectIds = [
-              ...new Set(ids),
-            ] as unknown as WorkspaceState["workspace"]["projectIds"];
+            const projectIds = Arr.dedupe(ids);
             const homeProjectId = ids[homeAt]!;
             return current === undefined
               ? {

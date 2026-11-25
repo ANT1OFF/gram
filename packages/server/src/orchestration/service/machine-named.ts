@@ -3,7 +3,7 @@ import { LOCAL_MACHINE_NAMES, namesThisMachine } from "../../host/paired-machine
 
 /** A joined machine as a name is matched against it. */
 export interface NameableMachine {
-  readonly id: string;
+  readonly id: HostId;
   readonly name: string;
   readonly onDemand?: string | undefined;
 }
@@ -53,7 +53,7 @@ export const machineNamedIn = (
       ? m.id === typed || m.name === typed
       : m.id.toLowerCase() === wanted || m.name.trim().toLowerCase() === wanted,
   );
-  if (found.length === 1) return { kind: "machine", id: found[0]!.id as HostId };
+  if (found.length === 1) return { kind: "machine", id: found[0]!.id };
   const known =
     machines.length === 0
       ? "No machine is joined to this Gram."

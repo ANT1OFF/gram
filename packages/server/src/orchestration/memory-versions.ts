@@ -1,10 +1,14 @@
+import { DreamId } from "@gram/contracts";
 import { redactText } from "../logging/redact.ts";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 
 const VERSION = /^\d{4}$/;
+const isDreamId = Schema.is(DreamId);
 
 /** The memory update a version came from, kept beside it so History can say so. */
 export interface MemoryVersionSource {
-  readonly dreamId: string;
+  readonly dreamId: DreamId;
   readonly mode: "review" | "auto";
   /** Its one line on what it changed. */
   readonly summary?: string | undefined;
@@ -18,18 +22,17 @@ export const adoptedNote = (
   text: string,
 ): { adoptedAt?: number; basedOn?: string; source?: MemoryVersionSource } => {
   try {
-    const note = JSON.parse(text) as Record<string, unknown>;
+    const note: unknown = JSON.parse(text);
+    if (!Predicate.isObject(note)) return {};
     const out: { adoptedAt?: number; basedOn?: string; source?: MemoryVersionSource } = {};
     if (typeof note["adoptedAt"] === "number" && Number.isFinite(note["adoptedAt"]))
       out.adoptedAt = note["adoptedAt"];
     if (typeof note["basedOn"] === "string" && VERSION.test(note["basedOn"]))
       out.basedOn = note["basedOn"];
-    const source = note["source"] as Record<string, unknown> | undefined;
+    const source = note["source"];
     if (
-      typeof source === "object" &&
-      source !== null &&
-      typeof source["dreamId"] === "string" &&
-      /^[A-Za-z0-9-]{8,64}$/.test(source["dreamId"]) &&
+      Predicate.isObject(source) &&
+      isDreamId(source["dreamId"]) &&
       (source["mode"] === "review" || source["mode"] === "auto")
     ) {
       out.source = {

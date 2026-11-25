@@ -1,28 +1,29 @@
 import { pinRefusal } from "../../embedding/worker-machines.ts";
 import type { makeSpawnBreaker } from "../spawn-breaker.ts";
 import {
-  listedRow,
+  aboveHigh,
   AppToolError,
   autonomyOf,
   briefFooterOf,
-  effectiveCheckout,
-  type HostId,
-  hostOf,
-  LOCAL_HOST_ID,
+  browserUseAllowed,
   type Checkout,
+  effectiveCheckout,
+  fieldsOf,
+  type HostId,
+  hostListing,
+  hostOf,
+  listedRow,
+  LOCAL_HOST_ID,
   type ModelRef,
+  profileFilesOf,
   type Project,
   type ProjectId,
   type ReasoningVariant,
   type Thread,
   type ThreadId,
   type UserInput,
-  type WorkspaceId,
-  aboveHigh,
-  browserUseAllowed,
-  hostListing,
-  profileFilesOf,
   workerBrowserOn,
+  type WorkspaceId,
 } from "@gram/contracts";
 import { OWNERS_DIFFER, sameOwner } from "../../host/ownership.ts";
 import { samePath } from "@gram/git";
@@ -585,8 +586,7 @@ export const makeSpawning = (kit: OrchestrationKit, deps: SpawningDeps) => {
               existing.createdAt,
             )).some(
               (event) =>
-                event.kind === "spawn" &&
-                (event.data as { readonly threadId?: unknown } | null)?.threadId === existing.id,
+                event.kind === "spawn" && fieldsOf(event.data).get("threadId") === existing.id,
             );
             const misplaced = recoveredMachineProblem(existing, {
               own: orchestratorsMachine(caller),

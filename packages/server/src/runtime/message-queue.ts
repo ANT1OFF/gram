@@ -27,7 +27,6 @@ import {
   fenceThreadMessage,
   type ThreadId,
   InvalidState,
-  type GramUIMessage,
   type ThreadNotFound,
   type AgentUnavailable,
   type Thread,
@@ -334,7 +333,7 @@ export const makeMessageQueue = ({
           ...(input.author === undefined ? {} : { author: input.author }),
           delivery: options?.interrupt === true ? "interrupt" : "steer",
         },
-      } as unknown as GramUIMessage);
+      });
       const read = yield* forAgent(rt, input);
       const taken = yield* (
         options?.interrupt === true ? session.steer(read, options) : session.steer(read)

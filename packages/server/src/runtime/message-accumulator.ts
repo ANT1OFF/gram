@@ -1,8 +1,14 @@
 import type { GramUIMessage, GramUIMessageChunk } from "@gram/contracts";
+import * as Predicate from "effect/Predicate";
 
 type Part = Record<string, unknown> & { type: string };
 type LooseChunk = Record<string, unknown> & { type: string };
 
+const approvalOf = (part: Part) => {
+  const approval = part["approval"];
+  return Predicate.isObject(approval) ? approval : undefined;
+};
+const isList = (value: unknown): value is ReadonlyArray<unknown> => Array.isArray(value);
 const streaming = (parts: Map<string, Part>) =>
   [...parts.values()].some((part) => part["state"] === "streaming");
 
@@ -21,7 +27,7 @@ export class MessageAccumulator {
 
   /** Applies one chunk; true when it completed a part (or the message) and a snapshot is due. */
   apply(chunk: GramUIMessageChunk): boolean {
-    const c = chunk as unknown as LooseChunk;
+    const c: LooseChunk = chunk;
     switch (c.type) {
       case "start":
       case "message-metadata":
@@ -101,12 +107,12 @@ export class MessageAccumulator {
         return false;
       case "tool-approval-response": {
         const part = [...this.toolParts.values()].find(
-          (p) => (p["approval"] as { id?: unknown } | undefined)?.id === c["approvalId"],
+          (p) => approvalOf(p)?.["id"] === c["approvalId"],
         );
         if (part === undefined) return false;
         part["state"] = "approval-responded";
         part["approval"] = {
-          ...(part["approval"] as object),
+          ...approvalOf(part),
           approved: c["approved"],
           ...pick(c, "reason"),
         };
@@ -152,6 +158,7 @@ export class MessageAccumulator {
   }
 
   snapshot(): GramUIMessage {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- each part is built from its GramUIMessageChunk by the AI SDK's own rules; the loose Part records can't name the part union
     return structuredClone({
       id: this.messageId,
       role: "assistant",
@@ -190,17 +197,12 @@ export class MessageAccumulator {
   }
 
   private mergeMetadata(metadata: unknown) {
-    if (typeof metadata !== "object" || metadata === null) return;
-    const incoming = metadata as Record<string, unknown>;
-    const previousIds = this.metadata?.["agentMessageIds"];
-    this.metadata = { ...this.metadata, ...incoming };
-    if (Array.isArray(previousIds) && Array.isArray(incoming["agentMessageIds"])) {
-      this.metadata["agentMessageIds"] = [
-        ...new Set([
-          ...(previousIds as Array<string>),
-          ...(incoming["agentMessageIds"] as Array<string>),
-        ]),
-      ];
+    if (!Predicate.isObject(metadata)) return;
+    const previousIds = this.metadata?.["agentMessageIds"],
+      incomingIds = metadata["agentMessageIds"];
+    this.metadata = { ...this.metadata, ...metadata };
+    if (isList(previousIds) && isList(incomingIds)) {
+      this.metadata["agentMessageIds"] = [...new Set([...previousIds, ...incomingIds])];
     }
   }
 

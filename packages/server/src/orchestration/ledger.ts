@@ -58,6 +58,7 @@ import {
   featureState,
   groupOf,
   overlapPairs,
+  pairThreads,
   workerState,
   workerStateBase,
   type WorkerStateInput,
@@ -629,7 +630,7 @@ export const featuresOf = (
   );
   const overlapping = new Map<ThreadId, { ids: Set<ThreadId>; files: Set<string> }>();
   for (const [pair, files] of pairs) {
-    const ids = pair.split(" ") as [ThreadId, ThreadId];
+    const ids = pairThreads(pair);
     for (const [own, other] of [ids, [ids[1], ids[0]]] as const) {
       const found = overlapping.get(own) ?? { ids: new Set(), files: new Set() };
       found.ids.add(other);

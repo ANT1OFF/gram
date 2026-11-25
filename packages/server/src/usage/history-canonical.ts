@@ -1,31 +1,19 @@
 import { addCodexCounts, validCodexCounts } from "@gram/agents/codex";
 import type { TokenUsage } from "@gram/contracts";
-import type { HistoryRecord } from "./history-types.ts";
+import { TOKEN_LANES, usageFromLanes, type HistoryRecord } from "./history-types.ts";
 
 export const historyKey = (record: HistoryRecord) =>
   JSON.stringify([record.provider, record.session, record.id]);
 const signature = (record: HistoryRecord) =>
   JSON.stringify([record.turn ?? null, record.model, record.at, record.tokens]);
-const equalCounts = (a: TokenUsage, b: TokenUsage) =>
-  ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "reasoningTokens"].every(
-    (key) => a[key as keyof TokenUsage] === b[key as keyof TokenUsage],
-  );
+const equalCounts = (a: TokenUsage, b: TokenUsage) => TOKEN_LANES.every((key) => a[key] === b[key]);
 const overlappingMinimum = (a: TokenUsage, b: TokenUsage): TokenUsage | undefined => {
-  const minimum = Object.fromEntries(
-    [
-      "inputTokens",
-      "outputTokens",
-      "cacheReadTokens",
-      "cacheWriteTokens",
-      "reasoningTokens",
-    ].flatMap((key) => {
-      const lane = key as keyof TokenUsage;
-      return a[lane] === undefined && b[lane] === undefined
-        ? []
-        : [[key, Math.max(a[lane] ?? 0, b[lane] ?? 0)]];
-    }),
-  ) as unknown as TokenUsage;
-  return validCodexCounts(minimum) ? minimum : undefined;
+  const minimum = usageFromLanes((lane) =>
+    a[lane] === undefined && b[lane] === undefined
+      ? undefined
+      : Math.max(a[lane] ?? 0, b[lane] ?? 0),
+  );
+  return minimum !== undefined && validCodexCounts(minimum) ? minimum : undefined;
 };
 
 const validRequirement = (value: TokenUsage | undefined): value is TokenUsage =>
@@ -185,14 +173,7 @@ export function canonicalHistory(
             record.complete &&
             record.turnComplete &&
             validRequirement(record.expectedTurnTokens) &&
-            [
-              "inputTokens",
-              "outputTokens",
-              "cacheReadTokens",
-              "cacheWriteTokens",
-              "reasoningTokens",
-            ].every((key) => {
-              const lane = key as keyof TokenUsage;
+            TOKEN_LANES.every((lane) => {
               const required = record.expectedTurnTokens![lane] ?? 0;
               return required === 0 || (tokens[lane] !== undefined && tokens[lane] >= required);
             }),

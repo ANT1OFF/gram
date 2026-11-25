@@ -2,13 +2,14 @@ import {
   AppToolError,
   effectiveCheckout,
   hostOf,
-  type ThreadId,
+  ThreadId,
   type WorkerPacking,
   type WorkerPlacement,
   workerPackingOf,
 } from "@gram/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as Fiber from "effect/Fiber";
 import type * as Scope from "effect/Scope";
 import {
@@ -547,11 +548,10 @@ export const makeWorkerSandbox = ({
             if (machine === undefined)
               return yield* fail(`No machine of your workers is named ${wanted}.`);
           } else {
-            const worker = yield* store
-              .getThread(wanted as ThreadId)
-              .pipe(
-                Effect.mapError(() => fail(`shareWith names no worker or machine: ${wanted}.`)),
-              );
+            const worker = yield* Schema.decodeUnknownEffect(ThreadId)(wanted).pipe(
+              Effect.flatMap((id) => store.getThread(id)),
+              Effect.mapError(() => fail(`shareWith names no worker or machine: ${wanted}.`)),
+            );
             if (worker.spawnedBy?.threadId !== caller)
               return yield* fail(`${worker.title} is not one of your workers.`);
             const host = hostOf(effectiveCheckout(worker));

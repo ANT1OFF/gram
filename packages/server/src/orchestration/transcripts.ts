@@ -2,7 +2,7 @@ import {
   fieldsOf,
   fenceThreadMessage,
   type SessionTranscriptMessage,
-  type SessionTranscriptRole,
+  SessionTranscriptRole,
   type SessionTranscriptTool,
   type GramUIMessage,
 } from "@gram/contracts";
@@ -338,15 +338,19 @@ export const parseArchived = (text: string): ArchivedTranscript | undefined => {
   const header = text.slice(0, anchors[0]!.index);
   const title = /^# (.*)$/m.exec(header)?.[1] ?? "Untitled";
   const source = /^Source: (.*)$/m.exec(header)?.[1] ?? "";
-  const blocks = anchors.map((anchor, index): TranscriptBlock => {
+  const blocks = anchors.flatMap((anchor, index): ReadonlyArray<TranscriptBlock> => {
+    const role = SessionTranscriptRole.literals.find((each) => each === anchor[2]);
+    if (role === undefined) return [];
     const start = anchor.index + anchor[0].length + 1;
     const end = anchors[index + 1]?.index ?? text.length;
-    return {
-      seq: Number(anchor[1]),
-      role: anchor[2] as SessionTranscriptRole,
-      id: anchor[3]!,
-      body: text.slice(start, end).replace(HEADING, ""),
-    };
+    return [
+      {
+        seq: Number(anchor[1]),
+        role,
+        id: anchor[3]!,
+        body: text.slice(start, end).replace(HEADING, ""),
+      },
+    ];
   });
   return { title, source, blocks };
 };

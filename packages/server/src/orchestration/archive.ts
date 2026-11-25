@@ -1,4 +1,4 @@
-import type { Thread, ThreadId } from "@gram/contracts";
+import { type Thread, ThreadId } from "@gram/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -188,7 +188,7 @@ export const archiveClosedThread = (
     if (gone.length > 0) {
       yield* store.forgetDreamThreads(
         workspaceId,
-        gone.map((id) => id as ThreadId),
+        gone.map((id) => ThreadId.make(id)),
       );
     }
     return true;

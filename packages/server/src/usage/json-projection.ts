@@ -9,6 +9,8 @@ type Frame = {
   count: number;
 };
 
+const nullPrototypeRecord = (): Record<string, unknown> => ({ __proto__: null });
+
 /** Incremental JSON validation/projection. Skipped string values are never materialized. */
 export class JsonProjection {
   readonly #fields: Fields;
@@ -175,12 +177,7 @@ export class JsonProjection {
         this.#frames.push({
           kind: c === "{" ? "object" : "array",
           fields: selected,
-          value:
-            selected === undefined
-              ? undefined
-              : c === "{"
-                ? (Object.create(null) as Record<string, unknown>)
-                : [],
+          value: selected === undefined ? undefined : c === "{" ? nullPrototypeRecord() : [],
           seen: new Set(),
           phase: c === "{" ? "key" : "value",
           key: "",

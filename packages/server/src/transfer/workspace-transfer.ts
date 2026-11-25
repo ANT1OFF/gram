@@ -17,12 +17,14 @@ import {
   type Project,
   type ProjectId,
   type Thread,
+  ThreadId,
   type ThreadStatus,
   type WorkspaceBundle,
   type WorkspaceState,
   WORKSPACE_BUNDLE_FORMAT,
 } from "@gram/contracts";
 import { Proc, projectRootKey } from "@gram/git";
+import * as Arr from "effect/Array";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -32,7 +34,7 @@ import * as Semaphore from "effect/Semaphore";
 import { ServerConfig } from "../config.ts";
 import { registerRepo } from "../fs/folders.ts";
 import { GitStatePublisher } from "../git/publisher.ts";
-import { redactSecrets, redactText } from "../logging/redact.ts";
+import { redactText } from "../logging/redact.ts";
 import { renderClosedThread, ThreadArchive } from "../orchestration/archive.ts";
 import { checkMemorySet, OrchestrationMemory } from "../orchestration/memory.ts";
 import { decodeOutbox, emptyOutbox, encodeOutbox } from "../orchestration/outbox.ts";
@@ -41,6 +43,7 @@ import { refuseConnectorEntries } from "../orchestration/service/kit.ts";
 import { migrations } from "../persistence/migrations.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { recordedOriginUrl, shareableRemote } from "./recorded-remote.ts";
+import { scrubbed } from "./scrubbed.ts";
 import { makeClosedReopener } from "../rpc/handlers/closed-threads.ts";
 import type { CheckoutService } from "../runtime/hooks.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
@@ -63,27 +66,6 @@ const MID_TURN: ReadonlySet<ThreadStatus> = new Set([
 const WORKSPACE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 const refuse = (message: string) => new InvalidState({ message });
-
-const TOOL_PAYLOAD: ReadonlySet<string> = new Set(["input", "output", "rawInput", "result"]);
-
-/**
- * `value` with every string in it scrubbed of what looks like a credential. With `tools`, for
- * messages, what a tool was given or answered is also censored by key, as the transcript archive
- * does it, since `{"password": …}` holds its secret in a string that looks like nothing.
- */
-export const scrubbed = <A>(value: A, tools = false): A => {
-  if (typeof value === "string") return redactText(value) as A;
-  if (Array.isArray(value)) return value.map((each: unknown) => scrubbed(each, tools)) as A;
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, inner]) => [
-        key,
-        scrubbed(tools && TOOL_PAYLOAD.has(key) ? redactSecrets(inner) : inner, tools),
-      ]),
-    ) as A;
-  }
-  return value;
-};
 
 export { shareableRemote };
 
@@ -340,27 +322,29 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
           }
 
           const known = yield* store.listProjects;
-          const projects: Array<BundleProject> = [];
-          for (const id of workspace.projectIds) {
-            const project = known.find((each) => each.id === id);
-            if (project === undefined) {
-              return yield* refuse(
-                `A repository of ${workspace.name} is no longer a project here, so the workspace can't be described whole. Edit the workspace first.`,
-              );
-            }
-            const remote = yield* remoteOf(project.root);
-            if (remote === undefined) {
-              notes.push(
-                `${project.name} has no origin a bundle may name; whoever imports it has to know which repository it is.`,
-              );
-            }
-            projects.push({
-              id: project.id,
-              name: project.name,
-              root: project.root,
-              ...(remote === undefined ? {} : { remote }),
-            });
-          }
+          const projects = yield* Effect.forEach(workspace.projectIds, (id) =>
+            Effect.gen(function* () {
+              const project = known.find((each) => each.id === id);
+              if (project === undefined) {
+                return yield* refuse(
+                  `A repository of ${workspace.name} is no longer a project here, so the workspace can't be described whole. Edit the workspace first.`,
+                );
+              }
+              const remote = yield* remoteOf(project.root);
+              if (remote === undefined) {
+                notes.push(
+                  `${project.name} has no origin a bundle may name; whoever imports it has to know which repository it is.`,
+                );
+              }
+              const described: BundleProject = {
+                id: project.id,
+                name: project.name,
+                root: project.root,
+                ...(remote === undefined ? {} : { remote }),
+              };
+              return described;
+            }),
+          );
 
           let orchestrator: WorkspaceBundle["orchestrator"];
           if (holder !== undefined) {
@@ -432,7 +416,7 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
               continue;
             }
             archived.push({
-              threadId: entry.threadId as Thread["id"],
+              threadId: ThreadId.make(entry.threadId),
               text,
               archivedAt: entry.archivedAt,
             });
@@ -459,7 +443,7 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
             app: { version: config.appVersion ?? "0.0.0", schema: SCHEMA },
             exportedAt: yield* Clock.currentTimeMillis,
             workspace: state,
-            projects: projects as unknown as WorkspaceBundle["projects"],
+            projects,
             ...(orchestrator === undefined ? {} : { orchestrator }),
             workers,
             archive: archived,
@@ -570,9 +554,7 @@ export class WorkspaceTransfer extends Context.Service<WorkspaceTransfer, Worksp
                     ),
                   );
           const placed = yield* placeProjects(bundle, input.projects);
-          const projectIds = source.workspace.projectIds.map(
-            (id) => placed.get(id)!.id,
-          ) as unknown as WorkspaceState["workspace"]["projectIds"];
+          const projectIds = Arr.map(source.workspace.projectIds, (id) => placed.get(id)!.id);
           const home = placed.get(source.workspace.homeProjectId)!;
           const others = [...placed.values()].filter((project) => project.id !== home.id);
           const notes: Array<string> = opening?.note === undefined ? [] : [opening.note];

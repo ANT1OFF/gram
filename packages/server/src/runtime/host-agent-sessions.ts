@@ -27,6 +27,7 @@ import { type AttachmentsOnMachine, carryAttachments } from "../host/carry-attac
 import type { HostSessionsConnection } from "../host/protocol.ts";
 import { AgentHosts } from "./agent-hosts.ts";
 import { InputUndelivered } from "./undelivered.ts";
+import { defined } from "../defined.ts";
 
 /** The event a session whose host went ends with. */
 export const HOST_STOPPED_ENDED: AgentEvent = {
@@ -145,9 +146,6 @@ const dreamOpensOnMachine = (agent: AgentKind, options: OpenSessionOptions): boo
   options.switchStartup === undefined &&
   options.waitForPreviousSession === undefined;
 
-const defined = <A extends object>(value: A): A =>
-  Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as A;
-
 const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): HostSessionOpen =>
   defined({
     handle,
@@ -188,7 +186,7 @@ const openRequest = (handle: string, agent: AgentKind, o: OpenSessionOptions): H
             ...(o.browserScope.sites === undefined ? {} : { sites: [...o.browserScope.sites] }),
             ...(o.browserScope.apps === undefined ? {} : { apps: [...o.browserScope.apps] }),
           },
-  }) as HostSessionOpen;
+  });
 
 const undelivered = (error: HostFailed) =>
   Effect.die(

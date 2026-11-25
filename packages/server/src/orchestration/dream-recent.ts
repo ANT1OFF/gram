@@ -260,13 +260,14 @@ export const summaryOf = (
 ): string => {
   const count = (status: DreamFileDiff["status"]) =>
     review.filter((file) => file.status === status).length;
-  const counts = [
+  const tallies: ReadonlyArray<readonly [number, string]> = [
     [count("added"), "added"],
     [count("changed") + count("conflict"), "changed"],
     [count("removed"), "removed"],
-  ]
-    .filter(([n]) => (n as number) > 0)
-    .map(([n, what]) => `${plural(n as number, "note")} ${what as string}`)
+  ];
+  const counts = tallies
+    .filter(([n]) => n > 0)
+    .map(([n, what]) => `${plural(n, "note")} ${what}`)
     .join(", ");
   const first = (report ?? "")
     .split("\n")

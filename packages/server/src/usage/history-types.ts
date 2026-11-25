@@ -1,5 +1,6 @@
 import type { TokenUsage, UsageProvider } from "@gram/contracts";
 import type { CodexUsageBasis } from "@gram/agents/codex";
+import * as Predicate from "effect/Predicate";
 export interface HistoryRecord {
   provider: UsageProvider;
   session: string;
@@ -27,10 +28,32 @@ export interface HistoryRecord {
   cacheIncomplete?: boolean;
 }
 
+export const TOKEN_LANES = [
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheWriteTokens",
+  "reasoningTokens",
+] as const satisfies ReadonlyArray<keyof TokenUsage>;
+export type TokenLane = (typeof TOKEN_LANES)[number];
+export type TokenLanes = Partial<Record<TokenLane, number>>;
+/** Counts in lane order, skipping lanes `lane` leaves undefined; undefined without input and output. */
+export const usageFromLanes = (
+  lane: (key: TokenLane) => number | undefined,
+): TokenUsage | undefined => {
+  const lanes: TokenLanes = {};
+  for (const key of TOKEN_LANES) {
+    const value = lane(key);
+    if (value !== undefined) lanes[key] = value;
+  }
+  const { inputTokens, outputTokens } = lanes;
+  return inputTokens === undefined || outputTokens === undefined
+    ? undefined
+    : { ...lanes, inputTokens, outputTokens };
+};
+
 export const object = (value: unknown): Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  Predicate.isObject(value) ? value : {};
 export const identity = (value: unknown): string | undefined =>
   typeof value === "string" &&
   value.length > 0 &&

@@ -467,15 +467,21 @@ export const queueIndex = (rt: Runtime, itemId: QueueItemId) =>
       : Effect.succeed(index);
   });
 
+type DataChunk = Extract<GramUIMessageChunk, { type: `data-${string}` }>;
+const isDataChunk = (chunk: GramUIMessageChunk): chunk is DataChunk =>
+  chunk.type.startsWith("data-");
+
 /** `message` with a `data-*` part replaced by type + id, or appended. */
 export const withDataPart = (message: GramUIMessage, chunk: GramUIMessageChunk): GramUIMessage => {
-  const c = chunk as unknown as { type: string; id?: string; data: unknown };
-  const parts = message.parts as unknown as ReadonlyArray<{ type: string; id?: string }>;
-  const part = { type: c.type, ...(c.id === undefined ? {} : { id: c.id }), data: c.data };
+  if (!isDataChunk(chunk)) return message;
+  const { transient: _transient, ...part } = chunk;
+  const { parts } = message;
   const index =
-    c.id === undefined ? -1 : parts.findIndex((p) => p.type === c.type && p.id === c.id);
+    part.id === undefined
+      ? -1
+      : parts.findIndex((p) => p.type === part.type && "id" in p && p.id === part.id);
   const next = index === -1 ? [...parts, part] : parts.map((p, i) => (i === index ? part : p));
-  return { ...message, parts: next } as unknown as GramUIMessage;
+  return { ...message, parts: next };
 };
 
 /** `thread.status` for `rt`, with its compaction while one is under way. */

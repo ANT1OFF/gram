@@ -550,7 +550,6 @@ export const MAX_LINES = {
     "packages/server/src/runtime/thread-runtimes.ts": 1902,
     "packages/server/src/settings/workspace-tools.ts": 794,
     "packages/server/src/transfer/thread-transfer.ts": 976,
-    "packages/server/src/transfer/workspace-transfer.ts": 709,
     "packages/shell/src/core/page-driver.ts": 1309,
     "packages/shell/src/modules/agent-browser/headless.ts": 903,
     "packages/shell/src/modules/agent-browser/pane.ts": 1245,

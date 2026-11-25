@@ -11,6 +11,8 @@ import {
   identity,
   modelOf,
   timeOf,
+  TOKEN_LANES,
+  usageFromLanes,
   type HistoryRecord,
   type HistoryReducer,
 } from "./history-types.ts";
@@ -60,13 +62,6 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
     change(record);
     responseProofBytes += Buffer.byteLength(JSON.stringify(record)) - before;
   };
-  const expectedKeys = [
-    "inputTokens",
-    "outputTokens",
-    "cacheReadTokens",
-    "cacheWriteTokens",
-    "reasoningTokens",
-  ] as const;
   const observeRequirement = (
     id: string,
     raw: unknown,
@@ -88,7 +83,7 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
     }
     const prior = responseRequirements.get(id);
     if (
-      expectedKeys.some(
+      TOKEN_LANES.some(
         (key) =>
           expected[key] !== undefined && counts[key] !== undefined && expected[key] < counts[key],
       )
@@ -96,20 +91,18 @@ export function makeCodexHistory(initialFrom = -Infinity, initialTo = Infinity):
       conflict();
     if (
       prior !== undefined &&
-      expectedKeys.some(
+      TOKEN_LANES.some(
         (key) =>
           prior[key] !== undefined && expected[key] !== undefined && expected[key] < prior[key],
       )
     )
       conflict();
-    const required = Object.fromEntries(
-      expectedKeys.flatMap((key) =>
-        prior?.[key] === undefined && expected[key] === undefined
-          ? []
-          : [[key, Math.max(prior?.[key] ?? 0, expected[key] ?? 0)]],
-      ),
-    ) as unknown as TokenUsage;
-    if (!validCodexCounts(required)) conflict();
+    const required = usageFromLanes((key) =>
+      prior?.[key] === undefined && expected[key] === undefined
+        ? undefined
+        : Math.max(prior?.[key] ?? 0, expected[key] ?? 0),
+    );
+    if (required === undefined || !validCodexCounts(required)) conflict();
     else {
       responseRequirements.set(id, required);
       responseRequirementBytes +=

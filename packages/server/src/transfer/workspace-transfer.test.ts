@@ -33,10 +33,10 @@ import {
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { FakeAgentControl } from "../runtime/fake-agent.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
+import { scrubbed } from "./scrubbed.ts";
 import {
   bundleProblem,
   handoverNote,
-  scrubbed,
   shareableRemote,
   TRANSFER_OFF,
   WorkspaceTransfer,

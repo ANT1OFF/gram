@@ -1,42 +1,42 @@
 import type { OutwardGate } from "@gram/agents";
 import { gateHoldsInMode as codexGateHoldsInMode } from "@gram/agents/codex";
 import {
-  AppToolError,
-  autonomyOf,
-  NotFound,
-  customModelsOf,
-  withCustomModels,
-  listedRow,
-  type AgentModel,
-  type CatalogueRow,
-  resolveModel,
-  isLocalHost,
   type AgentKind,
+  type AgentModel,
+  AppToolError,
+  type Autonomy,
+  autonomyOf,
+  type CatalogueRow,
+  type Checkout,
+  connectorEntryProblem,
+  customModelsOf,
   type GitState,
+  hostCandidates,
+  type HostId,
+  hostListing,
+  InvalidState,
+  isLocalHost,
+  type LimitWait,
+  listedRow,
   type ModelRef,
+  NotFound,
   type OrchestratorCharter,
   type PermissionMode,
-  type PrStatus,
   type Project,
   type ProjectId,
+  type PrStatus,
   type RequestId,
-  type ServerEvent,
-  type LimitWait,
-  type Thread,
-  type ThreadId,
-  type TurnId,
-  type HostId,
+  resolveModel,
   type RosterModel,
-  type WorkerModel,
-  type WorkspaceState,
-  type WorkspaceId,
-  type Checkout,
-  type Autonomy,
-  connectorEntryProblem,
-  InvalidState,
-  hostCandidates,
-  hostListing,
   rosterModelHere,
+  type ServerEvent,
+  type Thread,
+  ThreadId,
+  type TurnId,
+  withCustomModels,
+  type WorkerModel,
+  type WorkspaceId,
+  type WorkspaceState,
 } from "@gram/contracts";
 import { Proc, samePathKey, samePath, basename, tryRepoRoots } from "@gram/git";
 import * as Clock from "effect/Clock";
@@ -920,7 +920,7 @@ export const makeOrchestrationKit = Effect.gen(function* () {
     ).pipe(Effect.map((key) => samePathKey(key)));
 
   const findThread = (threadId: string) =>
-    store.getThread(threadId as ThreadId).pipe(Effect.orElseSucceed(() => undefined));
+    store.getThread(ThreadId.make(threadId)).pipe(Effect.orElseSucceed(() => undefined));
 
   const provideProc = <A>(effect: Effect.Effect<A, never, Proc>, fallback: A): Effect.Effect<A> =>
     Option.match(proc, {

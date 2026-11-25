@@ -1,3 +1,4 @@
+import { fieldsOf } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -23,13 +24,11 @@ export const SIGNAL_STOP_DEADLINE_MS = 9_500;
 
 /** Whether `message` is main's request to shut down. */
 export const isShutdownRequest = (message: unknown): boolean =>
-  typeof message === "object" &&
-  message !== null &&
-  (message as { readonly type?: unknown }).type === "shutdown";
+  typeof message === "object" && message !== null && fieldsOf(message).get("type") === "shutdown";
 
 /** Whether `message` is main's request to shut down for an update, which seals the essentials. */
 export const isUpdateShutdownRequest = (message: unknown): boolean =>
-  isShutdownRequest(message) && (message as { readonly reason?: unknown }).reason === "update";
+  isShutdownRequest(message) && fieldsOf(message).get("reason") === "update";
 
 /**
  * What an update needs from the server before main may kill whatever else of its teardown is still

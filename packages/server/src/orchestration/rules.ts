@@ -1,80 +1,80 @@
 import { dreamSupportFor, type OutwardGate, type ToolAudience } from "@gram/agents";
 import {
-  browserScope,
-  type BrowserScope,
-  checksOf,
-  ciFixOwnedPrs,
-  ciFixPrKey,
-  ledgerPrsOf,
-  browserUseAllowed,
-  codexSurfaces,
-  type CodexSurfaces,
-  orchestratorBrowserOn,
-  workerBrowserOn,
-  USER_AWAY_AFTER_MINUTES,
-  USER_IN_CONVERSATION_MINUTES,
-  USER_HOLD_IDLE_MS,
-  autonomyOf,
-  connectorSetOf,
-  narrowAllowlist,
-  FEATURE_PLAN_MAX_STAGES,
-  modelRefOf,
-  listedRow,
-  resolveModel,
-  closestName,
-  type CatalogueRow,
-  FEATURE_STAGE_MAX,
-  FEATURE_STAGE_NOTE_MAX,
-  FINISHED_STATES,
-  featureState,
-  orchestrationMode,
-  DEPENDENCY_DRAG_CONFLICT_MIN,
-  DEPENDENCY_DRAG_ROUNDS,
-  PrWakeEvent as PrWakeEvents,
-  prRefText,
-  prWakeWhen,
-  requiredChecksOf,
-  stageHasRemainingSteps,
-  workerHasOngoingWork,
-  WAKE_MAX_MINUTES,
   AgentKind,
   type Autonomy,
+  autonomyOf,
   type BackgroundTask,
+  browserScope,
+  type BrowserScope,
+  browserUseAllowed,
+  type CatalogueRow,
+  checksOf,
   type ChecksRollup,
+  ciFixOwnedPrs,
+  ciFixPrKey,
+  closestName,
+  codexSurfaces,
+  type CodexSurfaces,
+  connectorSetOf,
+  DEPENDENCY_DRAG_CONFLICT_MIN,
+  DEPENDENCY_DRAG_ROUNDS,
   type DigestChange,
   type DigestReport,
   type DigestVariant,
+  FEATURE_PLAN_MAX_STAGES,
+  FEATURE_STAGE_MAX,
+  FEATURE_STAGE_NOTE_MAX,
   type FeatureGroup,
   type FeatureGroupLedgerEntry,
   type FeatureLedgerEntry,
   type FeatureStage,
+  featureState,
+  FINISHED_STATES,
+  inlineText,
+  ledgerPrsOf,
+  listedRow,
   type ModelRef,
+  modelRefOf,
+  narrowAllowlist,
+  orchestrationMode,
+  orchestratorBrowserOn,
   type OrchestratorCharter,
   type PauseReason,
   type PermissionMode,
+  type ProjectId,
   type PrRef,
+  prRefText,
   type PrStatus,
   type PrWakeEvent,
+  PrWakeEvent as PrWakeEvents,
   type PrWakeFired,
+  prWakeWhen,
   type PrWatchSeen,
-  type ProjectId,
-  type StoredWakeCondition,
-  wakeConditionWhen,
-  type Settings,
-  type SpawnedBy,
-  type Thread,
-  type ThreadId,
-  type ThreadRole,
-  type ThreadStatus,
-  type WorkerReport,
-  type WorkerError,
-  type WorkerReportState,
+  requiredChecksOf,
+  resolveModel,
   type RosterModel,
   rosterName,
+  type Settings,
+  type SpawnedBy,
+  stageHasRemainingSteps,
+  type StoredWakeCondition,
+  type Thread,
+  ThreadId,
+  type ThreadRole,
+  type ThreadStatus,
+  USER_AWAY_AFTER_MINUTES,
+  USER_HOLD_IDLE_MS,
+  USER_IN_CONVERSATION_MINUTES,
+  WAKE_MAX_MINUTES,
+  wakeConditionWhen,
+  workerBrowserOn,
+  type WorkerError,
+  workerFallback,
+  workerHasOngoingWork,
+  type WorkerReport,
+  type WorkerReportState,
   type WorkerState,
   type WorkspaceId,
-  workerFallback,
-  inlineText,
 } from "@gram/contracts";
 import { createHash } from "node:crypto";
 import { SENDS_PER_MINUTE, WINDOW_MS as SEND_WINDOW_MS } from "../app-tools/loop-guard.ts";
@@ -511,8 +511,9 @@ const byCatalogue = (
 ): ReadonlyArray<RosterModel> => {
   if (catalogue === undefined) return [];
   const prefixed = /^([a-z]+):(.+)$/i.exec(wanted);
-  const agent = prefixed?.[1]?.toLowerCase();
-  const scoped = agent !== undefined && catalogue.has(agent as AgentKind);
+  const prefix = prefixed?.[1]?.toLowerCase();
+  const agent = AgentKind.literals.find((kind) => kind === prefix);
+  const scoped = agent !== undefined && catalogue.has(agent);
   const asked = scoped ? prefixed![2]! : wanted;
   return allowed.filter((each) => {
     if (scoped && each.agent !== agent) return false;
@@ -1051,6 +1052,11 @@ export const overlapPairs = (
   return new Map([...pairs].map(([pair, files]) => [pair, [...files].toSorted()]));
 };
 
+export const pairThreads = (pair: string): readonly [ThreadId, ThreadId] => {
+  const space = pair.indexOf(" ");
+  return [ThreadId.make(pair.slice(0, space)), ThreadId.make(pair.slice(space + 1))];
+};
+
 /**
  * What a worker is told when another worker's PR merged into its base and changed files it changes
  * too: bring the base in now, even if git merges it cleanly.
@@ -1075,7 +1081,7 @@ export const overlaps = (
 ): Readonly<Record<ThreadId, ReadonlyArray<ThreadId>>> => {
   const found = new Map<ThreadId, Set<ThreadId>>();
   for (const pair of overlapPairs(workers).keys()) {
-    const [a, b] = pair.split(" ") as [ThreadId, ThreadId];
+    const [a, b] = pairThreads(pair);
     found.set(a, (found.get(a) ?? new Set()).add(b));
     found.set(b, (found.get(b) ?? new Set()).add(a));
   }
@@ -1511,10 +1517,10 @@ export const digestDiff = (input: {
 
   for (const [threadId, before] of Object.entries(snapshot)) {
     if (next[threadId] !== undefined) continue;
-    if (before.state === "archived" || input.archivedRemovals?.includes(threadId as ThreadId))
+    if (before.state === "archived" || input.archivedRemovals?.includes(ThreadId.make(threadId)))
       continue;
     changes.push({
-      threadId: threadId as ThreadId,
+      threadId: ThreadId.make(threadId),
       feature: before.feature,
       title: before.title,
       from: before.state,

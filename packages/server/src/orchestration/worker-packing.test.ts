@@ -3,7 +3,13 @@
 // answers for a hosted server: no network, and no machine is ever started.
 
 import { describe, expect, it } from "@effect/vitest";
-import type { OrchestratorCharter, Thread, ThreadId, WorkspaceId } from "@gram/contracts";
+import {
+  HostId,
+  type OrchestratorCharter,
+  type Thread,
+  type ThreadId,
+  type WorkspaceId,
+} from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -598,7 +604,9 @@ describe("one decision for every way onto a workers' machine", () => {
       // spawn's own lookup (the same resolver) refuses it as unknown.
       for (const machine of [name.toUpperCase(), id.toUpperCase(), ` ${name}x`]) {
         expect(yield* plan(CALLER, { ...input, machine }, undefined)).toBeUndefined();
-        expect(machineNamedIn([{ id, name, onDemand: "worker" }], machine)).toMatchObject({
+        expect(
+          machineNamedIn([{ id: HostId.make(id), name, onDemand: "worker" }], machine),
+        ).toMatchObject({
           kind: "refused",
           code: "unknown_machine",
         });

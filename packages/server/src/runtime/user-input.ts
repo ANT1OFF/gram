@@ -89,10 +89,10 @@ export const typedText = (input: UserInput) => {
  * A user message's parts: its text, attached files, the notice or origin the transcript shows, and
  * what Gram told the agent with it.
  */
-export const userParts = (input: UserInput, messageId: string) => [
+export const userParts = (input: UserInput, messageId: string): GramUIMessage["parts"] => [
   { type: "text", text: typedText(input) },
   ...(input.attachments ?? []).map((attachment) => ({
-    type: "file",
+    type: "file" as const,
     mediaType: attachment.mediaType ?? "application/octet-stream",
     filename: attachment.name ?? basename(attachment.path),
     url: pathToFileURL(attachment.path).href,
@@ -101,22 +101,22 @@ export const userParts = (input: UserInput, messageId: string) => [
     ? []
     : [
         input.notice.kind === "orchestration"
-          ? { type: "data-orchestration-digest", id: messageId, data: input.notice }
+          ? { type: "data-orchestration-digest" as const, id: messageId, data: input.notice }
           : input.notice.kind === "idleCompact"
-            ? { type: "data-idle-compact", id: messageId, data: input.notice }
+            ? { type: "data-idle-compact" as const, id: messageId, data: input.notice }
             : input.notice.kind === "humanReview"
-              ? { type: "data-human-review-notice", id: messageId, data: input.notice }
-              : { type: "data-review-notice", id: messageId, data: input.notice },
+              ? { type: "data-human-review-notice" as const, id: messageId, data: input.notice }
+              : { type: "data-review-notice" as const, id: messageId, data: input.notice },
       ]),
   ...(input.origin === undefined
     ? []
-    : [{ type: "data-thread-origin", id: messageId, data: input.origin }]),
+    : [{ type: "data-thread-origin" as const, id: messageId, data: input.origin }]),
   ...(input.conversation === undefined
     ? []
-    : [{ type: "data-conversation", id: messageId, data: input.conversation }]),
+    : [{ type: "data-conversation" as const, id: messageId, data: input.conversation }]),
   ...(input.waitNote === undefined
     ? []
-    : [{ type: "data-wait-note", id: messageId, data: { text: input.waitNote } }]),
+    : [{ type: "data-wait-note" as const, id: messageId, data: { text: input.waitNote } }]),
 ];
 
 /** The user message a turn opens with. */
@@ -125,18 +125,17 @@ export const userMessage = (
   messageId: string,
   turnId: TurnId,
   createdAt: number,
-) =>
-  ({
-    id: messageId,
-    role: "user",
-    parts: userParts(input, messageId),
-    metadata: {
-      turnId,
-      createdAt,
-      agentMessageIds: [messageId],
-      ...(input.author === undefined ? {} : { author: input.author }),
-    },
-  }) as unknown as GramUIMessage;
+): GramUIMessage => ({
+  id: messageId,
+  role: "user",
+  parts: userParts(input, messageId),
+  metadata: {
+    turnId,
+    createdAt,
+    agentMessageIds: [messageId],
+    ...(input.author === undefined ? {} : { author: input.author }),
+  },
+});
 
 /**
  * `message` with who sent it (`metadata.sentBy`): the signed-in person this call is made for, on a

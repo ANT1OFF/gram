@@ -1,14 +1,8 @@
 import { validCodexCounts } from "@gram/agents/codex";
 import type { TokenUsage } from "@gram/contracts";
+import { TOKEN_LANES, usageFromLanes, type TokenLanes } from "./history-types.ts";
 
 const limit = 50_000;
-const keys = [
-  "inputTokens",
-  "outputTokens",
-  "cacheReadTokens",
-  "cacheWriteTokens",
-  "reasoningTokens",
-] as const;
 const zero = (): TokenUsage => ({
   inputTokens: 0,
   outputTokens: 0,
@@ -16,7 +10,7 @@ const zero = (): TokenUsage => ({
   cacheWriteTokens: 0,
   reasoningTokens: 0,
 });
-type Threshold = Partial<Record<(typeof keys)[number], number>>;
+type Threshold = TokenLanes;
 interface Scope {
   order?: number;
   before?: Threshold;
@@ -29,7 +23,7 @@ interface Scope {
 
 const meets = (counter: TokenUsage | undefined, minimum: Threshold | undefined) =>
   counter !== undefined &&
-  keys.every(
+  TOKEN_LANES.every(
     (key) =>
       (minimum?.[key] ?? 0) === 0 ||
       (counter[key] !== undefined && counter[key] >= (minimum?.[key] ?? 0)),
@@ -82,7 +76,7 @@ export function makeCodexHistoryCoverage() {
       if (JSON.stringify(state.before) !== JSON.stringify(preceding)) mark(ordered[i]!, true);
       state.before = preceding;
       const required: Threshold = {};
-      for (const key of keys) {
+      for (const key of TOKEN_LANES) {
         const base = Math.max(preceding[key] ?? 0, state.barrier?.[key] ?? 0);
         const needed = Math.max(state.requests[key] ?? 0, state.minimum?.[key] ?? 0);
         const n = base + needed;
@@ -120,7 +114,7 @@ export function makeCodexHistoryCoverage() {
         return;
       }
       const minimum = Object.fromEntries(
-        keys.flatMap((key) =>
+        TOKEN_LANES.flatMap((key) =>
           state.minimum?.[key] === undefined && expected[key] === undefined
             ? []
             : [[key, Math.max(state.minimum?.[key] ?? 0, expected[key] ?? 0)]],
@@ -148,8 +142,8 @@ export function makeCodexHistoryCoverage() {
         mark(turn, false);
       }
       if (state.barrier !== undefined || counter === undefined) return;
-      const barrier: Record<string, number> = {};
-      for (const key of keys) {
+      const barrier: TokenLanes = {};
+      for (const key of TOKEN_LANES) {
         if (counter[key] === undefined) continue;
         const difference = counter[key] - (known?.[key] ?? 0);
         if (!Number.isSafeInteger(difference) || difference < 0) {
@@ -158,8 +152,8 @@ export function makeCodexHistoryCoverage() {
         }
         barrier[key] = difference;
       }
-      const next = barrier as unknown as TokenUsage;
-      if (!validCodexCounts(next)) {
+      const next = usageFromLanes((key) => barrier[key]);
+      if (next === undefined || !validCodexCounts(next)) {
         refuse(state.order ?? ordered.length);
         return;
       }
@@ -186,10 +180,8 @@ export function makeCodexHistoryCoverage() {
       }
       const state = scope(turn);
       if (state === undefined) return "refused";
-      const combined = Object.fromEntries(
-        keys.map((key) => [key, (state.requests[key] ?? 0) + (tokens[key] ?? 0)]),
-      ) as unknown as TokenUsage;
-      if (!validCodexCounts(combined)) {
+      const combined = usageFromLanes((key) => (state.requests[key] ?? 0) + (tokens[key] ?? 0));
+      if (combined === undefined || !validCodexCounts(combined)) {
         refuse(scopes.get(turn)?.order ?? ordered.length);
         return "refused";
       }
@@ -212,7 +204,7 @@ export function makeCodexHistoryCoverage() {
       if (state?.order === undefined || state.before === undefined) return false;
       if (unprovenFrom !== undefined && state.order > unprovenFrom) return false;
       const minimum: Threshold = { ...state.before };
-      for (const key of keys)
+      for (const key of TOKEN_LANES)
         if (ownPrefix[key] !== undefined) minimum[key] = (minimum[key] ?? 0) + ownPrefix[key];
       return meets(counter, minimum);
     },
