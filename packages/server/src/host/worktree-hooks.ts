@@ -8,7 +8,7 @@ import {
 } from "@gram/contracts";
 import { Proc, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";
-import { runWorktreeHook, sanitizeHookText } from "./worktree-hook-runner.ts";
+import { runWorktreeHook } from "./worktree-hook-runner.ts";
 import { resolveWorktreeHook, WORKTREE_HOOK_VERSION } from "./worktree-hook-source.ts";
 
 export interface HostWorktreeHooks<E = HostFailed> {
@@ -119,7 +119,7 @@ export const worktreeHooksOn = (options: {
           path,
           revision,
           fingerprint,
-          script: sanitizeHookText(script),
+          script,
         };
       }),
     run: (req, interrupted) =>

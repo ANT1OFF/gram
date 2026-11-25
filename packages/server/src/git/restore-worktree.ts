@@ -1,5 +1,6 @@
 import {
   effectiveCheckout,
+  type Checkout,
   InvalidState,
   type RestoreWorktreeResult,
   type Thread,
@@ -56,14 +57,19 @@ export const restoreThreadWorktree = (threadId: ThreadId, fromPr: boolean) =>
       } satisfies RestoreWorktreeResult;
     }
     const setup = restored.worktreeSetup;
-    if (setup !== undefined) {
+    if (setup !== undefined || checkout.worktreeSetup !== undefined) {
+      const sameCheckout = (candidate: Checkout) =>
+        candidate.path === checkout.path &&
+        hostOf(candidate) === hostOf(checkout) &&
+        candidate.worktreeSetup?.generation === checkout.worktreeSetup?.generation;
+      const withSetup = ({ worktreeSetup: _, ...candidate }: Checkout): Checkout =>
+        setup === undefined ? candidate : { ...candidate, worktreeSetup: setup };
       yield* store.updateThread(threadId, (current) =>
-        current.checkout.path !== checkout.path || hostOf(current.checkout) !== hostOf(checkout)
-          ? current
-          : {
-              ...current,
-              checkout: { ...current.checkout, worktreeSetup: setup },
-            },
+        current.currentCheckout !== undefined && sameCheckout(current.currentCheckout)
+          ? { ...current, currentCheckout: withSetup(current.currentCheckout) }
+          : sameCheckout(current.checkout)
+            ? { ...current, checkout: withSetup(current.checkout) }
+            : current,
       );
     }
     yield* Effect.logInfo("worktree restored").pipe(
