@@ -1,13 +1,13 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { redactText, SECRET_KEY } from "@gram/contracts";
+import { errnoCode, redactText, SECRET_KEY, type WorktreeHookKind } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { missingCommand, plainLines, signalGroup, stopGroup } from "../git/check-process.ts";
 import { redactUrlCredentials } from "./remote-url.ts";
-import type { WorktreeHookKind, WorktreeHookSource } from "./worktree-hook-source.ts";
+import { type WorktreeHookSource, worktreeHookFingerprint } from "./worktree-hook-source.ts";
 
 export const SETUP_TIMEOUT_MS = 20 * 60_000;
 export const RESUME_TIMEOUT_MS = 10_000;
@@ -15,7 +15,13 @@ const MAX_LOG_BYTES = 48 * 1024;
 const KILL_GRACE_MS = 100;
 const REAP_MS = 400;
 
-type HookProcessFailure = "missing-tool" | "timeout" | "exited" | "launch" | "cleanup";
+type HookProcessFailure =
+  | "missing-tool"
+  | "timeout"
+  | "exited"
+  | "launch"
+  | "cleanup"
+  | "interrupted";
 
 interface HookProcessResult {
   readonly durationMs: number;
@@ -63,14 +69,17 @@ export const worktreeHookEnv = (
 
 interface HookRunnerOptions {
   readonly loginPath: string;
+  readonly approvedFingerprint: string;
+  readonly stagingRoot?: string;
   readonly base?: NodeJS.ProcessEnv;
   readonly publicVariables?: Readonly<Record<string, string>>;
   readonly budgetMs?: number;
+  readonly interrupted?: (outcome: WorktreeHookResult) => Effect.Effect<void>;
 }
 
 type HookCompletion =
   | { readonly kind: "exit"; readonly code: number | null; readonly signal: NodeJS.Signals | null }
-  | { readonly kind: "spawn"; readonly missing: boolean }
+  | { readonly kind: "spawn"; readonly code: string | undefined }
   | { readonly kind: "timeout" };
 
 const hookFailure = (
@@ -123,7 +132,7 @@ const startHook = (bin: string, cwd: string, env: Record<string, string>, timeou
     abort = () => clearTimeout(timer);
     child.once("error", (error) => {
       exited = true;
-      resolve({ kind: "spawn", missing: "code" in error && error.code === "ENOENT" });
+      resolve({ kind: "spawn", code: errnoCode(error) });
     });
     child.once("exit", (code, signal) => {
       exited = true;
@@ -151,6 +160,15 @@ const startHook = (bin: string, cwd: string, env: Record<string, string>, timeou
   };
 };
 
+const staging = (root: string | undefined): string => {
+  if (root === undefined) return mkdtempSync(join(tmpdir(), "gram-worktree-hook-"));
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const info = lstatSync(root);
+  if (!info.isDirectory() || (info.mode & 0o077) !== 0 || info.uid !== process.getuid?.())
+    throw new Error("The worktree hook staging directory is not private.");
+  return mkdtempSync(join(root, "run-"));
+};
+
 /** Executes only the selected committed bytes, with the worktree as cwd and closed stdin. */
 export const runWorktreeHook = (
   checkout: string,
@@ -159,12 +177,19 @@ export const runWorktreeHook = (
 ): Effect.Effect<WorktreeHookResult> => {
   if (process.platform === "win32")
     return Effect.succeed(hookFailure("launch", "This machine cannot execute POSIX hooks."));
+  if (
+    source.fingerprint !== options.approvedFingerprint ||
+    worktreeHookFingerprint(source.path, source.script) !== options.approvedFingerprint
+  )
+    return Effect.succeed(
+      hookFailure("launch", "The hook bytes differ from the approved fingerprint."),
+    );
   const limit = source.kind === "setup" ? SETUP_TIMEOUT_MS : RESUME_TIMEOUT_MS;
   const budget = Math.min(options.budgetMs ?? limit, limit);
   if (budget <= 0) return Effect.succeed(hookFailure("timeout", "The hook deadline elapsed."));
 
   return Effect.acquireUseRelease(
-    Effect.try(() => mkdtempSync(join(tmpdir(), "gram-worktree-hook-"))),
+    Effect.try(() => staging(options.stagingRoot)),
     (dir) =>
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
@@ -181,7 +206,22 @@ export const runWorktreeHook = (
             return startHook(file, checkout, env, budget);
           });
           const complete = yield* restore(Effect.promise(() => running.complete)).pipe(
-            Effect.onInterrupt(() => Effect.promise(running.cleanup)),
+            Effect.onInterrupt(() =>
+              Effect.gen(function* () {
+                const clean = yield* Effect.promise(running.cleanup);
+                if (options.interrupted === undefined) return;
+                yield* options.interrupted(
+                  hookFailure(
+                    clean ? "interrupted" : "cleanup",
+                    clean
+                      ? "The hook was interrupted."
+                      : "The hook was interrupted and cleanup could not be confirmed.",
+                    running.duration(),
+                    running.log(),
+                  ),
+                );
+              }),
+            ),
           );
           const clean = yield* Effect.promise(running.cleanup);
           const duration = running.duration();
@@ -200,8 +240,15 @@ export const runWorktreeHook = (
               duration,
               log,
             );
-          if (complete.kind === "spawn")
-            return complete.missing && existsSync(checkout)
+          if (complete.kind === "spawn") {
+            if (complete.code === "EACCES" || complete.code === "EPERM")
+              return hookFailure(
+                "launch",
+                "The machine denied execution of the staged hook or its interpreter.",
+                duration,
+                log,
+              );
+            return complete.code === "ENOENT" && existsSync(checkout)
               ? hookFailure(
                   "missing-tool",
                   `Hook interpreter ${sanitizeHookText(source.interpreter)} is unavailable.`,
@@ -209,6 +256,7 @@ export const runWorktreeHook = (
                   log,
                 )
               : hookFailure("launch", "Could not start the hook in its worktree.", duration, log);
+          }
           if (complete.code === 0) return { status: "passed" as const, durationMs: duration, log };
           const missing = complete.code === 127 ? missingCommand(log) : undefined;
           if (missing !== undefined)

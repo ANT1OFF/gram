@@ -6,8 +6,21 @@ import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import { makeAppToolsTunnel } from "./app-tools-tunnel.ts";
 import { hostOriginGuard } from "./origin-guard.ts";
 import { ClaudeHost, ClaudeHostLive } from "@gram/agents/claude";
-import { AgentUnavailable, HOST_PROTOCOL_VERSION, LOCAL_HOST_ID } from "@gram/contracts";
-import { guardOrigins, Proc, ProcLive, Worktrees, WorktreesLive } from "@gram/git";
+import {
+  AgentUnavailable,
+  HOST_PROTOCOL_VERSION,
+  HostFailed,
+  LOCAL_HOST_ID,
+} from "@gram/contracts";
+import {
+  guardOrigins,
+  PathProbe,
+  PathProbeLive,
+  Proc,
+  ProcLive,
+  Worktrees,
+  WorktreesLive,
+} from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -22,6 +35,7 @@ import { sharedOnHost } from "../shared/host-shared.ts";
 import { hostLoopback } from "./loopback.ts";
 import { threadPlacesOnHost } from "./thread-places.ts";
 import { cloneWorktrees } from "./clone-worktrees.ts";
+import { hostedHooksFrom, worktreeHooksOn } from "./worktree-hooks.ts";
 import {
   hostAttachments,
   hostIdentity,
@@ -166,7 +180,8 @@ const hostService = (
     readonly busy: (busy: BusyOf) => void;
   },
   diskOf?: string,
-): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts> =>
+  provisioned = false,
+): Effect.Effect<HostService, never, Scope.Scope | Proc | Worktrees | AgentHosts | PathProbe> =>
   Effect.gen(function* () {
     const proc = yield* Proc;
     const agents = yield* AgentHosts;
@@ -190,6 +205,7 @@ const hostService = (
       keptTerminals === undefined ? undefined : keptTerminalsIn(keptTerminals),
     );
     const folders = foldersOn(proc);
+    const loginPath = (yield* PathProbe).path;
     const machineMcp =
       hostId === LOCAL_HOST_ID
         ? { server: undefined }
@@ -302,6 +318,24 @@ const hostService = (
       },
       worktrees:
         hostId === LOCAL_HOST_ID ? yield* Worktrees : cloneWorktrees(proc, yield* Worktrees),
+      worktreeHooks: worktreeHooksOn({
+        proc,
+        loginPath,
+        stagingRoot: join(diskOf ?? hostHome(), "worktree-hooks"),
+        ...(provisioned ? { hosted: hostedHooksFrom(process.env) } : {}),
+        ...(hostId === LOCAL_HOST_ID
+          ? {}
+          : {
+              admit: (path) =>
+                folders.gate.admit(path, "session").pipe(
+                  Effect.map((folder) => folder.path),
+                  Effect.mapError(
+                    () =>
+                      new HostFailed({ message: "The host did not admit the hook's checkout." }),
+                  ),
+                ),
+            }),
+      }),
       git: gitOn(proc),
       terminals,
       sessions,
@@ -339,6 +373,7 @@ const hostLayer = (
 ) =>
   Layer.mergeAll(
     WorktreesLive.pipe(Layer.provideMerge(ProcLive)),
+    PathProbeLive,
     hostAgents(oauthToken, keyAuth, codexData, limit),
   );
 
@@ -426,6 +461,7 @@ NodeRuntime.runMain(
                 join(home, "kept-terminals", hostId),
                 undefined,
                 home,
+                provisioned,
               ).pipe(
                 Effect.tap((service) =>
                   Effect.sync(() => {

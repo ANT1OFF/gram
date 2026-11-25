@@ -28,5 +28,6 @@ export const HostFeature = Schema.Literals([
   "stop-going",
   "app-tools-tunnel",
   "loopback-tunnels",
+  "worktree-hooks",
 ]);
 export type HostFeature = typeof HostFeature.Type;

@@ -22,6 +22,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { folderExists, resolveFolder } from "../fs/folders.ts";
 import { originIdentityAt } from "../host/repos.ts";
+import { markNewWorktree } from "../host/worktree-hook-source.ts";
 import { effectiveOriginsAt, recordedCloneIdentity } from "./recorded-clone.ts";
 import { answerCheckoutRepos } from "./checkout-repos.ts";
 import { guardStoreOrigins } from "./origin-guard.ts";
@@ -144,7 +145,10 @@ export const GitCheckoutLive = Layer.effect(
                       : provide(removalError(error, root)),
                 ),
               );
-            return yield* withOrigin(created.checkout, created.checkout.repoRoot ?? root);
+            const checkout = yield* withOrigin(created.checkout, created.checkout.repoRoot ?? root);
+            return created.reused || checkout.kind !== "worktree"
+              ? checkout
+              : { ...checkout, worktreeSetup: yield* provide(markNewWorktree(checkout.path)) };
           }
           case "machineFolder":
             return yield* new InvalidState({ message: THIS_MACHINE_FOLDER });
@@ -302,7 +306,7 @@ export const GitCheckoutLive = Layer.effect(
           (yield* store.listThreads).filter((t) => t.id !== thread.id),
           LOCAL_HOST_ID,
         );
-        return yield* worktrees
+        const restored = yield* worktrees
           .restore({
             repoPath: repo,
             worktreeDir: checkout.path,
@@ -320,6 +324,8 @@ export const GitCheckoutLive = Layer.effect(
                   : Effect.fail(new GitError({ message: error.message })),
             ),
           );
+        if (restored.kind === "branchGone") return restored;
+        return { ...restored, worktreeSetup: yield* provide(markNewWorktree(checkout.path)) };
       });
 
     return { prepare, checkRelease, release, discard, present: folderExists, restore };

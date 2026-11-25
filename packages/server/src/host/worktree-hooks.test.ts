@@ -1,11 +1,12 @@
 import { chmodSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "@effect/vitest";
-import { ProcLive } from "@gram/git";
+import { Proc, ProcLive } from "@gram/git";
 import * as Effect from "effect/Effect";
 import { makeRepo, removeDir, run, tempDir, write } from "../git/test-repo.ts";
 import { runWorktreeHook } from "./worktree-hook-runner.ts";
 import { resolveWorktreeHook } from "./worktree-hook-source.ts";
+import { worktreeHooksOn, type ReusableSetup } from "./worktree-hooks.ts";
 
 const fixture = Effect.gen(function* () {
   const dir = tempDir();
@@ -92,6 +93,7 @@ echo 'password=fixture-sensitive-text'
           if (lookup.status !== "found") throw new Error("Missing fixture hook");
           putHook(repo, ".gram/setup", "#!/bin/sh\nexit 9\n");
           const result = yield* runWorktreeHook(repo, lookup.source, {
+            approvedFingerprint: lookup.source.fingerprint,
             base: {
               HOME: dir,
               PATH: "/usr/bin:/bin",
@@ -124,6 +126,7 @@ echo 'password=fixture-sensitive-text'
         const lookup = yield* resolveWorktreeHook(repo, "resume");
         if (lookup.status !== "found") throw new Error("Missing fixture hook");
         const result = yield* runWorktreeHook(repo, lookup.source, {
+          approvedFingerprint: lookup.source.fingerprint,
           loginPath: "/usr/bin:/bin",
           budgetMs: 250,
         });
@@ -136,11 +139,103 @@ echo 'password=fixture-sensitive-text'
         const next = yield* resolveWorktreeHook(repo, "resume");
         if (next.status !== "found") throw new Error("Missing fixture hook");
         expect(
-          yield* runWorktreeHook(repo, next.source, { loginPath: "/usr/bin:/bin" }),
+          yield* runWorktreeHook(repo, next.source, {
+            loginPath: "/usr/bin:/bin",
+            approvedFingerprint: next.source.fingerprint,
+          }),
         ).toMatchObject({
           status: "failed",
           failure: "missing-tool",
           reason: expect.stringContaining("gram-fixture-missing-command"),
+        });
+      }),
+    ),
+  );
+
+  it.live("rejects changed bytes even when the source still carries the approved fingerprint", () =>
+    onGit(
+      Effect.gen(function* () {
+        const { repo } = yield* fixture;
+        putHook(repo, ".gram/setup", "#!/bin/sh\necho trusted\n");
+        commit(repo);
+        const selected = yield* resolveWorktreeHook(repo, "setup");
+        if (selected.status !== "found") throw new Error("Missing fixture hook");
+        const altered = { ...selected.source, script: "#!/bin/sh\necho wrong\n" };
+        expect(
+          yield* runWorktreeHook(repo, altered, {
+            loginPath: "/usr/bin:/bin",
+            approvedFingerprint: selected.source.fingerprint,
+          }),
+        ).toMatchObject({
+          status: "failed",
+          reason: expect.stringContaining("approved fingerprint"),
+          log: "",
+        });
+      }),
+    ),
+  );
+
+  it.live("uses a prepared result only when its scope, target and input key match", () =>
+    onGit(
+      Effect.gen(function* () {
+        const { dir, repo } = yield* fixture;
+        putHook(repo, ".gram/setup", "#!/bin/sh\necho worktree-run\n");
+        commit(repo);
+        let lookup: "missing" | "mismatch" | "expired" | "hit" = "missing";
+        const host = worktreeHooksOn({
+          proc: yield* Proc,
+          stagingRoot: join(dir, "host-hook-state"),
+          loginPath: Effect.succeed("/usr/bin:/bin"),
+          hosted: {
+            enabled: true,
+            preparation: {
+              environment: "fixture",
+              environmentRevision: "image-1",
+              policyRevision: "policy-2",
+              reuse: (target) =>
+                Effect.sync((): ReusableSetup | undefined => {
+                  if (lookup === "missing") return undefined;
+                  const now = Date.now();
+                  return {
+                    ...target,
+                    version: 1,
+                    resultId: "prepared-fixture",
+                    completedAt: now - 100,
+                    expiresAt: lookup === "expired" ? now - 1 : now + 60_000,
+                    inputKey: lookup === "mismatch" ? "wrong" : target.inputKey,
+                  };
+                }),
+            },
+          },
+        });
+        const inspection = yield* host.inspect({ checkout: repo, kind: "setup" });
+        if (inspection.status !== "found") throw new Error("Missing fixture hook");
+        const request = {
+          checkout: repo,
+          kind: "setup" as const,
+          revision: inspection.revision,
+          fingerprint: inspection.fingerprint,
+          workspace: "fixture-workspace",
+          repository: "fixture-repository",
+          environment: "fixture",
+          generation: "fixture-checkout",
+        };
+        for (const miss of ["missing", "mismatch", "expired"] as const) {
+          lookup = miss;
+          expect(yield* host.run(request)).toMatchObject({
+            status: "passed",
+            log: "worktree-run\n",
+          });
+        }
+        lookup = "hit";
+        expect(yield* host.run(request)).toMatchObject({
+          status: "reused",
+          resultId: "prepared-fixture",
+          log: "",
+        });
+        expect(yield* host.run({ ...request, fingerprint: "unapproved" })).toMatchObject({
+          status: "failed",
+          log: "",
         });
       }),
     ),

@@ -20,6 +20,7 @@ export * from "./completion.ts";
 export * from "./codex-home.ts";
 export * from "./custom-models.ts";
 export * from "./domain.ts";
+export * from "./worktree-hooks.ts";
 export * from "./gateway-kinds.ts";
 export * from "./thread-title.ts";
 export * from "./embedding.ts";

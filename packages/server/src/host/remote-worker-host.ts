@@ -327,6 +327,14 @@ export const machineCheckouts = (
           ...(created.checkout.base === undefined ? {} : { base: created.checkout.base }),
           repoRoot: repoPath,
           ...(cloneIdentity === undefined ? {} : { cloneIdentity }),
+          ...(request.untrusted === true || created.checkout.untrusted === true
+            ? { untrusted: true }
+            : {}),
+          ...(created.reused || created.checkout.worktreeSetup === undefined
+            ? {}
+            : {
+                worktreeSetup: created.checkout.worktreeSetup,
+              }),
         };
         return checkout;
       }),

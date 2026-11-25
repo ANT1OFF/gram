@@ -4,6 +4,7 @@ import {
   type RestoreWorktreeResult,
   type Thread,
   type ThreadId,
+  hostOf,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -53,6 +54,17 @@ export const restoreThreadWorktree = (threadId: ThreadId, fromPr: boolean) =>
         branch,
         ...(pr === undefined ? {} : { pr }),
       } satisfies RestoreWorktreeResult;
+    }
+    const setup = restored.worktreeSetup;
+    if (setup !== undefined) {
+      yield* store.updateThread(threadId, (current) =>
+        current.checkout.path !== checkout.path || hostOf(current.checkout) !== hostOf(checkout)
+          ? current
+          : {
+              ...current,
+              checkout: { ...current.checkout, worktreeSetup: setup },
+            },
+      );
     }
     yield* Effect.logInfo("worktree restored").pipe(
       Effect.annotateLogs({ threadId, source: restored.source }),

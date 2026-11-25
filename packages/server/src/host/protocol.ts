@@ -97,6 +97,7 @@ import { hostKnowsAgent, openRefusal, readableBy } from "./session-gates.ts";
 import type { HostSessionsService } from "./sessions.ts";
 import type { HostTerminalsService, TerminalRoot } from "./terminals.ts";
 import type { HostLoopback } from "./loopback.ts";
+import type { HostWorktreeHooks } from "./worktree-hooks.ts";
 import type {
   OpenSettings,
   OpenTerminal,
@@ -149,6 +150,7 @@ export interface HostService {
   /** The clones it keeps of repositories, for the workers placed on it. */
   readonly repos: HostRepos;
   readonly worktrees: HostWorktrees;
+  readonly worktreeHooks?: HostWorktreeHooks;
   readonly git: HostGit;
   readonly terminals: HostTerminalsService;
   readonly sessions: HostSessionsService;
@@ -263,6 +265,7 @@ const noFolders = new HostFailed({ message: "This host doesn't list its folders.
 const noAppTools = new HostFailed({ message: "This host carries no app-tool calls." });
 const noShared = new HostFailed({ message: "This host keeps no shared folders." });
 const noLoopback = new HostFailed({ message: "This host opens no loopback tunnels." });
+const noWorktreeHooks = new HostFailed({ message: "This host runs no worktree hooks." });
 const noThreadPlaces = new HostFailed({
   message: "This host makes no folders for threads started from a profile.",
 });
@@ -385,6 +388,10 @@ const handlersFor = (host: HostService) => {
         host.worktrees.baseBranches(repoPath).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.create": (request) =>
         gated(host.worktrees.create(request).pipe(Effect.mapError(worktreeToWire))),
+      "host.worktreeHooks.inspect": (request) =>
+        gated(host.worktreeHooks?.inspect(request) ?? Effect.fail(noWorktreeHooks)),
+      "host.worktreeHooks.run": (request) =>
+        gated(host.worktreeHooks?.run(request) ?? Effect.fail(noWorktreeHooks)),
       "host.worktrees.remove": (request) =>
         host.worktrees.remove(request).pipe(Effect.mapError(worktreeToWire)),
       "host.worktrees.restore": (request) =>
@@ -808,6 +815,7 @@ export interface HostConnection {
     readonly identify?: HostRepoIdentify | undefined;
   };
   readonly worktrees: HostWorktrees;
+  readonly worktreeHooks?: HostWorktreeHooks<HostFailed | HostUnavailable>;
   readonly git: HostGitConnection;
   readonly terminals: HostTerminalsConnection;
   readonly sessions: HostSessionsConnection;
@@ -1603,6 +1611,14 @@ export const connectHost = (
             : Effect.fail(new HostFailed({ message: HOST_STOP_UNANSWERED }));
         }),
       );
+    const hookCall = <A, E extends { readonly _tag: string }>(call: Effect.Effect<A, E>) =>
+      guarded(call).pipe(
+        Effect.mapError((error) =>
+          error instanceof HostFailed || error instanceof HostUnavailable
+            ? error
+            : unavailable(HOST_NOT_ANSWERING),
+        ),
+      );
     return {
       hello,
       files,
@@ -1623,6 +1639,14 @@ export const connectHost = (
           }
         : {}),
       loopback: hostServes(hello, "loopback-tunnels") ? loopback : undefined,
+      ...(hostServes(hello, "worktree-hooks")
+        ? {
+            worktreeHooks: {
+              inspect: (request) => hookCall(client["host.worktreeHooks.inspect"](request)),
+              run: (request) => hookCall(client["host.worktreeHooks.run"](request)),
+            },
+          }
+        : {}),
       ...(hello.capabilities.includes("checks") ? { checks } : {}),
       repos: {
         ensure: (url) => worktreeCall(client["host.repos.ensure"]({ url })),
