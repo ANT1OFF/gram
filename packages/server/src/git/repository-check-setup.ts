@@ -64,11 +64,10 @@ export const approveRepositoryCheck = (options: {
       machine,
       repository: project.originIdentity ?? project.id,
       kind: "setup",
+      folderTrusted: trusted.pipe(Effect.map((current) => current !== undefined)),
       ask,
     });
-    return consent.decision === "allow" && (yield* trusted) !== undefined
-      ? consent.grant
-      : undefined;
+    return consent.decision === "allow" ? consent.grant : undefined;
   });
 
 /** Runs the checked-out repository hook under its own environment and the shared check deadline. */

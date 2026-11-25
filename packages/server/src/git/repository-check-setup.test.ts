@@ -5,6 +5,7 @@ import { PathProbe, ProcLive } from "@gram/git";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { localAppHeadersForTests } from "../http/local-app.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { makeRespondHandlers } from "../rpc/handlers/respond.ts";
 import { makeRuntimeTestLayer, TEST_CONFIG } from "../runtime/test-harness.ts";
@@ -68,12 +69,15 @@ describe.skipIf(process.platform === "win32")("repository setup for the local me
           throw new Error("Missing hook approval");
         expect(card.input["command"]).toBe(script);
         expect(yield* Deferred.isDone(done)).toBe(false);
-        yield* makeRespondHandlers(store, rt)["thread.respond"]({
-          threadId: thread.id,
-          requestId: card.id,
-          shown: card.shown,
-          answer: { kind: "approval", decision: "allow", scope: "once" },
-        });
+        yield* makeRespondHandlers(store, rt)["thread.respond"](
+          {
+            threadId: thread.id,
+            requestId: card.id,
+            shown: card.shown,
+            answer: { kind: "approval", decision: "allow", scope: "once" },
+          },
+          { headers: localAppHeadersForTests() },
+        );
         const result = yield* Deferred.await(done);
         expect(result).toMatchObject({
           status: "passed",
