@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.43.0](https://github.com/ANT1OFF/gram/compare/v1.42.0...v1.43.0) (2026-11-25)
+
+
+### Features
+
+* **embed:** the app's account on the compact strip ([#1038](https://github.com/ANT1OFF/gram/issues/1038)) ([bbbceaf](https://github.com/ANT1OFF/gram/commit/bbbceaf0b44d55268b50a6816d125e19fc82c4ff))
+* memory updates wait for both time and activity ([#1025](https://github.com/ANT1OFF/gram/issues/1025)) ([6df2875](https://github.com/ANT1OFF/gram/commit/6df28755d1ed8a591181f40eb80a61394b3a3548))
+* **orchestration:** pack workers onto hosted machines, by the orchestrator's and the workers' own choice ([#1028](https://github.com/ANT1OFF/gram/issues/1028)) ([529de7f](https://github.com/ANT1OFF/gram/commit/529de7f2919e23299c8581f4162483de06d15dfb))
+
+
+### Bug Fixes
+
+* a click in the transcript no longer misses when the content moves under it ([#1046](https://github.com/ANT1OFF/gram/issues/1046)) ([5491548](https://github.com/ANT1OFF/gram/commit/5491548fd42978ad7e83f2387e93d81f84ae47ac))
+* a file change streaming into the chat no longer flickers ([#1035](https://github.com/ANT1OFF/gram/issues/1035)) ([dd05dfc](https://github.com/ANT1OFF/gram/commit/dd05dfc851c77723ac4b51c0cd32a50fd3deaf3d))
+* act on a provider's ask to move a hosted worker machine that dialled in after start ([#1031](https://github.com/ANT1OFF/gram/issues/1031)) ([7b873d9](https://github.com/ANT1OFF/gram/commit/7b873d9209ae9d5d5b14beb3d3d52475202755f5))
+* await the promises the code dropped, and lint for them ([#1033](https://github.com/ANT1OFF/gram/issues/1033)) ([ad31799](https://github.com/ANT1OFF/gram/commit/ad3179939e2ad63e151ec5d34eea4551176d18d1))
+* scrolling a Markdown preview no longer flashes code and table buttons ([#1034](https://github.com/ANT1OFF/gram/issues/1034)) ([0188c77](https://github.com/ANT1OFF/gram/commit/0188c77e0917a8e306e07b862df4b3a7beb1baec))
+* three e2e specs no longer fail on a slow CI runner ([#1041](https://github.com/ANT1OFF/gram/issues/1041)) ([28c2511](https://github.com/ANT1OFF/gram/commit/28c2511a3db492d30a4b9033cfa460dae95b446b))
+
 ## [1.42.0](https://github.com/ANT1OFF/gram/compare/v1.41.0...v1.42.0) (2026-11-24)
 
 
