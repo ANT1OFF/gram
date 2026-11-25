@@ -698,7 +698,7 @@
       "tests": ["packages/server/src/gateway/*.test.ts", "apps/web/e2e/ai-helpers.spec.ts"],
       "docs": ["docs/AGENTS_AND_FEATURES.md#ai-helpers-and-context-consent"],
       "ui": {
-        "where": "Settings → Agents & models → Gateways",
+        "where": "Settings → Agents & models → Gateways, and the helpers under Settings → Agents & models → AI helpers",
         "route": "/settings/gateways",
         "landmark": {
           "role": "region",
@@ -877,7 +877,7 @@
       ],
       "docs": ["docs/UPDATES.md", "docs/RELEASING.md"],
       "ui": {
-        "where": "Settings → About: the version, updates and What's new",
+        "where": "Settings → About: the version and updates, and the release notes under Settings → About → What's New",
         "route": "/settings/about",
         "landmark": {
           "role": "region",
