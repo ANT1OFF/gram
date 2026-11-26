@@ -43,16 +43,11 @@ export const localHelperModel = (
   return undefined;
 };
 
-/** A kind of helper-model job; each has its own switch, cache row and budget line. */
-export const HelperKind = Schema.Literals([
-  "title",
-  "plan",
-  "recap",
-  "suggest",
-  "wait",
-  "notice",
-  "stuck",
-]);
+/**
+ * A kind of helper-model job; each has its own switch, cache row and budget line. `plan` was one
+ * until the helper stopped keeping thread plans: its usage rows are skipped on read.
+ */
+export const HelperKind = Schema.Literals(["title", "recap", "suggest", "wait", "notice", "stuck"]);
 export type HelperKind = typeof HelperKind.Type;
 
 /** One line of the usage ledger: a kind on a model, for one UTC day. */

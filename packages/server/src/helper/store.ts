@@ -1,4 +1,5 @@
-import { type HelperKind, type HelperUsageLine, RequestId, type ThreadId } from "@gram/contracts";
+import { HelperKind, type HelperUsageLine, RequestId, type ThreadId } from "@gram/contracts";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { SqlClient, type SqlError } from "../platform/unstable.ts";
 
@@ -51,6 +52,8 @@ export interface HelperStore {
   ) => Effect.Effect<Readonly<Record<string, number>>>;
 }
 
+const isHelperKind = Schema.is(HelperKind);
+
 const run = <A, R>(effect: Effect.Effect<A, SqlError, R>): Effect.Effect<A, never, R> =>
   effect.pipe(Effect.catch((error) => Effect.die(error)));
 
@@ -73,7 +76,7 @@ export const makeHelperStore: Effect.Effect<HelperStore, never, SqlClient.SqlCli
       usageOn: (day) =>
         run(
           sql<{
-            kind: HelperKind;
+            kind: string;
             model: string;
             calls: number;
             input_tokens: number;
@@ -84,15 +87,21 @@ export const makeHelperStore: Effect.Effect<HelperStore, never, SqlClient.SqlCli
             FROM helper_usage WHERE day = ${day} ORDER BY kind, model`,
         ).pipe(
           Effect.map((rows) =>
-            rows.map((r) => ({
-              kind: r.kind,
-              model: r.model,
-              calls: Number(r.calls),
-              inputTokens: Number(r.input_tokens),
-              outputTokens: Number(r.output_tokens),
-              costUsd: Number(r.cost_usd),
-              failures: Number(r.failures),
-            })),
+            rows.flatMap((r) =>
+              isHelperKind(r.kind)
+                ? [
+                    {
+                      kind: r.kind,
+                      model: r.model,
+                      calls: Number(r.calls),
+                      inputTokens: Number(r.input_tokens),
+                      outputTokens: Number(r.output_tokens),
+                      costUsd: Number(r.cost_usd),
+                      failures: Number(r.failures),
+                    },
+                  ]
+                : [],
+            ),
           ),
         ),
       getOutput: (threadId, kind, requestId) =>

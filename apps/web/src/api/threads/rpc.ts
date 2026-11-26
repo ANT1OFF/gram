@@ -118,8 +118,6 @@ export const threadsRpc = ({ client, connection }: RpcContext): ThreadsApi => {
     rename: (threadId, title) => run(client["thread.rename"]({ threadId, title })),
     addDirectory: (threadId, path) => run(client["thread.addDirectory"]({ threadId, path })),
     setPlan: (threadId, plan) => run(client["thread.setPlan"]({ threadId, plan })),
-    refreshPlan: (threadId, rebuild) =>
-      run(client["thread.refreshPlan"]({ threadId, ...(rebuild ? { rebuild } : {}) })),
     pin: (threadId, pinned) => run(client["thread.pin"]({ threadId, pinned })),
     park: (threadId, parked) => run(client["thread.park"]({ threadId, parked })),
     markCompleted: (threadId, completed) =>

@@ -14,7 +14,6 @@ export const waitsRpc = ({ client }: RpcContext): WaitsApi => ({
         ...(note === undefined || note.trim() === "" ? {} : { note: note.trim() }),
       }),
     ),
-  keepWait: (threadId, id) => run(client["thread.keepWait"]({ threadId, id })),
   addWait: (threadId, messageId, options = {}) =>
     run(
       client["thread.addWait"]({

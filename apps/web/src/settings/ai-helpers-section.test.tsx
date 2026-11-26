@@ -107,7 +107,7 @@ describe("AiHelpersSection", () => {
     );
     expect((await picker("Local helper fallback")).textContent).toContain("None");
     expect(toggle("Thread titles").disabled).toBe(false);
-    expect(toggle("Thread plans").disabled).toBe(true);
+    expect(toggle("Where you left off").disabled).toBe(true);
     expect((await picker("Helper context to Codex / OpenAI")).textContent).toContain("No context");
   });
 
@@ -268,7 +268,7 @@ describe("AiHelpersSection", () => {
     await renderInRouter(<AiHelpersSection />, { api });
     await picker("Helper model for Personal Gateway");
     expect(toggle("Thread titles").disabled).toBe(true);
-    expect(toggle("Thread plans").disabled).toBe(true);
+    expect(toggle("Where you left off").disabled).toBe(true);
     const upsert = vi.spyOn(api, "upsertProfile");
     fireEvent.change(screen.getByRole("combobox", { name: "Helper context permission" }), {
       target: { value: "opening" },
@@ -279,12 +279,12 @@ describe("AiHelpersSection", () => {
     expect(upsert).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Allow context" }));
     await waitFor(() => expect(toggle("Thread titles").disabled).toBe(false));
-    expect(toggle("Thread plans").disabled).toBe(true);
+    expect(toggle("Where you left off").disabled).toBe(true);
     fireEvent.change(screen.getByRole("combobox", { name: "Helper context permission" }), {
       target: { value: "conversation" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Allow context" }));
-    await waitFor(() => expect(toggle("Thread plans").disabled).toBe(false));
+    await waitFor(() => expect(toggle("Where you left off").disabled).toBe(false));
 
     fireEvent.click(toggle("Thread titles"));
     await waitFor(() => expect(save).toHaveBeenCalledWith({ helpers: { title: false } }));

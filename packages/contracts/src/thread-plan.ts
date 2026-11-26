@@ -4,8 +4,9 @@ import { PlanStepId } from "./ids.ts";
 /**
  * A thread's plan: the goal of the whole thread and the steps across its
  * turns and PRs. Unlike the agent's todo list (`PlanItem`), which lasts a turn, it persists, and the
- * agent (`set_plan`), the user and the helper model all write it, in that order of precedence under
- * the facts.
+ * agent (`set_plan`), an orchestrator's brief and the user write it; a merged PR's step is done
+ * whoever wrote it. The helper model of an older build wrote it too: its steps are dropped on read
+ * (`withoutHelperSteps`).
  */
 
 /** The longest a goal or a step's text is kept. */
@@ -16,7 +17,10 @@ export const MAX_PLAN_STEPS = 8;
 export const PlanStepStatus = Schema.Literals(["todo", "doing", "done", "blocked", "dropped"]);
 export type PlanStepStatus = typeof PlanStepStatus.Type;
 
-/** Who wrote a step: the agent (`set_plan`), the helper model, the user, or an orchestrator's brief. */
+/**
+ * Who wrote a step: the agent (`set_plan`), the user, or an orchestrator's brief. `helper` is an
+ * older build's helper model, kept so its stored plans decode.
+ */
 export const PlanSource = Schema.Literals(["agent", "helper", "user", "orchestrator"]);
 export type PlanSource = typeof PlanSource.Type;
 
@@ -35,7 +39,7 @@ export const PlanStep = Schema.Struct({
   text: PlanText,
   status: PlanStepStatus,
   source: PlanSource,
-  /** Frozen for the helper: the user edited it, or the agent wrote it with `set_plan`. */
+  /** The user edited it, or the agent wrote it with `set_plan`: the agent keeps a user's step. */
   locked: Schema.optionalKey(Schema.Boolean),
   pr: Schema.optionalKey(PlanStepPr),
   /** Why it has this status, short and quote-free ("tests passed in turn 7", "#204 merged"). */
@@ -46,12 +50,12 @@ export type PlanStep = typeof PlanStep.Type;
 export const ThreadPlan = Schema.Struct({
   /** What the whole thread is for; empty until somebody says. */
   goal: PlanText,
-  /** Who wrote the goal: a user's is kept against the agent and the helper. */
+  /** Who wrote the goal: a user's is kept against the agent. */
   goalBy: Schema.optionalKey(PlanSource),
   steps: Schema.Array(PlanStep).check(Schema.isMaxLength(MAX_PLAN_STEPS)),
   /** The step to do next, when whoever wrote the plan said; else the first open one. */
   next: Schema.optionalKey(PlanStepId),
-  /** What the helper saw last (`feed_rev`, the PR facts, the agent plan), so an unchanged thread costs no call. */
+  /** What an older build's helper saw last; written empty now and kept so stored plans decode. */
   basis: Schema.String,
   /** Epoch ms. */
   updatedAt: Schema.Number,
@@ -93,7 +97,7 @@ export const PlanStepEdit = Schema.Struct({
   id: Schema.optionalKey(PlanStepId),
   text: Schema.NonEmptyString,
   status: PlanStepStatus,
-  /** False hands the step back to the helper ("Let the helper update this"); absent keeps it the user's. */
+  /** False lifts the step's lock, so the agent's `set_plan` may reword it; absent keeps it the user's. */
   locked: Schema.optionalKey(Schema.Boolean),
   pr: Schema.optionalKey(PlanStepPr),
 });

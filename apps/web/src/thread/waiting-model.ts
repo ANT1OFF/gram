@@ -34,13 +34,13 @@ export interface QuestionsOf {
 }
 
 /**
- * What a thread's Waiting on you tray lists: its own open items, the
- * helper's suggestions among them, oldest first, and for an orchestrator its workspace's open
+ * What a thread's Waiting on you tray lists: its own open items, oldest first, and for an
+ * orchestrator its workspace's open
  * questions after them. Its own requests stay out, since their cards are above the composer
  * already, and so do its workers', which the board lists.
  */
 export const trayViews = (summary: WaitsOf, asked?: QuestionsOf): WaitView[] => [
-  ...(summary.waits ?? []).map((item) => waitViewOf(summary.thread.id, item)),
+  ...keptWaits(summary).map((item) => waitViewOf(summary.thread.id, item)),
   ...(asked === undefined
     ? []
     : asked.questions.map((question) =>
@@ -49,15 +49,14 @@ export const trayViews = (summary: WaitsOf, asked?: QuestionsOf): WaitView[] => 
 ];
 
 /**
- * A thread's items as every view but its own tray lists them: kept ones only, since a helper's
- * suggestion waits for the user in that thread alone until it is kept.
+ * A thread's open items as every view lists them, without the helper suggestions an older server
+ * still sends (`waitIsKept`).
  */
 export const keptWaits = (summary: Pick<WaitsOf, "waits">): WaitItem[] =>
   (summary.waits ?? []).filter(waitIsKept);
 
-/** How many count on the sidebar row: kept items only, never a suggestion. */
-export const waitCount = (views: readonly WaitView[]): number =>
-  views.filter((view) => view.suggested !== true).length;
+/** How many count on the sidebar row. */
+export const waitCount = (views: readonly WaitView[]): number => views.length;
 
 const KIND_WORDS: Record<WaitViewKind, readonly [one: string, many: string]> = {
   draft: ["draft", "drafts"],
@@ -71,11 +70,10 @@ const KIND_WORDS: Record<WaitViewKind, readonly [one: string, many: string]> = {
 
 /** "3 waiting on you: 2 drafts, 1 review", in the order kinds first appear. */
 export const waitBreakdown = (views: readonly WaitView[]): string => {
-  const counted = views.filter((view) => view.suggested !== true);
   const byKind = new Map<WaitViewKind, number>();
-  for (const view of counted) byKind.set(view.kind, (byKind.get(view.kind) ?? 0) + 1);
+  for (const view of views) byKind.set(view.kind, (byKind.get(view.kind) ?? 0) + 1);
   const parts = [...byKind].map(([kind, n]) => `${n} ${KIND_WORDS[kind][n === 1 ? 0 : 1]}`);
-  return `${counted.length} waiting on you${parts.length === 0 ? "" : `: ${parts.join(", ")}`}`;
+  return `${views.length} waiting on you${parts.length === 0 ? "" : `: ${parts.join(", ")}`}`;
 };
 
 /** The collapsed line's names, short enough to scan: each title up to its first colon. */
@@ -85,18 +83,12 @@ export const trayNames = (views: readonly WaitView[]): string[] =>
     return head === "" ? view.title : head;
   });
 
-/** The collapsed button's spoken label: the count and every title, suggestions named as such. */
-export const trayLabel = (views: readonly WaitView[]): string => {
-  const kept = views.filter((view) => view.suggested !== true);
-  const suggested = views.filter((view) => view.suggested === true);
-  return [
+/** The collapsed button's spoken label: the count and every title. */
+export const trayLabel = (views: readonly WaitView[]): string =>
+  [
     `${waitBreakdown(views)}.`,
-    ...(kept.length === 0 ? [] : [kept.map((view) => view.title).join("; ")]),
-    ...(suggested.length === 0
-      ? []
-      : [`Suggested: ${suggested.map((view) => view.title).join("; ")}`]),
+    ...(views.length === 0 ? [] : [views.map((view) => view.title).join("; ")]),
   ].join(" ");
-};
 
 /** What the helper resolved that may still be undone at `now`, newest first. */
 export const undoableHelperResolves = (summary: WaitsOf, now: number): WaitItem[] =>
@@ -171,8 +163,8 @@ export const copyTextOf = (
 export const RESOLVED_SHOWN_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The items resolved in the last day, latest first, for the tray's Resolved line and ⌘K: not the
- * helper's suggestions that were dismissed or lapsed, which were never the user's.
+ * The items resolved in the last day, latest first, for the tray's Resolved line and ⌘K: not an
+ * older build's helper suggestions that were dismissed or lapsed, which were never the user's.
  */
 export const recentlyResolved = (items: readonly WaitItem[], now: number): WaitItem[] =>
   items

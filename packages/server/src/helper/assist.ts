@@ -241,10 +241,9 @@ export const ThreadAssistLive = Layer.effect(
       waits,
       recentMessages: (threadId, turns) =>
         Effect.map(store.recentMessages(threadId, turns), (page) => page.messages),
-      lastTurnId: (threadId) => Effect.map(store.listTurns(threadId), (turns) => turns.at(-1)?.id),
       enabled: Effect.map(store.getSettings, (settings) => helperOn(settings, "wait")),
     });
-    const waiting = yield* FiberMap.make<string>();
+    const waiting = yield* FiberMap.make<ThreadId>();
 
     const watch = yield* makeRecapWatch(recaps);
     yield* runtimes.observe({
@@ -253,19 +252,11 @@ export const ThreadAssistLive = Layer.effect(
         Effect.all([
           watch.started(thread.id),
           turnMoved(thread.id),
-          waitHelper.userSent(thread.id),
-          FiberMap.remove(waiting, `end:${thread.id}`),
-          FiberMap.run(waiting, `input:${thread.id}`, waitHelper.atUserInput(thread, input.text)),
+          FiberMap.run(waiting, thread.id, waitHelper.atUserInput(thread, input.text)),
         ]),
       onTurnEnd: (thread, end) =>
         Effect.gen(function* () {
           yield* watch.ended(thread, yield* focused(thread.id));
-          const inputs = waitHelper.inputs(thread.id);
-          yield* FiberMap.run(
-            waiting,
-            `end:${thread.id}`,
-            waitHelper.atTurnEnd(thread, end, inputs),
-          );
           if (!suggestibleEnd(end)) return;
           yield* FiberMap.run(suggesting, thread.id, suggestions.atTurnEnd(thread, end.turnId));
         }),
@@ -281,9 +272,7 @@ export const ThreadAssistLive = Layer.effect(
               FiberMap.remove(suggesting, event.threadId),
               suggestions.forget(event.threadId),
               watch.started(event.threadId),
-              FiberMap.remove(waiting, `input:${event.threadId}`),
-              FiberMap.remove(waiting, `end:${event.threadId}`),
-              waitHelper.forget(event.threadId),
+              FiberMap.remove(waiting, event.threadId),
             ]),
       ),
       Effect.forkScoped,

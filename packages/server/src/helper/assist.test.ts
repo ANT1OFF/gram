@@ -43,7 +43,7 @@ const meanwhile: { current: Effect.Effect<unknown> | undefined } = { current: un
 
 /** What the helper answers a Waiting on you job, from the prompt it was given. */
 const waitAnswer: { current: (prompt: string) => WaitOutput } = {
-  current: () => ({ add: null, resolve: [] }),
+  current: () => ({ resolve: [] }),
 };
 
 const scheduler: HelperSchedulerShape = {
@@ -147,7 +147,7 @@ describe("ThreadAssistLive", () => {
     }).pipe(Effect.provide(AssistTestLayer)),
   );
 
-  it.effect("suggests what a reply leaves the user, and resolves it when the user says sent", () =>
+  it.effect("resolves the agent's item when the user says sent, and suggests none of its own", () =>
     Effect.gen(function* () {
       jobs.length = 0;
       const runtimes = yield* ThreadRuntimes;
@@ -162,45 +162,32 @@ describe("ThreadAssistLive", () => {
         "the first send",
         fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 1 && s)),
       );
-      waitAnswer.current = () => ({
-        add: {
-          kind: "draft",
-          title: "Teams message to Kari",
-          copyFrom: "Hi Kari, the fix is out.",
-        },
-        resolve: [],
-      });
       yield* session.completeTurn("Here is the draft to send:\n\n> Hi Kari, the fix is out.");
-      const [suggestion] = yield* waitFor(
-        "the suggestion",
-        Effect.map(waits.open(thread.id), (open) => open.length === 1 && open),
+      yield* waitFor(
+        "the turn's end",
+        runtimes.status(thread.id).pipe(Effect.map((s) => s === "idle")),
       );
-      const { messages } = yield* runtimes.replay(thread.id);
-      expect(suggestion).toMatchObject({
-        source: "helper",
-        suggested: true,
-        copy: "Hi Kari, the fix is out.",
-        messageId: messages.findLast((m) => m.role === "assistant")?.id,
-      });
       const waitJobs = () => jobs.filter((j) => j.job.kind === "wait");
-      expect(waitJobs()).toHaveLength(1);
-      expect(waitJobs()[0]?.job.lane).toBe("background");
-      expect(waitJobs()[0]?.prompt).toContain("Hi Kari, the fix is out.");
+      // A reply with a deliverable in it adds nothing: only the agent adds items.
+      expect(yield* waits.open(thread.id)).toEqual([]);
+      expect(waitJobs()).toHaveLength(0);
 
-      // Kept, it counts; the user's "sent" resolves it as they send, and lapses nothing kept.
-      yield* waits.keep(thread.id, suggestion!.id);
-      waitAnswer.current = (prompt) => ({
-        add: null,
-        resolve: prompt.includes(suggestion!.id) ? [suggestion!.id] : [],
-      });
+      const { item } = yield* waits.put(
+        thread.id,
+        { kind: "draft", title: "Teams message to Kari", copy: "Hi Kari, the fix is out." },
+        "agent",
+      );
+      waitAnswer.current = (prompt) => ({ resolve: prompt.includes(item.id) ? [item.id] : [] });
       yield* runtimes.send(thread.id, { text: "sent" });
       yield* waitFor(
         "the resolve",
         Effect.map(waits.open(thread.id), (open) => open.length === 0),
       );
       expect(yield* waits.helperResolved(thread.id)).toMatchObject([
-        { id: suggestion!.id, resolvedBy: "helper" },
+        { id: item.id, resolvedBy: "helper" },
       ]);
+      expect(waitJobs()).toHaveLength(1);
+      expect(waitJobs()[0]?.job.lane).toBe("background");
       const second = yield* waitFor(
         "the second send",
         fake.latest(thread.id).pipe(Effect.map((s) => s.sent.length === 2 && s)),
@@ -210,8 +197,8 @@ describe("ThreadAssistLive", () => {
         "the turn's end",
         runtimes.status(thread.id).pipe(Effect.map((s) => s === "idle")),
       );
-      // The turn after says nothing to suggest, and its "sent" was already asked about.
-      expect(waitJobs()).toHaveLength(2);
+      // The turn's end asks nothing more.
+      expect(waitJobs()).toHaveLength(1);
     }).pipe(Effect.provide(AssistTestLayer)),
   );
 

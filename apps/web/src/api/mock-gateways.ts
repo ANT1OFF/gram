@@ -128,7 +128,7 @@ const HELPER_STATUS: HelperStatus = {
   failures: 1,
   lines: [
     {
-      kind: "plan",
+      kind: "recap",
       model: "claude-haiku-5.5-eu",
       calls: 30,
       inputTokens: 120_000,

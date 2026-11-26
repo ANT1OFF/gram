@@ -5,7 +5,6 @@ import {
   WaitId,
   waitData,
   waitContentOf,
-  waitIsKept,
   withWaitChange,
   type MessageId,
   type GramUIMessageChunk,
@@ -67,9 +66,9 @@ interface WaitPut {
 }
 
 export interface ThreadWaitsShape {
-  /** The thread's open items, suggestions among them, oldest first. */
+  /** The thread's open items, oldest first. */
   open(threadId: ThreadId): Effect.Effect<ReadonlyArray<WaitItem>>;
-  /** What the helper resolved within `HELPER_RESOLVE_UNDO_MS`, newest first, suggestions aside. */
+  /** What the helper resolved within `HELPER_RESOLVE_UNDO_MS`, newest first. */
   helperResolved(threadId: ThreadId): Effect.Effect<ReadonlyArray<WaitItem>>;
   /**
    * Adds an item, or updates the open one `draft.id` names, anchored where its chip lands: the
@@ -119,28 +118,8 @@ export interface ThreadWaitsShape {
     },
   ): Effect.Effect<{ readonly item: WaitItem; readonly changed: boolean }, NotFound>;
   /**
-   * Adds the helper's suggestion, anchored to `messageId` and drawn as no chip. `false`, adding
-   * nothing, when the message already has, or had, an item from the helper, which is how a dismissed
-   * suggestion stays dismissed, or when the thread is full, or `fresh` says it came too late; that
-   * is asked under the write lock `lapse` takes too, so a suggestion can't land past a lapse.
-   */
-  suggest(
-    threadId: ThreadId,
-    draft: Omit<WaitDraft, "id">,
-    messageId: MessageId,
-    fresh?: Effect.Effect<boolean>,
-  ): Effect.Effect<boolean>;
-  /**
-   * Keeps an open suggestion: it counts from now on, and its chip is drawn in the reply it came
-   * from. Refused as adding an item is while the thread is full.
-   */
-  keep(threadId: ThreadId, id: WaitId): Effect.Effect<WaitItem, NotFound | WaitsFull>;
-  /** The user sent to the thread: suggestions they didn't keep are resolved, by the helper. */
-  lapse(threadId: ThreadId): Effect.Effect<number>;
-  /**
    * The note for the next message the agent reads (`waitNoteText`), and the items it tells of;
-   * `undefined` with no news. Leaves out the helper's suggestions, kept ones aside, and what
-   * `pending` already tells, as it was then. Records nothing: `heard` does, once the agent has the
+   * `undefined` with no news. Leaves out what `pending` already tells, as it was then. Records nothing: `heard` does, once the agent has the
    * message.
    */
   draftNote(
@@ -150,8 +129,7 @@ export interface ThreadWaitsShape {
   /** Records that the agent heard of `items` as they were in the note it took. */
   heard(threadId: ThreadId, items: ReadonlyArray<WaitItem>): Effect.Effect<void>;
   /**
-   * The thread's items, open or `all`, for `list_waits`, without the helper's suggestions: the agent
-   * has heard of those it answers, unless `heard` is false, as when its orchestrator reads them.
+   * The thread's items, open or `all`, for `list_waits`: the agent has heard of those it answers, unless `heard` is false, as when its orchestrator reads them.
    */
   listForAgent(
     threadId: ThreadId,
@@ -164,8 +142,6 @@ export interface ThreadWaitsShape {
 
 /** Which version of an item this is: any change to it, Done and Undo included, moves it on. */
 export const waitRevision = (item: Pick<WaitItem, "revision">): number => item.revision ?? 0;
-
-const fullAt = (open: ReadonlyArray<WaitItem>) => open.filter(waitIsKept).length;
 
 const newWaitId = (): WaitId => Schema.decodeSync(WaitId)(`w-${randomUUID().slice(0, 8)}`);
 
@@ -193,7 +169,7 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
       let transcript: WaitTranscript | undefined;
 
       const restyle = (threadId: ThreadId, item: WaitItem, state?: "revised") =>
-        item.messageId === undefined || transcript === undefined || item.suggested === true
+        item.messageId === undefined || transcript === undefined
           ? Effect.void
           : transcript
               .updateDataPart(threadId, item.messageId, waitChunk(item, state))
@@ -212,7 +188,7 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
           ),
           (resolved) =>
             resolved
-              .filter((item) => item.resolvedBy === "helper" && item.suggested !== true)
+              .filter((item) => item.resolvedBy === "helper")
               .toSorted((a, b) => (b.resolvedAt ?? 0) - (a.resolvedAt ?? 0)),
         );
 
@@ -236,12 +212,7 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
             Effect.gen(function* () {
               const open = yield* store.listWaits(threadId);
               const previous =
-                draft.id === undefined
-                  ? undefined
-                  : open.find(
-                      (item) =>
-                        item.id === draft.id && (editor === undefined || item.suggested !== true),
-                    );
+                draft.id === undefined ? undefined : open.find((item) => item.id === draft.id);
               if ((draft.id !== undefined || editor !== undefined) && previous === undefined) {
                 return yield* new NotFound({
                   entity: "wait",
@@ -249,8 +220,8 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                   message: `no open item ${draft.id ?? ""} in this thread`,
                 });
               }
-              const kept = fullAt(open);
-              const adds = previous === undefined || previous.suggested === true;
+              const kept = open.length;
+              const adds = previous === undefined;
               if (adds && kept >= MAX_OPEN_WAITS) return yield* new WaitsFull({ open: kept });
               const now = Date.now();
               const person =
@@ -272,7 +243,7 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
                   ? {}
                   : { updatedAt: now, revision: waitRevision(previous) + 1 }),
                 ...(person === undefined ? {} : { person }),
-                ...(previous === undefined || previous.suggested === true
+                ...(previous === undefined
                   ? {}
                   : {
                       history: withWaitChange(previous.history, {
@@ -322,12 +293,8 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
               ) {
                 return { item: before, changed: false };
               }
-              if (
-                resolution === undefined &&
-                before.resolvedAt !== undefined &&
-                before.suggested !== true
-              ) {
-                const open = fullAt(yield* store.listWaits(threadId));
+              if (resolution === undefined && before.resolvedAt !== undefined) {
+                const open = (yield* store.listWaits(threadId)).length;
                 if (open >= MAX_OPEN_WAITS) return yield* new WaitsFull({ open });
               }
               const item = yield* store.resolveWait(threadId, id, resolution);
@@ -371,85 +338,19 @@ export class ThreadWaits extends Context.Service<ThreadWaits, ThreadWaitsShape>(
               return { item, changed: true };
             }),
           ),
-        suggest: (threadId, draft, messageId, fresh = Effect.succeed(true)) =>
-          writes.withPermits(1)(
-            Effect.gen(function* () {
-              if (!(yield* fresh)) return false;
-              const all = yield* store.listWaits(threadId, "all");
-              const seen = all.some(
-                (item) => item.source === "helper" && item.messageId === messageId,
-              );
-              if (seen || fullAt(all) >= MAX_OPEN_WAITS) return false;
-              const person = yield* store.lastSender(threadId);
-              const item: WaitItem = {
-                id: newWaitId(),
-                kind: draft.kind,
-                title: draft.title,
-                ...(draft.body === undefined ? {} : { body: draft.body }),
-                ...(draft.copy === undefined ? {} : { copy: draft.copy }),
-                ...(draft.link === undefined ? {} : { link: draft.link }),
-                source: "helper",
-                createdAt: Date.now(),
-                messageId,
-                suggested: true,
-                ...(person === undefined ? {} : { person }),
-              };
-              yield* store.putWait(threadId, item);
-              yield* publish(threadId);
-              return true;
-            }),
-          ),
-        keep: (threadId, id) =>
-          writes.withPermits(1)(
-            Effect.gen(function* () {
-              const before = yield* store.getWait(threadId, id);
-              if (before.suggested !== true || before.resolvedAt !== undefined) {
-                return yield* new NotFound({
-                  entity: "wait",
-                  id,
-                  message: `no open suggestion ${id} in this thread`,
-                });
-              }
-              const open = fullAt(yield* store.listWaits(threadId));
-              if (open >= MAX_OPEN_WAITS) return yield* new WaitsFull({ open });
-              const { suggested: _, ...rest } = before;
-              const item: WaitItem = { ...rest, revision: waitRevision(before) + 1 };
-              yield* store.putWait(threadId, item);
-              yield* publish(threadId);
-              yield* restyle(threadId, item);
-              return item;
-            }),
-          ),
-        lapse: (threadId) =>
-          writes.withPermits(1)(
-            Effect.gen(function* () {
-              const open = yield* store.listWaits(threadId);
-              const lapsed = open.filter((item) => item.suggested === true);
-              const at = Date.now();
-              for (const item of lapsed) {
-                yield* store
-                  .resolveWait(threadId, item.id, { by: "helper", at, note: "lapsed" })
-                  .pipe(Effect.ignore);
-              }
-              if (lapsed.length > 0) yield* publish(threadId);
-              return lapsed.length;
-            }),
-          ),
         draftNote: (threadId, pending) =>
           Effect.gen(function* () {
             const told = new Set(pending.map((item) => `${item.id}:${item.resolvedAt ?? ""}`));
             const news = (yield* store.listWaitNews(threadId)).filter(
-              (item) => item.suggested !== true && !told.has(`${item.id}:${item.resolvedAt ?? ""}`),
+              (item) => !told.has(`${item.id}:${item.resolvedAt ?? ""}`),
             );
-            const note = waitNoteText(news, (yield* store.listWaits(threadId)).filter(waitIsKept));
+            const note = waitNoteText(news, yield* store.listWaits(threadId));
             return note === undefined ? undefined : { note, news };
           }),
         heard: (threadId, items) => store.markWaitsTold(threadId, items, Date.now()),
         listForAgent: (threadId, which, heard = true) =>
           Effect.gen(function* () {
-            const items = (yield* store.listWaits(threadId, which)).filter(
-              (item) => item.suggested !== true,
-            );
+            const items = yield* store.listWaits(threadId, which);
             if (!heard) return items;
             const news = new Set((yield* store.listWaitNews(threadId)).map((item) => item.id));
             yield* store.markWaitsTold(

@@ -37,9 +37,6 @@ import {
   type HelperTextResult,
 } from "../gateway/helper-llm.ts";
 import { cleanTitle, schedulerTitles } from "../gateway/titles.ts";
-import { EventHub } from "../events/event-hub.ts";
-import { ThreadPlans } from "../plans/service.ts";
-import { refreshPlan } from "../plans/keeper.ts";
 import { makeRecaps } from "./recap.ts";
 import { makeSuggestions, SuggestOutput } from "./suggest.ts";
 import { makeAskReplies } from "./ask-replies.ts";
@@ -89,7 +86,7 @@ const planJob = (
   basis: string,
   overrides: Partial<HelperJob<typeof Plan.Type, typeof Plan.Encoded>> = {},
 ): HelperJob<typeof Plan.Type, typeof Plan.Encoded> => ({
-  kind: "plan",
+  kind: "notice",
   threadId: THREAD,
   lane: "background",
   basis,
@@ -345,7 +342,7 @@ describe("local helper routing and consent", () => {
                   [otherContextKey]: "conversation",
                 },
               }));
-              for (const kind of ["title", "plan"] as const)
+              for (const kind of ["title", "notice"] as const)
                 expect(
                   yield* h.scheduler.schedule({ ...planJob(`single-off-${kind}`), kind }),
                 ).toEqual({ _tag: "Skipped", reason: "consent" });
@@ -370,29 +367,15 @@ describe("local helper routing and consent", () => {
                 ...s,
                 helpers: { ...s.helpers, source: "automatic", [contextKey]: "conversation" },
               }));
-              const plans = yield* ThreadPlans.pipe(
-                Effect.provide(ThreadPlans.layer),
-                Effect.provide(EventHub.layer),
-              );
               expect(
-                yield* refreshPlan(
-                  {
-                    store: h.store,
-                    plans,
-                    scheduler: h.scheduler,
-                    gitOf: () => Effect.succeed(undefined),
-                    prContext: () => Effect.succeed([]),
-                  },
-                  THREAD,
-                  { lane: "interactive", rebuild: true, userSpoke: true },
-                ),
-              ).toMatchObject({ goal: "synthetic", steps: [{ text: "Review the change" }] });
+                yield* h.scheduler.schedule({ ...planJob("child-notice"), kind: "notice" }),
+              ).toMatchObject({ _tag: "Done" });
               const shared = {
                 schedule: h.scheduler.schedule,
                 status: () => Effect.succeed("idle" as const),
                 userMessages: () => Effect.succeed([opening]),
                 recentMessages: () => Effect.succeed([opening, reply]),
-                plan: () => plans.get(THREAD),
+                plan: () => Effect.succeed(undefined),
                 prContext: () => Effect.succeed([]),
                 focused: () => Effect.succeed(true),
               };
@@ -437,7 +420,7 @@ describe("local helper routing and consent", () => {
               // Each kind at the Cheap tier's effort, as this model lists it: a title at
               // medium where it can, the rest at low; never high on Gram's own choice.
               const listed = discoveredModels.find((row) => row.id === model);
-              const kinds = ["title", "plan", "recap", "suggest", "wait"] as const;
+              const kinds = ["title", "notice", "recap", "suggest", "wait"] as const;
               expect(rows.filter((r) => r.model).map((r) => [r.model, r.effort])).toEqual([
                 ...kinds.map((kind) => [model, localHelperEffort(listed, undefined, kind)]),
                 [model, "low"],
@@ -825,7 +808,7 @@ describe("helper scheduler", () => {
         expect(calls[0]!.reasoningEffort).toBe("low");
         // A reasoning model's hidden tokens count against the cap; at 30 its titles came back empty.
         expect(calls[0]!.maxOutputTokens).toBeGreaterThanOrEqual(2_000);
-        expect((calls[0]!.model as unknown as StubModel).kind).toBe("plan");
+        expect((calls[0]!.model as unknown as StubModel).kind).toBe("notice");
 
         const status = yield* scheduler.status;
         expect(status.calls).toBe(1);
@@ -834,7 +817,7 @@ describe("helper scheduler", () => {
         expect(status.costUsd).toBeCloseTo(costUsd("claude-haiku-5.5-eu", 1_000, 200), 10);
         expect(status.lines).toEqual([
           expect.objectContaining({
-            kind: "plan",
+            kind: "notice",
             model: "claude-haiku-5.5-eu",
             calls: 1,
             failures: 0,
@@ -882,11 +865,11 @@ describe("helper scheduler", () => {
         // A prompt version bump is a new basis.
         yield* scheduler.schedule(planJob("b1", { promptVersion: 2 }));
         expect(calls).toHaveLength(2);
-        const latest = yield* scheduler.latest(THREAD, "plan", Plan);
+        const latest = yield* scheduler.latest(THREAD, "notice", Plan);
         expect(Option.getOrUndefined(latest)?.value).toEqual({ goal: "B" });
         // It goes with its thread.
         yield* store.removeThread(THREAD);
-        expect(yield* helperStore.getOutput(THREAD, "plan")).toBeUndefined();
+        expect(yield* helperStore.getOutput(THREAD, "notice")).toBeUndefined();
       }),
     ),
   );
@@ -968,7 +951,7 @@ describe("helper scheduler", () => {
         first.open();
         expect(yield* Fiber.join(a)).toMatchObject({ value: { goal: "old" } });
         expect(yield* Fiber.join(b)).toMatchObject({ value: { goal: "new" } });
-        const latest = yield* scheduler.latest(THREAD, "plan", Plan);
+        const latest = yield* scheduler.latest(THREAD, "notice", Plan);
         expect(Option.getOrUndefined(latest)?.value).toEqual({ goal: "new" });
       }),
     ),
@@ -1004,7 +987,7 @@ describe("helper scheduler", () => {
           let dies = 1;
           const { scheduler, calls } = yield* harness([ok('{"goal":"A"}')], {
             deps: {
-              kindDailyCalls: { plan: 1 },
+              kindDailyCalls: { notice: 1 },
               helperStore: {
                 ...real,
                 addUsage: (delta) =>
@@ -1060,7 +1043,7 @@ describe("helper scheduler", () => {
         late.open();
         // Not a failed write either: the row is simply not made.
         expect((yield* Fiber.join(job))._tag).toBe("Done");
-        expect(yield* helperStore.getOutput(THREAD, "plan")).toBeUndefined();
+        expect(yield* helperStore.getOutput(THREAD, "notice")).toBeUndefined();
       }),
     ),
   );
@@ -1171,7 +1154,7 @@ describe("helper scheduler", () => {
         ]);
         yield* helperStore.addUsage({
           day: "1970-01-01",
-          kind: "plan",
+          kind: "notice",
           model: "gpt-6-luna",
           calls: 1,
           inputTokens: 0,
@@ -1193,7 +1176,7 @@ describe("helper scheduler", () => {
         });
         yield* helperStore.addUsage({
           day: "1970-01-01",
-          kind: "plan",
+          kind: "notice",
           model: "gpt-6-luna",
           calls: 1,
           inputTokens: 0,
@@ -1258,15 +1241,7 @@ describe("helper scheduler", () => {
           profile: unconsented,
           deps: { key: () => Effect.die("must not read the key without consent") },
         });
-        for (const kind of [
-          "title",
-          "plan",
-          "recap",
-          "suggest",
-          "wait",
-          "notice",
-          "stuck",
-        ] as const) {
+        for (const kind of ["title", "recap", "suggest", "wait", "notice", "stuck"] as const) {
           expect(yield* scheduler.schedule(planJob(`no-consent-${kind}`, { kind }))).toEqual({
             _tag: "Skipped",
             reason: "consent",
@@ -1304,7 +1279,7 @@ describe("helper scheduler", () => {
     provide(
       Effect.gen(function* () {
         const { scheduler, calls, store } = yield* harness([ok('{"goal":"A"}')], {
-          settings: (s) => ({ ...s, helpers: { plan: false } }),
+          settings: (s) => ({ ...s, helpers: { notice: false } }),
         });
         expect(yield* scheduler.schedule(planJob("b1"))).toEqual({
           _tag: "Skipped",
@@ -1377,7 +1352,7 @@ describe("helper models", () => {
       helperEffort: "none",
       helperFallback: null,
     };
-    expect(helperRoutes(picked, { kind: "plan" })).toEqual([
+    expect(helperRoutes(picked, { kind: "notice" })).toEqual([
       { model: "gpt-6.1-sol", effort: "low" },
     ]);
     const haikuFirst: GatewayProfile = {
@@ -1385,7 +1360,7 @@ describe("helper models", () => {
       helperModel: "a-claude-haiku-4.5",
       helperFallback: { model: "gpt-6-luna", effort: "low" },
     };
-    expect(helperRoutes(haikuFirst, { kind: "plan" })).toEqual([
+    expect(helperRoutes(haikuFirst, { kind: "notice" })).toEqual([
       { model: "a-claude-haiku-4.5", effort: undefined },
       { model: "gpt-6-luna", effort: "low" },
     ]);
@@ -1407,7 +1382,7 @@ describe("helper models", () => {
       helperEffort: "xhigh",
       helperFallback: { model: "plain", effort: "high" },
     };
-    expect(helperRoutes(catalog, { kind: "plan" })).toEqual([
+    expect(helperRoutes(catalog, { kind: "notice" })).toEqual([
       { model: "gpt-cat", effort: "xhigh" },
       { model: "plain", effort: undefined },
     ]);
@@ -1520,7 +1495,7 @@ const haikuReply = (content: string) =>
   );
 
 /** One helper call on Haiku 5.5, as the scheduler makes it. */
-const haikuCall = (kind: "plan" | "title") =>
+const haikuCall = (kind: "notice" | "title") =>
   generateHelperText({
     model: helperLanguageModel(EXAMPLE, Redacted.make("sk-test"), "claude-haiku-5.5-eu", kind),
     system: "s",
@@ -1580,7 +1555,7 @@ describe("helper transport", () => {
   it("reads Haiku 5.5's answer apart from the thinking LiteLLM sends beside it", async () => {
     const answers = ['```json\n{"goal": "Fix the login test"}\n```', "Fix the login test"];
     vi.stubGlobal("fetch", async () => haikuReply(answers.shift()!));
-    const plan = await haikuCall("plan");
+    const plan = await haikuCall("notice");
     expect(plan.usage).toEqual({ inputTokens: 900, outputTokens: 140 });
     expect(parseJsonOutput(plan.text)).toEqual({ goal: "Fix the login test" });
     expect(cleanTitle((await haikuCall("title")).text)).toBe("Fix the login test");

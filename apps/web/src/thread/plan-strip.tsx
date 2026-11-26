@@ -17,13 +17,11 @@ import {
   CircleCheck,
   CircleDot,
   CircleSlash,
-  ListRestart,
+  History,
   Network,
   Octagon,
   Pencil,
   Plus,
-  RefreshCw,
-  Sparkles,
   Square,
   Target,
   User,
@@ -38,7 +36,7 @@ import { PR_STATE_DISPLAY, prLifecycleOf } from "@/components/pr-marks-model";
 import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/lib/use-now";
-import { spin, Spinner, StatusMark, Swap, type MarkPhase } from "@/motion";
+import { Spinner, StatusMark, Swap, type MarkPhase } from "@/motion";
 import { imeComposing } from "@/composer/send-key";
 import { useThreadFeed } from "@/stores/feeds";
 import { STATUS_DISPLAY } from "@/sidebar/status";
@@ -75,7 +73,7 @@ const STEP: Record<PlanStepStatus, { icon: LucideIcon; tone: string; label: stri
 
 const SOURCE: Record<PlanSource, { icon: LucideIcon; label: string }> = {
   agent: { icon: Bot, label: "From the agent's own plan" },
-  helper: { icon: Sparkles, label: "Kept by the helper" },
+  helper: { icon: Bot, label: "From an earlier helper" },
   user: { icon: User, label: "Edited by you" },
   orchestrator: { icon: Network, label: "From the orchestrator's brief" },
 };
@@ -95,9 +93,6 @@ const TODO_ICON: Record<
   completed: { icon: CircleCheck, tone: "text-success", mark: "done" },
   cancelled: { icon: CircleSlash, tone: "text-muted-foreground" },
 };
-
-const report = (op: Promise<unknown>) =>
-  void op.catch((error: unknown) => console.error("plan", error));
 
 function TextEdit({
   value,
@@ -222,7 +217,6 @@ function StepRow({
   const [editing, setEditing] = useState(false);
   const display = STEP[step.status];
   const source = SOURCE[step.source];
-  const held = step.locked === true && (step.source === "user" || step.source === "orchestrator");
   return (
     <li data-testid="plan-step" data-status={step.status} className="group/step flex flex-col">
       <span className="flex items-start gap-2">
@@ -323,24 +317,10 @@ function StepRow({
             </button>
           </span>
         )}
-        {held && editable ? (
-          <button
-            type="button"
-            title={`${source.label}; the helper leaves it alone. Click to let the helper update it.`}
-            aria-label={`Let the helper update “${step.text}”`}
-            onClick={() =>
-              onEdit((edit) => withStep(edit, step.id, (s) => ({ ...s, locked: false })))
-            }
-            className="mt-0.5 flex shrink-0 items-center gap-0.5 text-subtle hover:text-foreground"
-          >
-            <source.icon aria-hidden className="size-icon-row" />
-          </button>
-        ) : (
-          <span title={source.label} className="mt-0.5 shrink-0 text-subtle">
-            <source.icon aria-hidden className="size-icon-row" />
-            <span className="sr-only">{source.label}</span>
-          </span>
-        )}
+        <span title={source.label} className="mt-0.5 shrink-0 text-subtle">
+          <source.icon aria-hidden className="size-icon-row" />
+          <span className="sr-only">{source.label}</span>
+        </span>
       </span>
       {todos !== undefined && todos.length > 0 && <TurnTodos items={todos} />}
     </li>
@@ -351,14 +331,12 @@ function FooterAction({
   label,
   hint,
   icon: Icon,
-  spinning = false,
   disabled = false,
   onClick,
 }: {
   label: string;
   hint?: string;
   icon: LucideIcon;
-  spinning?: boolean;
   disabled?: boolean;
   onClick: () => void;
 }) {
@@ -375,7 +353,7 @@ function FooterAction({
         />
       }
     >
-      <Icon aria-hidden ref={spinning ? spin : undefined} className="size-icon-row" />
+      <Icon aria-hidden className="size-icon-row" />
     </Hint>
   );
 }
@@ -383,7 +361,7 @@ function FooterAction({
 const updatedText = (by: PlanSource, ago: string): string => {
   switch (by) {
     case "helper":
-      return `Updated ${ago} from the transcript and PR state`;
+      return `Updated ${ago}`;
     case "agent":
       return `Updated ${ago} by the agent`;
     case "user":
@@ -441,7 +419,7 @@ export const stripShown = ({ progress, state }: StripFacts): boolean =>
  * headline and count, folded until clicked; while the thread works, the headline names the step in
  * progress, not the command running. Opened, it lists the steps, each with its
  * status glyph (a click moves it on), its PR's live state, who wrote it, and on hover an edit,
- * moves and a remove; every edit makes the step the user's and locks it against the helper. The
+ * moves and a remove; every edit makes the step the user's, which the agent's `set_plan` keeps. The
  * agent's todo list for this turn sits under the step in progress, or stands for the steps while
  * the plan has none. Absent while the thread keeps no plan, and on an orchestrator, whose board is
  * its plan.
@@ -460,7 +438,6 @@ export function PlanStrip({
   const open = inPopover || openState;
   const [adding, setAdding] = useState(false);
   const [editingGoal, setEditingGoal] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const now = useNow(open, undefined, 60_000);
   const sent = useRef<PlanEdit | undefined>(undefined);
   const saving = useRef<Promise<unknown>>(Promise.resolve());
@@ -477,10 +454,6 @@ export function PlanStrip({
       .finally(() => {
         if (sent.current === next) sent.current = undefined;
       });
-  };
-  const refresh = (rebuild: boolean) => {
-    setRefreshing(true);
-    report(api.refreshPlan(threadId, rebuild).finally(() => setRefreshing(false)));
   };
   const goal = plan?.goal ?? "";
   const doing = fromTodo ? undefined : steps.find((step) => step.status === "doing");
@@ -630,7 +603,7 @@ export function PlanStrip({
                 </>
               ) : (
                 <>
-                  <Sparkles aria-hidden className="size-icon-row" />
+                  <History aria-hidden className="size-icon-row" />
                   {updatedText(plan.updatedBy, agoText(plan.updatedAt, now))}
                 </>
               )}
@@ -644,21 +617,6 @@ export function PlanStrip({
               {steps.length < 8 && (
                 <FooterAction label="Add step" icon={Plus} onClick={() => setAdding(true)} />
               )}
-              <FooterAction
-                label="Refresh"
-                hint="Refresh: bring the plan up to date from the transcript and PR state"
-                icon={RefreshCw}
-                spinning={refreshing}
-                disabled={refreshing}
-                onClick={() => refresh(false)}
-              />
-              <FooterAction
-                label="Rebuild"
-                hint="Rebuild: drop the steps nobody locked and derive them again from the whole thread"
-                icon={ListRestart}
-                disabled={refreshing}
-                onClick={() => refresh(true)}
-              />
             </span>
           </div>
         </div>

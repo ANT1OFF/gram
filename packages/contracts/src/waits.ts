@@ -15,8 +15,7 @@ export const WAIT_BODY_MAX = 500;
 /** The longest text Copy puts on the clipboard. */
 export const WAIT_COPY_MAX = 20_000;
 /**
- * The most items one thread keeps open, suggestions not counted; the next is refused until one is
- * resolved or updated.
+ * The most items one thread keeps open; the next is refused until one is resolved or updated.
  */
 export const MAX_OPEN_WAITS = 12;
 /** How long an item the helper resolved offers Undo in the tray. */
@@ -110,8 +109,8 @@ export const WaitItem = Schema.Struct({
    */
   resolverThread: Schema.optionalKey(ThreadId),
   /**
-   * Proposed by the helper model and not yet kept: listed dashed, never counted and drawn as no
-   * chip. Kept, the flag goes; dismissed, or lapsed when the user next sends, it is resolved.
+   * Proposed by the helper model of an older build and never kept. The helper no longer suggests
+   * items: the server drops these on read, and `waitIsKept` leaves them out of an older server's.
    */
   suggested: Schema.optionalKey(Schema.Literal(true)),
   /**
@@ -180,7 +179,7 @@ export const waitEndingOf = (
   item: Pick<WaitItem, "resolvedAt" | "ending">,
 ): WaitEnding | undefined => (item.resolvedAt === undefined ? undefined : (item.ending ?? "done"));
 
-/** Whether `item` counts: open and not a suggestion still to be kept. */
+/** Whether `item` counts: open, and not an older build's helper suggestion (`suggested`). */
 export const waitIsKept = (item: Pick<WaitItem, "resolvedAt" | "suggested">): boolean =>
   waitIsOpen(item) && item.suggested !== true;
 
@@ -251,8 +250,6 @@ export const WaitView = Schema.Struct({
   createdAt: Schema.Number,
   /** Jump to's target. */
   messageId: Schema.optionalKey(MessageId),
-  /** Proposed by the helper and not yet kept: listed, never counted. */
-  suggested: Schema.optionalKey(Schema.Literal(true)),
 });
 export type WaitView = typeof WaitView.Type;
 
@@ -268,7 +265,6 @@ export const waitViewOf = (threadId: ThreadId, item: WaitItem): WaitView => {
     ...(preview === undefined || preview === "" ? {} : { preview }),
     createdAt: item.createdAt,
     ...(item.messageId === undefined ? {} : { messageId: item.messageId }),
-    ...(item.suggested === true ? { suggested: true } : {}),
   };
 };
 

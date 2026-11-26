@@ -1184,23 +1184,30 @@ describe("M1 core app tools", () => {
       );
       expect(session.sent[5]?.waitNote).toContain(`The user reopened: "Teams message to Kari"`);
 
-      // A helper's suggestion stays out of the note until the user keeps it, and lists nowhere.
+      // An older build's helper suggestion, still stored, lists nowhere and tells nothing.
       yield* session.completeTurn();
       yield* waitStatusIdle(thread.id);
       yield* waits.heard(thread.id, yield* store.listWaitNews(thread.id));
-      expect(
-        yield* waits.suggest(thread.id, { kind: "draft", title: "Suggested reply" }, anchor),
-      ).toBe(true);
-      const suggestion = (yield* store.listWaits(thread.id)).find((w) => w.suggested === true)!;
+      const stale = "w-stale" as WaitId;
+      yield* store.putWait(thread.id, {
+        id: stale,
+        kind: "draft",
+        title: "Suggested reply",
+        source: "helper",
+        createdAt: Date.now(),
+        messageId: anchor,
+        suggested: true,
+      });
       expect(yield* waits.draftNote(thread.id, [])).toBeUndefined();
+      expect((yield* store.listWaits(thread.id, "all")).map((w) => w.id)).not.toContain(stale);
+      expect((yield* store.listWaitNews(thread.id)).map((w) => w.id)).not.toContain(stale);
       expect(
         (
           (yield* runTool(thread.id, "list_waits", {})) as { waits: ReadonlyArray<{ id: string }> }
         ).waits.map((w) => w.id),
-      ).not.toContain(suggestion.id);
-      yield* waits.keep(thread.id, suggestion.id);
-      expect((yield* waits.draftNote(thread.id, []))?.note).toContain(
-        `The user added to Waiting on you, to act on themselves: "Suggested reply"`,
+      ).not.toContain(stale);
+      expect((yield* waits.resolve(thread.id, stale, undefined).pipe(Effect.flip))._tag).toBe(
+        "NotFound",
       );
     }).pipe(Effect.provide(TestLayer)),
   );

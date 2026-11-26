@@ -210,7 +210,6 @@ export const parseJsonOutput = (text: string): unknown => {
 const CONCURRENCY: Readonly<Record<HelperLane, number>> = { interactive: 2, background: 1 };
 
 const KIND_DAILY_CALLS: Readonly<Partial<Record<HelperKind, number>>> = {
-  plan: 400,
   suggest: 600,
   recap: 100,
   wait: 300,

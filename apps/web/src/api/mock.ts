@@ -2058,15 +2058,6 @@ export class MockCore implements Pick<Api, "kind" | "connection" | "served">, Th
     return plan ?? null;
   }
 
-  /** The mock has no helper: its plans are seeded, and a refresh only says when it looked. */
-  async refreshPlan(threadId: ThreadId): Promise<ThreadPlan | null> {
-    const runtime = this.#runtime(threadId);
-    const plan = runtime.summary.plan;
-    if (plan === undefined) return null;
-    this.#setPlans(runtime, { plan: { ...plan, updatedAt: Date.now() } });
-    return runtime.summary.plan ?? null;
-  }
-
   async pin(threadId: ThreadId, pinned: boolean) {
     this.#update(this.#runtime(threadId), { pinned });
   }

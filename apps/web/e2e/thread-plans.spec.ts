@@ -21,7 +21,7 @@ test("a planned thread's header strip says where it stands, and edits the plan",
   await strip.getByRole("button", { name: /^Plan: / }).click();
   const steps = strip.getByTestId("plan-step");
   await expect(steps).toHaveCount(3);
-  await expect(steps.nth(2)).toContainText("Kept by the helper");
+  await expect(steps.nth(2)).toContainText("From the agent's own plan");
 
   // A click on a step's glyph moves its status on, and the edit makes the step the user's.
   await steps
@@ -29,7 +29,7 @@ test("a planned thread's header strip says where it stands, and edits the plan",
     .getByRole("button", { name: /^To do: Run e2e/ })
     .click();
   await expect(steps.nth(2)).toHaveAttribute("data-status", "doing");
-  await expect(steps.nth(2).getByRole("button", { name: /Let the helper update/ })).toBeVisible();
+  await expect(steps.nth(2)).toContainText("Edited by you");
 
   // Rewording a step keeps its place; a new step goes at the end.
   await steps.nth(2).hover();

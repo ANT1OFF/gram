@@ -697,12 +697,14 @@ export const HelperSettings = Schema.Struct({
   codexContext: Schema.optionalKey(HelperContextScope),
   /** The master switch for every helper-model call. Read through `helperOn`; absent means on. */
   enabled: Schema.optionalKey(Schema.Boolean),
-  /** One switch per job kind, read through `helperOn` too; absent means on. */
+  /**
+   * One switch per job kind, read through `helperOn` too; absent means on. An older file's `plan`
+   * switch (the helper's thread plans, since removed) is dropped on read like any unknown key.
+   */
   title: Schema.optionalKey(Schema.Boolean),
-  plan: Schema.optionalKey(Schema.Boolean),
   recap: Schema.optionalKey(Schema.Boolean),
   suggest: Schema.optionalKey(Schema.Boolean),
-  /** Waiting on you suggestions from a reply, and resolves from what the user writes. */
+  /** Resolves Waiting on you items from what the user writes ("sent", "merged"). */
   wait: Schema.optionalKey(Schema.Boolean),
   /** Titles for asks' desktop notifications; the exact command stays under them. */
   notice: Schema.optionalKey(Schema.Boolean),
@@ -1279,7 +1281,6 @@ export const SettingsPatch = Schema.Struct({
       codexContext: clearable(HelperContextScope),
       enabled: clearable(Schema.Boolean),
       title: clearable(Schema.Boolean),
-      plan: clearable(Schema.Boolean),
       recap: clearable(Schema.Boolean),
       suggest: clearable(Schema.Boolean),
       wait: clearable(Schema.Boolean),

@@ -45,11 +45,11 @@ export const MOCK_DEPS_PLAN: ThreadPlan = {
   steps: [
     { id: "s1" as PlanStepId, text: "Bump runtime dependencies", status: "done", source: "agent" },
     { id: "s2" as PlanStepId, text: "Fix the zod 4 type errors", status: "done", source: "agent" },
-    { id: "s3" as PlanStepId, text: "Run e2e against Vite 8.3", status: "todo", source: "helper" },
+    { id: "s3" as PlanStepId, text: "Run e2e against Vite 8.3", status: "todo", source: "agent" },
   ],
   basis: "",
   updatedAt: 0,
-  updatedBy: "helper",
+  updatedBy: "agent",
 };
 
 const BUSY = new Set<ThreadSummary["status"]>([
