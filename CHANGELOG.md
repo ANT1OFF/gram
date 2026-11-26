@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.44.0](https://github.com/ANT1OFF/gram/compare/v1.43.0...v1.44.0) (2026-11-26)
+
+
+### Features
+
+* a PR's review rounds fold into one doc ([#1073](https://github.com/ANT1OFF/gram/issues/1073)) ([8f97d06](https://github.com/ANT1OFF/gram/commit/8f97d063d8be709d8757686990f1e4965702f94e))
+* activate worktree setup and resume hooks in threads ([#1057](https://github.com/ANT1OFF/gram/issues/1057)) ([0aee8a8](https://github.com/ANT1OFF/gram/commit/0aee8a8c3e06eff7370b4daab85f18dffcd7b3b0))
+* bind worktree hook consent to committed content ([#1055](https://github.com/ANT1OFF/gram/issues/1055)) ([78ec208](https://github.com/ANT1OFF/gram/commit/78ec2082ef17cc0fa1b7f649cdecc1847af5cac7))
+* docs archive themselves after their PR merges or their worker is archived ([#1074](https://github.com/ANT1OFF/gram/issues/1074)) ([1d68d0d](https://github.com/ANT1OFF/gram/commit/1d68d0d66bf935380e5b8619169f1df268d2dee0))
+* docs can be archived and restored, and the cap counts active docs ([#1071](https://github.com/ANT1OFF/gram/issues/1071)) ([dcb5c80](https://github.com/ANT1OFF/gram/commit/dcb5c808c9585a925a73a137500b01d8535d80ce))
+* on-demand playbooks, and every role's tool catalogue about 10% smaller ([#1070](https://github.com/ANT1OFF/gram/issues/1070)) ([497b211](https://github.com/ANT1OFF/gram/commit/497b211d5ffe018008684952508003a485fcdd22))
+* resolve and run committed worktree hooks ([#1053](https://github.com/ANT1OFF/gram/issues/1053)) ([4773d68](https://github.com/ANT1OFF/gram/commit/4773d681a86ebfea8a7110e03a94a146997193b2))
+* route worktree hooks through their checkout host ([#1054](https://github.com/ANT1OFF/gram/issues/1054)) ([b796222](https://github.com/ANT1OFF/gram/commit/b79622265a6f7c3004cd0065a841cd6e6a87984d))
+* the Docs pane searches, archives and restores ([#1075](https://github.com/ANT1OFF/gram/issues/1075)) ([d335947](https://github.com/ANT1OFF/gram/commit/d3359471767a29d5307007aabbbc817840f23886))
+* use committed worktree setup in local merge checks ([#1058](https://github.com/ANT1OFF/gram/issues/1058)) ([98dbd4c](https://github.com/ANT1OFF/gram/commit/98dbd4ce096c50d15cb884ce2915e06fb86e8c99))
+
+
+### Bug Fixes
+
+* a worker's quiet signal keeps its place in its thread's queue, and lint exhaustive switches and type-only imports ([#1060](https://github.com/ANT1OFF/gram/issues/1060)) ([fcdae01](https://github.com/ANT1OFF/gram/commit/fcdae010a6bbe8b49230102a8c711de8a6c007ce))
+* **embedding:** History row outcome, late places fade, Settings tab title, fold button name, quiet machine home lookup ([#1050](https://github.com/ANT1OFF/gram/issues/1050)) ([d4ffa43](https://github.com/ANT1OFF/gram/commit/d4ffa4332ba96f3c1de4a6ea78a7869379dba6ec))
+* links styled as buttons are links again, for screen readers ([#1066](https://github.com/ANT1OFF/gram/issues/1066)) ([b43fe1e](https://github.com/ANT1OFF/gram/commit/b43fe1e8021d59b93556703a0651377e92ff8b7f))
+* **security:** hold proposal approvals to who may make the change directly ([#1059](https://github.com/ANT1OFF/gram/issues/1059)) ([491f152](https://github.com/ANT1OFF/gram/commit/491f1521d878cf753762950eb71350fb11e29824))
+* **security:** workers read memory notes with ARNs and ids, and lose only the section a secret is in ([#1072](https://github.com/ANT1OFF/gram/issues/1072)) ([5730519](https://github.com/ANT1OFF/gram/commit/57305199686977d27144696d7e47046198c1ae33))
+* the mock backend builds contract errors with their own classes, and lint for it ([#1061](https://github.com/ANT1OFF/gram/issues/1061)) ([76ec700](https://github.com/ANT1OFF/gram/commit/76ec70075f326b0cbcf61d364cba0e019038a367))
+* the pane header's thread menu keeps to its cap while it offers Continue in Codex ([#1068](https://github.com/ANT1OFF/gram/issues/1068)) ([507bd9f](https://github.com/ANT1OFF/gram/commit/507bd9f1621a5896eb2c4d673c48a46a462c9a77))
+* the Workers panel keeps a merged worker with a pending wake in Waiting, as the sidebar does ([#1069](https://github.com/ANT1OFF/gram/issues/1069)) ([25cdc1e](https://github.com/ANT1OFF/gram/commit/25cdc1e4c0afcecea990012695409b09ae68c261))
+
 ## [1.43.0](https://github.com/ANT1OFF/gram/compare/v1.42.0...v1.43.0) (2026-11-25)
 
 
