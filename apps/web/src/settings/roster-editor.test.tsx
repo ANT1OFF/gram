@@ -9,8 +9,7 @@ import {
   type ProfileId,
 } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
@@ -21,10 +20,7 @@ import { themeStore } from "@/theme/store";
 
 import { RosterEditor } from "./roster-editor";
 import { SOL_ROSTER } from "./roster-test-fixtures";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-}));
+import { renderInRouter } from "@/panels/test-utils";
 
 const efforts = ["low", "medium", "high"] as const;
 const gateway: GatewayProfile = {
@@ -80,7 +76,7 @@ afterEach(() => {
 describe("RosterEditor", () => {
   it("keeps effort variants distinct when adding, editing and removing rows", async () => {
     current = newWorkspaceCharter({ workerModels: SOL_ROSTER });
-    const { rerender } = render(view(current));
+    const { rerender } = await renderInRouter(view(current));
     fireEvent.click(screen.getByTestId("worker-model-add"));
     fireEvent.change(screen.getByTestId("worker-model-form-note"), {
       target: { value: "default effort jobs" },
@@ -116,7 +112,7 @@ describe("RosterEditor", () => {
 
   it("shows local setup instructions without taking up a keyless gateway", async () => {
     current = newWorkspaceCharter({ workerModels: SOL_ROSTER });
-    render(view(current));
+    await renderInRouter(view(current));
     const entries = screen.getAllByTestId("worker-model");
     expect(entries.map((entry) => entry.getAttribute("data-agent"))).toEqual([
       "claude",
@@ -133,9 +129,9 @@ describe("RosterEditor", () => {
     expect(within(warning).getByRole("link").getAttribute("href")).toBe("/settings/agents");
   });
 
-  it("changes an entry's effort and nothing else", () => {
+  it("changes an entry's effort and nothing else", async () => {
     current = newWorkspaceCharter({ workerModels: SOL_ROSTER });
-    render(view(current));
+    await renderInRouter(view(current));
     const [opus] = screen.getAllByTestId("worker-model");
     fireEvent.change(within(opus!).getByLabelText("Effort for Claude Code opus"), {
       target: { value: "low" },
@@ -159,7 +155,7 @@ describe("RosterEditor", () => {
       ...newWorkspaceCharter({}),
       workerModels: [{ agent: "codex", model: "gpt-6.1-sol", profileId: gateway.id }],
     };
-    render(view(current));
+    await renderInRouter(view(current));
     const [sol] = screen.getAllByTestId("worker-model");
     const select = await within(sol!).findByLabelText<HTMLSelectElement>(/^Effort for /);
     await waitFor(() => expect(select.title).toBe(UNLISTED_EFFORTS));
@@ -171,7 +167,7 @@ describe("RosterEditor", () => {
   });
 
   it("shows the charter's orchestrator model when the charter changes under it", async () => {
-    const { rerender } = render(view({ maxConcurrentWorkers: 1 }));
+    const { rerender } = await renderInRouter(view({ maxConcurrentWorkers: 1 }));
     const follow = screen.getByTestId<HTMLSelectElement>("orchestrator-model-follow");
     expect(follow.value).toBe("follow");
     // The workspace arrives, or is saved elsewhere, after the editor mounted.

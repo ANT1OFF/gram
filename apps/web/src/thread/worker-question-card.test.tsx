@@ -10,14 +10,9 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 
 import { WorkerQuestionCard } from "./worker-question-card";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: unknown }) => children,
-  useNavigate: () => vi.fn(),
-}));
 
 // A worker's question card in a transcript is drawn once, as the question was then (the
 // orchestrator's never again), so it follows the workspace's live ledger: an answer given anywhere
@@ -103,7 +98,9 @@ const card = () => screen.getByTestId("worker-question-card");
 describe("WorkerQuestionCard", () => {
   it("an answer given elsewhere shows on an open card, without Send, and with who and when", async () => {
     const { api, elsewhere } = fakeApi(forwarded);
-    renderWithApi(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, api);
+    await renderInRouter(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, {
+      api,
+    });
     await waitFor(() =>
       expect(within(card()).getByRole("button", { name: "Answer" })).toBeTruthy(),
     );
@@ -122,9 +119,9 @@ describe("WorkerQuestionCard", () => {
   it("a card drawn before the ledger is in shows the newer of the two", async () => {
     // The ledger's copy lags the card's: the card's, further along, stands.
     const { api } = fakeApi(forwarded);
-    renderWithApi(
+    await renderInRouter(
       <WorkerQuestionCard question={answered("Admin", "09:50")} threadId={orchestratorId} />,
-      api,
+      { api },
     );
     await waitFor(() => expect(card().dataset["stage"]).toBe("answered"));
     expect(within(card()).getByTestId("question-outcome").textContent).toBe("Admin");
@@ -132,7 +129,9 @@ describe("WorkerQuestionCard", () => {
 
   it("Update answer starts from the answer given and sends the change against it", async () => {
     const { api, answers } = fakeApi(answered("Member", "09:41"));
-    renderWithApi(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, api);
+    await renderInRouter(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, {
+      api,
+    });
     fireEvent.click(await within(card()).findByTestId("question-update"));
     const member = within(card()).getByRole<HTMLInputElement>("radio", { name: /^Member/ });
     expect(member.checked).toBe(true);
@@ -156,7 +155,9 @@ describe("WorkerQuestionCard", () => {
 
   it("a change made elsewhere while one is open here is shown before another can be sent", async () => {
     const { api, answers, elsewhere } = fakeApi(answered("Member", "09:41"));
-    renderWithApi(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, api);
+    await renderInRouter(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, {
+      api,
+    });
     fireEvent.click(await within(card()).findByTestId("question-update"));
     fireEvent.click(within(card()).getByRole("radio", { name: /^Admin/ }));
 
@@ -188,7 +189,9 @@ describe("WorkerQuestionCard", () => {
       closedAt: Date.parse("2026-11-22T09:30:00"),
     };
     const { api } = fakeApi(withdrawn);
-    renderWithApi(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, api);
+    await renderInRouter(<WorkerQuestionCard question={forwarded} threadId={orchestratorId} />, {
+      api,
+    });
     await waitFor(() => expect(card().dataset["stage"]).toBe("dismissed"));
     expect(within(card()).getByTestId("question-status").textContent).toBe(
       "Superseded by WQ8 · 09:30",

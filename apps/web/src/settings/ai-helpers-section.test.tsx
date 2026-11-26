@@ -7,12 +7,11 @@ import {
 } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import { typingReporter } from "@/composer/typing-presence";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import {
@@ -26,10 +25,6 @@ import {
   usageLine,
   withPick,
 } from "./ai-helpers-section";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-}));
 
 const mockApi = () => createMockApi({ speed: 0, autoplay: false });
 
@@ -64,7 +59,7 @@ describe("AiHelpersSection", () => {
       await api.updateSettings({ helpers });
       useServerSettings.setState({ settings: { ...DEFAULT_SETTINGS, helpers } });
       const update = vi.spyOn(api, "updateSettings");
-      renderWithApi(<AiHelpersSection />, api);
+      await renderInRouter(<AiHelpersSection />, { api });
       await picker("Helper source");
       expect(screen.getByText(/Claude is tool-free; Codex uses guided generation/)).toBeTruthy();
       expect(screen.queryByText(/Helpers have no tools/)).toBeNull();
@@ -80,7 +75,7 @@ describe("AiHelpersSection", () => {
       ...gateway!,
       helperContext: { baseURL: gateway!.baseURL, scope: "conversation" },
     });
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     expect((await picker("Helper source")).textContent).toContain(
       "Automatic (local subscriptions)",
     );
@@ -106,7 +101,7 @@ describe("AiHelpersSection", () => {
     };
     await api.updateSettings({ helpers });
     useServerSettings.setState({ settings: { ...DEFAULT_SETTINGS, helpers } });
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     expect((await picker("Claude Code / Anthropic helper model")).textContent).toContain(
       "withdrawn-haiku (unavailable)",
     );
@@ -141,7 +136,7 @@ describe("AiHelpersSection", () => {
         },
       ],
     });
-    const view = renderWithApi(<AiHelpersSection />, api);
+    const view = await renderInRouter(<AiHelpersSection />, { api });
     await waitFor(async () =>
       expect((await picker("Claude Code / Anthropic helper effort")).textContent).toContain(
         "Automatic — Medium for titles, Low for the rest",
@@ -170,7 +165,7 @@ describe("AiHelpersSection", () => {
     );
     view.unmount();
     useServerSettings.setState({ settings: await api.getSettings() });
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     expect((await picker("Helper source")).textContent).toContain("Codex");
     expect((await picker("Codex / OpenAI helper model")).textContent).toContain("GPT-6 Luna");
     expect((await picker("Claude Code / Anthropic helper effort")).textContent).toContain(
@@ -188,7 +183,7 @@ describe("AiHelpersSection", () => {
   it("recommends Haiku 5.5 with a Luna fallback, and offers an effort with a picked model only", async () => {
     const api = mockApi();
     await onExample(api);
-    const view = renderWithApi(<AiHelpersSection />, api);
+    const view = await renderInRouter(<AiHelpersSection />, { api });
     expect((await picker("Helper model for Personal Gateway")).textContent).toContain(
       "Automatic — currently claude-haiku-5.5-eu, recommended",
     );
@@ -203,7 +198,7 @@ describe("AiHelpersSection", () => {
       helperEffort: "low",
       helperFallback: { model: "gpt-6-luna-gone" },
     });
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     expect((await picker("Helper model effort for Personal Gateway")).textContent).toContain(
       "Low effort",
     );
@@ -216,14 +211,14 @@ describe("AiHelpersSection", () => {
   it("says automatic has no fallback while Luna, its only one, is the model", async () => {
     const api = mockApi();
     await onExample(api, { helperModel: "gpt-6-luna" });
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     expect((await picker("Helper fallback for Personal Gateway")).textContent).toMatch(
       /Automatic — none, as .+ is the model/,
     );
   });
 
   it("starts on the first model where Haiku 5.5 isn't listed, with no fallback", async () => {
-    renderWithApi(<AiHelpersSection />, mockApi());
+    await renderInRouter(<AiHelpersSection />, { api: mockApi() });
     expect((await picker("Helper model for Personal Gateway")).textContent).toContain(
       "Automatic — currently GPT-5.5",
     );
@@ -270,7 +265,7 @@ describe("AiHelpersSection", () => {
   it("keeps every helper off until context is allowed, then follows feature switches", async () => {
     const api = mockApi();
     const save = vi.spyOn(api, "updateSettings");
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     await picker("Helper model for Personal Gateway");
     expect(toggle("Thread titles").disabled).toBe(true);
     expect(toggle("Thread plans").disabled).toBe(true);
@@ -301,7 +296,7 @@ describe("AiHelpersSection", () => {
   it("shows the suggestions' acceptance rate under their switch", async () => {
     const api = mockApi();
     await onExample(api);
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     expect((await screen.findByTestId("suggest-rate")).textContent).toBe(
       "Last 7 days: used in 9 of 34 turns that offered them (26%).",
     );
@@ -311,7 +306,7 @@ describe("AiHelpersSection", () => {
     const api = mockApi();
     await onExample(api);
     const save = vi.spyOn(api, "updateSettings");
-    renderWithApi(<AiHelpersSection />, api);
+    await renderInRouter(<AiHelpersSection />, { api });
     const field = screen.getByLabelText<HTMLInputElement>("Gateway estimate limit");
     expect(field.value).toBe("2");
     fireEvent.change(field, { target: { value: "0" } });

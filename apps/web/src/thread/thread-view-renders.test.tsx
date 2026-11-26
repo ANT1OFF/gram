@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
 import type { GramUIMessage, GramUIMessageChunk, MessageId, ThreadId } from "@gram/contracts";
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import type { ApiThreadFeedEvent } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import { ThreadView } from "./thread-view";
@@ -17,12 +16,6 @@ type ToolCardsModule = typeof ToolCards;
 // NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
 vi.mock("@/motion/number-ticker", () => ({
   NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children?: ReactNode }) => children,
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
 }));
 
 /** Counts each tool card's renders by its tool call id. */
@@ -166,10 +159,9 @@ afterEach(() => {
 describe("ThreadView while a reply streams", () => {
   it("leaves a finished Task row alone while the reply under it grows", async () => {
     const feed = controlledFeed();
-    renderWithApi(
-      <ThreadView threadId={THREAD} focused={false} />,
-      Object.assign(Object.create(api) as MockApi, { threadFeed: feed.threadFeed }),
-    );
+    await renderInRouter(<ThreadView threadId={THREAD} focused={false} />, {
+      api: Object.assign(Object.create(api) as MockApi, { threadFeed: feed.threadFeed }),
+    });
     expect(await screen.findByText("Find sleep-based tests")).toBeTruthy();
     feed.push(chunk({ type: "start", messageId: "a2" }), chunk({ type: "text-start", id: "t" }));
     await nextFrame();

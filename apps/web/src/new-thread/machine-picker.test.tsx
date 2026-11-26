@@ -6,14 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import { NewThreadDraft } from "@/composer/new-thread-draft";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter, renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import type { JoinedMachine } from "@/settings/machines-api";
 
 import { MachinePicker } from "./machine-picker";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 /** Synthetic machines only: no host, tailnet or account behind any of them. */
 const machine = (overrides: Partial<JoinedMachine>): JoinedMachine => ({
@@ -99,7 +97,7 @@ describe("New thread on a joined machine", () => {
 
   it("shows Machine first, and a pick runs the chat in its home there", async () => {
     serveMachines([ONLINE, SIGNED_OUT]);
-    renderWithApi(<NewThreadDraft />, createMockApi({ speed: 0, autoplay: false }));
+    await renderInRouter(<NewThreadDraft />, { api: createMockApi({ speed: 0, autoplay: false }) });
     const where = await screen.findByTestId("new-where");
     await within(where).findByTestId("where-machine");
     // The machine is the first stop: the Folder chip lists its folders.
@@ -129,7 +127,7 @@ describe("New thread on a joined machine", () => {
   it("types or browses a folder there, through its host, and refuses a credential folder", async () => {
     serveMachines([ONLINE]);
     const user = userEvent.setup();
-    renderWithApi(<NewThreadDraft />, createMockApi({ speed: 0, autoplay: false }));
+    await renderInRouter(<NewThreadDraft />, { api: createMockApi({ speed: 0, autoplay: false }) });
     await pick(/build box/);
     await user.click(screen.getByTestId("new-more-options"));
     const field = await screen.findByRole("combobox", { name: "Folder on build box" });
@@ -167,7 +165,7 @@ describe("New thread on a joined machine", () => {
       checkout: { kind: "current" },
     });
     const user = userEvent.setup();
-    renderWithApi(<NewThreadDraft />, api);
+    await renderInRouter(<NewThreadDraft />, { api });
     await pick(/build box/);
     await user.click(screen.getByTestId("where-folder"));
     const menu = await screen.findByTestId("where-folder-menu");
@@ -186,7 +184,7 @@ describe("New thread on a joined machine", () => {
 
   it("says before it starts that a machine isn't signed in, with Sign in there", async () => {
     serveMachines([ONLINE, SIGNED_OUT]);
-    renderWithApi(<NewThreadDraft />, createMockApi({ speed: 0, autoplay: false }));
+    await renderInRouter(<NewThreadDraft />, { api: createMockApi({ speed: 0, autoplay: false }) });
     await pick(/new box/);
     const note = await screen.findByTestId("machine-note");
     expect(note.textContent).toContain(

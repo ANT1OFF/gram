@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import type { WorkspaceId } from "@gram/contracts";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 
 import { newEntryRoute } from "./new-entry";
@@ -11,13 +11,9 @@ import { useEmbedShell } from "@/embed/store";
 import { NewEntryMenu, newEntryOf } from "./new-entry-menu";
 import { useTaskDraftStore } from "./task-draft-store";
 
-const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
-
 const studio = "w-studio" as WorkspaceId;
 
 beforeEach(() => {
-  navigate.mockReset();
   useTaskDraftStore.setState({ last: undefined, entry: undefined });
   useLayoutStore.setState({ grid: { ...EMPTY_GRID, panes: [null] } });
 });
@@ -45,7 +41,7 @@ describe("newEntryRoute", () => {
 
 describe("NewEntryMenu", () => {
   it("is New task, a menu of Team and Chat, each with its shortcut", async () => {
-    renderWithApi(<NewEntryMenu />, {});
+    const { router } = await renderInRouter(<NewEntryMenu />, { api: {} });
     const add = screen.getByRole("button", { name: "New task" });
     expect(add.getAttribute("aria-haspopup")).toBe("menu");
     // Its words, which the header shows where it has room for them beside its icons.
@@ -58,33 +54,33 @@ describe("NewEntryMenu", () => {
       expect.stringMatching(/^Team.+N$/),
       expect.stringMatching(/^Chat.+T$/),
     ]);
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
   });
 
   it("opens the New form on the choice picked", async () => {
-    for (const [who, route] of [
-      ["Team", { to: "/new-task", search: {} }],
-      ["Chat", { to: "/new" }],
+    for (const [who, pathname] of [
+      ["Team", "/new-task"],
+      ["Chat", "/new"],
     ] as const) {
-      navigate.mockReset();
-      renderWithApi(<NewEntryMenu />, {});
+      const { router } = await renderInRouter(<NewEntryMenu />, { api: {} });
       fireEvent.click(screen.getByRole("button", { name: "New task" }));
       const menu = await screen.findByRole("menu", { name: "New" });
       fireEvent.click(within(menu).getByRole("menuitem", { name: new RegExp(`^${who}`) }));
-      expect(navigate).toHaveBeenCalledWith(route);
+      await waitFor(() => expect(router.state.location.pathname).toBe(pathname));
+      expect(router.state.location.search).toEqual({});
       cleanup();
     }
   });
 
-  it("is one plain button of the embedding app's when it names what New starts", () => {
+  it("is one plain button of the embedding app's when it names what New starts", async () => {
     useEmbedShell.setState({ newEntry: { label: "New agent", to: "/agents" } });
     try {
-      renderWithApi(<NewEntryMenu />, {});
+      const { router } = await renderInRouter(<NewEntryMenu />, { api: {} });
       const add = screen.getByRole("button", { name: "New agent" });
       expect(add.getAttribute("aria-haspopup")).toBeNull();
       expect(add.textContent).toBe("New agent");
       fireEvent.click(add);
-      expect(navigate).toHaveBeenCalledWith({ to: "/agents" });
+      await waitFor(() => expect(router.state.location.pathname).toBe("/agents"));
       expect(screen.queryByRole("menu")).toBeNull();
     } finally {
       useEmbedShell.setState({ newEntry: undefined });

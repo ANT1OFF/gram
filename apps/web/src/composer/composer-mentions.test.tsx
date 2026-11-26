@@ -5,18 +5,16 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useDraftStore } from "@/stores/drafts";
 import { useThreadsStore } from "@/stores/threads";
 
 import { Composer } from "./composer";
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));
-
 const THREAD = "t-flaky" as ThreadId;
 const ROOT = "/Users/dev/code/api/.worktrees/fix-flaky-retry";
 
-const setup = () => {
+const setup = async () => {
   useThreadsStore.setState({
     byId: {
       [THREAD]: { status: "idle", thread: { id: THREAD, checkout: { path: ROOT } } },
@@ -24,7 +22,7 @@ const setup = () => {
   });
   const api = createMockApi({ speed: 0, autoplay: false });
   const fsFiles = vi.spyOn(api, "fsFiles");
-  renderWithApi(<Composer threadId={THREAD} focused />, api);
+  await renderInRouter(<Composer threadId={THREAD} focused />, { api, path: `/t/${THREAD}` });
   const composer = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   return { composer, fsFiles, user: userEvent.setup() };
 };
@@ -43,7 +41,7 @@ afterEach(() => {
 
 describe("Composer @ mentions", () => {
   it("offers the checkout's top level on @, folders first, without git-ignored folders", async () => {
-    const { composer, fsFiles, user } = setup();
+    const { composer, fsFiles, user } = await setup();
     await user.click(composer);
     await user.type(composer, "look at @");
     await waitFor(() => expect(files()).not.toBeNull());
@@ -63,7 +61,7 @@ describe("Composer @ mentions", () => {
   });
 
   it("filters as you type and inserts the chosen file with a space, caret after it", async () => {
-    const { composer, user } = setup();
+    const { composer, user } = await setup();
     await user.click(composer);
     await user.type(composer, "why @retry");
     await waitFor(() => expect(offered()[0]).toBe("src/retry.ts"));
@@ -75,7 +73,7 @@ describe("Composer @ mentions", () => {
   });
 
   it("leaves Enter and the arrows to an input method still composing", async () => {
-    const { composer, user } = setup();
+    const { composer, user } = await setup();
     await user.click(composer);
     await user.type(composer, "why @retry");
     await waitFor(() => expect(offered()[0]).toBe("src/retry.ts"));
@@ -91,7 +89,7 @@ describe("Composer @ mentions", () => {
   });
 
   it("keeps a chosen folder open, listing its children", async () => {
-    const { composer, user } = setup();
+    const { composer, user } = await setup();
     await user.click(composer);
     await user.type(composer, "@sr");
     await waitFor(() => expect(offered()[0]).toBe("src/"));
@@ -108,7 +106,7 @@ describe("Composer @ mentions", () => {
   });
 
   it("closes on Escape and stays closed for that @, until another one is typed", async () => {
-    const { composer, user } = setup();
+    const { composer, user } = await setup();
     await user.click(composer);
     await user.type(composer, "@do");
     await waitFor(() => expect(files()).not.toBeNull());
@@ -122,7 +120,7 @@ describe("Composer @ mentions", () => {
   });
 
   it("stays shut for an email address, inside a code fence and for pasted text", async () => {
-    const { composer, fsFiles, user } = setup();
+    const { composer, fsFiles, user } = await setup();
     await user.click(composer);
     await user.type(composer, "mail me@example");
     expect(files()).toBeNull();
@@ -139,7 +137,7 @@ describe("Composer @ mentions", () => {
   });
 
   it("closes when the composer loses focus", async () => {
-    const { composer, user } = setup();
+    const { composer, user } = await setup();
     await user.click(composer);
     await user.type(composer, "@");
     await waitFor(() => expect(files()).not.toBeNull());

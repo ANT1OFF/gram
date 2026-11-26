@@ -1,24 +1,18 @@
 // @vitest-environment happy-dom
 import type { ThreadId } from "@gram/contracts";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import { draftProjectPrefill, prefillDraftProject } from "@/composer/draft-prefill";
 import { useBindingsStore } from "@/keyboard/bindings-store";
 import { installKeyboard } from "@/keyboard/registry";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 import { useThreadHistory } from "@/stores/thread-history";
 import { useThreadsStore } from "@/stores/threads";
 
 import { ThreadSwitcher } from "./thread-switcher";
-
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => navigate,
-  useParams: () => ({}),
-}));
 
 const FLAKY = "t-flaky" as ThreadId;
 const QUESTION = "t-question" as ThreadId;
@@ -41,7 +35,6 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   uninstall();
-  navigate.mockReset();
   prefillDraftProject(undefined);
 });
 
@@ -58,8 +51,8 @@ const visitBoth = () => {
 };
 
 describe("ThreadSwitcher", () => {
-  it("walks recent threads while Ctrl is held and opens the pick on release", () => {
-    renderWithApi(<ThreadSwitcher />, api);
+  it("walks recent threads while Ctrl is held and opens the pick on release", async () => {
+    const { router } = await renderInRouter(<ThreadSwitcher />, { api });
     visitBoth();
 
     ctrlTab();
@@ -70,15 +63,15 @@ describe("ThreadSwitcher", () => {
     fireEvent.keyUp(window, { key: "Control" });
 
     expect(screen.queryByTestId("thread-switcher")).toBeNull();
-    expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: FLAKY } });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${FLAKY}`));
     const { grid } = useLayoutStore.getState();
     expect(grid.panes[grid.focused]).toBe(FLAKY);
   });
 
-  it("finishes on the rebound chord's modifier, not on Control", () => {
+  it("finishes on the rebound chord's modifier, not on Control", async () => {
     useBindingsStore.setState({ overrides: { "thread.cycleNext": "alt+tab" } });
     try {
-      renderWithApi(<ThreadSwitcher />, api);
+      const { router } = await renderInRouter(<ThreadSwitcher />, { api });
       visitBoth();
 
       fireEvent.keyDown(window, { key: "Tab", code: "Tab", altKey: true });
@@ -89,31 +82,31 @@ describe("ThreadSwitcher", () => {
       expect(screen.queryByTestId("thread-switcher")).not.toBeNull();
       fireEvent.keyUp(window, { key: "Alt" });
       expect(screen.queryByTestId("thread-switcher")).toBeNull();
-      expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: FLAKY } });
+      await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${FLAKY}`));
     } finally {
       useBindingsStore.setState({ overrides: {} });
     }
   });
 
-  it("cancels on Escape without switching", () => {
-    renderWithApi(<ThreadSwitcher />, api);
+  it("cancels on Escape without switching", async () => {
+    const { router } = await renderInRouter(<ThreadSwitcher />, { api });
     visitBoth();
 
     ctrlTab();
     fireEvent.keyDown(window, { key: "Escape", code: "Escape", ctrlKey: true });
     expect(screen.queryByTestId("thread-switcher")).toBeNull();
     fireEvent.keyUp(window, { key: "Control" });
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
   });
 
-  it("drafts a new thread in the focused thread's folder on mod+t", () => {
-    renderWithApi(<ThreadSwitcher />, api);
+  it("drafts a new thread in the focused thread's folder on mod+t", async () => {
+    const { router } = await renderInRouter(<ThreadSwitcher />, { api });
     act(() => useLayoutStore.getState().openThread(FLAKY));
 
     fireEvent.keyDown(window, { key: "t", code: "KeyT", ctrlKey: true });
     fireEvent.keyDown(window, { key: "t", code: "KeyT", metaKey: true });
 
-    expect(navigate).toHaveBeenCalledWith({ to: "/new" });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/new"));
     const checkout = useThreadsStore.getState().byId[FLAKY]!.thread.checkout;
     expect(draftProjectPrefill()).toBe(checkout.repoRoot ?? checkout.path);
   });

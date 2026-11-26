@@ -11,6 +11,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { Toasts } from "@/shell/toasts";
 
 import { NotificationsPanel } from "./notifications-panel";
+import { renderInRouter } from "./test-utils";
 
 /** What opens the history: the Inbox's Notifications link, here a button standing in for it. */
 function Opener() {
@@ -25,8 +26,6 @@ function Opener() {
   );
 }
 
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 beforeEach(() => {
   useNotificationHistory.setState({ entries: [], quiet: {} });
   useThreadsStore.setState({ notifications: [], byId: {}, ready: true });
@@ -37,7 +36,6 @@ beforeEach(() => {
     focusMode: false,
     windowWidth: 1440,
   });
-  navigate.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -54,8 +52,8 @@ describe("Notifications center", () => {
     expect(notificationTime(new Date(2026, 9, 10, 23, 15).getTime())).toContain("23:15");
   });
 
-  it("reads and clears plain text history with truthful unavailable thread targets", () => {
-    render(
+  it("reads and clears plain text history with truthful unavailable thread targets", async () => {
+    const { router } = await renderInRouter(
       <>
         <Opener />
         <NotificationsPanel />
@@ -82,10 +80,10 @@ describe("Notifications center", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
     expect(screen.queryByTestId("notification-entry")).toBeNull();
     expect(screen.getByText("No notifications yet")).toBeTruthy();
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
   });
 
-  it("opens a known thread, marks its notice read, and withdraws navigation after removal", () => {
+  it("opens a known thread, marks its notice read, and withdraws navigation after removal", async () => {
     const id = "existing" as ThreadId;
     const summary: ThreadSummary = {
       status: "idle",
@@ -111,9 +109,9 @@ describe("Notifications center", () => {
     useThreadsStore
       .getState()
       .applyEvent({ type: "notify", kind: "done", title: "Synthetic turn finished", threadId: id });
-    render(<NotificationsPanel />);
+    const { router } = await renderInRouter(<NotificationsPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Synthetic thread" }));
-    expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: id } });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${id}`));
     expect(useNotificationHistory.getState().entries[0]?.read).toBe(true);
     act(() => useThreadsStore.getState().applyEvent({ type: "thread.removed", threadId: id }));
     expect(screen.queryByRole("button", { name: "Synthetic thread" })).toBeNull();
@@ -131,7 +129,7 @@ describe("Notifications center", () => {
       run: deny,
     });
     try {
-      render(
+      await renderInRouter(
         <>
           <Opener />
           <NotificationsPanel />

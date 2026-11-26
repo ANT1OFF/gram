@@ -12,13 +12,10 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { installKeyboard, registerShortcut } from "@/keyboard/registry";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 
 import { ContinueLatest, resumeModel, ResumeSessions } from "./resume-sessions";
-
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 
 const ROOT = "/repo";
 
@@ -72,16 +69,14 @@ const rows = () => screen.getAllByTestId("past-session");
 
 afterEach(() => {
   cleanup();
-  navigate.mockReset();
   useLayoutStore.setState({ grid: EMPTY_GRID });
 });
 
 describe("ResumeSessions", () => {
   it("lists every agent's sessions newest first, labelled, and resumes a Claude one", async () => {
     const createThread = vi.fn(async () => thread);
-    renderWithApi(<ResumeSessions projectRoot={ROOT} />, {
-      ...twoAgents({ claude: async () => claude, codex: async () => codex }),
-      createThread,
+    const { router } = await renderInRouter(<ResumeSessions projectRoot={ROOT} />, {
+      api: { ...twoAgents({ claude: async () => claude, codex: async () => codex }), createThread },
     });
 
     await waitFor(() => expect(rows()).toHaveLength(3));
@@ -101,35 +96,32 @@ describe("ResumeSessions", () => {
         resumeSessionId: "s-new",
       }),
     );
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: "t1" } }),
-    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/t/t1"));
   });
 
   it("opens the thread already showing a session instead of creating another", async () => {
     const createThread = vi.fn();
-    renderWithApi(<ResumeSessions projectRoot={ROOT} />, {
-      listSessions: async (agent) =>
-        agent === "claude" ? claude : { supported: false, sessions: [] },
-      createThread,
+    const { router } = await renderInRouter(<ResumeSessions projectRoot={ROOT} />, {
+      api: {
+        listSessions: async (agent) =>
+          agent === "claude" ? claude : { supported: false, sessions: [] },
+        createThread,
+      },
     });
     fireEvent.click((await screen.findAllByTestId("past-session"))[1]!);
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: "t9" } }),
-    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/t/t9"));
     expect(createThread).not.toHaveBeenCalled();
   });
 
   it("keeps the other agents' sessions when one listing fails", async () => {
-    renderWithApi(
-      <ResumeSessions projectRoot={ROOT} />,
-      twoAgents({
+    await renderInRouter(<ResumeSessions projectRoot={ROOT} />, {
+      api: twoAgents({
         claude: async () => claude,
         codex: async () => {
           throw new Error("codex serve didn't start");
         },
       }),
-    );
+    });
     expect(
       await screen.findByText("Couldn't list Codex sessions: codex serve didn't start"),
     ).toBeTruthy();
@@ -137,13 +129,13 @@ describe("ResumeSessions", () => {
   });
 
   it("says when no agent can list sessions, or there are none", async () => {
-    renderWithApi(<ResumeSessions projectRoot={ROOT} />, {
-      listSessions: async () => ({ supported: false, sessions: [] }),
+    await renderInRouter(<ResumeSessions projectRoot={ROOT} />, {
+      api: { listSessions: async () => ({ supported: false, sessions: [] }) },
     });
     expect(await screen.findByText("No agent here can list its past sessions.")).toBeTruthy();
     cleanup();
-    renderWithApi(<ResumeSessions projectRoot={ROOT} />, {
-      listSessions: async () => ({ supported: true, sessions: [] }),
+    await renderInRouter(<ResumeSessions projectRoot={ROOT} />, {
+      api: { listSessions: async () => ({ supported: true, sessions: [] }) },
     });
     expect(await screen.findByText("No past sessions in this folder.")).toBeTruthy();
   });
@@ -153,10 +145,12 @@ describe("ResumeSessions delete", () => {
   it("deletes a session after an inline confirm, never one a thread shows", async () => {
     let list = claude;
     const deleteSession = vi.fn(async () => {});
-    renderWithApi(<ResumeSessions projectRoot={ROOT} />, {
-      listSessions: async (agent) =>
-        agent === "claude" ? list : { supported: false, sessions: [] },
-      deleteSession,
+    await renderInRouter(<ResumeSessions projectRoot={ROOT} />, {
+      api: {
+        listSessions: async (agent) =>
+          agent === "claude" ? list : { supported: false, sessions: [] },
+        deleteSession,
+      },
     });
     await waitFor(() => expect(rows()).toHaveLength(2));
     expect(screen.queryByLabelText("Delete “Tracing”")).toBeNull();
@@ -199,11 +193,13 @@ describe("ResumeSessions delete", () => {
   });
 
   it("shows why a delete failed and keeps the confirm open", async () => {
-    renderWithApi(<ResumeSessions projectRoot={ROOT} />, {
-      listSessions: async (agent) =>
-        agent === "claude" ? claude : { supported: false, sessions: [] },
-      deleteSession: async () => {
-        throw new Error("Session not found");
+    await renderInRouter(<ResumeSessions projectRoot={ROOT} />, {
+      api: {
+        listSessions: async (agent) =>
+          agent === "claude" ? claude : { supported: false, sessions: [] },
+        deleteSession: async () => {
+          throw new Error("Session not found");
+        },
       },
     });
     fireEvent.click(await screen.findByLabelText("Delete “Speed up tests”"));
@@ -218,15 +214,17 @@ describe("ResumeSessions delete", () => {
 
   it("resumes on the draft's model when the session is that agent's", async () => {
     const createThread = vi.fn(async () => thread);
-    renderWithApi(
+    await renderInRouter(
       <ResumeSessions
         projectRoot={ROOT}
         model={{ agent: "claude", model: "opus", variant: "high" }}
       />,
       {
-        listSessions: async (agent) =>
-          agent === "claude" ? claude : { supported: false, sessions: [] },
-        createThread,
+        api: {
+          listSessions: async (agent) =>
+            agent === "claude" ? claude : { supported: false, sessions: [] },
+          createThread,
+        },
       },
     );
     fireEvent.click((await screen.findAllByTestId("past-session"))[0]!);
@@ -245,12 +243,12 @@ describe("ContinueLatest", () => {
   it("resumes the agent's newest session on the chosen model and effort", async () => {
     const createThread = vi.fn(async () => thread);
     const listSessions = vi.fn(async () => claude);
-    renderWithApi(
+    const { router } = await renderInRouter(
       <ContinueLatest
         projectRoot={ROOT}
         model={{ agent: "claude", model: "opus", variant: "high" }}
       />,
-      { listSessions, createThread },
+      { api: { listSessions, createThread } },
     );
     fireEvent.click(screen.getByRole("button", { name: "Continue latest session" }));
     await waitFor(() =>
@@ -263,22 +261,20 @@ describe("ContinueLatest", () => {
       }),
     );
     expect(listSessions).toHaveBeenCalledWith("claude", ROOT, 1);
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: "t1" } }),
-    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/t/t1"));
   });
 
   it("says when the agent has nothing to continue", async () => {
-    renderWithApi(
+    const { router } = await renderInRouter(
       <ContinueLatest
         projectRoot={ROOT}
         model={{ agent: "codex", model: "gpt-5.5", profileId: "litellm" as ProfileId }}
       />,
-      { listSessions: async () => ({ supported: true, sessions: [] }) },
+      { api: { listSessions: async () => ({ supported: true, sessions: [] }) } },
     );
     fireEvent.click(screen.getByRole("button", { name: "Continue latest session" }));
     expect(await screen.findByText("No past Codex sessions in this folder.")).toBeTruthy();
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
   });
 });
 

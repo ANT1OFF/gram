@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
-import type * as Router from "@tanstack/react-router";
 import { DEFAULT_SETTINGS, type ThreadId, type WorkspaceState } from "@gram/contracts";
 import { cleanup, waitFor } from "@testing-library/react";
 import { Profiler, type ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useServerEvents } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
@@ -21,12 +20,8 @@ import { useWorkersNow } from "./workers-tab";
 // they derive changes, not on every change to any thread: the Workers count the title bar's "…"
 // shows, the Board's chips and its count of what waits on you.
 
-const route = vi.hoisted(() => ({ workspaceId: "" }));
-vi.mock("@tanstack/react-router", async (importOriginal) => ({
-  ...(await importOriginal<typeof Router>()),
-  useNavigate: () => () => Promise.resolve(),
-  useParams: () => ({ workspaceId: route.workspaceId }),
-}));
+/** The workspace the window's route names. */
+const route = { workspaceId: "" };
 
 const commits = new Map<string, number>();
 const counted = (id: string, children: ReactNode) => (
@@ -99,11 +94,14 @@ afterEach(() => {
   resetDerivedAsks();
 });
 
+const renderWindow = () =>
+  renderInRouter(<Window />, { api, path: `/w/${route.workspaceId}/files` });
+
 const settled = () => new Promise((resolve) => setTimeout(resolve, 150));
 
 describe("always-mounted views", () => {
   it("sit out a working worker's activity line and its other changes", async () => {
-    const view = renderWithApi(<Window />, api);
+    const view = await renderWindow();
     await waitFor(() => expect(view.getByTestId("workers-count")).toBeTruthy());
     await waitFor(() => expect(view.getByTestId("board")).toBeTruthy());
     api.simulateStatus(worker, "running", "Reading a.ts");
@@ -130,7 +128,7 @@ describe("always-mounted views", () => {
   });
 
   it("still follow a change that is theirs: a worker's status reaches its chip", async () => {
-    const view = renderWithApi(<Window />, api);
+    const view = await renderWindow();
     await waitFor(() => expect(view.getByTestId("board")).toBeTruthy());
     api.simulateStatus(worker, "idle");
     await waitFor(() => expect(view.getByTestId("board").textContent).toMatch(/^idle /));

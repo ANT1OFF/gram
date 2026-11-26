@@ -1,16 +1,15 @@
 // @vitest-environment happy-dom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installKeyboard, registerShortcut } from "@/keyboard/registry";
+import { renderInRouter } from "@/panels/test-utils";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { showUndo, useUndoToasts } from "@/stores/undo-toasts";
 
 import { useToastDock } from "./toast-dock";
 import { Toasts } from "./toasts";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 const notify = (title: string) =>
   act(() =>
@@ -39,7 +38,7 @@ afterEach(() => {
 
 describe("Toasts", () => {
   it("shows a change with Undo, which runs once and closes the toast", async () => {
-    render(<Toasts />);
+    await renderInRouter(<Toasts />);
     const undo = vi.fn(async () => {});
     act(() => showUndo({ key: "w", title: "Paused platform", undo }));
     // A later change to the same thing replaces the toast rather than stacking another.
@@ -51,7 +50,7 @@ describe("Toasts", () => {
     await waitFor(() => expect(useUndoToasts.getState().toasts).toEqual([]));
   });
 
-  it("docks in the chat's corner, whether the right panel is open or not", () => {
+  it("docks in the chat's corner, whether the right panel is open or not", async () => {
     for (const panelOpen of [true, false]) {
       useLayoutStore.setState({
         panelOpen,
@@ -59,7 +58,7 @@ describe("Toasts", () => {
         threadInView: true,
         windowWidth: 1440,
       });
-      render(
+      await renderInRouter(
         <>
           <Chat />
           <Toasts />
@@ -77,16 +76,16 @@ describe("Toasts", () => {
     }
   });
 
-  it("floats bottom-right while the chat has no dock, as when a review covers it", () => {
-    render(<Toasts />);
+  it("floats bottom-right while the chat has no dock, as when a review covers it", async () => {
+    await renderInRouter(<Toasts />);
     notify("CI passed on #7");
     expect(screen.getByRole("list", { name: "Notifications" }).getAttribute("data-docked")).toBe(
       "false",
     );
   });
 
-  it("shows a repeated notice once, as the latest, not stacked", () => {
-    render(<Toasts />);
+  it("shows a repeated notice once, as the latest, not stacked", async () => {
+    await renderInRouter(<Toasts />);
     notify("Claude Code is much older than 2.1.328");
     notify("CI passed on #7");
     notify("Claude Code is much older than 2.1.328");
@@ -96,8 +95,8 @@ describe("Toasts", () => {
     ]);
   });
 
-  it("dismisses a toast on Escape", () => {
-    render(<Toasts />);
+  it("dismisses a toast on Escape", async () => {
+    await renderInRouter(<Toasts />);
     notify("Couldn't push");
     const toast = screen.getByTestId("toast");
     fireEvent.keyDown(toast.querySelector("button")!, { key: "Escape" });
@@ -105,7 +104,7 @@ describe("Toasts", () => {
   });
 
   it("moves focus to the toast that takes a dismissed toast's place", async () => {
-    render(<Toasts />);
+    await renderInRouter(<Toasts />);
     notify("First");
     notify("Second");
     const [first] = screen.getAllByRole("button", { name: "Dismiss" });
@@ -117,7 +116,7 @@ describe("Toasts", () => {
     );
   });
 
-  it("keeps Escape on a toast from running an app shortcut too, such as denying an approval", () => {
+  it("keeps Escape on a toast from running an app shortcut too, such as denying an approval", async () => {
     const deny = vi.fn();
     const uninstall = installKeyboard(window);
     const unregister = registerShortcut({
@@ -128,7 +127,7 @@ describe("Toasts", () => {
       run: deny,
     });
     try {
-      render(<Toasts />);
+      await renderInRouter(<Toasts />);
       notify("Couldn't push");
       fireEvent.keyDown(screen.getByRole("button", { name: "Dismiss" }), { key: "Escape" });
       expect(screen.queryByTestId("toast")).toBeNull();
@@ -139,8 +138,8 @@ describe("Toasts", () => {
     }
   });
 
-  it("shows at most three toasts", () => {
-    render(<Toasts />);
+  it("shows at most three toasts", async () => {
+    await renderInRouter(<Toasts />);
     for (const title of ["one", "two", "three", "four"]) notify(title);
     expect(screen.getAllByTestId("toast").map((t) => t.textContent)).toEqual([
       "Notice: two",

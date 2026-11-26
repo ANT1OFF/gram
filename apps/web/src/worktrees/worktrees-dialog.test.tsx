@@ -4,17 +4,12 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 import { ThreadDialogs } from "@/thread/thread-dialogs";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { WorktreesDialog } from "./worktrees-dialog";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-}));
 
 const API = "/Users/dev/code/api";
 const EXPERIMENT = `${API}/.worktrees/cache-experiment`;
@@ -52,7 +47,7 @@ describe("WorktreesDialog", () => {
       thread: { ...owner.thread, id: "t-sibling" as typeof owner.thread.id, title: "Other owner" },
     };
     useThreadsStore.setState({ byId: { ...byId, [sibling.thread.id]: sibling } });
-    renderWithApi(<WorktreesDialog repoPath={API} onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath={API} onClose={() => {}} />, { api });
 
     const worktree = await screen.findByRole("listitem", { name: "fix/flaky-retry" });
     expect(worktree.textContent).toContain("Used by “Fix flaky retry test”");
@@ -76,7 +71,7 @@ describe("WorktreesDialog", () => {
   });
 
   it("lists the main checkout first, each worktree's thread and its uncommitted work", async () => {
-    renderWithApi(<WorktreesDialog repoPath={API} onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath={API} onClose={() => {}} />, { api });
 
     await waitFor(() => expect(screen.getAllByTestId("worktree-row").length).toBeGreaterThan(3));
     const [first] = screen.getAllByTestId("worktree-row");
@@ -103,7 +98,7 @@ describe("WorktreesDialog", () => {
   });
 
   it("removes an unused worktree with the picked rules, forcing after a dirty refusal", async () => {
-    renderWithApi(<WorktreesDialog repoPath={API} onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath={API} onClose={() => {}} />, { api });
 
     const experiment = await screen.findByRole("listitem", { name: "experiment/cache" });
     fireEvent.click(within(experiment).getByRole("button", { name: "Remove…" }));
@@ -133,7 +128,7 @@ describe("WorktreesDialog", () => {
   });
 
   it("keeps keyboard focus in the dialog when a removal is cancelled or done", async () => {
-    renderWithApi(<WorktreesDialog repoPath={API} onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath={API} onClose={() => {}} />, { api });
     const experiment = await screen.findByRole("listitem", { name: "experiment/cache" });
     const removeButton = () => within(experiment).getByRole("button", { name: "Remove…" });
 
@@ -171,11 +166,13 @@ describe("WorktreesDialog", () => {
     const removeWorktree = vi.fn(async () => {
       throw Object.assign(new Error("A thread has this worktree open"), { _tag: "InvalidState" });
     });
-    renderWithApi(<WorktreesDialog repoPath="/r" onClose={() => {}} />, {
-      listWorktrees,
-      removeWorktree,
-      worktreeStatus: vi.fn(async () => ({ repo: false }) as GitState),
-      worktreePendingPermissions: vi.fn(async () => []),
+    await renderInRouter(<WorktreesDialog repoPath="/r" onClose={() => {}} />, {
+      api: {
+        listWorktrees,
+        removeWorktree,
+        worktreeStatus: vi.fn(async () => ({ repo: false }) as GitState),
+        worktreePendingPermissions: vi.fn(async () => []),
+      },
     });
 
     fireEvent.click(await screen.findByRole("button", { name: "Remove…" }));
@@ -208,9 +205,11 @@ describe("WorktreesDialog", () => {
         },
       ],
     }));
-    renderWithApi(<WorktreesDialog repoPath="/r" onClose={() => {}} />, {
-      listWorktrees,
-      worktreeStatus: vi.fn(async () => ({ repo: false }) as GitState),
+    await renderInRouter(<WorktreesDialog repoPath="/r" onClose={() => {}} />, {
+      api: {
+        listWorktrees,
+        worktreeStatus: vi.fn(async () => ({ repo: false }) as GitState),
+      },
     });
 
     const open = await screen.findByRole("listitem", { name: "y" });
@@ -221,7 +220,7 @@ describe("WorktreesDialog", () => {
 
   it("opens from the thread dialogs store", async () => {
     useThreadDialogs.getState().open({ kind: "worktrees", repoPath: API });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderInRouter(<ThreadDialogs />, { api });
     expect(await screen.findByTestId("worktrees-dialog")).toBeTruthy();
     expect(await screen.findByRole("listitem", { name: "Main checkout" })).toBeTruthy();
   });

@@ -3,13 +3,11 @@ import type { ThreadId, WindowPlacements } from "@gram/contracts";
 import { act, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useLayoutStore } from "@/stores/layout";
 
 import { useWindowPlacementsSync } from "./use-window-placements";
 import { currentWindow } from "./window-identity";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 function Harness() {
   useWindowPlacementsSync();
@@ -62,12 +60,16 @@ describe("useWindowPlacementsSync", () => {
       useLayoutStore.getState().openThread("t-a" as ThreadId);
     });
 
-    renderWithApi(<Harness />, {
-      watchWindows: (window, signal) => {
-        watch.emit({ windows: [{ windowId: window.windowId, name: window.name, threadIds: [] }] });
-        return watch.iterate(signal);
+    await renderInRouter(<Harness />, {
+      api: {
+        watchWindows: (window, signal) => {
+          watch.emit({
+            windows: [{ windowId: window.windowId, name: window.name, threadIds: [] }],
+          });
+          return watch.iterate(signal);
+        },
+        reportWindow,
       },
-      reportWindow,
     });
 
     await waitFor(() =>
@@ -93,12 +95,16 @@ describe("useWindowPlacementsSync", () => {
       useLayoutStore.getState().openThread("t-a" as ThreadId);
     });
 
-    renderWithApi(<Harness />, {
-      watchWindows: (window, signal) => {
-        watch.emit({ windows: [{ windowId: window.windowId, name: window.name, threadIds: [] }] });
-        return watch.iterate(signal);
+    await renderInRouter(<Harness />, {
+      api: {
+        watchWindows: (window, signal) => {
+          watch.emit({
+            windows: [{ windowId: window.windowId, name: window.name, threadIds: [] }],
+          });
+          return watch.iterate(signal);
+        },
+        reportWindow,
       },
-      reportWindow,
     });
 
     await waitFor(() =>

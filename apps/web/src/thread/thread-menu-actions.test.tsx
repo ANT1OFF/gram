@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { CommandPalette } from "@/palette/command-palette";
 import { useAllActivity } from "@/stores/all-activity";
 import { useLayoutStore } from "@/stores/layout";
@@ -12,11 +12,6 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { useThreadDialogs } from "./thread-dialogs-store";
 import { ThreadMenu } from "./thread-menu";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-}));
 
 const FLAKY = "t-flaky" as ThreadId;
 let api: MockApi;
@@ -52,7 +47,7 @@ describe("ThreadMenu thread actions", () => {
   it("pins and parks the thread", async () => {
     const pin = vi.spyOn(api, "pin");
     const park = vi.spyOn(api, "park");
-    renderWithApi(<ThreadMenu threadId={FLAKY} />, api);
+    await renderInRouter(<ThreadMenu threadId={FLAKY} />, { api });
 
     await openMenu();
     fireEvent.click(await screen.findByRole("menuitem", { name: "Pin" }));
@@ -64,7 +59,7 @@ describe("ThreadMenu thread actions", () => {
   });
 
   it("opens the rename and close dialogs", async () => {
-    renderWithApi(<ThreadMenu threadId={FLAKY} />, api);
+    await renderInRouter(<ThreadMenu threadId={FLAKY} />, { api });
 
     await openMenu();
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
@@ -77,12 +72,12 @@ describe("ThreadMenu thread actions", () => {
 
   it("snoozes the thread from the header through More…, to a preset", async () => {
     const snooze = vi.spyOn(api, "snooze");
-    renderWithApi(
+    await renderInRouter(
       <>
         <ThreadMenu threadId={FLAKY} />
         <CommandPalette />
       </>,
-      api,
+      { api },
     );
     await openMore();
     fireEvent.click(await screen.findByRole("option", { name: /^Snooze thread…/ }));
@@ -108,12 +103,12 @@ describe("ThreadMenu thread actions", () => {
     );
 
     // Both through the menu's More…, which opens ⌘K on the thread's own commands.
-    const plain = renderWithApi(
+    const plain = await renderInRouter(
       <>
         <ThreadMenu threadId={FLAKY} />
         <CommandPalette />
       </>,
-      api,
+      { api },
     );
     await openMore();
     await screen.findByRole("option", { name: /^Rename thread…/ });
@@ -121,12 +116,12 @@ describe("ThreadMenu thread actions", () => {
     act(() => useLayoutStore.getState().closePalette());
     plain.unmount();
 
-    renderWithApi(
+    await renderInRouter(
       <>
         <ThreadMenu threadId={made.workerThreadId} />
         <CommandPalette />
       </>,
-      api,
+      { api },
     );
     await openMore();
     fireEvent.click(await screen.findByRole("option", { name: "Remove from workspace" }));
@@ -152,7 +147,7 @@ describe("ThreadMenu Show all activity", () => {
         },
       };
     });
-    renderWithApi(<ThreadMenu threadId={FLAKY} />, api);
+    await renderInRouter(<ThreadMenu threadId={FLAKY} />, { api });
     await openMenu();
     const item = await screen.findByTestId("menu-all-activity");
     expect(item.getAttribute("aria-checked")).toBe("false");
@@ -161,7 +156,7 @@ describe("ThreadMenu Show all activity", () => {
   });
 
   it("is not offered on any other thread", async () => {
-    renderWithApi(<ThreadMenu threadId={FLAKY} />, api);
+    await renderInRouter(<ThreadMenu threadId={FLAKY} />, { api });
     await openMenu();
     expect(screen.queryByTestId("menu-all-activity")).toBeNull();
   });

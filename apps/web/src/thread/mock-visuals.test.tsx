@@ -3,13 +3,10 @@ import type { FileImage, MockCardData, ThreadId } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useLayoutStore } from "@/stores/layout";
 
 import { MockCard, OptionGallery } from "./mock-visuals";
-
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 
 const T = "t-orchestrator" as ThreadId;
 const FOLDER = "/repo/.worktrees/feat-needs-you-home/docs/design/mocks/needs-you-home";
@@ -56,8 +53,8 @@ const OPTIONS = [
 
 describe("OptionGallery", () => {
   it("shows each option's screenshot by file name only, and nothing for one without", async () => {
-    renderWithApi(<OptionGallery threadId={T} options={OPTIONS} recommended="C Hybrid" />, {
-      fsImage,
+    await renderInRouter(<OptionGallery threadId={T} options={OPTIONS} recommended="C Hybrid" />, {
+      api: { fsImage },
     });
     const tiles = screen.getAllByTestId("option-visual");
     expect(tiles.map((tile) => tile.dataset["option"])).toEqual(["A Inbox", "C Hybrid"]);
@@ -68,19 +65,21 @@ describe("OptionGallery", () => {
   });
 
   it("enlarges a screenshot in the lightbox on a click", async () => {
-    renderWithApi(<OptionGallery threadId={T} options={OPTIONS} />, { fsImage });
+    await renderInRouter(<OptionGallery threadId={T} options={OPTIONS} />, { api: { fsImage } });
     fireEvent.click(await screen.findByRole("button", { name: "Open A Inbox · a-inbox-dark.png" }));
     expect((await screen.findByTestId("attachment-lightbox")).textContent).toContain(
       "A Inbox · a-inbox-dark.png",
     );
   });
 
-  it("opens the asking thread's Preview at the option's board, by the kit's id for it", () => {
+  it("opens the asking thread's Preview at the option's board, by the kit's id for it", async () => {
     const { shown, opened } = spyOnLayout();
-    renderWithApi(<OptionGallery threadId={T} options={OPTIONS} />, { fsImage });
+    const { router } = await renderInRouter(<OptionGallery threadId={T} options={OPTIONS} />, {
+      api: { fsImage },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Open mock: C Hybrid" }));
     expect(opened).toHaveBeenCalledWith(T);
-    expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: T } });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${T}`));
     expect(shown).toHaveBeenCalledWith(T, `${FOLDER}/v1.html#c-hybrid-popover`, {
       previewPane: expect.any(Boolean),
       thread: true,
@@ -102,9 +101,8 @@ describe("OptionGallery", () => {
         ],
       }),
     }));
-    renderWithApi(<OptionGallery threadId={T} options={[]} mock={`${FOLDER}/mock.json`} />, {
-      fsImage,
-      fsFile,
+    await renderInRouter(<OptionGallery threadId={T} options={[]} mock={`${FOLDER}/mock.json`} />, {
+      api: { fsImage, fsFile },
     });
     const open = screen.getByTestId("question-open-mocks");
     await waitFor(() => expect((open as HTMLButtonElement).disabled).toBe(false));
@@ -112,10 +110,11 @@ describe("OptionGallery", () => {
     expect(shown).toHaveBeenCalledWith(T, `${FOLDER}/v2.html`, expect.anything());
   });
 
-  it("is nothing for a question without pictures", () => {
-    renderWithApi(<OptionGallery threadId={T} options={[{ label: "Yes" }, { label: "No" }]} />, {
-      fsImage,
-    });
+  it("is nothing for a question without pictures", async () => {
+    await renderInRouter(
+      <OptionGallery threadId={T} options={[{ label: "Yes" }, { label: "No" }]} />,
+      { api: { fsImage } },
+    );
     expect(screen.queryByTestId("option-gallery")).toBeNull();
   });
 
@@ -123,8 +122,8 @@ describe("OptionGallery", () => {
     const refused = vi.fn(async () => {
       throw Object.assign(new Error("outside"), { _tag: "InvalidState" });
     });
-    renderWithApi(<OptionGallery threadId={T} options={OPTIONS.slice(0, 1)} />, {
-      fsImage: refused,
+    await renderInRouter(<OptionGallery threadId={T} options={OPTIONS.slice(0, 1)} />, {
+      api: { fsImage: refused },
     });
     const missing = await screen.findByTestId("mock-thumb-missing");
     expect(missing.textContent).toContain("a-inbox-dark.png");
@@ -158,7 +157,7 @@ const CARD: MockCardData = {
 describe("MockCard", () => {
   it("shows the title, version and status, and the shots in the app's mode first", async () => {
     document.documentElement.setAttribute("data-mode", "light");
-    renderWithApi(<MockCard threadId={T} mock={CARD} />, { fsImage });
+    await renderInRouter(<MockCard threadId={T} mock={CARD} />, { api: { fsImage } });
     const card = screen.getByTestId("mock-card");
     expect(screen.getByRole("heading", { name: "Needs you home" })).toBeTruthy();
     expect(screen.getByTestId("mock-version").textContent).toBe("v1");
@@ -173,7 +172,7 @@ describe("MockCard", () => {
 
   it("switches dark and light, and opens in Preview in the theme it shows", async () => {
     const { shown } = spyOnLayout();
-    renderWithApi(<MockCard threadId={T} mock={CARD} />, { fsImage });
+    await renderInRouter(<MockCard threadId={T} mock={CARD} />, { api: { fsImage } });
     expect(await screen.findByRole("img", { name: "A inbox · a-inbox-dark.png" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "light" }));
     expect(screen.getByRole("button", { name: "light" }).getAttribute("aria-pressed")).toBe("true");
@@ -192,10 +191,11 @@ describe("MockCard", () => {
     });
   });
 
-  it("has no theme switch when no direction has both shots", () => {
-    renderWithApi(<MockCard threadId={T} mock={{ ...CARD, directions: [CARD.directions[1]!] }} />, {
-      fsImage,
-    });
+  it("has no theme switch when no direction has both shots", async () => {
+    await renderInRouter(
+      <MockCard threadId={T} mock={{ ...CARD, directions: [CARD.directions[1]!] }} />,
+      { api: { fsImage } },
+    );
     expect(screen.queryByRole("group", { name: "Screenshots" })).toBeNull();
   });
 });

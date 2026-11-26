@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 import { ThreadNotFound, type ThreadId } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { feedMessages } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -17,12 +16,6 @@ import { useTraceViewStore } from "./trace-view-store";
 // NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
 vi.mock("@/motion/number-ticker", () => ({
   NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children?: ReactNode }) => children,
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
 }));
 
 const FLAKY = "t-flaky" as ThreadId;
@@ -61,14 +54,14 @@ describe("ThreadView usage ring", () => {
         contextTokens: 43_000,
       },
     });
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
     expect((await screen.findByTestId("usage-ring")).getAttribute("aria-label")).toBe(
       "Context: 22% of the window used",
     );
     cleanup();
 
     // A remount subscribes to the feed again, which starts over from the stored messages.
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
     expect((await screen.findByTestId("usage-ring")).getAttribute("aria-label")).toBe(
       "Context: 22% of the window used",
     );
@@ -87,7 +80,7 @@ describe("ThreadView usage ring", () => {
         },
       });
     apply(20_000);
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
     const ring = await screen.findByTestId("usage-ring");
     expect(ring.getAttribute("aria-label")).toBe("Context: 10% of the window used");
 
@@ -108,7 +101,7 @@ describe("ThreadView startup explanation", () => {
         status,
         ...(explanation === undefined ? {} : { detail: explanation }),
       });
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
     await screen.findByTestId("thread-view");
     expect(screen.queryByTestId("thread-starting-detail")).toBeNull();
     act(() => apply("starting", detail));
@@ -130,7 +123,7 @@ describe("ThreadView pending restart", () => {
     const DOCS = "t-docs" as ThreadId;
     const { applyEvent } = useThreadsStore.getState();
     applyEvent({ type: "thread.pendingRestart", threadId: DOCS, reason: "mcpConfig" });
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
     const glyph = await screen.findByTestId("pending-restart");
     expect(glyph.getAttribute("aria-label")).toBe("Restart pending: MCP config changed");
     expect(pendingRestartHint(useThreadsStore.getState().byId[DOCS])).toContain(
@@ -160,7 +153,7 @@ describe("ThreadView of a thread the server doesn't have", () => {
     useThreadsStore
       .getState()
       .applyEvent({ type: "thread.upsert", thread: { ...thread, id: GONE } });
-    renderWithApi(<ThreadView threadId={GONE} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={GONE} focused={false} />, { api });
 
     expect(await screen.findByTestId("thread-gone")).toBeTruthy();
     expect(screen.queryByTestId("thread-view")).toBeNull();
@@ -175,7 +168,7 @@ describe("ThreadView of a thread the server doesn't have", () => {
         act(() => useThreadsStore.getState().applyEvent(event));
       }
     })();
-    renderWithApi(<ThreadView threadId={DARK} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DARK} focused={false} />, { api });
     await screen.findByTestId("thread-view");
     await vi.waitFor(() => expect(feedMessages(DARK).length).toBeGreaterThan(0));
 
@@ -198,7 +191,7 @@ describe("ThreadView of a thread the server doesn't have", () => {
 
   it("subscribes again on a snapshot that has the thread back, removal unseen", async () => {
     const DEPS = "t-deps" as ThreadId;
-    renderWithApi(<ThreadView threadId={DEPS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DEPS} focused={false} />, { api });
     await screen.findByTestId("thread-view");
     await vi.waitFor(() => expect(feedMessages(DEPS).length).toBeGreaterThan(0));
 
@@ -243,13 +236,15 @@ describe("ThreadView of a thread the server doesn't have", () => {
         };
       },
     });
-    renderWithApi(<ThreadView threadId={PLAN} focused={false} />, racing);
+    await renderInRouter(<ThreadView threadId={PLAN} focused={false} />, { api: racing });
     expect(await screen.findByTestId("thread-view")).toBeTruthy();
     await vi.waitFor(() => expect(feedMessages(PLAN).length).toBeGreaterThan(0));
   });
 
   it("says it's gone once the thread list no longer has it", async () => {
-    renderWithApi(<ThreadView threadId={"t-removed" as ThreadId} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={"t-removed" as ThreadId} focused={false} />, {
+      api,
+    });
     expect(await screen.findByTestId("thread-gone")).toBeTruthy();
   });
 });
@@ -262,7 +257,7 @@ describe("ThreadView header", () => {
     const at = Date.now() + 45 * 60_000;
     api.simulateThreadWake({ id: "w1", threadId: DOCS, at, note: "check the canary", setAt: 1 });
     api.simulateThreadWake({ id: "w2", threadId: FLAKY, at, note: "another thread's", setAt: 1 });
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
 
     const chip = await screen.findByTestId("pane-wake");
     expect(chip.getAttribute("title")).toBe("Wakes at 12:45: check the canary");
@@ -294,7 +289,7 @@ describe("ThreadView header", () => {
       note: "tomorrow",
       setAt: 1,
     });
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
 
     const chip = await screen.findByTestId("pane-wake");
     expect(chip.getAttribute("title")).toBe(
@@ -309,7 +304,7 @@ describe("ThreadView header", () => {
       type: "thread.upsert",
       thread: { ...thread, mode: "default", model: { agent: "codex", model: "gpt-5.5" } },
     });
-    renderWithApi(<ThreadView threadId={FLAKY} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={FLAKY} focused={false} />, { api });
 
     const header = await screen.findByTestId("pane-header");
     expect(header.textContent).not.toContain("Codex");
@@ -328,7 +323,7 @@ describe("ThreadView header", () => {
       type: "thread.upsert",
       thread: { ...thread, role: "orchestrator", title: "Orchestrator · api" },
     });
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
 
     const heading = await screen.findByRole("heading", { level: 1 });
     expect(heading.getAttribute("aria-label")).toBe("Orchestrator: api");
@@ -343,7 +338,7 @@ describe("ThreadView header", () => {
       type: "thread.upsert",
       thread: { ...thread, labels: [label!.id] },
     });
-    renderWithApi(<ThreadView threadId={FLAKY} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={FLAKY} focused={false} />, { api });
 
     expect((await screen.findByTestId("pane-label")).textContent).toContain(label!.name);
     // One alarm: a red label never tints the header or dots its chip.
@@ -352,14 +347,14 @@ describe("ThreadView header", () => {
   });
 
   it("leaves pushing to the PR panel, with no push button of its own", async () => {
-    renderWithApi(<ThreadView threadId={"t-dark" as ThreadId} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={"t-dark" as ThreadId} focused={false} />, { api });
     await screen.findByTestId("pane-header");
     expect(screen.queryByTestId("push-button")).toBeNull();
   });
 
   it("keeps the branch out of the header and its thread menu", async () => {
     for (const threadId of [FLAKY, "t-docs" as ThreadId]) {
-      renderWithApi(<ThreadView threadId={threadId} focused={false} />, api);
+      await renderInRouter(<ThreadView threadId={threadId} focused={false} />, { api });
       // The agents' working detail: More…, ⌘K on the thread, has it to copy and push.
       expect(within(screen.getByTestId("pane-header")).queryByTestId("branch-chip")).toBeNull();
       fireEvent.click(screen.getByRole("button", { name: "Thread menu" }));
@@ -385,7 +380,7 @@ describe("ThreadView of a thread that waits for its machine", () => {
       awaitingMachine,
     });
     await resync();
-    renderWithApi(<ThreadView threadId={WAIT} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={WAIT} focused={false} />, { api });
     return within(await screen.findByTestId("thread-view"));
   };
 
@@ -452,7 +447,7 @@ describe("ThreadView of a thread that waits for its machine", () => {
 describe("ThreadView trace", () => {
   it("keeps the conversation mounted while the trace loads, opens and closes", async () => {
     const DOCS = "t-docs" as ThreadId;
-    renderWithApi(<ThreadView threadId={DOCS} focused={false} />, api);
+    await renderInRouter(<ThreadView threadId={DOCS} focused={false} />, { api });
     const transcript = await screen.findByTestId("transcript");
     expect(screen.queryByTestId("trace-view")).toBeNull();
 

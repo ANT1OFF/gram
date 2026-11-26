@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import type * as StreamContextModule from "@/orchestration/stream-context";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { feedMessages } from "@/stores/feeds";
 import { useRevealStore } from "@/stores/reveal";
 import { useThreadsStore } from "@/stores/threads";
@@ -29,11 +29,6 @@ const props = () => seen.props as TranscriptProps;
 
 vi.mock("@/motion/number-ticker", () => ({
   NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children?: ReactNode }) => children,
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
 }));
 vi.mock("./transcript", async (original) => ({
   ...(await original<typeof TranscriptModule>()),
@@ -84,7 +79,7 @@ afterEach(() => {
 });
 
 it("counts a search hit's position in the rows the transcript shows, not the thread's messages", async () => {
-  renderWithApi(<ThreadView threadId={DEPS} focused />, api);
+  await renderInRouter(<ThreadView threadId={DEPS} focused />, { api });
   await screen.findByTestId("transcript");
   await vi.waitFor(() => expect(feedMessages(DEPS).length).toBeGreaterThan(1));
   await waitFor(() => expect(props().messages.length).toBeGreaterThan(0));

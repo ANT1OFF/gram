@@ -4,15 +4,10 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import { WaitingTray } from "./waiting-tray";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: unknown }) => children,
-  useNavigate: () => vi.fn(),
-}));
 
 // Every item on Waiting on you ends one of three ways: done, dismissed by the user without doing
 // it, or withdrawn by its thread or that thread's orchestrator. The tray records each as itself.
@@ -56,7 +51,7 @@ describe("WaitingTray endings", () => {
       dismissWait: vi.fn(async () => open),
       listWaits: vi.fn(async () => []),
     } satisfies Partial<Api>;
-    renderWithApi(<WaitingTray threadId={T} />, api);
+    await renderInRouter(<WaitingTray threadId={T} />, { api });
     fireEvent.click(within(tray()).getByRole("button", { expanded: false }));
     const row = within(tray()).getByTestId("waiting-item");
 
@@ -72,7 +67,7 @@ describe("WaitingTray endings", () => {
     expect(within(tray()).getByTestId("waiting-undo-row").dataset["ending"]).toBe("dismissed");
   });
 
-  it("Escape steps back from Dismiss, and a blank reason dismisses without one", () => {
+  it("Escape steps back from Dismiss, and a blank reason dismisses without one", async () => {
     const open = item("w-1");
     showing([open]);
     const api = {
@@ -80,7 +75,7 @@ describe("WaitingTray endings", () => {
       dismissWait: vi.fn(async () => open),
       listWaits: vi.fn(async () => []),
     } satisfies Partial<Api>;
-    renderWithApi(<WaitingTray threadId={T} />, api);
+    await renderInRouter(<WaitingTray threadId={T} />, { api });
     fireEvent.click(within(tray()).getByRole("button", { expanded: false }));
     const row = within(tray()).getByTestId("waiting-item");
 
@@ -110,7 +105,9 @@ describe("WaitingTray endings", () => {
       }),
     ];
     showing([item("w-1")]);
-    renderWithApi(<WaitingTray threadId={T} />, { listWaits: vi.fn(async () => resolved) });
+    await renderInRouter(<WaitingTray threadId={T} />, {
+      api: { listWaits: vi.fn(async () => resolved) },
+    });
     fireEvent.click(within(tray()).getByRole("button", { expanded: false }));
     const line = await waitFor(() => within(tray()).getByTestId("waiting-resolved"));
     fireEvent.click(within(line).getByRole("button"));

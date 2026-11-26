@@ -10,18 +10,13 @@ import {
 } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useTaskDraftStore } from "@/orchestration/task-draft-store";
 import { NewTaskDraft } from "./new-task-draft";
 
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-  useNavigate: () => vi.fn(),
-}));
 afterEach(() => {
   cleanup();
   useServerSettings.setState({ settings: undefined });
@@ -40,7 +35,7 @@ const workspace: WorkspaceState = {
   },
   charter: DEFAULT_CHARTER,
 };
-const setup = (
+const setup = async (
   selection: () => Promise<TaskModelSelection>,
   observation: (agent: string) => Partial<SelectedHarnessSupport> = () => ({}),
 ) => {
@@ -66,7 +61,7 @@ const setup = (
   }));
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   useTaskDraftStore.setState({ last: undefined, entry: undefined });
-  renderWithApi(<NewTaskDraft />, api);
+  await renderInRouter(<NewTaskDraft />, { api });
   return { api, preview, start };
 };
 
@@ -79,7 +74,7 @@ describe("new-task authoritative preflight", () => {
     const selection: TaskModelSelection = {
       orchestrator: { agent: "codex", model: "synthetic-model" },
     };
-    const { start } = setup(async () => selection);
+    const { start } = await setup(async () => selection);
     await plannedOn(/Codex.*Synthetic/);
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic task" },
@@ -99,7 +94,7 @@ describe("new-task authoritative preflight", () => {
   });
 
   it("asks only between the orchestrator and one agent", async () => {
-    setup(async () => ({ orchestrator: { agent: "claude", model: "synthetic-model" } }));
+    await setup(async () => ({ orchestrator: { agent: "claude", model: "synthetic-model" } }));
     const who = await screen.findByRole("radiogroup", { name: "Who does it" });
     expect(
       within(who)
@@ -114,7 +109,7 @@ describe("new-task authoritative preflight", () => {
   });
 
   it("picks the orchestrator's agent in the prompt box, previews the pick and starts on it", async () => {
-    const { api, preview, start } = setup(async (input?: unknown) => {
+    const { api, preview, start } = await setup(async (input?: unknown) => {
       const picked = (input as { orchestrator?: TaskModelSelection["orchestrator"] }).orchestrator;
       return { orchestrator: picked ?? { agent: "claude", model: "synthetic-model" } };
     });
@@ -162,7 +157,7 @@ describe("new-task authoritative preflight", () => {
   });
 
   it("says when the task moves a running orchestrator to the pick", async () => {
-    setup(async () => ({
+    await setup(async () => ({
       orchestrator: { agent: "codex", model: "synthetic-model" },
       orchestratorFrom: { agent: "claude", model: "synthetic-model" },
     }));
@@ -173,7 +168,7 @@ describe("new-task authoritative preflight", () => {
 
   it("blocks all submit paths for a precise server refusal and recovers on explicit retry", async () => {
     let refused = true;
-    const { start } = setup(async () => {
+    const { start } = await setup(async () => {
       if (refused) throw new Error("Synthetic unavailable selected worker; choose explicitly.");
       return { orchestrator: { agent: "codex", model: "synthetic-model" } };
     });
@@ -201,7 +196,7 @@ describe("an orchestrator slot that can't run here", () => {
       orchestratorNote:
         "The orchestrator's model can't run here: nothing here fills the Top tier. It opens on claude:synthetic-model instead.",
     };
-    const { start } = setup(async () => selection);
+    const { start } = await setup(async () => selection);
     const note = await screen.findByTestId("task-orchestrator-note");
     expect(note.textContent).toContain("nothing here fills the Top tier");
     fireEvent.change(screen.getByLabelText("What needs doing"), {
@@ -222,7 +217,7 @@ describe("an orchestrator slot that can't run here", () => {
 
 describe("Start while the check runs", () => {
   it("cannot send a draft while authoritative selection is loading", async () => {
-    const { start, preview } = setup(() => new Promise(() => {}));
+    const { start, preview } = await setup(() => new Promise(() => {}));
     await waitFor(() => expect(preview).toHaveBeenCalled());
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic pending draft" },
@@ -239,7 +234,7 @@ describe("Start while the check runs", () => {
   });
 
   it("enables Start, in its own words, once the check passes", async () => {
-    setup(async () => ({ orchestrator: { agent: "claude", model: "synthetic-model" } }));
+    await setup(async () => ({ orchestrator: { agent: "claude", model: "synthetic-model" } }));
     fireEvent.change(screen.getByLabelText("What needs doing"), {
       target: { value: "Synthetic task" },
     });

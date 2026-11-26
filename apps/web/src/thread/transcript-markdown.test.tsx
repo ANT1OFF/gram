@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
 import type { GramUIMessage, ThreadId } from "@gram/contracts";
 import { cleanup, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import type { ApiThreadFeedEvent } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import { ThreadView } from "./thread-view";
@@ -24,12 +23,6 @@ vi.mock("@/components/ai-elements/markdown", async (importOriginal) => {
 // NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
 vi.mock("@/motion/number-ticker", () => ({
   NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children?: ReactNode }) => children,
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
 }));
 
 const THREAD = "t-docs" as ThreadId;
@@ -78,10 +71,9 @@ afterEach(() => {
 
 describe("the transcript while streamdown loads", () => {
   it("keeps saying it's loading, then lays out the rows once, as markdown", async () => {
-    const { container } = renderWithApi(
-      <ThreadView threadId={THREAD} focused={false} />,
-      Object.assign(Object.create(api) as MockApi, { threadFeed }),
-    );
+    const { container } = await renderInRouter(<ThreadView threadId={THREAD} focused={false} />, {
+      api: Object.assign(Object.create(api) as MockApi, { threadFeed }),
+    });
     // The messages are in, but no row is laid out, as plain text or otherwise, without markdown.
     await waitFor(() => expect(useThreadsStore.getState().byId[THREAD]).toBeDefined());
     await new Promise((resolve) => setTimeout(resolve, 50));

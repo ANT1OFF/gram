@@ -10,13 +10,14 @@ import {
   type SettingsPatch,
 } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createChannel, type Channel } from "@/api/channel";
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { useWelcome } from "@/welcome/welcome-state";
@@ -29,15 +30,6 @@ import {
   useLaunchIssues,
 } from "./banner";
 import { AgentChecks, ToolChecks } from "./tool-checks";
-
-/** The page the window shows, which the banner folds on leaving. */
-const route = vi.hoisted(() => ({ pathname: "/" }));
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-  useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
-    select({ location: { pathname: route.pathname } }),
-}));
 
 const SIGNED_OUT: LaunchChecks = {
   checkedAt: 1,
@@ -62,7 +54,8 @@ const idleUpdateFeed = (_agent: string, signal: AbortSignal) => {
   return feed;
 };
 
-const renderWith = (api: Partial<Api>, children: ReactNode) => {
+/** Renders `children` as the page at `path`, which the banner folds on leaving. */
+const renderWith = (api: Partial<Api>, children: ReactNode, path = "/") => {
   const source = api.watchCliUpdate ?? idleUpdateFeed;
   const watchCliUpdate: Api["watchCliUpdate"] = (agent, signal) => {
     const settled = Promise.withResolvers<void>();
@@ -81,12 +74,13 @@ const renderWith = (api: Partial<Api>, children: ReactNode) => {
       },
     };
   };
-  return render(
+  return renderInRouter(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
       <ApiProvider api={{ ...api, watchCliUpdate } as Api}>{children}</ApiProvider>
     </QueryClientProvider>,
+    { path },
   );
 };
 
@@ -125,7 +119,6 @@ const outcome = () => screen.getByTestId("banner-cli-update");
 
 beforeEach(() => {
   watches.length = 0;
-  route.pathname = "/";
   useBannerFold.setState({ folded: [], open: undefined });
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   vi.spyOn(console, "warn");
@@ -148,7 +141,7 @@ describe("LaunchChecksBanner", () => {
     useWelcome.setState({ onScreen: true });
     try {
       const launchChecks = vi.fn(async () => SIGNED_OUT);
-      renderWith(
+      await renderWith(
         { launchChecks, ...appAt("0.4.0") },
         <>
           {shell()}
@@ -169,7 +162,7 @@ describe("LaunchChecksBanner", () => {
         "0.4.0:gh-missing",
       ]);
       useWelcome.setState({ onScreen: false });
-      renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
+      await renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
       fireEvent.click(await screen.findByTestId("launch-issues-chip"));
       const banner = await screen.findByTestId("launch-checks-banner");
       expect(banner.querySelector('[data-issue="claude-signed-out"]')).toBeTruthy();
@@ -179,21 +172,13 @@ describe("LaunchChecksBanner", () => {
   });
 
   it("folds to the title bar's chip once seen and left, stays folded after a restart, and opens again from it", async () => {
-    route.pathname = "/t/t-1";
     const launchChecks = vi.fn(async () => SIGNED_OUT);
-    const view = renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
+    const { router } = await renderWith({ launchChecks, ...appAt("0.4.0") }, shell(), "/t/t-1");
     expect(await screen.findByTestId("launch-checks-banner")).toBeTruthy();
     expect(screen.queryByTestId("launch-issues-chip")).toBeNull();
 
     // Another thread opened: the banner has been seen, and folds to the chip.
-    route.pathname = "/t/t-2";
-    view.rerender(
-      <QueryClientProvider client={new QueryClient()}>
-        <ApiProvider api={{ launchChecks, ...appAt("0.4.0") } as unknown as Api}>
-          {shell()}
-        </ApiProvider>
-      </QueryClientProvider>,
-    );
+    await act(() => router.navigate({ to: "/t/$threadId", params: { threadId: "t-2" } }));
     const chip = await screen.findByTestId("launch-issues-chip");
     expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
     // Round 15: "⚠ 2" read as a second count of what needs you. Setup's glyph alone, like the
@@ -211,7 +196,7 @@ describe("LaunchChecksBanner", () => {
     cleanup();
 
     // A restart: the problems already seen start as the chip, which opens the banner.
-    renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
+    await renderWith({ launchChecks, ...appAt("0.4.0") }, shell());
     fireEvent.click(await screen.findByTestId("launch-issues-chip"));
     expect(await screen.findByTestId("launch-checks-banner")).toBeTruthy();
     expect(screen.queryByTestId("launch-issues-chip")).toBeNull();
@@ -220,7 +205,7 @@ describe("LaunchChecksBanner", () => {
   it("lists the problems with a details link, and a dismissal survives a restart", async () => {
     const launchChecks = vi.fn(async () => SIGNED_OUT);
     const app = appAt("0.4.0");
-    renderWith({ launchChecks, ...app }, <LaunchChecksBanner />);
+    await renderWith({ launchChecks, ...app }, <LaunchChecksBanner />);
 
     const banner = await screen.findByTestId("launch-checks-banner");
     expect(
@@ -228,7 +213,8 @@ describe("LaunchChecksBanner", () => {
     ).toEqual(["claude-signed-out", "gh-missing"]);
     // The command to run is set as code.
     expect(banner.querySelector("code")?.textContent).toBe("claude");
-    expect(screen.getByRole("link", { name: "Details" }).getAttribute("href")).toBe(
+    // A real link to Diagnostics, though Base UI's Button names it a button.
+    expect(screen.getByRole("button", { name: "Details" }).getAttribute("href")).toBe(
       "/settings/diagnostics",
     );
 
@@ -242,7 +228,7 @@ describe("LaunchChecksBanner", () => {
     cleanup();
 
     // A restart: fresh component state, the dismissal read back from settings.
-    renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
+    await renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
     await waitFor(() => expect(launchChecks).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
   });
@@ -250,7 +236,7 @@ describe("LaunchChecksBanner", () => {
   it("shows a dismissed problem again once the result changes or the app updates", async () => {
     seedDismissed(["0.4.0:claude-signed-out", "0.4.0:gh-missing"]);
     const apiKey = { ...SIGNED_OUT, claudeSignIn: "apiKey" as const };
-    renderWith(
+    await renderWith(
       { launchChecks: vi.fn(async () => apiKey), ...appAt("0.4.0") },
       <LaunchChecksBanner />,
     );
@@ -259,7 +245,7 @@ describe("LaunchChecksBanner", () => {
     expect(banner.querySelector('[data-issue="gh-missing"]')).toBeNull();
     cleanup();
 
-    renderWith(
+    await renderWith(
       { launchChecks: vi.fn(async () => SIGNED_OUT), ...appAt("0.5.0") },
       <LaunchChecksBanner />,
     );
@@ -273,7 +259,10 @@ describe("LaunchChecksBanner", () => {
   it("drops other versions' dismissals and cleared problems' when saving a new one", async () => {
     seedDismissed(["0.3.0:gh-missing", "0.4.0:git-missing"]);
     const app = appAt("0.4.0");
-    renderWith({ launchChecks: vi.fn(async () => SIGNED_OUT), ...app }, <LaunchChecksBanner />);
+    await renderWith(
+      { launchChecks: vi.fn(async () => SIGNED_OUT), ...app },
+      <LaunchChecksBanner />,
+    );
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
     await waitFor(() =>
       expect(app.updateSettings).toHaveBeenLastCalledWith({
@@ -291,7 +280,7 @@ describe("LaunchChecksBanner", () => {
       ghSignedIn: true,
       tools: SIGNED_OUT.tools.map((tool) => ({ ...tool, found: true })),
     };
-    renderWith({ launchChecks: vi.fn(async () => ghFixed), ...app }, <LaunchChecksBanner />);
+    await renderWith({ launchChecks: vi.fn(async () => ghFixed), ...app }, <LaunchChecksBanner />);
     await waitFor(() =>
       expect(app.updateSettings).toHaveBeenCalledWith({
         onboarding: { dismissedLaunchIssues: ["0.4.0:claude-signed-out"] },
@@ -302,7 +291,7 @@ describe("LaunchChecksBanner", () => {
 
   it("folds at the first click or key outside it, but not at one inside it", async () => {
     const launchChecks = vi.fn(async () => SIGNED_OUT);
-    renderWith(
+    await renderWith(
       { launchChecks, ...appAt("0.4.0") },
       <>
         <button type="button">Elsewhere</button>
@@ -337,7 +326,7 @@ describe("LaunchChecksBanner", () => {
           }
         : SIGNED_OUT,
     );
-    renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
+    await renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Re-check" }));
     await waitFor(() => expect(screen.queryByTestId("launch-checks-banner")).toBeNull());
@@ -348,7 +337,7 @@ describe("LaunchChecksBanner", () => {
     const launchChecks = vi.fn(async () => {
       throw new Error("NotImplemented");
     });
-    renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
+    await renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
     await waitFor(() => expect(launchChecks).toHaveBeenCalled());
     expect(screen.queryByTestId("launch-checks-banner")).toBeNull();
   });
@@ -358,7 +347,7 @@ describe("LaunchChecksBanner", () => {
       ...SIGNED_OUT,
       tools: SIGNED_OUT.tools.map((t) => (t.tool === "gh" ? { ...t, found: true } : t)),
     }));
-    renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
+    await renderWith({ launchChecks, ...appAt("0.4.0") }, <LaunchChecksBanner />);
 
     const banner = await screen.findByTestId("launch-checks-banner");
     expect(
@@ -439,7 +428,7 @@ describe("LaunchChecksBanner Update", () => {
 
   it("runs the Agents row's step in one click, and the line goes once the checks read the new version", async () => {
     const { api, state, push } = updatable();
-    renderWith(api, <LaunchChecksBanner />);
+    await renderWith(api, <LaunchChecksBanner />);
     const update = await screen.findByRole("button", { name: "Update Codex" });
     fireEvent.click(update);
     expect(api.updateCli).toHaveBeenCalledWith("codex", COMMAND);
@@ -458,7 +447,7 @@ describe("LaunchChecksBanner Update", () => {
 
   it("shows a failure inline with the command to copy, and offers Update again", async () => {
     const { api, push } = updatable();
-    renderWith(api, <LaunchChecksBanner />);
+    await renderWith(api, <LaunchChecksBanner />);
     fireEvent.click(await screen.findByRole("button", { name: "Update Codex" }));
     push({
       state: "failed",
@@ -490,7 +479,7 @@ describe("LaunchChecksBanner Update", () => {
         });
       }),
     });
-    renderWith(api, <LaunchChecksBanner />);
+    await renderWith(api, <LaunchChecksBanner />);
     fireEvent.click(await screen.findByRole("button", { name: "Update Codex" }));
     await waitFor(() => expect(outcome().getAttribute("data-state")).toBe("refused"));
     expect(outcome().textContent).toContain("doesn't offer to run that for Codex now");
@@ -505,7 +494,7 @@ describe("LaunchChecksBanner Update", () => {
       })),
     };
     const { api } = updatable({ agentRuntimes: vi.fn(async () => copyOnly) });
-    renderWith(api, <LaunchChecksBanner />);
+    await renderWith(api, <LaunchChecksBanner />);
     await screen.findByTestId("launch-checks-banner");
     await waitFor(() => expect(api.agentRuntimes).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Update Codex" })).toBeNull();
@@ -514,7 +503,7 @@ describe("LaunchChecksBanner Update", () => {
 
 describe("ToolChecks", () => {
   it("shows each tool's version, path and sign-in state", async () => {
-    renderWith({ launchChecks: vi.fn(async () => SIGNED_OUT) }, <ToolChecks />);
+    await renderWith({ launchChecks: vi.fn(async () => SIGNED_OUT) }, <ToolChecks />);
     const tools = await screen.findByTestId("tool-checks");
     await waitFor(() =>
       expect(tools.textContent).toContain("2.1.273 at /opt/bin/claude, not signed in"),
@@ -526,7 +515,7 @@ describe("ToolChecks", () => {
     const unusable =
       "C:\\npm\\claude.cmd doesn't run a native claude.exe, which Claude threads need.";
     const [claude, ...rest] = SIGNED_OUT.tools;
-    renderWith(
+    await renderWith(
       {
         launchChecks: vi.fn(async () => ({
           ...SIGNED_OUT,
@@ -584,7 +573,7 @@ describe("AgentChecks", () => {
         },
       ],
     };
-    renderWith(
+    await renderWith(
       {
         launchChecks: vi.fn(async (): Promise<LaunchChecks> => ({
           ...SIGNED_OUT,
@@ -616,7 +605,7 @@ describe("AgentChecks", () => {
   it("shows each agent's version, marks only trouble, and re-checks", async () => {
     const launchChecks = vi.fn(async (_force?: boolean) => SIGNED_OUT);
     const agentRuntimes = vi.fn(async (_refresh?: boolean) => runtimes);
-    renderWith({ launchChecks, agentRuntimes }, <AgentChecks />);
+    await renderWith({ launchChecks, agentRuntimes }, <AgentChecks />);
     const claude = await screen.findByRole("group", { name: "Claude Code" });
     expect(claude.textContent).toContain("2.1.273");
     expect(claude.textContent).toContain("not signed in");
@@ -646,7 +635,7 @@ describe("AgentChecks", () => {
   it("offers Claude's local sign-in fix", async () => {
     const launchChecks = vi.fn(async () => SIGNED_OUT);
     const agentRuntimes = vi.fn(async () => runtimes);
-    renderWith({ launchChecks, agentRuntimes }, <AgentChecks />);
+    await renderWith({ launchChecks, agentRuntimes }, <AgentChecks />);
     const claude = await screen.findByRole("group", { name: "Claude Code" });
     await waitFor(() => expect(claude.textContent).toContain("not signed in"));
     expect(claude.getAttribute("data-trouble")).toBe("error");
@@ -662,7 +651,7 @@ describe("AgentChecks", () => {
         message: "npm registry sign-in expired: run npm login",
       },
     };
-    renderWith({ launchChecks, agentRuntimes: vi.fn(async () => refused) }, <AgentChecks />);
+    await renderWith({ launchChecks, agentRuntimes: vi.fn(async () => refused) }, <AgentChecks />);
     const hint = await screen.findByTestId("registry-sign-in");
     expect(hint.textContent).toContain("npm registry sign-in expired: run npm login");
     expect(screen.getByRole("button", { name: "Copy npm login" })).toBeTruthy();
@@ -672,7 +661,7 @@ describe("AgentChecks", () => {
       ...runtimes,
       releasesUnavailable: { problem: "npm-missing", message: "npm isn't installed" },
     };
-    renderWith({ launchChecks, agentRuntimes: vi.fn(async () => missing) }, <AgentChecks />);
+    await renderWith({ launchChecks, agentRuntimes: vi.fn(async () => missing) }, <AgentChecks />);
     fireEvent.click(await screen.findByRole("button", { name: "Codex details" }));
     expect(screen.getByTestId("runtime-details").textContent).toContain(
       "can't check: npm isn't installed",

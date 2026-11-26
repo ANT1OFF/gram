@@ -4,14 +4,11 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 
 import { OutputsView } from "./outputs-view";
-
-const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 
 let api: MockApi;
 let workspaceId: Awaited<ReturnType<MockApi["simulateOrchestration"]>>["workspaceId"];
@@ -35,7 +32,6 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  navigate.mockReset();
   useThreadsStore.setState({ byId: {} });
 });
 
@@ -44,7 +40,7 @@ const tiles = () => screen.getAllByTestId("output-tile");
 describe("OutputsView", () => {
   it("shows the workspace's outputs as tiles by day, one-line labels with a 24-hour stamp", async () => {
     const listOutputs = vi.spyOn(api, "listOutputs");
-    renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
+    await renderInRouter(<OutputsView workspaceId={workspaceId} />, { api });
     await waitFor(() => expect(tiles().length).toBeGreaterThan(5));
     expect(listOutputs).toHaveBeenCalledWith(workspaceId, {});
     const groups = screen.getAllByTestId("output-group");
@@ -65,7 +61,7 @@ describe("OutputsView", () => {
 
   it("filters by kind on the server, and groups by feature", async () => {
     const listOutputs = vi.spyOn(api, "listOutputs");
-    renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
+    await renderInRouter(<OutputsView workspaceId={workspaceId} />, { api });
     await waitFor(() => expect(tiles().length).toBeGreaterThan(5));
     fireEvent.click(screen.getByRole("radio", { name: "Recordings" }));
     await waitFor(() =>
@@ -83,7 +79,7 @@ describe("OutputsView", () => {
 
   it("opens a screenshot at full size through its thread, and a document in its thread", async () => {
     const fsImage = vi.spyOn(api, "fsImage");
-    renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
+    const { router } = await renderInRouter(<OutputsView workspaceId={workspaceId} />, { api });
     await waitFor(() => expect(tiles().length).toBeGreaterThan(5));
     const shot = tiles().find((tile) => tile.getAttribute("data-kind") === "screenshot")!;
     const name = shot.textContent.replace(/\d{2}:\d{2}$/, "");
@@ -93,7 +89,7 @@ describe("OutputsView", () => {
     const threadId = shot.getAttribute("data-thread-id");
     expect(fsImage.mock.calls.some(([, options]) => options?.threadId === threadId)).toBe(true);
     fireEvent.click(within(viewer).getByTestId("output-viewer-thread"));
-    expect(navigate).toHaveBeenLastCalledWith({ to: "/t/$threadId", params: { threadId } });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${threadId}`));
 
     const doc = tiles().find(
       (tile) =>
@@ -101,14 +97,13 @@ describe("OutputsView", () => {
         tile.getAttribute("data-openable") === "true",
     )!;
     fireEvent.click(within(doc).getAllByRole("button")[0]!);
-    expect(navigate).toHaveBeenLastCalledWith({
-      to: "/t/$threadId",
-      params: { threadId: doc.getAttribute("data-thread-id") },
-    });
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe(`/t/${doc.getAttribute("data-thread-id")}`),
+    );
   });
 
   it("offers no Open for a document sent from outside its thread's checkouts", async () => {
-    renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
+    await renderInRouter(<OutputsView workspaceId={workspaceId} />, { api });
     await waitFor(() => expect(tiles().length).toBeGreaterThan(5));
     const away = tiles().find((tile) => tile.textContent?.includes("-summary.txt"))!;
     expect(away.getAttribute("data-openable")).toBe("false");
@@ -118,7 +113,7 @@ describe("OutputsView", () => {
 
   it("says so when nothing was made yet", async () => {
     vi.spyOn(api, "listOutputs").mockResolvedValue({ outputs: [] });
-    renderWithApi(<OutputsView workspaceId={workspaceId} />, api);
+    await renderInRouter(<OutputsView workspaceId={workspaceId} />, { api });
     expect(
       within(await screen.findByTestId("outputs-empty")).getByTestId("empty-title").textContent,
     ).toBe("No files yet");

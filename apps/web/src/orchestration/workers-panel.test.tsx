@@ -17,7 +17,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import type { Ask } from "./ask-model";
@@ -43,7 +43,6 @@ const api: Partial<Api> = {
 let ledger: Pick<OrchestratorLedger, "features"> | undefined;
 let asks: { workspaceId: WorkspaceId; asks: Ask[] }[] = [];
 
-vi.mock("@tanstack/react-router", () => ({ useParams: () => ({}) }));
 vi.mock("@/shell/thread-switcher", () => ({ useOpenThread: () => opened }));
 vi.mock("./use-orchestration", () => ({
   useOrchestratorLedgers: () => new Map([[WORKSPACE, ledger]]),
@@ -188,12 +187,12 @@ afterEach(() => {
 });
 
 describe("the Workers list", () => {
-  it("groups workers by status with quiet counts, Done folded, and draws no group that holds nothing", () => {
+  it("groups workers by status with quiet counts, Done folded, and draws no group that holds nothing", async () => {
     seed(
       [worker("run", "working", { status: "running" }), worker("shipped", "merged")],
       [summary("run", "running"), summary("shipped", "idle", { completedAt: NOW - 60 * 60_000 })],
     );
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
 
     expect(within(group("running")).getByTestId("workers-group-count").textContent).toBe("1");
     expect(within(group("running")).getByText("Title of run")).toBeTruthy();
@@ -213,7 +212,7 @@ describe("the Workers list", () => {
     }
   });
 
-  it("draws each worker with the sidebar's own row, wide: its question whole, in the needs-you tone", () => {
+  it("draws each worker with the sidebar's own row, wide: its question whole, in the needs-you tone", async () => {
     seed([worker("asker", "working")], [summary("asker", "idle")]);
     asks = [
       {
@@ -233,7 +232,7 @@ describe("the Workers list", () => {
         ],
       },
     ];
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
     const row = rowOf("asker");
     expect(within(row).getByTestId("overview-worker-title").textContent).toBe("Title of asker");
     const words = within(row).getByTestId("overview-worker-now");
@@ -241,9 +240,9 @@ describe("the Workers list", () => {
     expect(words.closest(".text-status-needs")).toBeTruthy();
   });
 
-  it("says once that there are no workers yet, with the orchestrator a click away, instead of five empty groups", () => {
+  it("says once that there are no workers yet, with the orchestrator a click away, instead of five empty groups", async () => {
     seed([], []);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
     const empty = screen.getByTestId("workers-empty");
     expect(within(empty).getByTestId("empty-title").textContent).toBe("No workers yet");
     expect(within(empty).getByRole("button", { name: "Message the orchestrator" })).toBeTruthy();
@@ -267,7 +266,7 @@ describe("the Workers list", () => {
         excerpt: "What Gram lacks.",
       },
     ];
-    const { unmount } = renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    const { unmount } = await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
     const strip = await screen.findByTestId("docs-strip");
     const doc = within(strip).getByTestId("doc-row");
     expect(doc.textContent).toBe("Gap analysis5m");
@@ -284,14 +283,14 @@ describe("the Workers list", () => {
     unmount();
 
     docs = [];
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
     await waitFor(() => expect(api.listDocs).toHaveBeenCalledTimes(2));
     expect(screen.queryByTestId("docs-strip")).toBeNull();
   });
 
-  it("opens an orchestrator's worker in the pane, keeping the chat, and with ⌘ in the main view", () => {
+  it("opens an orchestrator's worker in the pane, keeping the chat, and with ⌘ in the main view", async () => {
     seedTeam([{ id: "run", state: "working", status: "running" }]);
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(rowOf("run"));
     // The orchestrator stays the chat; the worker is in the pane, under its crumb.
     expect(opened).toHaveBeenCalledWith("orch");
@@ -305,12 +304,12 @@ describe("the Workers list", () => {
     expect(useBesideStore.getState().worker).toBeUndefined();
   });
 
-  it("searches from the header, listing only groups with a match", () => {
+  it("searches from the header, listing only groups with a match", async () => {
     seed(
       [worker("run", "working", { status: "running" }), worker("rest", "working")],
       [summary("run", "running"), summary("rest", "idle")],
     );
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
     fireEvent.click(screen.getByTestId("workers-panel-search-toggle"));
     const input = screen.getByTestId("workers-panel-search");
     fireEvent.change(input, { target: { value: "of run" } });
@@ -325,9 +324,9 @@ describe("the Workers list", () => {
     expect(group("running")).toBeTruthy();
   });
 
-  it("shows only the groups the filter picks", () => {
+  it("shows only the groups the filter picks", async () => {
     seed([worker("run", "working", { status: "running" })], [summary("run", "running")]);
-    renderWithApi(<WorkersPanel workspaceId={WORKSPACE} />, api);
+    await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
     act(() => useWorkersPanelStore.getState().setShown("running", true));
     expect(screen.queryByTestId("workers-group-needs")).toBeNull();
     expect(group("running")).toBeTruthy();
@@ -349,7 +348,7 @@ describe("a worker open in the pane", () => {
 
   it("goes back by ‹, the crumb or Esc to the list as it was: its groups, its scroll, the worker current and holding the keys", async () => {
     seedTeam([...team, { id: "shipped", state: "merged" }]);
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(heading("done"));
     list().scrollTop = 120;
     fireEvent.click(rowOf("b"));
@@ -384,7 +383,7 @@ describe("a worker open in the pane", () => {
 
   it("takes the keys when it opens from the list, on its title, so Esc goes back at once", async () => {
     seedTeam(team);
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(rowOf("b"));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("beside-title")));
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
@@ -401,7 +400,7 @@ describe("a worker open in the pane", () => {
         summary("orch", "idle"),
       ],
     );
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(rowOf("a"));
     fireEvent.click(screen.getByTestId("beside-tab-changes"));
     fireEvent.keyDown(screen.getByTestId("beside-title"), { key: "ArrowDown" });
@@ -411,9 +410,9 @@ describe("a worker open in the pane", () => {
     await waitFor(() => expect(document.activeElement).toBe(rowOf("b")));
   });
 
-  it("steps to the worker before or after with ↑ ↓ on its head, never from the composer or outside the pane", () => {
+  it("steps to the worker before or after with ↑ ↓ on its head, never from the composer or outside the pane", async () => {
     seedTeam(team);
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(rowOf("b"));
 
     fireEvent.keyDown(screen.getByTestId("beside-title"), { key: "ArrowDown" });
@@ -435,7 +434,7 @@ describe("a worker open in the pane", () => {
 
   it("opens any worker from its title's switcher: by group, narrowed by typing, ↓ and ⏎", async () => {
     seedTeam(team);
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(rowOf("a"));
     fireEvent.click(screen.getByTestId("beside-title"));
     const switcher = await screen.findByTestId("beside-switcher");
@@ -448,7 +447,7 @@ describe("a worker open in the pane", () => {
     await waitFor(() => expect(screen.getByTestId("beside-title").textContent).toBe("Title of c"));
   });
 
-  it("says why a tool it doesn't have is off: no PR yet", () => {
+  it("says why a tool it doesn't have is off: no PR yet", async () => {
     seed(
       [worker("run", "working", { status: "running" })],
       [
@@ -459,7 +458,7 @@ describe("a worker open in the pane", () => {
         summary("orch", "idle"),
       ],
     );
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(rowOf("run"));
     expect(screen.getByTestId("beside-tab-changes").textContent).toContain("3");
     const pr = screen.getByTestId("beside-tab-pr");
@@ -488,7 +487,7 @@ describe("a worker open in the pane", () => {
         summary("orch", "idle"),
       ],
     );
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     fireEvent.click(heading("done"));
     fireEvent.click(rowOf("shipped"));
     expect(screen.getByTestId("thread-view").dataset.readOnly).toBe("true");
@@ -533,7 +532,7 @@ describe("a worker open in the pane", () => {
     act(() => {
       openRecordBeside("gone" as ThreadId);
     });
-    renderWithApi(<Pane />, api);
+    await renderInRouter(<Pane />, { api });
     await waitFor(() =>
       expect(screen.getByTestId("beside-tab-changes").textContent).toBe("Changes2"),
     );

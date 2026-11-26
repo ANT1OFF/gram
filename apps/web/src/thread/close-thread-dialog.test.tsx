@@ -3,16 +3,11 @@ import type { GitState, PrStatus, ThreadId, ThreadSummary } from "@gram/contract
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import { CloseThreadDialog } from "./close-thread-dialog";
 import { branchDeleteLooksSafe, cleanAndPushed, mergedPrRef } from "./merged-cleanup";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => () => Promise.resolve(),
-  useParams: () => ({}),
-}));
 
 const T = "t-merged" as ThreadId;
 
@@ -101,15 +96,19 @@ const removalBox = () =>
   screen.getByRole<HTMLInputElement>("checkbox", { name: /Also delete the worktree on disk/ });
 
 describe("CloseThreadDialog", () => {
-  it("ticks removing a clean, pushed worktree, and leaves one with work unticked", () => {
+  it("ticks removing a clean, pushed worktree, and leaves one with work unticked", async () => {
     useThreadsStore.setState({ byId: { [T]: summary() } });
     const api = { closeThread: vi.fn(), pendingPermissions: async () => [] };
-    const first = renderWithApi(<CloseThreadDialog threadId={T} onClose={() => {}} />, api);
+    const first = await renderInRouter(<CloseThreadDialog threadId={T} onClose={() => {}} />, {
+      api,
+    });
     expect(removalBox().checked).toBe(true);
     first.unmount();
 
     useThreadsStore.setState({ byId: { [T]: summary({ changedFiles: 2 }) } });
-    const dirty = renderWithApi(<CloseThreadDialog threadId={T} onClose={() => {}} />, api);
+    const dirty = await renderInRouter(<CloseThreadDialog threadId={T} onClose={() => {}} />, {
+      api,
+    });
     expect(removalBox().checked).toBe(false);
     dirty.unmount();
 
@@ -119,7 +118,7 @@ describe("CloseThreadDialog", () => {
         [T]: { ...summary(), git: { ...noPr, upstream: "ahead", aheadUpstream: 1 } },
       } as never,
     });
-    renderWithApi(<CloseThreadDialog threadId={T} onClose={() => {}} />, api);
+    await renderInRouter(<CloseThreadDialog threadId={T} onClose={() => {}} />, { api });
     expect(removalBox().checked).toBe(false);
   });
 
@@ -128,13 +127,13 @@ describe("CloseThreadDialog", () => {
     const closeThread = vi.fn(async () => ({
       branch: { name: "fix/flake", deleted: false, reason: "it has commits #42 doesn't" },
     }));
-    renderWithApi(
+    await renderInRouter(
       <CloseThreadDialog
         threadId={T}
         onClose={() => {}}
         preset={{ removeWorktree: true, deleteBranch: true }}
       />,
-      { closeThread, pendingPermissions: async () => [] },
+      { api: { closeThread, pendingPermissions: async () => [] } },
     );
 
     const branchBox = screen.getByRole("checkbox", { name: /delete the local branch fix\/flake/ });
@@ -156,15 +155,15 @@ describe("CloseThreadDialog", () => {
     );
   });
 
-  it("never offers to delete the branch without a merged PR", () => {
+  it("never offers to delete the branch without a merged PR", async () => {
     useThreadsStore.setState({ byId: { [T]: summary({ pr: { ...pr, state: "OPEN" } }) } });
-    renderWithApi(
+    await renderInRouter(
       <CloseThreadDialog
         threadId={T}
         onClose={() => {}}
         preset={{ removeWorktree: true, deleteBranch: true }}
       />,
-      { closeThread: vi.fn(), pendingPermissions: async () => [] },
+      { api: { closeThread: vi.fn(), pendingPermissions: async () => [] } },
     );
     expect(screen.queryByRole("checkbox", { name: /delete the local branch/ })).toBeNull();
   });

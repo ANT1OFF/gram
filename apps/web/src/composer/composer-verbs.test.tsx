@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api/mock";
 import { useHandoffStore } from "@/orchestration/use-board-actions";
 import { MENU_CAP } from "@/palette/menu-caps";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useDraftStore } from "@/stores/drafts";
 import { useLayoutStore } from "@/stores/layout";
@@ -17,9 +17,6 @@ import { useViewStore } from "@/views/view-store";
 
 import { Composer } from "./composer";
 import { pendingTaskTarget, dropTaskTarget } from "./draft-prefill";
-
-const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 
 const THREAD = "t-orch" as ThreadId;
 const WORKSPACE = "w-billing";
@@ -54,12 +51,15 @@ const setup = async ({
   const setPaused = vi.spyOn(api, "setOrchestratorPaused").mockResolvedValue(undefined as never);
   // The thread lives only in the store, so the mock server would answer ThreadNotFound.
   vi.spyOn(api, "threadSuggestions").mockResolvedValue(null);
-  renderWithApi(<Composer threadId={THREAD} focused />, api);
+  const { router } = await renderInRouter(<Composer threadId={THREAD} focused />, {
+    api,
+    path: `/t/${THREAD}`,
+  });
   const composer = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   if (role === "orchestrator") {
     await waitFor(() => expect(listWorkspaces).toHaveBeenCalled());
   }
-  return { composer, setPaused, user: userEvent.setup() };
+  return { composer, setPaused, router, user: userEvent.setup() };
 };
 
 const verbMenu = () => screen.queryByRole("listbox", { name: "Orchestrator commands" });
@@ -71,7 +71,6 @@ const slashMenu = () => screen.queryByRole("listbox", { name: "Slash commands" }
 
 afterEach(() => {
   cleanup();
-  navigate.mockReset();
   dropTaskTarget();
   useThreadsStore.setState({ byId: {} });
   useDraftStore.setState({ text: {} });
@@ -125,7 +124,7 @@ describe("Composer / verbs on the orchestrator", () => {
   });
 
   it("wires each verb to the action Gram has for it", async () => {
-    const { composer, setPaused, user } = await setup();
+    const { composer, setPaused, router, user } = await setup();
     const pick = async (typed: string) => {
       await user.type(composer, typed);
       await waitFor(() => expect(verbMenu()).not.toBeNull());
@@ -134,26 +133,20 @@ describe("Composer / verbs on the orchestrator", () => {
     await user.click(composer);
 
     await pick("/task");
-    expect(navigate).toHaveBeenLastCalledWith({ to: "/new-task" });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/new-task"));
     expect(pendingTaskTarget()).toEqual({ kind: "workspace", workspaceId: WORKSPACE });
 
     await pick("/pause");
     await waitFor(() => expect(setPaused).toHaveBeenCalledWith(WORKSPACE, true));
 
     await pick("/memory");
-    expect(navigate).toHaveBeenLastCalledWith({
-      to: "/w/$workspaceId/memory",
-      params: { workspaceId: WORKSPACE },
-    });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/w/${WORKSPACE}/memory`));
 
     await pick("/repo");
     expect(useThreadDialogs.getState().dialog).toEqual({ kind: "addRepo", workspaceId: WORKSPACE });
 
     await pick("/files");
-    expect(navigate).toHaveBeenLastCalledWith({
-      to: "/w/$workspaceId/files",
-      params: { workspaceId: WORKSPACE },
-    });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/w/${WORKSPACE}/files`));
 
     const openPalette = vi.spyOn(useLayoutStore.getState(), "openPalette");
     useLayoutStore.setState({ openPalette });

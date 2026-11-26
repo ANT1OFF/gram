@@ -5,19 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 import { useHistoryStore } from "@/history/history-view";
 import { useInboxStore } from "@/inbox/inbox-store";
+import { renderInRouter } from "@/panels/test-utils";
 import { useLayoutStore } from "@/stores/layout";
 
 import { PhoneDrawer, PhoneMenuButton, usePhoneDrawer } from "./phone-drawer";
 
 // The phone's drawer: the overview's content over the page, opened from the header's menu and
 // closed by Escape, a tap on its scrim, or a pick in it (a new page, or a sheet it opened).
-
-const route = vi.hoisted(() => ({ pathname: "/t/a" }));
-
-vi.mock("@tanstack/react-router", () => ({
-  useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
-    select({ location: { pathname: route.pathname } }),
-}));
 
 vi.mock("@/shell/phone-menu", () => ({
   PhoneMenu: () => <aside data-testid="phone-menu-stub" />,
@@ -38,11 +32,12 @@ const Shell = () => (
 
 const drawer = () => screen.queryByTestId("phone-drawer");
 
+const renderShell = () => renderInRouter(<Shell />, { path: "/t/a" });
+
 const openDrawer = () => fireEvent.click(screen.getByRole("button", { name: "Threads" }));
 
 afterEach(() => {
   cleanup();
-  route.pathname = "/t/a";
   usePhoneDrawer.setState({ open: false });
   useLayoutStore.setState({ paletteOpen: false });
   useHistoryStore.setState({ open: false });
@@ -59,8 +54,8 @@ const roomy = (count: number) =>
   });
 
 describe("PhoneDrawer", () => {
-  it("opens from the menu button with the overview in its phone form", () => {
-    render(<Shell />);
+  it("opens from the menu button with the overview in its phone form", async () => {
+    await renderShell();
     expect(drawer()).toBeNull();
     openDrawer();
     expect(drawer()).not.toBeNull();
@@ -70,22 +65,22 @@ describe("PhoneDrawer", () => {
     expect(screen.getByTestId("phone-menu").getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("closes when the phone layout goes away, so it doesn't come back open", () => {
-    const { rerender } = render(<Shell />);
+  it("closes when the phone layout goes away, so it doesn't come back open", async () => {
+    const { rerender } = await renderShell();
     openDrawer();
     rerender(<PhoneMenuButton />);
     expect(usePhoneDrawer.getState().open).toBe(false);
   });
 
-  it("closes on Escape", () => {
-    render(<Shell />);
+  it("closes on Escape", async () => {
+    await renderShell();
     openDrawer();
     fireEvent.keyDown(drawer()!, { key: "Escape" });
     expect(usePhoneDrawer.getState().open).toBe(false);
   });
 
-  it("closes on a tap on the scrim", () => {
-    render(<Shell />);
+  it("closes on a tap on the scrim", async () => {
+    await renderShell();
     openDrawer();
     const scrim = screen.getByTestId("phone-drawer-scrim");
     fireEvent.pointerDown(scrim);
@@ -96,11 +91,10 @@ describe("PhoneDrawer", () => {
     expect(usePhoneDrawer.getState().open).toBe(false);
   });
 
-  it("closes once a row picked in it moves to another page", () => {
-    const { rerender } = render(<Shell />);
+  it("closes once a row picked in it moves to another page", async () => {
+    const { router } = await renderShell();
     openDrawer();
-    route.pathname = "/t/b";
-    rerender(<Shell />);
+    await act(() => router.navigate({ to: "/t/$threadId", params: { threadId: "b" } }));
     expect(usePhoneDrawer.getState().open).toBe(false);
   });
 
@@ -108,8 +102,8 @@ describe("PhoneDrawer", () => {
     ["Search", () => useLayoutStore.setState({ paletteOpen: true })],
     ["History", () => useHistoryStore.setState({ open: true })],
     ["Needs you", () => useInboxStore.setState({ open: true })],
-  ])("closes once %s opens from it", (_, show) => {
-    render(<Shell />);
+  ])("closes once %s opens from it", async (_, show) => {
+    await renderShell();
     openDrawer();
     act(() => {
       show();
@@ -117,8 +111,8 @@ describe("PhoneDrawer", () => {
     expect(usePhoneDrawer.getState().open).toBe(false);
   });
 
-  it("stays open while nothing was picked", () => {
-    const { rerender } = render(<Shell />);
+  it("stays open while nothing was picked", async () => {
+    const { rerender } = await renderShell();
     openDrawer();
     rerender(<Shell />);
     expect(usePhoneDrawer.getState().open).toBe(true);
@@ -127,7 +121,7 @@ describe("PhoneDrawer", () => {
   describe("in the roomy look", () => {
     it("opens with the plain menu ready in place of the overview", async () => {
       roomy(0);
-      render(<Shell />);
+      await renderShell();
       fireEvent.click(screen.getByRole("button", { name: "Menu" }));
       // A cold import must not open an empty dialog and take focus before the menu arrives.
       expect(drawer()).toBeNull();

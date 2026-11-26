@@ -5,13 +5,11 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useUndoToasts } from "@/stores/undo-toasts";
 
 import { useWorkspaceMergeApproval } from "./merge-approval";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 afterEach(() => {
   cleanup();
@@ -57,7 +55,7 @@ const mount = async () => {
   const a = await make("alpha", "p-web");
   const b = await make("beta", "p-api");
   const setCharter = vi.spyOn(api, "setOrchestratorCharter");
-  renderWithApi(<Harness a={a} b={b} />, api);
+  await renderInRouter(<Harness a={a} b={b} />, { api });
   return { setCharter };
 };
 
