@@ -87,10 +87,14 @@ test("opens a previewed file, a diff row and the thread folder in the editor", a
     .click();
   await expect.poll(opened).toEqual([RETRY, DIFF_ROW]);
 
-  await (
-    await openThreadMenu(page)
-  )
-    .getByRole("menuitem", { name: "Open folder in editor" })
+  // While the menu offers Continue in Codex, the folder's editor is in More…, to keep the cap.
+  const menu = await openThreadMenu(page);
+  await expect(menu.getByTestId("menu-continue-in")).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Open folder in editor" })).toHaveCount(0);
+  await menu.getByRole("menuitem", { name: "More…" }).click();
+  await page
+    .getByTestId("command-palette")
+    .getByRole("option", { name: "Open folder in editor" })
     .click();
   await expect.poll(opened).toEqual([RETRY, DIFF_ROW, WORKTREE]);
 });
