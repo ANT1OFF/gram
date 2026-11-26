@@ -119,7 +119,7 @@ const ARN_PREFIX =
 
 const withoutArnColons = (text: string): string =>
   text.replace(ARN_PREFIX, (_arn, partition: string, service: string, region: string, account) =>
-    ["arn", partition, service, region, account ?? "", ""].join(" "),
+    ["arn", partition, service, region, account ?? "", ""].join("~"),
   );
 
 const ENCODED = /\\[uUxX]|%[0-9a-fA-F]{2}|&#|&[A-Za-z][A-Za-z0-9]*;/;
@@ -247,6 +247,8 @@ const withoutShas = (text: string): string =>
 
 const TOKEN_PREFIX = /^(?:xox[a-z]|gh[pousr]|glpat|akia|asia|sk|pk|rk|hf|shpat|shpss)$/;
 
+const AWS_KEY_ID = /^(?:akia|asia)[a-z0-9]{16}$/;
+
 const DATE_DIGITS = /^(?:19|20)\d{2}(?:0[1-9]|1[0-2])?(?:0[1-9]|[12]\d|3[01])?$/;
 
 const pronounceable = (letters: string): boolean =>
@@ -257,7 +259,7 @@ const pronounceable = (letters: string): boolean =>
 const plainWord = (word: string): boolean => {
   const lower = word.toLowerCase();
   if (lower === "") return true;
-  if (TOKEN_PREFIX.test(lower)) return false;
+  if (TOKEN_PREFIX.test(lower) || AWS_KEY_ID.test(lower)) return false;
   const runs = lower.match(/[a-z]+|\d+/g) ?? [];
   if (runs.length > 3 || (runs.length === 3 && lower.length > 8)) return false;
   for (const run of runs) {
@@ -292,22 +294,29 @@ const slugPiece = (piece: string): boolean =>
     ? piece.length <= 4 || piece.length === 12 || DATE_DIGITS.test(piece)
     : /^(?:[A-Za-z][a-z]*|[A-Z]+)$/.test(piece) &&
       pronounceable(piece.toLowerCase()) &&
-      !TOKEN_PREFIX.test(piece.toLowerCase());
+      !TOKEN_PREFIX.test(piece.toLowerCase()) &&
+      !AWS_KEY_ID.test(piece.toLowerCase());
 
 const NAME_VALUE =
-  /(?<![A-Za-z0-9+/=_-])([A-Za-z][A-Za-z0-9_]*)=([A-Za-z0-9]+(?:[-_.][A-Za-z0-9]+)*)(?![A-Za-z0-9+/=_-])/g;
+  /(?<![A-Za-z0-9+/=_-])([A-Za-z][A-Za-z0-9_]*)=([a-z0-9]+(?:[-_.][a-z0-9]+)+)(?![A-Za-z0-9+/=_-])/g;
+
+const plainSlugValue = (value: string): boolean => value.split(/[-_.]/).every(slugPiece);
 
 const withoutSlugs = (text: string): string =>
-  text.replace(NAME_VALUE, "$1 $2").replace(SLUG, (slug) => {
-    const pieces = slug.split(/[-_]/);
-    const letters = pieces.filter((piece) => /^[A-Za-z]+$/.test(piece)).join("");
-    const plain =
-      pieces.every(slugPiece) &&
-      pieces.some((piece) => /^[A-Za-z]{2,}$/.test(piece)) &&
-      pronounceable(letters.toLowerCase()) &&
-      printableRun(base64Bytes(slug.replace(/[-_]/g, ""))) < 12;
-    return plain ? " " : slug;
-  });
+  text
+    .replace(NAME_VALUE, (pair, name: string, value: string) =>
+      plainSlugValue(value) ? `${name} ${value}` : pair,
+    )
+    .replace(SLUG, (slug) => {
+      const pieces = slug.split(/[-_]/);
+      const letters = pieces.filter((piece) => /^[A-Za-z]+$/.test(piece)).join("");
+      const plain =
+        pieces.every(slugPiece) &&
+        pieces.some((piece) => /^[A-Za-z]{2,}$/.test(piece)) &&
+        pronounceable(letters.toLowerCase()) &&
+        printableRun(base64Bytes(slug.replace(/[-_]/g, ""))) < 12;
+      return plain ? " " : slug;
+    });
 
 type ProseProblem =
   | "characters other than plain text"
@@ -429,6 +438,10 @@ export type WorkerView =
 
 const BLOCK_START = /^\s*(?:[-*+]|\d{1,3}[.)])\s|^\s{0,3}#{1,6}\s/;
 
+const HEADING = /^\s{0,3}(#{1,6})\s/;
+
+const headingLevel = (line: string): number => HEADING.exec(line)?.[1]?.length ?? 0;
+
 const BLOCK_PREFIX = /^\s*(?:[-*+]|\d{1,3}[.)]|#{1,6})\s+/;
 
 const FENCE = /^\s*(?:```|~~~)/;
@@ -498,6 +511,29 @@ const followsValue = (line: string): boolean => {
   return /^(?:[:=]|->|=>|→)/.test(bare) || LINKING.test(bare.split(/\s+/)[0] ?? "");
 };
 
+const credentialSection = (
+  lines: ReadonlyArray<string>,
+  blocks: ReadonlyArray<Block>,
+  at: number,
+) => {
+  const level = (index: number) => headingLevel(lines[blocks[index]!.from]!);
+  let from = at;
+  let depth = level(at);
+  if (depth === 0) {
+    while (from > 0 && level(from - 1) === 0) from--;
+    const heading = from - 1;
+    if (heading >= 0) {
+      depth = level(heading);
+      const title = lines[blocks[heading]!.from]!.replace(HEADING, "").trim();
+      if (!/\s/.test(title) && /\d|[a-z][A-Z]/.test(title)) from = heading;
+    }
+  }
+  const inSection = (index: number) => depth === 0 || level(index) === 0 || level(index) > depth;
+  let to = at;
+  while (to + 1 < blocks.length && inSection(to + 1)) to++;
+  return { from, to };
+};
+
 const bareTokens = (lines: ReadonlyArray<string>, block: Block | undefined): boolean =>
   block !== undefined &&
   lines.slice(block.from, block.to + 1).every((line) => BARE_TOKEN_LINE.test(line));
@@ -512,8 +548,10 @@ const describeWithheld = (withheld: ReadonlyArray<WithheldLines>): string =>
  * The note at `path` as a worker reads it (`WorkerView`). What a worker is shown always passes the
  * same prose checks a whole note must (`workerMayRead`), markers and all; a block withheld for a
  * value takes the next block with it when it ends leading into one, the block before when it
- * starts following one, and the bare runs of token characters beside it, so no piece of a value
- * split across blocks is left showing.
+ * starts following one, and the bare runs of token characters beside it; a block shaped like a
+ * credential, whose value no check bounds, takes its whole section: for a heading, its
+ * subsections too; otherwise from the heading above to the next as high, or the whole note. So no
+ * piece of a value split across blocks is left showing.
  */
 export const workerView = (path: string, text: string): WorkerView => {
   const problem = workerReadProblem(path, text);
@@ -543,22 +581,40 @@ export const workerView = (path: string, text: string): WorkerView => {
       take(at - 1, followsValue(lines[block.from]!) || bareTokens(lines, blocks[at - 1]));
     });
   }
-  if (problems.every((why) => why !== undefined)) return hidden;
+  const CREDENTIAL: ProseProblem = "something shaped like a credential";
+  const named = problems.flatMap((why, index) => (why === CREDENTIAL ? [index] : []));
+  for (const at of named) {
+    const section = credentialSection(lines, blocks, at);
+    for (let other = section.from; other <= section.to; other++) {
+      problems[other] ??= CREDENTIAL;
+    }
+  }
+  const plainLeft = blocks.some(
+    (block, index) => problems[index] === undefined && headingLevel(lines[block.from]!) === 0,
+  );
+  if (!plainLeft) return hidden;
   const shown: Array<string> = [];
   const withheld: Array<WithheldLines> = [];
   let at = 0;
-  blocks.forEach((block, index) => {
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index]!;
     while (at < block.from) shown.push(lines[at++]!);
     const why = problems[index];
     if (why === undefined) {
       while (at <= block.to) shown.push(lines[at++]!);
-      return;
+      continue;
     }
+    let last = index;
+    while (last + 1 < blocks.length && problems[last + 1] !== undefined) last++;
+    const end = blocks[last]!.to;
+    const kinds = new Set(problems.slice(index, last + 1));
+    const kind = kinds.has(CREDENTIAL) ? CREDENTIAL : why;
     const prefix = BLOCK_PREFIX.exec(lines[block.from]!)?.[0] ?? "";
-    shown.push(`${prefix}[${spanName(block.from + 1, block.to + 1)} withheld from workers]`);
-    withheld.push({ from: block.from + 1, to: block.to + 1, problem: why });
-    at = block.to + 1;
-  });
+    shown.push(`${prefix}[${spanName(block.from + 1, end + 1)} withheld from workers]`);
+    withheld.push({ from: block.from + 1, to: end + 1, problem: kind });
+    at = end + 1;
+    index = last;
+  }
   while (at < lines.length) shown.push(lines[at++]!);
   const view = shown.join("\n");
   return proseProblem(view) === undefined ? { kind: "shown", text: view, withheld } : hidden;

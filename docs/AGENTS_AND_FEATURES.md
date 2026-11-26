@@ -1146,20 +1146,25 @@ private reads as missing, as before. Where a note's text holds something shaped 
 credential or token, the worker reads the rest of it with each block that holds one (a
 paragraph, a list item with its continuation lines, a heading, a code fence or key block) replaced
 by a line naming the lines withheld; `memory_list` lists the note and names it under
-`keptFromWorkers` too, as read without those lines, with the kind of problem, never the text. A block withheld that ends leading
-into a value (`is:`, a credential word) takes the next block with it, and one beside bare runs of
-token characters takes them too, so no piece of a value shows apart from what names it, and what
-a worker is shown always passes the whole-note checks below. A note is held back whole when
-nothing plain would be left, when its front matter or a delimiter isn't plain, or when it holds
-characters other than plain text or escape syntax, which no part can be judged apart from:
-`memory_list` names it under `keptFromWorkers` and `memory_read` refuses it (`kept_from_workers`)
-with the line and the kind of problem. The memory editor says which, beside the file. ARNs (the
-colons of `arn:partition:service:region:account:` are structure, the resource is still checked),
-account ids, cited SHAs (after `at`, `head`, `commit`, `merged as` or a PR number), cited UUIDs
-(after `thread`, `run`, `request`, `id` and the like, capitalised or not), EC2-style resource ids, plain
-paths, `NAME=value` pairs of plain words and long hyphenated names (`qa-2026-11-19-use-cases`)
-are not taken for tokens; an uncited UUID or full-length hex run still is. A worker whose
-orchestrator no longer holds the workspace is told which of that is the case. Source:
+`keptFromWorkers` too, as read without those lines, with the kind of problem, never the text. A
+block shaped like a credential (a credential word, a pair, a record, a command), whose check
+names a value without bounding it, takes its whole section with it: for a heading, everything
+under it, subsections included; otherwise everything from the heading above it to the next
+heading as high, or the whole note when no heading comes first. A block shaped like a token,
+which bounds itself, goes alone, with the next block when it ends leading into a value (`is:`)
+and the bare runs of token characters beside it. What a worker is shown always passes the
+whole-note checks below. A note is held back whole when nothing plain would be left, when its
+front matter or a delimiter isn't plain, or when it holds characters other than plain text or
+escape syntax, which no part can be judged apart from: `memory_list` names it under
+`keptFromWorkers` and `memory_read` refuses it (`kept_from_workers`) with the line and the kind
+of problem. The memory editor says which, beside the file. ARNs (the colons of
+`arn:partition:service:region:account:` are structure, the resource is still checked), account
+ids, cited SHAs (after `at`, `head`, `commit`, `merged as` or a PR number), cited UUIDs (after
+`thread`, `run`, `request`, `id` and the like, capitalised or not), EC2-style resource ids, plain
+paths, `NAME=value` pairs whose value is lowercase words joined by `-`, and long hyphenated
+names (`qa-2026-11-19-use-cases`) are not taken for tokens; an uncited UUID or full-length hex
+run still is, and so is an AWS key id however it is spelt. A worker whose orchestrator no longer
+holds the workspace is told which of that is the case. Source:
 [memory filter](../packages/server/src/orchestration/memory-filter.ts).
 
 `search_transcripts` is full-text search over the workspace's own conversations: its

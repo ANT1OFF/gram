@@ -114,11 +114,11 @@ describe("workspace memory, for an orchestrator and its workers alike", () => {
           workspaceId,
           path: "MEMORY.md",
           content:
-            "# Memory index\n\n- We squash-merge.\n- The staging deploy key is in the vault.\n",
+            "# Memory index\n\n## Conventions\n\n- We squash-merge.\n\n## Staging\n\n- The staging deploy key is in the vault.\n",
         });
         const editor = yield* handlers["memory.read"]({ workspaceId, path: "MEMORY.md" });
         expect(editor.keptFromWorkers).toBe(
-          "Workers read this file without line 4 (something shaped like a credential)",
+          "Workers read this file without line 9 (something shaped like a credential)",
         );
 
         const worker = yield* spawn(session, { feature: "reader" });
@@ -129,13 +129,13 @@ describe("workspace memory, for an orchestrator and its workers alike", () => {
         // Listed, and named as read without that line, with why.
         expect(listed.files.map((file) => file.path)).toContain("MEMORY.md");
         expect(listed.keptFromWorkers).toEqual([
-          { path: "MEMORY.md", reason: "read without line 4 (something shaped like a credential)" },
+          { path: "MEMORY.md", reason: "read without line 9 (something shaped like a credential)" },
         ]);
         const read = (yield* worker.session.callTool("memory_read", { file: "MEMORY.md" })) as {
           readonly content: string;
         };
         expect(read.content).toBe(
-          "# Memory index\n\n- We squash-merge.\n- [line 4 withheld from workers]\n",
+          "# Memory index\n\n## Conventions\n\n- We squash-merge.\n\n## Staging\n\n- [line 9 withheld from workers]\n",
         );
         // What it reads with a line withheld, it can't write over.
         const refused = yield* worker.session
