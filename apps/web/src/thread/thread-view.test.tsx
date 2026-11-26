@@ -13,11 +13,6 @@ import { pendingRestartHint } from "@/composer/pending-restart";
 import { ThreadView } from "./thread-view";
 import { useTraceViewStore } from "./trace-view-store";
 
-// NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
-vi.mock("@/motion/number-ticker", () => ({
-  NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
-
 const FLAKY = "t-flaky" as ThreadId;
 let api: MockApi;
 

@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- a throwing ./markdown is a lost streamdown chunk */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,6 +12,10 @@ const freshModules = async () => {
   return { MessageResponse, loadMarkdown };
 };
 
+/** What the browser says of the window's connection, which the slow-link check reads. */
+const overLink = (effectiveType: string) =>
+  Object.defineProperty(navigator, "connection", { value: { effectiveType }, configurable: true });
+
 beforeEach(() => {
   vi.resetModules();
 });
@@ -18,7 +23,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.doUnmock("./markdown");
-  vi.doUnmock("@/shell/constrained-link");
+  Reflect.deleteProperty(navigator, "connection");
 });
 
 describe("MessageResponse while streamdown loads", () => {
@@ -60,7 +65,7 @@ describe("MessageResponse while streamdown loads", () => {
   });
 
   it("shows the text plain over a slow link while streamdown loads, then as markdown", async () => {
-    vi.doMock("@/shell/constrained-link", () => ({ thisLinkIsConstrained: () => true }));
+    overLink("2g");
     const { MessageResponse } = await freshModules();
     const { container } = render(<MessageResponse mode="static">{TEXT}</MessageResponse>);
 

@@ -10,9 +10,6 @@ import { useThreadsStore } from "@/stores/threads";
 import { PrActionItems, PrBadgeMenuItems } from "./pr-badge-menu";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "./ui/context-menu";
 
-const copyText = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock("@/settings/copy-text", () => ({ copyText }));
-
 const T = "t-flaky" as ThreadId;
 const pr = mockGitState(T, undefined)!.pr!;
 
@@ -98,10 +95,11 @@ describe("PrBadgeMenuItems", () => {
   it("copies the PR link, opens it on GitHub, and refreshes it", async () => {
     const openExternal = vi.fn(async () => {});
     const refreshGit = vi.fn(async () => {});
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     renderMenu({ openExternal, refreshGit });
 
     await choose("Copy PR link");
-    expect(copyText).toHaveBeenCalledWith("https://github.com/example/api/pull/412");
+    expect(writeText).toHaveBeenCalledWith("https://github.com/example/api/pull/412");
 
     await choose("Open #412 on GitHub");
     await waitFor(() =>

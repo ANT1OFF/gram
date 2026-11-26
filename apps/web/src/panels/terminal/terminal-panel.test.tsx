@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- happy-dom can't run ghostty-web's wasm terminal */
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 

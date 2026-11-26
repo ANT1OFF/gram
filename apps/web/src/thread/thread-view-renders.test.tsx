@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- wraps ToolCard to count each card's renders */
 import type { GramUIMessage, GramUIMessageChunk, MessageId, ThreadId } from "@gram/contracts";
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,11 +13,6 @@ import { ThreadView } from "./thread-view";
 import type * as ToolCards from "./tool-cards";
 
 type ToolCardsModule = typeof ToolCards;
-
-// NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
-vi.mock("@/motion/number-ticker", () => ({
-  NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
 
 /** Counts each tool card's renders by its tool call id. */
 const cards = vi.hoisted(() => ({ renders: new Map<string, number>() }));

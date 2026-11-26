@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- reads Transcript's props over a folding stream */
 import type { GramUIMessage, ThreadId } from "@gram/contracts";
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps, ReactNode } from "react";
@@ -27,9 +28,6 @@ const seen = vi.hoisted(() => ({
 }));
 const props = () => seen.props as TranscriptProps;
 
-vi.mock("@/motion/number-ticker", () => ({
-  NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
 vi.mock("./transcript", async (original) => ({
   ...(await original<typeof TranscriptModule>()),
   Transcript: (received: unknown) => {
@@ -37,7 +35,6 @@ vi.mock("./transcript", async (original) => ({
     return <div data-testid="transcript" />;
   },
 }));
-vi.mock("@/orchestration/since-you-left", () => ({ SinceYouLeft: () => null }));
 // A stream that folds the thread's first message, as a digest folded into a later one's line.
 vi.mock("@/orchestration/stream-context", async (original) => ({
   ...(await original<typeof StreamContextModule>()),

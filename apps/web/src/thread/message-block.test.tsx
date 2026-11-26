@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- sets the transcript; stores/feeds has no reset */
 import type {
   CompactionData,
   GitState,

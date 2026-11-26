@@ -8,32 +8,21 @@ import type {
   WorkspaceId,
   WorkspaceState,
 } from "@gram/contracts";
-import { act, cleanup } from "@testing-library/react";
+import { act, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { create } from "zustand";
 
 import type { Api } from "@/api/types";
 import { askOf } from "@/orchestration/ask-model";
 import type { WorkspaceAsks } from "@/orchestration/ask-stack";
 import { UNDO_MS, useAskStackStore } from "@/orchestration/ask-stack-store";
 import { groupInbox } from "@/orchestration/inbox-model";
+import { resetDerivedAsks, useDerivedAsks } from "@/orchestration/needs-you-store";
 import { renderWithRouter } from "@/panels/test-utils";
 
 import { MenuBar } from "./menu-bar";
 
 // The real component against a fake shell, with the asks it reads set by hand.
-
-const asks = create<{ all: readonly WorkspaceAsks[] }>()(() => ({ all: [] }));
-vi.mock("@/orchestration/ask-stack", () => ({
-  useWorkspaceAsks: () => asks((s) => s.all),
-  useOpenThread: () => () => {},
-}));
-const states = create<{ all: readonly WorkspaceState[] }>()(() => ({ all: [] }));
-vi.mock("@/orchestration/use-orchestration", () => ({
-  useWorkspaces: () => states((s) => s.all),
-}));
-const NO_STRIP: never[] = [];
-vi.mock("@/views/quiet-mode", () => ({ useQuietStrip: () => NO_STRIP }));
+const showAsks = (all: readonly WorkspaceAsks[]) => useDerivedAsks.setState({ asks: all });
 
 const approval = (id: string, command: string): ApprovalRequest => ({
   kind: "approval",
@@ -73,20 +62,29 @@ let onAction: ((action: TrayAction) => void) | undefined;
 const respondMany = vi.fn(async (answers: Parameters<Api["respondMany"]>[0]) =>
   answers.map((a) => ({ threadId: a.threadId, requestId: a.requestId, ok: true as const })),
 );
+/** The workspaces the server lists. */
+let workspaces: readonly WorkspaceState[];
 const setOrchestratorPaused = vi.fn(async (workspaceId: WorkspaceId, paused: boolean) => {
-  const all = states
-    .getState()
-    .all.map((w) =>
-      w.workspace.id !== workspaceId
-        ? w
-        : paused
-          ? { ...w, paused: { reason: "user" as const, at: 0 } }
-          : { workspace: w.workspace, charter: w.charter },
-    );
-  states.setState({ all });
-  return all.find((w) => w.workspace.id === workspaceId)!;
+  workspaces = workspaces.map((w) =>
+    w.workspace.id !== workspaceId
+      ? w
+      : paused
+        ? { ...w, paused: { reason: "user" as const, at: 0 } }
+        : { workspace: w.workspace, charter: w.charter },
+  );
+  return workspaces.find((w) => w.workspace.id === workspaceId)!;
 });
-const api: Partial<Api> = { respondMany, setOrchestratorPaused };
+const api: Partial<Api> = {
+  respondMany,
+  setOrchestratorPaused,
+  listWorkspaces: async () => workspaces,
+  // No workspace's ledger has loaded: the menu counts no busy or failed workers.
+  orchestratorLedger: () => new Promise(() => {}),
+  async *watchLedger(_: WorkspaceId, signal: AbortSignal) {
+    await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    yield* [];
+  },
+};
 
 const flush = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
 const allowOf = (menu: TrayMenu | undefined, command: string) =>
@@ -97,8 +95,8 @@ beforeEach(() => {
   onAction = undefined;
   respondMany.mockClear();
   setOrchestratorPaused.mockClear();
-  asks.setState({ all: [] });
-  states.setState({ all: [] });
+  resetDerivedAsks();
+  workspaces = [];
   useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {} });
   Object.defineProperty(window, "gram", {
     configurable: true,
@@ -128,12 +126,12 @@ describe("the menu bar's asks", () => {
   it("never answers a request changed under the same id with the Allow shown for the old one", async () => {
     renderWithRouter(<MenuBar />, api);
     await flush();
-    act(() => asks.setState({ all: [workspaceAsking("t-a", "0", "npm test")] }));
+    act(() => showAsks([workspaceAsking("t-a", "0", "npm test")]));
     await flush();
     const old = allowOf(menus.at(-1), "npm test");
     expect(old).toMatchObject({ answer: "Allow once" });
     // The same workspace, thread and request id now asks something else.
-    act(() => asks.setState({ all: [workspaceAsking("t-a", "0", "rm -rf build")] }));
+    act(() => showAsks([workspaceAsking("t-a", "0", "rm -rf build")]));
     await flush();
     const now = allowOf(menus.at(-1), "rm -rf build");
     expect(now?.id).not.toBe(old!.id);
@@ -148,7 +146,7 @@ describe("the menu bar's asks", () => {
   it("answers the ask it showed through the stack's hold", async () => {
     renderWithRouter(<MenuBar />, api);
     await flush();
-    act(() => asks.setState({ all: [workspaceAsking("t-a", "0", "npm test")] }));
+    act(() => showAsks([workspaceAsking("t-a", "0", "npm test")]));
     await flush();
     const shown = allowOf(menus.at(-1), "npm test")!;
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -162,27 +160,24 @@ describe("the menu bar's asks", () => {
   });
 
   it("pauses every workspace from Pause all, then offers Resume all, as Quiet's menu does", async () => {
-    states.setState({ all: [stateOf("w-a"), stateOf("w-b", true)] });
-    asks.setState({ all: [workspaceAsking("t-a", "0", "npm test")] });
+    workspaces = [stateOf("w-a"), stateOf("w-b", true)];
+    showAsks([workspaceAsking("t-a", "0", "npm test")]);
     renderWithRouter(<MenuBar />, api);
-    await flush();
-    expect(menus.at(-1)?.allPaused).toBe(false);
+    await waitFor(() => expect(menus.at(-1)?.allPaused).toBe(false));
     act(() => onAction?.({ kind: "pauseAll", paused: true }));
-    await flush();
-    // Only the one not paused yet.
+    // Only the one not paused yet; the menu follows the workspaces the server lists after.
+    await waitFor(() => expect(menus.at(-1)?.allPaused).toBe(true));
     expect(setOrchestratorPaused.mock.calls).toEqual([["w-a", true]]);
-    expect(menus.at(-1)?.allPaused).toBe(true);
     act(() => onAction?.({ kind: "pauseAll", paused: false }));
-    await flush();
+    await waitFor(() => expect(menus.at(-1)?.allPaused).toBe(false));
     expect(setOrchestratorPaused.mock.calls.slice(1)).toEqual([
       ["w-a", false],
       ["w-b", false],
     ]);
-    expect(menus.at(-1)?.allPaused).toBe(false);
   });
 
   it("offers no Pause all without workspaces", async () => {
-    asks.setState({ all: [workspaceAsking("t-a", "0", "npm test")] });
+    showAsks([workspaceAsking("t-a", "0", "npm test")]);
     renderWithRouter(<MenuBar />, api);
     await flush();
     expect(menus.at(-1)).not.toHaveProperty("allPaused");

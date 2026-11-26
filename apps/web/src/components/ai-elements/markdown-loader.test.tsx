@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- counts the loader's imports of ./markdown */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +8,10 @@ import type * as Loader from "./markdown-loader";
 // Over a slow link the link carries one thing after another, so a transcript holds the renderer's
 // load until its messages are in; on a good link the load starts at once, as rows wait for it.
 const loads = { count: 0 };
+
+/** What the browser says of the window's connection, which the slow-link check reads. */
+const overLink = (effectiveType: string) =>
+  Object.defineProperty(navigator, "connection", { value: { effectiveType }, configurable: true });
 
 beforeEach(() => {
   vi.resetModules();
@@ -20,7 +25,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.doUnmock("./markdown");
-  vi.doUnmock("@/shell/constrained-link");
+  Reflect.deleteProperty(navigator, "connection");
 });
 
 /** The loader as each test loads it, over the modules it set up. */
@@ -32,7 +37,7 @@ const Probe = ({ start }: { start: boolean }) => {
 
 describe("useMarkdown", () => {
   it("holds the load over a slow link until it is told to start", async () => {
-    vi.doMock("@/shell/constrained-link", () => ({ thisLinkIsConstrained: () => true }));
+    overLink("2g");
     loader = await import("./markdown-loader");
     const { rerender } = render(<Probe start={false} />);
     expect(screen.getByTestId("state").textContent).toBe("plain");
@@ -45,7 +50,7 @@ describe("useMarkdown", () => {
   });
 
   it("loads at once on a good link, held or not", async () => {
-    vi.doMock("@/shell/constrained-link", () => ({ thisLinkIsConstrained: () => false }));
+    overLink("4g");
     loader = await import("./markdown-loader");
     render(<Probe start={false} />);
     await vi.waitFor(() => expect(screen.getByTestId("state").textContent).toBe("loaded"));

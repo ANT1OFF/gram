@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- the entry's words are tested from a count and
+   kinds set by hand; the real hooks derive both from the window's whole Needs you list */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

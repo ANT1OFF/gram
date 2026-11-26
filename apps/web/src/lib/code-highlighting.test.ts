@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- counts and fails shiki's highlighter calls */
 import type { BundledLanguage } from "shiki";
 import { beforeEach, expect, it, vi } from "vitest";
 

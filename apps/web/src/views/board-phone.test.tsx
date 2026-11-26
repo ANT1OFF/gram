@@ -1,20 +1,28 @@
 // @vitest-environment happy-dom
-import type { FeatureStation } from "@gram/contracts";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { FeatureCardHeld, FeatureStation } from "@gram/contracts";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { RailRow, RailTone, RailWorker } from "@/orchestration/rail-model";
-
+import { renderWithApi } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import { doneCardLine, PhoneBoard, phoneCardLine, phoneCards, phoneSegmentOf } from "./board-phone";
 
-vi.mock("@/orchestration/overview-pr-chips", () => ({ WorkerPrChips: () => null }));
-vi.mock("@/orchestration/held-brief", () => ({
-  HeldBriefChip: ({ held }: { held: { title: string } }) => (
-    <li data-testid="rail-held">{held.title}</li>
-  ),
-}));
+/** The Board on a phone, with its real PR chips and held briefs: none of them calls the api. */
+const render = (ui: ReactElement) => renderWithApi(ui, {});
+
+const held: FeatureCardHeld = {
+  id: "h",
+  title: "Held one",
+  project: "api",
+  agent: "claude",
+  window: "fiveHour",
+  usedPct: 90,
+  until: 0,
+  waitsForSlot: true,
+};
 
 const worker = (id: string, tone: RailTone): RailWorker =>
   ({ threadId: id, title: `Task ${id}`, now: "editing", tone, prs: [] }) as unknown as RailWorker;
@@ -46,9 +54,7 @@ const rows = [
     working: [worker("a", "working"), worker("b", "needs")],
     checks: [worker("c", "waiting")],
   }),
-  row("registry", { working: [worker("d", "idle")] }, {
-    held: [{ id: "h", title: "Held one" }],
-  } as unknown as Partial<RailRow>),
+  row("registry", { working: [worker("d", "idle")] }, { held: [held] }),
 ];
 const done = [row("old", { merged: [worker("e", "merged")] }, { settled: true })];
 
@@ -97,7 +103,7 @@ describe("phone board", () => {
     expect(screen.getAllByTestId("phone-board-card")).toHaveLength(2);
     fireEvent.click(segment("waiting"));
     expect(screen.getAllByTestId("phone-board-card")).toHaveLength(2);
-    expect(screen.getByTestId("rail-held").textContent).toBe("Held one");
+    expect(within(screen.getByTestId("rail-held")).getByText("Held one")).toBeTruthy();
   });
 
   it("opens the worker's thread on a tap, as the desktop row does", () => {

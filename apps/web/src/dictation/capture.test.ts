@@ -4,8 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMicrophone, FLUSH_TIMEOUT_MS, KEEP_READY_MS, PRE_ROLL_FRAMES } from "./capture";
 import { createDictation, LEAD_SILENCE_FRAMES, STOP_TAIL_MS, type DictationPort } from "./session";
 
-vi.mock("./capture-worklet?worker&url", () => ({ default: "capture-worklet.js" }));
-
 /** One render quantum, as the audio thread gets it. */
 const QUANTUM = 128;
 const QUANTUM_MS = (QUANTUM / SPEECH_SAMPLE_RATE) * 1000;

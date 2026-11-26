@@ -10,12 +10,6 @@ import { useOnDemandPicks } from "./on-demand-picks";
 import { RunsOnChip } from "./runs-on-chip";
 import { StartMachineCard } from "./start-machine-card";
 
-// The spinner's animation isn't what is tested.
-vi.mock("@/motion", async (original) => ({
-  ...(await original<Record<string, unknown>>()),
-  Spinner: () => <span aria-hidden />,
-}));
-
 type Call = { url: string; method: string; body?: string };
 
 const serve = (statuses: unknown[]) => {

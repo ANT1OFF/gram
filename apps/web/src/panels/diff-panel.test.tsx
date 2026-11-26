@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- happy-dom can't draw NumberFlow's digits */
 import { NotImplemented, type Diff, type DiffScope, type ThreadId } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { mockDiff } from "@/api/mock-git";
 import { dispatchShortcut } from "@/keyboard/registry";
@@ -18,9 +19,6 @@ import { Remount, renderWithApi } from "./test-utils";
 vi.mock("@/motion/number-ticker", () => ({
   NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
 }));
-
-const copyText = vi.hoisted(() => vi.fn(async () => {}));
-vi.mock("@/settings/copy-text", () => ({ copyText }));
 
 const T = "t-flaky" as ThreadId;
 const radio = (name: string) => screen.getByRole("radio", { name });
@@ -113,8 +111,11 @@ describe("DiffPanel", () => {
     const tooLarge = within(files[5]!).getByTestId("diff-too-large");
     expect(tooLarge.textContent).toContain("This patch is too large to show here");
     expect(tooLarge.textContent).toContain("The other 4 files in this diff are reviewable here.");
+    const writeText = vi.fn(async () => {});
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    onTestFinished(() => void Reflect.deleteProperty(navigator, "clipboard"));
     fireEvent.click(within(tooLarge).getByRole("button", { name: "Copy git diff command" }));
-    expect(copyText).toHaveBeenCalledWith("git diff --no-index -- /dev/null vendor.js");
+    expect(writeText).toHaveBeenCalledWith("git diff --no-index -- /dev/null vendor.js");
     expect(await within(tooLarge).findByRole("status")).toBeTruthy();
   });
 

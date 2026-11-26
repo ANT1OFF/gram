@@ -10,24 +10,20 @@ import {
 } from "@gram/contracts";
 import { act, cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { create } from "zustand";
 
 import type { Api } from "@/api/types";
 import { askOf } from "@/orchestration/ask-model";
 import type { WorkspaceAsks } from "@/orchestration/ask-stack";
 import { UNDO_MS, useAskStackStore } from "@/orchestration/ask-stack-store";
 import { groupInbox } from "@/orchestration/inbox-model";
+import { resetDerivedAsks, useDerivedAsks } from "@/orchestration/needs-you-store";
 import { renderWithRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { AwayNotifications } from "./away-notifications";
 
 // The real hook against a fake shell, with the asks it reads set by hand.
-
-const asks = create<{ all: readonly WorkspaceAsks[] }>()(() => ({ all: [] }));
-vi.mock("@/orchestration/ask-stack", () => ({
-  useWorkspaceAsks: () => asks((s) => s.all),
-}));
+const showAsks = (all: readonly WorkspaceAsks[]) => useDerivedAsks.setState({ asks: all });
 
 const approval = (id: string, command: string): ApprovalRequest => ({
   kind: "approval",
@@ -82,7 +78,7 @@ beforeEach(() => {
   titles = [];
   onAction = undefined;
   respondMany.mockClear();
-  asks.setState({ all: [] });
+  resetDerivedAsks();
   useAskStackStore.setState({ held: [], sent: {}, problems: {}, replies: {} });
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   vi.spyOn(document, "hasFocus").mockReturnValue(false);
@@ -110,7 +106,7 @@ afterEach(() => {
 
 /** `all` become the asks, and the title asked for the newest settles to the template's. */
 const arrive = async (all: readonly WorkspaceAsks[], titleIndex: number) => {
-  act(() => asks.setState({ all }));
+  act(() => showAsks(all));
   await flush();
   await act(async () => titles[titleIndex]!(null));
   await flush();
@@ -121,12 +117,12 @@ describe("asks' desktop notifications", () => {
     renderWithRouter(<AwayNotifications graceMs={0} />, api);
     await flush();
     // Ask A in one workspace; its helper title is still being made.
-    act(() => asks.setState({ all: [workspaceAsking("w-a", "t-a", "0", "npm test")] }));
+    act(() => showAsks([workspaceAsking("w-a", "t-a", "0", "npm test")]));
     await flush();
     expect(titles).toHaveLength(1);
     // A is answered elsewhere, and a fresh agent process in another workspace asks B with the
     // same process-local request id.
-    act(() => asks.setState({ all: [workspaceAsking("w-b", "t-b", "0", "rm -rf build")] }));
+    act(() => showAsks([workspaceAsking("w-b", "t-b", "0", "rm -rf build")]));
     await flush();
     // A's title arrives: A is gone, so it shows nothing.
     await act(async () => titles[0]!("Run the tests"));
@@ -148,14 +144,14 @@ describe("asks' desktop notifications", () => {
   it("withdraws a notification whose request id now names another ask, and its Allow sends nothing", async () => {
     renderWithRouter(<AwayNotifications graceMs={0} />, api);
     await flush();
-    act(() => asks.setState({ all: [workspaceAsking("w-a", "t-a", "0", "npm test")] }));
+    act(() => showAsks([workspaceAsking("w-a", "t-a", "0", "npm test")]));
     await flush();
     await act(async () => titles[0]!(null));
     await flush();
     const [shown] = notes;
     expect(shown).toMatchObject({ body: "npm test", actions: ["Allow once"] });
     // The same key, another thread and command.
-    act(() => asks.setState({ all: [workspaceAsking("w-a", "t-b", "0", "rm -rf build")] }));
+    act(() => showAsks([workspaceAsking("w-a", "t-b", "0", "rm -rf build")]));
     await flush();
     expect(withdrawn).toContain(shown!.id);
     // A press that was already on its way finds nothing to answer.
@@ -169,7 +165,7 @@ describe("asks' desktop notifications", () => {
   it("answers the ask it showed through the stack's hold", async () => {
     renderWithRouter(<AwayNotifications graceMs={0} />, api);
     await flush();
-    act(() => asks.setState({ all: [workspaceAsking("w-a", "t-a", "0", "npm test")] }));
+    act(() => showAsks([workspaceAsking("w-a", "t-a", "0", "npm test")]));
     await flush();
     await act(async () => titles[0]!(null));
     await flush();
@@ -215,11 +211,11 @@ describe("asks' desktop notifications", () => {
 
     // One answered elsewhere: it stays up, unraised, until the last is gone.
     const before = withdrawn.length;
-    act(() => asks.setState({ all: [b, c] }));
+    act(() => showAsks([b, c]));
     await flush();
     expect(notes).toHaveLength(3);
     expect(withdrawn).toHaveLength(before);
-    act(() => asks.setState({ all: [] }));
+    act(() => showAsks([]));
     await flush();
     expect(withdrawn.at(-1)).toBe(notes[1]!.id);
     expect(respondMany).not.toHaveBeenCalled();

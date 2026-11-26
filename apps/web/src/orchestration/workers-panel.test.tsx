@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- the worker's ThreadView, DiffPanel, PrPanel and
+   FilesPanel are stubbed (each has its own tests); the ledger, finished-worker and card hooks hand
+   the list fixed facts at once */
 import type {
   DocId,
   DocMeta,
@@ -18,10 +21,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "@/api/types";
 import { renderInRouter } from "@/panels/test-utils";
+import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
 import type { Ask } from "./ask-model";
 import { besideShown, closeBeside, openRecordBeside, useBesideStore } from "./beside-store";
+import { resetDerivedAsks, useDerivedAsks } from "./needs-you-store";
 import { WorkerPane } from "./worker-pane";
 import { FINISHED, FOLDER_MISSING, liveTools, NO_PR_YET, NO_REPOSITORY } from "./worker-tools";
 import { useWorkersPanelStore, WorkersPanel } from "./workers-panel";
@@ -29,7 +34,6 @@ import { useWorkersPanelStore, WorkersPanel } from "./workers-panel";
 const WORKSPACE = "ws-1" as WorkspaceId;
 const NOW = Date.now();
 
-const opened = vi.fn<(threadId: ThreadId) => void>();
 /** The workspace's docs, which the list's Docs slot lists under the groups. */
 let docs: DocMeta[] = [];
 let finished: FinishedWorkerDetail | undefined;
@@ -41,9 +45,7 @@ const api: Partial<Api> = {
   prDetail: vi.fn(async () => ({ available: true, detail: { files: prFiles } }) as never),
 };
 let ledger: Pick<OrchestratorLedger, "features"> | undefined;
-let asks: { workspaceId: WorkspaceId; asks: Ask[] }[] = [];
 
-vi.mock("@/shell/thread-switcher", () => ({ useOpenThread: () => opened }));
 vi.mock("./use-orchestration", () => ({
   useOrchestratorLedgers: () => new Map([[WORKSPACE, ledger]]),
   useOrchestratorLedger: () => ({ data: ledger }),
@@ -52,7 +54,6 @@ vi.mock("./use-orchestration", () => ({
 vi.mock("./use-finished-workers", () => ({
   useFinishedWorkerPages: () => ({ finished: new Map(), horizons: new Map(), busy: false }),
 }));
-vi.mock("./ask-stack", () => ({ useWorkspaceAsks: () => asks }));
 // The sidebar's cards: none here, so every row is drawn from the ledger's facts.
 vi.mock("./overview-sidebar", () => ({ useOverviewFeatures: () => [] }));
 // The worker's own views are tested where they live; here only which one shows.
@@ -161,10 +162,9 @@ function Pane() {
 
 beforeEach(() => {
   docs = [];
-  asks = [];
+  resetDerivedAsks();
   finished = undefined;
   prFiles = [];
-  opened.mockClear();
   useWorkersPanelStore.setState({
     toggled: new Set(),
     shown: new Set(),
@@ -183,6 +183,7 @@ afterEach(() => {
   cleanup();
   closeBeside();
   vi.unstubAllGlobals();
+  useLayoutStore.setState({ grid: EMPTY_GRID });
   useThreadsStore.setState({ byId: {}, statusDetail: {} });
 });
 
@@ -214,24 +215,28 @@ describe("the Workers list", () => {
 
   it("draws each worker with the sidebar's own row, wide: its question whole, in the needs-you tone", async () => {
     seed([worker("asker", "working")], [summary("asker", "idle")]);
-    asks = [
-      {
-        workspaceId: WORKSPACE,
-        asks: [
-          {
-            key: "ask-1",
-            lead: "Where does the sheet go?",
-            worker: {
-              workspaceId: WORKSPACE,
-              question: {
-                threadId: "asker",
-                question: "Put the sheet under Help or under Settings?",
+    useDerivedAsks.setState({
+      asks: [
+        {
+          workspaceId: WORKSPACE,
+          name: "Shop",
+          orchestratorThreadId: undefined,
+          asks: [
+            {
+              key: "ask-1",
+              lead: "Where does the sheet go?",
+              worker: {
+                workspaceId: WORKSPACE,
+                question: {
+                  threadId: "asker",
+                  question: "Put the sheet under Help or under Settings?",
+                },
               },
-            },
-          } as unknown as Ask,
-        ],
-      },
-    ];
+            } as unknown as Ask,
+          ],
+        },
+      ],
+    });
     await renderInRouter(<WorkersPanel workspaceId={WORKSPACE} />, { api });
     const row = rowOf("asker");
     expect(within(row).getByTestId("overview-worker-title").textContent).toBe("Title of asker");
@@ -290,17 +295,16 @@ describe("the Workers list", () => {
 
   it("opens an orchestrator's worker in the pane, keeping the chat, and with ⌘ in the main view", async () => {
     seedTeam([{ id: "run", state: "working", status: "running" }]);
-    await renderInRouter(<Pane />, { api });
+    const { router } = await renderInRouter(<Pane />, { api });
     fireEvent.click(rowOf("run"));
     // The orchestrator stays the chat; the worker is in the pane, under its crumb.
-    expect(opened).toHaveBeenCalledWith("orch");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/t/orch"));
     expect(useBesideStore.getState()).toMatchObject({ worker: "run", shown: true });
     expect(screen.getByTestId("beside-title").textContent).toBe("Title of run");
     expect(screen.getByTestId("beside-crumb").textContent).toBe("Workers");
     act(() => closeBeside());
-    opened.mockClear();
     fireEvent.click(rowOf("run"), { metaKey: true });
-    expect(opened).toHaveBeenCalledWith("run");
+    await waitFor(() => expect(router.state.location.pathname).toBe("/t/run"));
     expect(useBesideStore.getState().worker).toBeUndefined();
   });
 

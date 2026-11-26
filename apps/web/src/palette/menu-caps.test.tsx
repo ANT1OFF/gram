@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- moves to renderInRouter with the menu-cap fix it exposes (WQ303; see #1065) */
 import { DEFAULT_SETTINGS, type ThreadId, type WorkspaceId } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
