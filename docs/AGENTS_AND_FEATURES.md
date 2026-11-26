@@ -1164,17 +1164,28 @@ A worker sees only plain notes: a file named for a credential or with front matt
 private reads as missing, as before. Where a note's text holds something shaped like a
 credential or token, the worker reads the rest of it with each block that holds one (a
 paragraph, a list item with its continuation lines, a heading, a code fence or key block) replaced
-by a line naming the lines withheld; `memory_list` lists the note and names it under
+by a line naming the lines withheld and why (`[withheld: credential-shaped, line 7]`); `memory_list` lists the note and names it under
 `keptFromWorkers` too, as read without those lines, with the kind of problem, never the text. A
 block shaped like a credential (a credential word, a pair, a record, a command), whose check
 names a value without bounding it, takes its whole section with it: for a heading, everything
 under it, subsections included; otherwise everything from the heading above it to the next
-heading as high, or the whole note when no heading comes first. A block shaped like a token,
+heading as high, or the whole note when no heading comes first but one comes later. In a note
+with no headings at all (a flat list of dated entries) it takes only what could hold its value
+instead: its nested items, the list it introduces with a `:`, and the blocks beside it that are a
+few words a line, a code fence or a password-shaped word; the dated entries around it still read.
+A bare `key` (an object's key, a key decision) is no credential word unless a value follows it;
+an `api key`, `deploy key`, `private_key` or `key pair` is. A block shaped like a token,
 which bounds itself, goes alone, with the next block when it ends leading into a value (`is:`)
 and the bare runs of token characters beside it. What a worker is shown always passes the
 whole-note checks below. A note is held back whole when nothing plain would be left, when its
 front matter or a delimiter isn't plain, or when it holds characters other than plain text or
-escape syntax, which no part can be judged apart from: `memory_list` names it under
+escape syntax, which no part can be judged apart from. Ordinary typography is plain text:
+punctuation, symbols and emoji, numbers, spaces, accented letters and Greek, Cyrillic, CJK,
+Arabic, Hebrew, Devanagari and Thai letters, with the checks reading look-alikes, fullwidth forms
+and `:`-like signs as the ASCII they pass for. What isn't: control and format characters
+(zero-width, bidi overrides, tags), private-use and unassigned code points, invisible letters,
+runs of variation selectors or stacked marks, fullwidth and mathematical letters, small capitals
+and IPA, other look-alike scripts, and a word mixing Latin with Greek or Cyrillic look-alikes: `memory_list` names it under
 `keptFromWorkers` and `memory_read` refuses it (`kept_from_workers`) with the line and the kind
 of problem. The memory editor says which, beside the file. ARNs (the colons of
 `arn:partition:service:region:account:` are structure, the resource is still checked), account

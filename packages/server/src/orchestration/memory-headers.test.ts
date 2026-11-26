@@ -157,6 +157,16 @@ const WRAPPED_BASE64 = (
     .match(/.{1,12}/g) ?? []
 ).join("\n");
 
+/** A dated decision of the shape that once hid a whole note: an object's `key`, a flag, ids. */
+const DATED_DECISION =
+  '- 2026-11-24 (WQ12, R1 infra hold #263): Amy chose "Audit once, force only when approved": `--force` is used only on approved held runs; a one-time read-only audit checks that each `<sha>.json` object in the CDK assets bucket hashes to its key; in-band verification comes as a follow-up.';
+/** Typography a note writes as a matter of course. */
+const TYPOGRAPHY =
+  "\u201CShip small\u201D \u2014 p95 \u2265 2 \u00D7 baseline \u2192 retry \u2018soon\u2019 \u2013 \u00BD \u00B0 \u2122 \u00AB \u00BB \u201E \u201A \u2020 \u2116 \u2032 \u2033 \u2030 \u00B5s \u2713 \u{1F680} \u26A0\uFE0F 1\uFE0F\u20E3\u00A0done\u2026";
+/** Letters beyond ASCII and Latin-1, in prose. */
+const LETTERS =
+  "Za\u017C\u00F3\u0142\u0107 g\u0119\u015Bl\u0105 ja\u017A\u0144; \u0141\u00F3d\u017A, \u011E\u00FCne\u015F, V\u0169 \u0110\u1EE9c; \u041F\u0440\u0438\u0432\u0435\u0442, \u043C\u0438\u0440; 50 \u03BCs, 10 k\u03A9; \u65E5\u672C\u8A9E\u306E\u30E1\u30E2.";
+
 /**
  * Every case from the reviews of #198, rounds 3 to 13, as one table: the path and text a worker would
  * read, and whether it may. A file a worker may not read is dropped whole: nothing in it is shown.
@@ -441,6 +451,30 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["a short password, short name", "a.md", "ADMIN=Orchard7Lantern", false],
     ["a short mixed code as an env var", "a.md", "DEPLOY_CODE=Ab3dE5gH7jK9mN1", false],
     ["a pair after an ARN", "a.md", `${ARN} appuser:Orchard7Lantern`, false],
+    // A bare `key` reads, a key named as a credential or given a value doesn't.
+    ["a deploy key with its value", "a.md", "The deploy key is orchard-willow.", false],
+    ["an API key header", "a.md", "x-api-key: orchard", false],
+    ["a bare key with a value", "a.md", "key: orchard", false],
+    ["a bare key assigned", "a.md", "Set key=Orchard7Lantern first.", false],
+    ["a key pair", "a.md", "The key pair for the bastion lives with ops.", false],
+    // Characters that hide or disguise text, which still hold a note back whole.
+    ["a bidi override", "a.md", "see \u202Etoken", false],
+    ["tag characters", "a.md", "see\u{E0041}\u{E0042} it", false],
+    ["variation selectors in a run", "a.md", "ok \u26A0\uFE0F\uFE0E\uFE0F", false],
+    ["a supplementary variation selector", "a.md", "ok a\u{E0100}", false],
+    ["an invisible Hangul filler", "a.md", "see\u3164it", false],
+    ["a braille blank", "a.md", "see\u2800it", false],
+    ["a soft hyphen", "a.md", "pass\u00ADword: orchard", false],
+    ["a combining grapheme joiner", "a.md", "pass\u034Fword: orchard", false],
+    ["stacked marks", "a.md", "Use e\u0301\u0301\u0301\u0301 here.", false],
+    ["a Cyrillic letter in a Latin word", "a.md", "The \u0440\u0430ssword is orchard.", false],
+    ["a word of Cyrillic look-alikes", "a.md", "\u043A\u0435\u0443: orchard", false],
+    ["Latin small capitals", "a.md", "\u1D18\u1D00ssword: orchard", false],
+    ["a look-alike from another script", "a.md", "\uA4D1assword: orchard", false],
+    ["a fullwidth colon", "a.md", "session\uFF1Aorchard-willow", false],
+    ["a ratio sign for a colon", "a.md", "session\u2236orchard-willow", false],
+    ["a no-break space before a pair", "a.md", "x\u00A0amy:orchard", false],
+    ["a fullwidth entity", "a.md", "see \uFF06#103;hp", false],
     ["a key with full-length lines", "a.md", PEM_REAL, false],
     ["a key with full-length lines, fenced", "a.md", `\`\`\`\n${PEM_REAL}\n\`\`\``, false],
     [
@@ -573,6 +607,11 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
       "\u201CShip small\u201D \u2014 never rebase\u2026 \u2022 squash merges.",
       true,
     ],
+    // Ordinary notes that once hid whole: an object's key, typography, letters past Latin-1.
+    ["a dated decision naming an object's key", "decisions.md", DATED_DECISION, true],
+    ["a key that is no credential", "notes.md", "- Key decisions sort by key, not by date.", true],
+    ["typography and emoji", "style/voice.md", TYPOGRAPHY, true],
+    ["accented and non-Latin letters", "people.md", LETTERS, true],
     ["paths and versions", "release.md", "Release notes go in CHANGELOG.md before 1.10.1.", true],
     ["a short path", "repo-layout.md", "Server tests live in packages/server/src.", true],
     [
@@ -601,7 +640,17 @@ const PLAIN = [
 const inNote = (text: string) =>
   [PLAIN[0], "", PLAIN[1], "", PLAIN[2], PLAIN[3], "", PLAIN[4], "", text, ""].join("\n");
 
-const MARKER = /^(?:[-*+] |\d{1,3}[.)] |#{1,6} )?\[lines? [\d–]+ withheld from workers\]$/;
+/** Dated entries, as a flat note with no headings has them. */
+const FLAT = [
+  "- 2026-11-20: we squash-merge every pull request once its checks are green.",
+  "- 2026-11-21: tabs, not spaces, in every file the formatter touches.",
+];
+
+/** `text` between two dated entries of a note with no headings. */
+const inFlatNote = (text: string) => [FLAT[0], "", text, "", FLAT[1], ""].join("\n");
+
+const MARKER =
+  /^(?:[-*+] |\d{1,3}[.)] |#{1,6} )?\[withheld: (?:credential|token)-shaped, lines? [\d–]+\]$/;
 
 /** A worker's view of `text` shows nothing but lines of `plain` and markers, or nothing at all. */
 const showsOnly = (path: string, text: string, plain: ReadonlyArray<string>) => {
@@ -628,6 +677,15 @@ describe("workerView, each secret a worker may not read", () => {
       const note = inNote(text);
       expect(workerMayRead(path, note)).toBe(false);
       showsOnly(path, note, PLAIN);
+    },
+  );
+
+  it.each(SECRETS.filter(([, , text]) => !/^(?:---|\+\+\+|<!--)/.test(text)))(
+    "%s: between dated entries of a note with no headings, it shows only them",
+    (_label, path, text) => {
+      const note = inFlatNote(text);
+      expect(workerMayRead(path, note)).toBe(false);
+      showsOnly(path, note, FLAT);
     },
   );
 });
@@ -694,6 +752,17 @@ describe("workerView, a value split from what names it", () => {
     expect(view.kind === "shown" && view.text.includes(PLAIN[2]!)).toBe(true);
   });
 
+  it.each(SPLIT.filter(([, text]) => !/^#/m.test(text)))(
+    "%s, in a note with no headings: shows none of it, and the dated entries around it",
+    (_label, text) => {
+      const note = inFlatNote(text);
+      expect(workerMayRead("notes.md", note)).toBe(false);
+      showsOnly("notes.md", note, FLAT);
+      const view = workerView("notes.md", note);
+      expect(view.kind === "shown" && FLAT.every((line) => view.text.includes(line))).toBe(true);
+    },
+  );
+
   it("withholds a credential's section, and shows the sections around it", () => {
     const note = [
       "# Notes",
@@ -723,7 +792,7 @@ describe("workerView, a value split from what names it", () => {
         "",
         "## Staging",
         "",
-        "- [lines 9–10 withheld from workers]",
+        "- [withheld: credential-shaped, lines 9–10]",
         "",
         "## Style",
         "",
@@ -734,7 +803,29 @@ describe("workerView, a value split from what names it", () => {
     });
   });
 
-  it("withholds a note with no heading whole when it names a credential", () => {
+  it("withholds only the bullet a credential is in, in a note with no headings", () => {
+    const note = [
+      "---",
+      "title: Decisions",
+      "---",
+      FLAT[0],
+      DATED_DECISION,
+      "- 2026-11-25: the deploy key is in the vault.",
+      `- 2026-11-26: ${TYPOGRAPHY}`,
+      FLAT[1],
+      "",
+    ].join("\n");
+    expect(workerView("decisions.md", note)).toEqual({
+      kind: "shown",
+      text: note.replace(
+        "- 2026-11-25: the deploy key is in the vault.",
+        "- [withheld: credential-shaped, line 6]",
+      ),
+      withheld: [{ from: 6, to: 6, problem: "something shaped like a credential" }],
+    });
+  });
+
+  it("withholds a note with no headings whole when a credential leaves nothing plain", () => {
     const note = "- We squash-merge.\n- Keep the API key out of logs.\n";
     expect(workerView("notes.md", note).kind).toBe("hidden");
   });

@@ -1,9 +1,12 @@
 import { isMap, isScalar, parseDocument } from "yaml";
+import { folded, foldedAsBefore, plainCharacters } from "./memory-filter-text.ts";
 
-const STRONG =
-  "secrets?|tokens?|keys?|apikeys?|passwords?|passwd|pwd|pw|passphrases?|cookies?|credentials?|creds?|bearer|dsn";
+const CREDENTIAL_KEY =
+  "(?:api|access|secret|private|ssh|deploy|signing|encryption|decryption|licen[cs]e|master|client|service|account|gpg|pgp|root|admin|app|webhook|session|auth|hmac|rsa|aes|kms)[\\s_-]*keys?|keys?[\\s_-]*(?:pairs?|files?|ids?|material|phrases?)";
 
-const WEAK = "pass|auth|authn|authz|authorization|authentication|sessions?|private|env|acl";
+const STRONG = `secrets?|tokens?|${CREDENTIAL_KEY}|apikeys?|passwords?|passwd|pwd|pw|passphrases?|cookies?|credentials?|creds?|bearer|dsn`;
+
+const WEAK = "keys?|pass|auth|authn|authz|authorization|authentication|sessions?|private|env|acl";
 
 const WEAK_IN_TEXT = "logins?|bind";
 
@@ -93,26 +96,6 @@ const credentialWords = (text: string): boolean =>
   STEM.test(text) ||
   weakShaped(text) ||
   directiveLine(text);
-
-const PLAIN_CHARS = /^[\t\n\r\x20-\x7E–—‘’“”…•·À-ÖØ-öø-ÿ→←↑↓↔⇒⇐⇔≥≤≈≠±×÷§€£✓✔✗✘✅❌]*$/;
-
-const FOLDS: Readonly<Record<string, string>> = {
-  ß: "ss",
-  æ: "ae",
-  Æ: "AE",
-  ø: "o",
-  Ø: "O",
-  ð: "d",
-  Ð: "D",
-  þ: "th",
-  Þ: "Th",
-};
-
-const folded = (text: string): string =>
-  text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[ßæÆøØðÐþÞ]/g, (letter) => FOLDS[letter] ?? letter);
 
 const ARN_PREFIX =
   /(?<![A-Za-z0-9_-])arn:(aws(?:-cn|-us-gov|-iso(?:-[a-z])?)?):([a-z][a-z0-9-]{1,62}):((?:[a-z]{2}(?:-[a-z]+)+-\d)?):(\d{12}|aws)?:(?=[A-Za-z0-9])/g;
@@ -325,28 +308,55 @@ type ProseProblem =
   | "something shaped like a credential"
   | "something shaped like a token or encoded value";
 
-const proseProblem = (text: string): ProseProblem | undefined => {
-  if (!PLAIN_CHARS.test(text)) return "characters other than plain text";
-  if (ENCODED.test(text)) return "escape or encoding syntax";
-  if (openDelimiter(text)) return "a code fence, quote or key block left open";
-  const ascii = withoutArnColons(folded(text));
-  if (
-    USERINFO.test(ascii) ||
-    CONNECTION_STRING.test(ascii) ||
-    colonRecord(ascii) ||
-    COMMAND_CREDENTIAL.test(ascii) ||
-    OPTION_CREDENTIAL.test(ascii) ||
-    AUTH_COMMAND.test(ascii) ||
-    PAIR_LINE.test(ascii) ||
-    PAIR_VALUE.test(ascii) ||
-    credentialWords(ascii)
-  ) {
-    return "something shaped like a credential";
-  }
+const CREDENTIAL: ProseProblem = "something shaped like a credential";
+
+const TOKEN: ProseProblem = "something shaped like a token or encoded value";
+
+const MARKER_KIND: Readonly<Partial<Record<ProseProblem, string>>> = {
+  [CREDENTIAL]: "credential-shaped",
+  [TOKEN]: "token-shaped",
+};
+
+const MARKER_LINE =
+  /^([ \t]*(?:(?:[-*+]|\d{1,3}[.)]|#{1,6})[ \t]+)?)\[withheld: (?:credential|token)-shaped, lines? \d+(?:–\d+)?\][ \t]*$/gm;
+
+const foldings = (text: string): ReadonlyArray<string> => {
+  const now = folded(text);
+  const before = foldedAsBefore(text);
+  return now === before ? [now] : [now, before];
+};
+
+const credentialShaped = (ascii: string): boolean =>
+  USERINFO.test(ascii) ||
+  CONNECTION_STRING.test(ascii) ||
+  colonRecord(ascii) ||
+  COMMAND_CREDENTIAL.test(ascii) ||
+  OPTION_CREDENTIAL.test(ascii) ||
+  AUTH_COMMAND.test(ascii) ||
+  PAIR_LINE.test(ascii) ||
+  PAIR_VALUE.test(ascii) ||
+  credentialWords(ascii);
+
+const tokenShaped = (ascii: string): boolean => {
   const runs = withoutSlugs(withoutPaths(withoutIds(withoutShas(ascii))));
-  return splitEncoding(runs) || tokenRun(runs)
-    ? "something shaped like a token or encoded value"
-    : undefined;
+  return splitEncoding(runs) || tokenRun(runs);
+};
+
+const obscuredProblem = (text: string): ProseProblem | undefined => {
+  if (!plainCharacters(text)) return "characters other than plain text";
+  const views = [text, ...foldings(text)];
+  if (views.some((view) => ENCODED.test(view))) return "escape or encoding syntax";
+  if (views.some(openDelimiter)) return "a code fence, quote or key block left open";
+  return undefined;
+};
+
+const proseProblem = (raw: string): ProseProblem | undefined => {
+  const text = raw.replace(MARKER_LINE, "$1withheld");
+  const obscured = obscuredProblem(text);
+  if (obscured !== undefined) return obscured;
+  const views = foldings(text).map(withoutArnColons);
+  if (views.some(credentialShaped)) return CREDENTIAL;
+  return views.some(tokenShaped) ? TOKEN : undefined;
 };
 
 const lineOf = (text: string): number | undefined => {
@@ -497,14 +507,20 @@ const bodyStart = (lines: ReadonlyArray<string>): number => {
   return close === -1 ? 0 : close + 1;
 };
 
-const leadsIntoValue = (line: string): boolean => {
+const lastWord = (line: string): { readonly bare: string; readonly last: string } => {
   const bare = folded(line)
     .trim()
     .replace(/["'`*_)\]]+$/, "");
-  if (/(?:[:=>→]|->)$/.test(bare)) return true;
-  const last = bare.split(/[\s(["'`]+/).pop() ?? "";
-  return LINKING.test(last) || credentialWord(last);
+  return { bare, last: bare.split(/[\s(["'`]+/).pop() ?? "" };
 };
+
+const introducesValue = (line: string): boolean => {
+  const { bare, last } = lastWord(line);
+  return /(?:[:=>→]|->)$/.test(bare) || LINKING.test(last);
+};
+
+const leadsIntoValue = (line: string): boolean =>
+  introducesValue(line) || credentialWord(lastWord(line).last);
 
 const followsValue = (line: string): boolean => {
   const bare = folded(line).replace(BLOCK_PREFIX, "").trim();
@@ -534,6 +550,62 @@ const credentialSection = (
   return { from, to };
 };
 
+const indent = (line: string): number => /^[ \t]*/.exec(line)![0].length;
+
+const LIST_ITEM = /^\s*(?:[-*+]|\d{1,3}[.)])\s/;
+
+const PASSWORD_SHAPED_WORD =
+  /(?<![A-Za-z0-9])(?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{8,}(?![A-Za-z0-9])/;
+
+const couldBeValue = (lines: ReadonlyArray<string>, block: Block): boolean => {
+  const text = lines.slice(block.from, block.to + 1);
+  if (opensRegion(text[0]!) || PASSWORD_SHAPED_WORD.test(text.join("\n"))) return true;
+  return text.every(
+    (line) =>
+      line
+        .replace(BLOCK_PREFIX, "")
+        .replace(/^\s*>\s?/, "")
+        .split(/[\s|]+/)
+        .filter((word) => /[\p{L}\p{N}]/u.test(word)).length <= 6,
+  );
+};
+
+const valueNeighboursInFlatNote = (
+  lines: ReadonlyArray<string>,
+  blocks: ReadonlyArray<Block>,
+  at: number,
+): ReadonlyArray<number> => {
+  const block = blocks[at]!;
+  const taken: Array<number> = [];
+  let next = at + 1;
+  while (next < blocks.length && indent(lines[blocks[next]!.from]!) > indent(lines[block.from]!)) {
+    taken.push(next++);
+  }
+  const last = blocks[next - 1]!;
+  if (introducesValue(lines[last.to]!)) {
+    for (
+      let item = next;
+      item < blocks.length &&
+      LIST_ITEM.test(lines[blocks[item]!.from]!) &&
+      (item === next || blocks[item]!.from === blocks[item - 1]!.to + 1);
+      item++
+    ) {
+      taken.push(item);
+    }
+  }
+  if (next < blocks.length && couldBeValue(lines, blocks[next]!)) taken.push(next);
+  if (at > 0 && couldBeValue(lines, blocks[at - 1]!)) taken.push(at - 1);
+  return taken;
+};
+
+const leadsIntoValueBeside = (
+  lines: ReadonlyArray<string>,
+  block: Block,
+  next: Block | undefined,
+): boolean =>
+  introducesValue(lines[block.to]!) ||
+  (leadsIntoValue(lines[block.to]!) && next !== undefined && couldBeValue(lines, next));
+
 const bareTokens = (lines: ReadonlyArray<string>, block: Block | undefined): boolean =>
   block !== undefined &&
   lines.slice(block.from, block.to + 1).every((line) => BARE_TOKEN_LINE.test(line));
@@ -550,15 +622,19 @@ const describeWithheld = (withheld: ReadonlyArray<WithheldLines>): string =>
  * value takes the next block with it when it ends leading into one, the block before when it
  * starts following one, and the bare runs of token characters beside it; a block shaped like a
  * credential, whose value no check bounds, takes its whole section: for a heading, its
- * subsections too; otherwise from the heading above to the next as high, or the whole note. So no
- * piece of a value split across blocks is left showing.
+ * subsections too; otherwise from the heading above to the next as high. In a note with no
+ * headings it takes only what could hold its value (`valueNeighboursInFlatNote`): its nested
+ * items, the list it introduces, and short blocks beside it, never the dated entries around it.
+ * So no piece of a value split across blocks is left showing. Each withheld span reads
+ * `[withheld: credential-shaped, line N]` (or `token-shaped`), which the checks read as a plain
+ * word, so what a worker is shown still passes them.
  */
 export const workerView = (path: string, text: string): WorkerView => {
   const problem = workerReadProblem(path, text);
   if (problem === undefined) return { kind: "shown", text, withheld: [] };
   const hidden: WorkerView = { kind: "hidden", problem };
   if (problem.kind !== "text") return hidden;
-  if (!PLAIN_CHARS.test(text) || ENCODED.test(text) || openDelimiter(text)) return hidden;
+  if (obscuredProblem(text) !== undefined) return hidden;
   const lines = text.split(/\r?\n/);
   const body = bodyStart(lines);
   if (body > 0 && proseProblem(lines.slice(0, body).join("\n")) !== undefined) return hidden;
@@ -566,6 +642,7 @@ export const workerView = (path: string, text: string): WorkerView => {
   const problems: Array<ProseProblem | undefined> = blocks.map((block) =>
     proseProblem(lines.slice(block.from, block.to + 1).join("\n")),
   );
+  const flat = blocks.every((block) => headingLevel(lines[block.from]!) === 0);
   for (let spreading = true; spreading;) {
     spreading = false;
     blocks.forEach((block, at) => {
@@ -577,16 +654,24 @@ export const workerView = (path: string, text: string): WorkerView => {
           spreading = true;
         }
       };
-      take(at + 1, leadsIntoValue(lines[block.to]!) || bareTokens(lines, blocks[at + 1]));
+      const next = blocks[at + 1];
+      const leads = flat
+        ? leadsIntoValueBeside(lines, block, next)
+        : leadsIntoValue(lines[block.to]!);
+      take(at + 1, leads || bareTokens(lines, next));
       take(at - 1, followsValue(lines[block.from]!) || bareTokens(lines, blocks[at - 1]));
+      if (flat && why === CREDENTIAL) {
+        for (const other of valueNeighboursInFlatNote(lines, blocks, at)) take(other, true);
+      }
     });
   }
-  const CREDENTIAL: ProseProblem = "something shaped like a credential";
-  const named = problems.flatMap((why, index) => (why === CREDENTIAL ? [index] : []));
-  for (const at of named) {
-    const section = credentialSection(lines, blocks, at);
-    for (let other = section.from; other <= section.to; other++) {
-      problems[other] ??= CREDENTIAL;
+  if (!flat) {
+    const named = problems.flatMap((why, index) => (why === CREDENTIAL ? [index] : []));
+    for (const at of named) {
+      const section = credentialSection(lines, blocks, at);
+      for (let other = section.from; other <= section.to; other++) {
+        problems[other] ??= CREDENTIAL;
+      }
     }
   }
   const plainLeft = blocks.some(
@@ -610,7 +695,8 @@ export const workerView = (path: string, text: string): WorkerView => {
     const kinds = new Set(problems.slice(index, last + 1));
     const kind = kinds.has(CREDENTIAL) ? CREDENTIAL : why;
     const prefix = BLOCK_PREFIX.exec(lines[block.from]!)?.[0] ?? "";
-    shown.push(`${prefix}[${spanName(block.from + 1, end + 1)} withheld from workers]`);
+    const marker = MARKER_KIND[kind] ?? "credential-shaped";
+    shown.push(`${prefix}[withheld: ${marker}, ${spanName(block.from + 1, end + 1)}]`);
     withheld.push({ from: block.from + 1, to: end + 1, problem: kind });
     at = end + 1;
     index = last;

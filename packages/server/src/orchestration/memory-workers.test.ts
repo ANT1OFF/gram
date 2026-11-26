@@ -135,7 +135,7 @@ describe("workspace memory, for an orchestrator and its workers alike", () => {
           readonly content: string;
         };
         expect(read.content).toBe(
-          "# Memory index\n\n## Conventions\n\n- We squash-merge.\n\n## Staging\n\n- [line 9 withheld from workers]\n",
+          "# Memory index\n\n## Conventions\n\n- We squash-merge.\n\n## Staging\n\n- [withheld: credential-shaped, line 9]\n",
         );
         // What it reads with a line withheld, it can't write over.
         const refused = yield* worker.session
