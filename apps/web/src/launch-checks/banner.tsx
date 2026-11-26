@@ -200,7 +200,7 @@ export function LaunchChecksBanner() {
         <Link
           to="/settings/diagnostics"
           data-slot="button"
-          className={buttonVariants({ size: "sm", variant: "ghost" })}
+          className={cn(buttonVariants({ size: "sm", variant: "ghost" }))}
         >
           Details
         </Link>

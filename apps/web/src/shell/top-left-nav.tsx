@@ -60,7 +60,7 @@ export function TopLeftNav({
             }
             data-setup={setup.length > 0 || undefined}
             data-slot="button"
-            className={buttonVariants({ variant: "ghost", size: "icon-sm", className: NAV })}
+            className={cn(buttonVariants({ variant: "ghost", size: "icon-sm", className: NAV }))}
           />
         }
       >

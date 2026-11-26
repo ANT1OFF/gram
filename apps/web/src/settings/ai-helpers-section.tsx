@@ -250,7 +250,7 @@ export function AiHelpersSection() {
             <Link
               to="/settings/gateways"
               data-slot="button"
-              className={buttonVariants({ size: "sm", variant: "outline" })}
+              className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
             >
               Set up a gateway
             </Link>

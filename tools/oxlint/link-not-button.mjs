@@ -24,7 +24,7 @@ export const linkNotButton = {
             context.report({
               node: attribute,
               message:
-                'A `Button` that renders a `Link` gives `<a href role="button">`, which a screen reader announces as a button though it navigates. Render the `Link` itself with `className={buttonVariants({ variant, size })}` and `data-slot="button"`, as thread/agent-error-card.tsx does.',
+                'A `Button` that renders a `Link` gives `<a href role="button">`, which a screen reader announces as a button though it navigates. Render the `Link` itself with `className={cn(buttonVariants({ variant, size }))}` (cn lets the size classes win over the base ones, as in `Button`) and `data-slot="button"`.',
             });
         }
       },

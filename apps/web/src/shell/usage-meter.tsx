@@ -241,14 +241,11 @@ function UsageLink({ className }: { className?: string | undefined }) {
           aria-label="Usage"
           data-slot="button"
           data-testid="usage-link"
-          className={buttonVariants({
-            variant: "ghost",
-            size: "icon-sm",
-            className: cn(
-              "text-muted-foreground data-[status=active]:bg-muted data-[status=active]:text-foreground",
-              className,
-            ),
-          })}
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "icon-sm" }),
+            "text-muted-foreground data-[status=active]:bg-muted data-[status=active]:text-foreground",
+            className,
+          )}
         />
       }
     >
