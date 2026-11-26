@@ -61,13 +61,15 @@ function StepBody({
  * `compact` draws the steps as pips with the current one named under them, for the board's narrow
  * feature column; otherwise every step carries its name and the row wraps. `bare` keeps only the
  * pips, for a line that names the stage in a chip beside them. Read-only until `onSelect` is given,
- * which is the seam for the user setting a stage by clicking a step.
+ * which is the seam for the user setting a stage by clicking a step. `behind` draws the pips grey,
+ * for a stage the work has moved on from since it was set (DESIGN.md: a stale stage is neutral).
  */
 export function StageStepper({
   stage,
   subject,
   compact = false,
   bare = false,
+  behind = false,
   onSelect,
   className,
 }: {
@@ -77,6 +79,8 @@ export function StageStepper({
   compact?: boolean;
   /** With `compact`: the pips alone, no name, attribution or note under them. */
   bare?: boolean;
+  /** With `compact`: grey pips, the current one too, for a stage set before the latest report. */
+  behind?: boolean;
   onSelect?: ((name: string) => void) | undefined;
   className?: string;
 }) {
@@ -119,7 +123,11 @@ export function StageStepper({
                   onSelect={onSelect}
                   className={cn(
                     "relative block w-full rounded-full py-1 after:block after:h-1.5 after:rounded-full",
-                    step.status === "done" ? "after:bg-primary/45" : "after:bg-border-strong/60",
+                    step.status === "done"
+                      ? behind
+                        ? "after:bg-muted-foreground/60"
+                        : "after:bg-primary/45"
+                      : "after:bg-border-strong/60",
                   )}
                 >
                   {step.status === "current" && (
@@ -127,7 +135,10 @@ export function StageStepper({
                       layoutId={highlight}
                       transition={glide}
                       aria-hidden
-                      className="absolute inset-x-0 top-1 z-1 h-1.5 rounded-full bg-primary"
+                      className={cn(
+                        "absolute inset-x-0 top-1 z-1 h-1.5 rounded-full",
+                        behind ? "bg-muted-foreground" : "bg-primary",
+                      )}
                     />
                   )}
                   <span className="sr-only">

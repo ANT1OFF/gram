@@ -1,6 +1,6 @@
 import type { ThreadId, WorkspaceId, WorkspaceState } from "@gram/contracts";
 import { Columns3 } from "lucide-react";
-import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { useSubscription } from "@/lib/effects";
@@ -17,10 +17,13 @@ import { NoCiNote } from "@/orchestration/no-ci-note";
 import { useOpenWorker, useRailFacts } from "@/orchestration/feature-sheet";
 import {
   boardRows,
+  groupChoices,
   hiddenWorkerCount,
-  railEntries,
+  lineStage,
+  pickIn,
   railRows,
-  type RailEntry,
+  rowsInGroup,
+  type GroupPick,
   type RailRow,
 } from "@/orchestration/rail-model";
 import {
@@ -40,8 +43,7 @@ import { useFeatureCards } from "@/orchestration/use-feature-cards";
 import { useWorkspaces } from "@/orchestration/use-orchestration";
 import { useLayoutStore } from "@/stores/layout";
 
-import { GroupBand } from "./board-group";
-
+import { GroupFilter } from "./board-group";
 import { DoneBand, doneRows } from "./board-done";
 import { PhoneBoard } from "./board-phone";
 import { GridHeads, GridLine } from "./board-grid";
@@ -54,25 +56,8 @@ export interface ViewProps {
   readonly workspaceId: WorkspaceId | undefined;
 }
 
-function OtherLine({ place, children }: { place: RowPlace; children: ReactNode }) {
-  return (
-    <li {...place}>
-      <p
-        data-testid="rail-other"
-        className="bg-card/40 px-4 py-2 text-reading font-medium text-muted-foreground"
-      >
-        Other
-      </p>
-      <ul aria-label="Features in no group">{children}</ul>
-    </li>
-  );
-}
-
 const GRID_LINE_HEIGHT = 56;
 const LINE_OVERSCAN = 3;
-
-const entryKey = (entry: RailEntry) =>
-  entry.kind === "line" ? `line:${entry.row.feature}` : `group:${entry.group.group}`;
 
 const takesFocusOnOpen = (active: Element | null) =>
   active === null ||
@@ -127,7 +112,11 @@ function RailBoard({ state }: { state: WorkspaceState }) {
   );
   const [picked, setPicked] = useState<PersonKey | undefined>(undefined);
   const pick = shared ? picked : undefined;
-  const rows = useMemo(() => rowsFor(allRows, pick), [allRows, pick]);
+  const personRows = useMemo(() => rowsFor(allRows, pick), [allRows, pick]);
+  const choices = useMemo(() => groupChoices(personRows), [personRows]);
+  const [pickedGroup, setPickedGroup] = useState<GroupPick>(undefined);
+  const groupPick = pickIn(choices, pickedGroup);
+  const rows = useMemo(() => rowsInGroup(personRows, groupPick), [personRows, groupPick]);
   const persons = useMemo(() => (shared ? personByWorker(allRows) : undefined), [allRows, shared]);
   const done = useMemo(
     () => (finishedShown ? [] : doneRows(railRows(cards, facts, "all"))),
@@ -137,9 +126,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
     () => hiddenWorkerCount(cards, boardRows(railRows(cards, facts), false)),
     [cards, facts],
   );
-  const entries = useMemo(() => railEntries(rows, state.groups), [rows, state.groups]);
   const phone = usePhone();
-  const [editingGroups, setEditingGroups] = useState<ReadonlySet<string>>(() => new Set());
   const repos = useMemo(() => new Set(rows.flatMap((row) => row.projects)).size > 1, [rows]);
   const ownerOf = (threadId: ThreadId) => {
     const key = persons?.get(threadId);
@@ -151,8 +138,8 @@ function RailBoard({ state }: { state: WorkspaceState }) {
       row={row}
       owners={shared ? ownersText(ownersOf(row), people) : undefined}
       ownerOf={shared && ownersOf(row).length > 1 ? ownerOf : undefined}
-      stage={state.stages?.[row.feature]}
-      needsMark={row.group === undefined}
+      stage={lineStage(row, state.stages, state.groups)}
+      setStage={setStage}
       repos={repos}
       asking={asking}
       onOpen={onOpen}
@@ -160,7 +147,7 @@ function RailBoard({ state }: { state: WorkspaceState }) {
     />
   );
   const placed = (place: RowPlace, index: number): RowPlace =>
-    index === entries.length - 1
+    index === rows.length - 1
       ? place
       : {
           ...place,
@@ -194,6 +181,12 @@ function RailBoard({ state }: { state: WorkspaceState }) {
           />
         </>
       )}
+      <GroupFilter
+        choices={choices}
+        picked={groupPick}
+        onPick={setPickedGroup}
+        className="px-4 pt-2 pb-1"
+      />
       <NoCiNote workspaceId={workspaceId} className="shrink-0 px-4 pt-1.5 pb-1" />
       <div
         data-testid="rail-scroller"
@@ -235,39 +228,12 @@ function RailBoard({ state }: { state: WorkspaceState }) {
                   as="ul"
                   label="Features"
                   bare
-                  items={entries}
-                  rowKey={entryKey}
+                  items={rows}
+                  rowKey={(row) => row.feature}
                   estimate={GRID_LINE_HEIGHT}
                   overscan={LINE_OVERSCAN}
-                  retainedKeys={editingGroups}
                 >
-                  {(entry, index, place) =>
-                    entry.kind === "line" ? (
-                      entry.headed === true ? (
-                        <OtherLine place={placed(place, index)}>{line(entry.row)}</OtherLine>
-                      ) : (
-                        line(entry.row, placed(place, index))
-                      )
-                    ) : (
-                      <GroupBand
-                        workspaceId={workspaceId}
-                        group={entry.group}
-                        setStage={setStage}
-                        editing={editingGroups.has(entryKey(entry))}
-                        onEditingChange={(editing) =>
-                          setEditingGroups((previous) => {
-                            const next = new Set(previous);
-                            if (editing) next.add(entryKey(entry));
-                            else next.delete(entryKey(entry));
-                            return next;
-                          })
-                        }
-                        place={placed(place, index)}
-                      >
-                        {entry.group.rows.map((row) => line(row))}
-                      </GroupBand>
-                    )
-                  }
+                  {(row, index, place) => line(row, placed(place, index))}
                 </VirtualRows>
               </GlideList>
             )}

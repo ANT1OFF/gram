@@ -11,16 +11,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   boardRows,
-  groupFolded,
-  groupFoldKey,
+  groupChoices,
   groupNames,
   hiddenWorkerCount,
   edgeBesidePrs,
   nowBesidePrs,
   overlapHint,
-  railEntries,
+  lineStage,
+  pickIn,
   railRows,
   railTone,
+  rowsInGroup,
+  stageBehind,
   type RailFacts,
 } from "./rail-model";
 
@@ -236,96 +238,65 @@ const staged = (current: string) => ({
   stage: { plan: ["merge", "verify", "publish"], current },
 });
 
-describe("railEntries", () => {
-  it("deals lines into bands in the workspace's order, ungrouped lines after, finished bands last", () => {
-    const groups: Record<string, FeatureGroup> = {
-      release: { features: ["notes", "api"], stage: plan("merge", ["build", "merge", "ship"]) },
-      cleanup: { features: ["lint"] },
-    };
-    const rows = railRows(
-      [
-        grouped("api", "release"),
-        grouped("solo", undefined),
-        grouped("lint", "cleanup", { state: "merged", station: "merged" }),
-        grouped("notes", "release", { state: "inReview", station: "review" }),
-        grouped("adhoc", "spike"),
-      ],
-      facts(),
-    );
-    const entries = railEntries(rows, groups);
-    expect(
-      entries.map((entry) =>
-        entry.kind === "line" ? entry.row.feature : `[${entry.group.group}]`,
-      ),
-    ).toEqual(["[release]", "[spike]", "solo", "[cleanup]"]);
-    // The ungrouped line carries a heading of its own, not reading as the band's above it.
-    expect(entries[2]).toMatchObject({ kind: "line", headed: true });
-    const [release] = entries;
-    expect(release?.kind === "group" && release.group).toMatchObject({
-      // Its features in the order they joined; its state its least advanced line's.
-      rows: [{ feature: "notes" }, { feature: "api" }],
-      state: "working",
-      stage: { stage: "merge" },
-      finished: false,
+describe("the Board's groups", () => {
+  it("draws a line's own stage, else its group's, with what moving it sets", () => {
+    const own = plan("merge", ["build", "merge"]);
+    const whole = plan("ship", ["merge", "ship"]);
+    const groups: Record<string, FeatureGroup> = { release: { features: ["api"], stage: whole } };
+    expect(lineStage({ feature: "api", group: "release" }, { api: own }, groups)).toEqual({
+      stage: own,
+      target: { feature: "api" },
     });
-    expect(entries.at(-1)).toMatchObject({ kind: "group", group: { finished: true } });
+    expect(lineStage({ feature: "api", group: "release" }, {}, groups)).toEqual({
+      stage: whole,
+      target: { group: "release" },
+    });
+    expect(lineStage({ feature: "api", group: undefined }, {}, groups)).toBeUndefined();
+    expect(lineStage({ feature: "api", group: "spike" }, undefined, groups)).toBeUndefined();
   });
 
-  it("gives ungrouped lines no heading with no band above them", () => {
-    const rows = railRows([grouped("solo", undefined), grouped("adhoc", undefined)], facts());
-    expect(railEntries(rows, {})).toEqual(rows.map((row) => ({ kind: "line", row })));
-    // A finished band below them doesn't need one either: its own band heads it.
-    const done = railRows(
-      [grouped("solo", undefined), grouped("lint", "cleanup", { state: "merged" })],
-      facts(),
-    );
-    expect(railEntries(done, {})[0]).toEqual({ kind: "line", row: done[0] });
+  it("calls a stage behind once the line has reported since it was set", () => {
+    expect(stageBehind({ setAt: 100 }, 200)).toBe(true);
+    expect(stageBehind({ setAt: 200 }, 100)).toBe(false);
+    expect(stageBehind({ setAt: 100 }, undefined)).toBe(false);
   });
 
-  it("heads only the first ungrouped line under a band", () => {
-    const rows = railRows(
-      [grouped("api", "release"), grouped("solo", undefined), grouped("adhoc", undefined)],
-      facts(),
-    );
-    const entries = railEntries(rows, {});
-    expect(entries[1]).toMatchObject({ row: { feature: "solo" }, headed: true });
-    expect(entries[2]).toEqual({ kind: "line", row: rows[2] });
-  });
-
-  it("puts a band's finished lines after those still going", () => {
+  it("offers a choice per group with a line, in the lines' order, and none without a group", () => {
     const rows = railRows(
       [
-        grouped("shipped", "release", { state: "merged", station: "merged" }),
-        grouped("going", "release"),
+        grouped("solo", undefined),
+        grouped("notes", "release"),
+        grouped("lint", "cleanup"),
+        grouped("api", "release"),
       ],
       facts(),
     );
-    const [band] = railEntries(rows, { release: { features: ["shipped", "going"] } });
-    expect(band?.kind === "group" && band.group.rows.map((row) => row.feature)).toEqual([
-      "going",
-      "shipped",
+    const choices = groupChoices(rows);
+    expect(choices).toEqual({
+      groups: [
+        { group: "release", count: 2 },
+        { group: "cleanup", count: 1 },
+      ],
+      ungrouped: 1,
+    });
+    expect(rowsInGroup(rows, { group: "release" }).map((row) => row.feature)).toEqual([
+      "notes",
+      "api",
     ]);
+    expect(rowsInGroup(rows, "ungrouped").map((row) => row.feature)).toEqual(["solo"]);
+    expect(rowsInGroup(rows, undefined)).toBe(rows);
+    // No line in a group: no filter to draw.
+    expect(groupChoices(railRows([grouped("solo", undefined)], facts()))).toEqual({
+      groups: [],
+      ungrouped: 0,
+    });
   });
 
-  it("keeps a band with no line only while its plan has steps to come", () => {
-    const groups: Record<string, FeatureGroup> = {
-      planned: { features: ["gone"], stage: plan("fix", ["review", "fix", "release"]) },
-      over: { features: ["old"], stage: plan("release", ["review", "release"]) },
-      bare: { features: ["older"] },
-    };
-    const entries = railEntries([], groups);
-    expect(entries).toEqual([
-      {
-        kind: "group",
-        group: {
-          group: "planned",
-          state: undefined,
-          stage: groups["planned"]!.stage,
-          rows: [],
-          finished: false,
-        },
-      },
-    ]);
+  it("gives every line back when the picked group's last line leaves", () => {
+    const choices = { groups: [{ group: "release", count: 1 }], ungrouped: 0 };
+    expect(pickIn(choices, { group: "release" })).toEqual({ group: "release" });
+    expect(pickIn(choices, { group: "cleanup" })).toBeUndefined();
+    expect(pickIn(choices, "ungrouped")).toBeUndefined();
   });
 
   it("lists every group a feature can move to, the workspace's first", () => {
@@ -333,19 +304,6 @@ describe("railEntries", () => {
       groupNames({ release: { features: [] } }, [{ group: "spike" }, {}, { group: "release" }]),
     ).toEqual(["release", "spike"]);
     expect(groupNames(undefined, [])).toEqual([]);
-  });
-
-  it("folds a band: listed folds one going, opens one finished", () => {
-    expect(groupFoldKey("w-1", { group: "release", finished: false })).toBe(
-      "board:w-1/group:release",
-    );
-    expect(groupFoldKey("w-1", { group: "release", finished: true })).toBe(
-      "board:w-1/finished:release",
-    );
-    expect(groupFolded({ finished: false }, false)).toBe(false);
-    expect(groupFolded({ finished: false }, true)).toBe(true);
-    expect(groupFolded({ finished: true }, false)).toBe(true);
-    expect(groupFolded({ finished: true }, true)).toBe(false);
   });
 });
 

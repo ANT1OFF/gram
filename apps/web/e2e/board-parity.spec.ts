@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { closeMenus } from "./titlebar-menu";
 
@@ -41,12 +41,11 @@ const goInApp = (page: Page, path: string) =>
 const board = (page: Page) => page.getByTestId("rail-board");
 /** The title bar, which on Board carries its header: one bar, not two. */
 const bar = (page: Page) => page.getByTestId("shell-titlebar");
-/** The closed fold around `locator`, if one hides it: a closed fold is inert, not unrendered. */
-const foldAround = (locator: Locator) => locator.locator("xpath=ancestor-or-self::*[@inert]");
 const line = (page: Page, feature: string) =>
   board(page).locator(`[data-testid="rail-row"][data-feature="${feature}"]`);
-const band = (page: Page, group: string) =>
-  board(page).locator(`[data-testid="rail-group"][data-group="${group}"]`);
+/** The header filter's choice of `group`. */
+const pick = (page: Page, group: string) =>
+  board(page).locator(`[data-testid="board-group-pick"][data-group="${group}"]`);
 
 test("the header tidies up, pauses and resumes, and shows archived work on asking", async ({
   page,
@@ -161,12 +160,12 @@ test("a line carries its stage as a chip, its sheet's steps set it, and Set stag
     return seeded;
   });
   const mail = line(page, "mail-trigger");
-  const chip = mail.getByTestId("rail-stage-chip");
-  await expect(chip).toContainText("build");
-  await expect(chip).toContainText("2/3");
-  await expect(chip).toHaveAttribute("title", /Contract agreed with the payments team\./);
-  // The stations say how far it has come, so the line draws no steps of its own.
-  await expect(mail.getByTestId("stage-stepper")).toHaveCount(0);
+  const chip = mail.getByTestId("rail-plan-name");
+  const plan = mail.getByTestId("rail-plan");
+  await expect(chip).toHaveText("build · 2 of 3");
+  await expect(plan).toHaveAttribute("title", /Contract agreed with the payments team\./);
+  // The Stage cell draws the plan's steps, once.
+  await expect(mail.getByTestId("stage-step")).toHaveCount(3);
 
   // In the feature's sheet, a click on a step sets it at once, as the user.
   await mail.getByTestId("rail-feature").click();
@@ -176,7 +175,7 @@ test("a line carries its stage as a chip, its sheet's steps set it, and Set stag
   await page.keyboard.press("Escape");
   await expect(mailSheet).toBeHidden();
   await expect(chip).toContainText("rollout");
-  await expect(chip).toHaveAttribute("title", /set by you/);
+  await expect(plan).toHaveAttribute("title", /set by you/);
   await expect
     .poll(() =>
       page.evaluate(
@@ -206,32 +205,32 @@ test("a line carries its stage as a chip, its sheet's steps set it, and Set stag
     "waiting on the API team",
   );
   await page.keyboard.press("Escape");
-  await expect(paging.getByTestId("rail-stage-chip")).toContainText("waiting on the API team");
+  // The line says it once, in its Stage cell in place of the station bar.
+  await expect(paging.getByTestId("rail-plan-name")).toHaveText("waiting on the API team");
+  await expect(paging.getByTestId("grid-stage")).toHaveCount(0);
 });
 
-test("lines gather under their group's band, which folds and remembers it, and the menu moves them", async ({
+test("a line names its group, the header filters by it, and the menu moves it", async ({
   page,
 }) => {
-  const made = await start(page, () => window.gramMock!.simulateWorkerWaits());
-  const cleanup = band(page, "casefile-cleanup");
-  const toggle = cleanup.getByTestId("rail-group-toggle");
-  await expect(cleanup).toBeVisible();
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  await expect(cleanup.getByTestId("rail-group-state")).toBeVisible();
-  const members = cleanup.getByTestId("rail-row");
+  await start(page, () => window.gramMock!.simulateWorkerWaits());
+  // No bands: each of the group's lines is on the list with its group as a tag.
+  await expect(board(page).getByTestId("rail-group")).toHaveCount(0);
+  const members = board(page)
+    .getByTestId("rail-row")
+    .filter({ has: page.getByTestId("rail-group-tag").filter({ hasText: "casefile-cleanup" }) });
   const count = await members.count();
   expect(count).toBeGreaterThan(0);
+  await expect(pick(page, "casefile-cleanup")).toContainText(String(count));
 
-  // Folding hides its lines and is kept.
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await expect(foldAround(members.first())).toHaveCount(1);
-  const folds = await page.evaluate(
-    () => JSON.parse(localStorage.getItem("gram.layout") ?? "{}").state?.workspacesCollapsedNodes,
-  );
-  expect(folds).toContain(`board:${made.workspaceId}/group:casefile-cleanup`);
-  await toggle.click();
-  await expect(foldAround(members.first())).toHaveCount(0);
+  // Picking the group keeps its lines alone; picking it again gives every line back.
+  await expect(line(page, "registry-paging")).toBeVisible();
+  await pick(page, "casefile-cleanup").click();
+  await expect(pick(page, "casefile-cleanup")).toHaveAttribute("aria-pressed", "true");
+  await expect(board(page).getByTestId("rail-row")).toHaveCount(count);
+  await expect(line(page, "registry-paging")).toHaveCount(0);
+  await pick(page, "casefile-cleanup").click();
+  await expect(line(page, "registry-paging")).toBeVisible();
 
   // The submenu opens from the keyboard too.
   const paging0 = line(page, "registry-paging");
@@ -257,10 +256,10 @@ test("lines gather under their group's band, which folds and remembers it, and t
   await dialog.getByRole("textbox", { name: "Group name" }).fill("Paging Rollout");
   await dialog.getByRole("button", { name: "Move to paging-rollout" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(band(page, "paging-rollout").getByTestId("rail-row")).toHaveAttribute(
-    "data-feature",
-    "registry-paging",
+  await expect(line(page, "registry-paging").getByTestId("rail-group-tag")).toHaveText(
+    "paging-rollout",
   );
+  await expect(pick(page, "paging-rollout")).toContainText("1");
 
   const moved = line(page, "registry-paging");
   await moved.hover();
@@ -270,33 +269,45 @@ test("lines gather under their group's band, which folds and remembers it, and t
     .getByTestId("feature-group-menu")
     .getByRole("menuitem", { name: "Remove from paging-rollout" })
     .click();
-  await expect(band(page, "paging-rollout")).toHaveCount(0);
+  await expect(pick(page, "paging-rollout")).toHaveCount(0);
   await expect(line(page, "registry-paging")).toBeVisible();
+  await expect(line(page, "registry-paging").getByTestId("rail-group-tag")).toHaveCount(0);
 });
 
-test("a finished group folds to one line, and a group's plan is set from its band", async ({
+test("a group's plan stands in its lines' Stage cells, and a step there moves it", async ({
   page,
 }) => {
-  await start(page, () => window.gramMock!.simulateFinishedWork());
-  await bar(page).getByTestId("rail-show-archived").click();
-  const cleanup = band(page, "q3-cleanup");
-  // Finished work goes last, and the Board draws only the lines near its view: scroll down to it.
-  await board(page)
-    .getByTestId("rail-scroller")
-    .evaluate((scroller) => (scroller.scrollTop = scroller.scrollHeight));
-  await expect(cleanup).toHaveAttribute("data-finished", "true");
-  await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "false");
-  await expect(foldAround(cleanup.getByTestId("rail-row").first())).toHaveCount(1);
-  await cleanup.getByTestId("rail-group-toggle").click();
-  await expect(foldAround(cleanup.getByTestId("rail-row").first())).toHaveCount(0);
+  const made = await start(page, () => window.gramMock!.simulateWorkerWaits());
+  await page.evaluate(
+    (id) =>
+      window.gramMock!.setOrchestratorStage(id, {
+        group: "casefile-cleanup",
+        plan: ["build", "review", "release"],
+        stage: "build",
+        note: "Index and export first.",
+      }),
+    made.workspaceId,
+  );
+  // A line with one worker draws the plan in place of its station bar.
+  const exported = line(page, "casefile-export");
+  const plan = exported.getByTestId("rail-plan");
+  await expect(plan).toHaveAttribute("data-of", "group");
+  await expect(exported.getByTestId("rail-plan-name")).toHaveText("build · 1 of 3");
+  await expect(plan).toHaveAttribute("title", /Index and export first\./);
+  await expect(exported.getByTestId("grid-stage")).toHaveCount(0);
+  // One with several heads its workers' rows with it; each worker keeps its own station.
+  const index = line(page, "casefile-index");
+  await expect(index.getByTestId("rail-plan")).toHaveCount(1);
+  await expect(index.getByTestId("grid-stage")).toHaveCount(
+    await index.getByTestId("rail-worker").count(),
+  );
 
-  await cleanup.getByTestId("rail-group-plan").click();
-  const editor = cleanup.getByTestId("stage-editor");
-  // It opens on the stage's label, ready to type in.
-  await expect(editor.getByRole("textbox").first()).toBeFocused();
-  await editor.getByRole("textbox").first().fill("released");
-  await editor.getByRole("button", { name: "Save" }).click();
-  await expect(cleanup.getByTestId("rail-group-stage-chip")).toContainText("released");
+  // A step moves the group's stage, and every line of it says so.
+  await exported.getByRole("button", { name: "review (upcoming)" }).click();
+  await expect(exported.getByTestId("rail-plan-name")).toHaveText("review · 2 of 3");
+  await expect(index.getByTestId("rail-plan-name")).toHaveText("review · 2 of 3");
+  // A line in no group keeps its station bar.
+  await expect(line(page, "registry-paging").getByTestId("rail-plan")).toHaveCount(0);
 });
 
 test("the failure card lists a stopped worker above the lines, names its step, opens it, and dismisses with Undo", async ({

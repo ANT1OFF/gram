@@ -1,17 +1,17 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { openOrchestrator, threadRow } from "./thread-row";
 
 // The Board draws only the feature lines near the view (performance pass item 11): with 60
 // features a dozen or so lines are on the page, each where the whole list would put it, whatever
-// its height. Tab walks on past the drawn ones, a group's band still folds the lines under it away,
+// its height. Tab walks on past the drawn ones, picking a group draws its lines alone,
 // and a worker's chip drawn anew on scrolling doesn't glide in from where it last was.
 
 const FEATURES = 60;
 
 const board = (page: Page) => page.getByTestId("rail-board");
 const features = (page: Page) => board(page).getByRole("list", { name: "Features", exact: true });
-/** The Features list's own entries: its lines and its groups' bands, not the lines inside a band. */
+/** The Features list's own entries: its lines. */
 const entries = (page: Page) => features(page).locator(":scope > [data-index]");
 
 /** The board scenario's workspace with 60 more features, the first with four workers. */
@@ -73,7 +73,7 @@ const expectContiguous = async (page: Page) => {
   return boxes;
 };
 
-/** Whether the drawn entries sit edge to edge, once a fold's height has settled. */
+/** Whether the drawn entries sit edge to edge, once their heights have settled. */
 const contiguous = (page: Page) => async () => {
   try {
     await expectContiguous(page);
@@ -83,27 +83,6 @@ const contiguous = (page: Page) => async () => {
   }
 };
 
-/**
- * An element's height once it has held still for a few frames. The Board view scales in past full
- * size, so a box read during that entrance can be a pixel or two taller than the settled one.
- */
-const settledHeight = (locator: Locator) =>
-  locator.evaluate(
-    (element) =>
-      new Promise<number>((resolve) => {
-        let last = -1;
-        let still = 0;
-        const frame = () => {
-          const height = element.getBoundingClientRect().height;
-          still = height === last ? still + 1 : 0;
-          last = height;
-          if (still >= 5) resolve(height);
-          else requestAnimationFrame(frame);
-        };
-        frame();
-      }),
-  );
-
 const focusedEntry = (page: Page) =>
   page.evaluate(() => {
     const entry = document.activeElement?.closest<HTMLElement>(
@@ -111,38 +90,6 @@ const focusedEntry = (page: Page) =>
     );
     return entry === null || entry === undefined ? -1 : Number(entry.dataset["index"]);
   });
-
-test("an open group plan keeps its unsaved draft when another row takes focus and it scrolls away", async ({
-  page,
-}) => {
-  await seed(page, "workerWaits");
-  const group = board(page).locator('[data-testid="rail-group"][data-group="casefile-cleanup"]');
-  await group.getByTestId("rail-group-plan").click();
-  const note = group.getByTestId("stage-editor-note");
-  await note.fill("Keep this unsaved plan note");
-  // The last focused row is retained separately. An open editor must survive after focus leaves it.
-  await board(page)
-    .locator('[data-testid="rail-row"][data-feature="bulk-0"]')
-    .getByTestId("rail-feature")
-    .focus();
-  await scrollBoard(page, "end");
-  // The bulk lines and five others: `changelog-tool` and `q3-cleanup` are finished, so off the Board.
-  await expect(entries(page).last()).toHaveAttribute("data-index", String(FEATURES + 2));
-  await expect(note).toHaveValue("Keep this unsaved plan note");
-  await scrollBoard(page, 0);
-  await expect(note).toBeVisible();
-  await expect(note).toHaveValue("Keep this unsaved plan note");
-  expect(await entries(page).count()).toBeLessThan(30);
-  // Closing the editor releases the extra row once focus has gone elsewhere again.
-  await group.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(group.getByTestId("stage-editor")).toHaveCount(0);
-  await board(page)
-    .locator('[data-testid="rail-row"][data-feature="bulk-0"]')
-    .getByTestId("rail-feature")
-    .focus();
-  await scrollBoard(page, "end");
-  await expect(group).toHaveCount(0);
-});
 
 test("60 features draw a dozen or so lines, each where the whole list puts it", async ({
   page,
@@ -238,19 +185,26 @@ test("a chip drawn anew on scrolling back stays put rather than gliding in", asy
   }
 });
 
-test("a group's band folds its lines away and the lines under it move up", async ({ page }) => {
+test("picking a group draws its lines alone, edge to edge, and All draws every line again", async ({
+  page,
+}) => {
   await seed(page, "workerWaits");
-  const band = board(page).locator('[data-testid="rail-group"][data-group="casefile-cleanup"]');
-  await expect(band).toBeVisible();
-  const toggle = band.getByTestId("rail-group-toggle");
-  const height = async () => (await band.boundingBox())!.height;
-  const open = await settledHeight(band);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await expect.poll(height).toBeLessThan(open - 20);
+  const pick = board(page).locator(
+    '[data-testid="board-group-pick"][data-group="casefile-cleanup"]',
+  );
+  const all = board(page).getByTestId("board-group-pick").first();
+  await pick.click();
+  await expect(pick).toHaveAttribute("aria-pressed", "true");
+  await expect(board(page).locator('[data-testid="rail-row"][data-feature="bulk-0"]')).toHaveCount(
+    0,
+  );
+  await expect
+    .poll(() => board(page).getByTestId("rail-group-tag").count())
+    .toBe(await entries(page).count());
   await expect.poll(contiguous(page)).toBe(true);
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "true");
-  await expect.poll(height).toBeGreaterThan(open - 1);
+  await all.click();
+  await expect(
+    board(page).locator('[data-testid="rail-row"][data-feature="bulk-0"]'),
+  ).toBeVisible();
   await expect.poll(contiguous(page)).toBe(true);
 });

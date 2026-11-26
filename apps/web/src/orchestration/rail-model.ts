@@ -1,6 +1,5 @@
 import {
   FEATURE_STATIONS,
-  stageHasRemainingSteps,
   type FeatureCard,
   type FeatureGroup,
   type FeatureCardHeld,
@@ -14,6 +13,7 @@ import {
 } from "@gram/contracts";
 
 import { leastAdvanced } from "./board-model";
+import type { StageTarget } from "./stage-model";
 import type { WorkerActivity } from "./wait-model";
 import type { WaitingOn } from "./waiting-on";
 import { workerShown } from "./worker-shown";
@@ -47,7 +47,7 @@ export interface RailRow {
   readonly card: FeatureCard;
   /** The group it runs in as one effort with others, if any. */
   readonly group: string | undefined;
-  /** That of its least advanced worker on the line: what its group's band is made of. */
+  /** That of its least advanced worker on the line. */
   readonly state: WorkerState;
   /** The projects its workers change, in order, each once. */
   readonly projects: readonly string[];
@@ -340,76 +340,73 @@ export const overlapHint = (worker: Pick<RailWorker, "overlaps" | "overlapFiles"
         worker.overlapFiles.length === 0 ? "" : `: ${worker.overlapFiles.join(", ")}`
       }`;
 
-/** Several features run as one effort: the band over their lines, with the whole's stage. */
-export interface RailGroup {
-  readonly group: string;
-  /** That of its least advanced line; none while it has no line, only a plan still to follow. */
-  readonly state: WorkerState | undefined;
-  readonly stage: FeatureStage | undefined;
-  readonly rows: readonly RailRow[];
-  /** Every line of it finished: the band folds to one line until opened. */
-  readonly finished: boolean;
-}
-
 /**
- * One entry of the Board's list: a feature line, or a group's band over its lines. `headed` marks
- * the first line in no group under a band: it draws the Other heading over itself, so the lines
- * after a band never read as the band's. The heading is part of its line's entry rather than one of
- * its own, as Tab moves through the list by entries and a heading has nothing to stop on.
+ * The stage a line's Stage cell draws: the feature's own, else its group's, with what to set when
+ * the user moves it. `undefined` when neither has one, so the cell keeps its station bar.
  */
-export type RailEntry =
-  | { readonly kind: "line"; readonly row: RailRow; readonly headed?: true }
-  | { readonly kind: "group"; readonly group: RailGroup };
-
-const band = (group: RailGroup): RailEntry => ({ kind: "group", group });
-
-/**
- * The lines dealt into their groups (`FeatureCard.group`), each band where its first line stood:
- * bands still going lead, in the workspace's order with their features in the order they joined,
- * then the lines in no group as `railRows` ordered them, under an Other heading when a band is
- * above them, then the finished bands. A group the workspace doesn't list yet still gets a band, so
- * nothing is dropped while the two disagree; one with no line left keeps its band only while its
- * plan has steps to come.
- */
-export const railEntries = (
-  rows: readonly RailRow[],
+export const lineStage = (
+  row: Pick<RailRow, "feature" | "group">,
+  stages: Readonly<Record<string, FeatureStage>> | undefined,
   groups: Readonly<Record<string, FeatureGroup>> | undefined,
-): readonly RailEntry[] => {
-  const listed = Object.keys(groups ?? {});
-  const names = [
-    ...new Set([...listed, ...rows.flatMap((row) => (row.group === undefined ? [] : [row.group]))]),
-  ];
-  const bands = names.flatMap((group): RailGroup[] => {
-    const order = groups?.[group]?.features ?? [];
-    const rank = (row: RailRow) => {
-      const index = order.indexOf(row.feature);
-      return index < 0 ? order.length : index;
-    };
-    const members = rows
-      .filter((row) => row.group === group)
-      .toSorted((a, b) => Number(a.finished) - Number(b.finished) || rank(a) - rank(b));
-    const stage = groups?.[group]?.stage;
-    if (members.length === 0 && !stageHasRemainingSteps(stage)) return [];
-    return [
-      {
-        group,
-        state: leastAdvanced(members.map((row) => row.state)),
-        stage,
-        rows: members,
-        finished: members.length > 0 && members.every((row) => row.finished),
-      },
-    ];
-  });
-  const going = bands.filter((group) => !group.finished).map(band);
-  const loose = rows.filter((row) => row.group === undefined);
-  return [
-    ...going,
-    ...loose.map((row, index): RailEntry =>
-      index === 0 && going.length > 0 ? { kind: "line", row, headed: true } : { kind: "line", row },
-    ),
-    ...bands.filter((group) => group.finished).map(band),
-  ];
+): { readonly stage: FeatureStage; readonly target: StageTarget } | undefined => {
+  const own = stages?.[row.feature];
+  if (own !== undefined) return { stage: own, target: { feature: row.feature } };
+  const group = row.group === undefined ? undefined : groups?.[row.group]?.stage;
+  return group === undefined || row.group === undefined
+    ? undefined
+    : { stage: group, target: { group: row.group } };
 };
+
+/**
+ * Whether a stage was set before the line's latest report, so the work has moved on since it was
+ * said: the cell then draws it grey, with when it was set.
+ */
+export const stageBehind = (stage: Pick<FeatureStage, "setAt">, reportAt: number | undefined) =>
+  reportAt !== undefined && stage.setAt < reportAt;
+
+/** The header's filter: every line, one group's, or those in none. */
+export type GroupPick = { readonly group: string } | "ungrouped" | undefined;
+
+/**
+ * The header filter's choices: each group with a line on the Board, in the order its first line
+ * stands, with how many lines it has, and how many lines are in no group. Empty when no line is in
+ * a group, so the header draws no filter. A group with no line on the Board has no choice.
+ */
+export const groupChoices = (
+  rows: readonly Pick<RailRow, "group">[],
+): { readonly groups: readonly { group: string; count: number }[]; readonly ungrouped: number } => {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (row.group !== undefined) counts.set(row.group, (counts.get(row.group) ?? 0) + 1);
+  }
+  return {
+    groups: [...counts].map(([group, count]) => ({ group, count })),
+    ungrouped: counts.size === 0 ? 0 : rows.filter((row) => row.group === undefined).length,
+  };
+};
+
+/** The lines a pick keeps. */
+export const rowsInGroup = <R extends Pick<RailRow, "group">>(
+  rows: readonly R[],
+  pick: GroupPick,
+): readonly R[] =>
+  pick === undefined
+    ? rows
+    : rows.filter((row) =>
+        pick === "ungrouped" ? row.group === undefined : row.group === pick.group,
+      );
+
+/** A pick that still names a choice, else every line: a group whose last line left takes it back. */
+export const pickIn = (choices: ReturnType<typeof groupChoices>, pick: GroupPick): GroupPick =>
+  pick === undefined
+    ? undefined
+    : pick === "ungrouped"
+      ? choices.ungrouped > 0
+        ? pick
+        : undefined
+      : choices.groups.some((each) => each.group === pick.group)
+        ? pick
+        : undefined;
 
 /** Every group a feature can be moved to: the workspace's, then any only a card names yet. */
 export const groupNames = (
@@ -421,19 +418,6 @@ export const groupNames = (
     ...cards.flatMap((card) => (card.group === undefined ? [] : [card.group])),
   ]),
 ];
-
-/**
- * The fold key of a group's band, in `layout.workspacesCollapsedNodes`:
- * a band still going is listed while folded, a finished one while open, so each starts as it should.
- */
-export const groupFoldKey = (workspaceId: string, group: Pick<RailGroup, "group" | "finished">) =>
-  group.finished
-    ? `board:${workspaceId}/finished:${group.group}`
-    : `board:${workspaceId}/group:${group.group}`;
-
-/** Whether a band is folded, given whether its key is listed. */
-export const groupFolded = (group: Pick<RailGroup, "finished">, listed: boolean): boolean =>
-  group.finished ? !listed : listed;
 
 /**
  * A worker's words beside its PR cell, which already names its PRs: "checks on #142" says

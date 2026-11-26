@@ -856,10 +856,10 @@ test("the Board hides finished work until asked, and remembers that per workspac
   const chip = (threadId: string) =>
     board.locator(`[data-testid="rail-worker"][data-thread-id="${threadId}"]`);
   const spike = board.locator('[data-testid="rail-row"][data-feature="sse-spike"]');
-  const cleanup = board.locator('[data-testid="rail-group"][data-group="q3-cleanup"]');
+  const cleanup = board.locator('[data-testid="rail-row"][data-feature="auth-refresh"]');
 
-  // Finished work is off the Board for Done: archived, merged and delivered lines, and `q3-cleanup`,
-  // a group with nothing still going. Board's header is the title bar's.
+  // Finished work is off the Board for Done: archived, merged and delivered lines, and the lines of
+  // `q3-cleanup`, a group with nothing still going. Board's header is the title bar's.
   const toggle = page.getByTestId("shell-titlebar").getByTestId("rail-show-archived");
   await expect(toggle).toHaveAccessibleName(/^Show finished \(\d+\)$/);
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -879,17 +879,13 @@ test("the Board hides finished work until asked, and remembers that per workspac
   await expect(spike.getByTestId("rail-worker")).toHaveAttribute("data-tone", "merged");
   await expect(spike).toHaveAttribute("data-finished", "true");
   await expect(chip(made.delivered)).toBeVisible();
-  // A group with nothing still going is folded to one line, last: the Board draws only the lines
-  // near its view, so scroll down to it.
+  // A finished group's lines are lines like any other, last, with their group as a tag: the Board
+  // draws only the lines near its view, so scroll down to them.
   await board
     .getByTestId("rail-scroller")
     .evaluate((scroller) => (scroller.scrollTop = scroller.scrollHeight));
   await expect(cleanup).toHaveAttribute("data-finished", "true");
-  await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "false");
-  await expect(chip(made.merged[0]!).locator("xpath=ancestor::*[@inert]")).toHaveCount(1);
-  // The finished group opens on a click.
-  await cleanup.getByTestId("rail-group-toggle").click();
-  await expect(cleanup.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(cleanup.getByTestId("rail-group-tag")).toHaveText("q3-cleanup");
   await waitForBoardLayout(chip(made.merged[0]!));
   await chip(made.merged[0]!).scrollIntoViewIfNeeded();
   await expect(chip(made.merged[0]!)).toBeInViewport();
@@ -903,10 +899,9 @@ test("the Board hides finished work until asked, and remembers that per workspac
   await expect(chip(made.archived)).toHaveCount(0);
 });
 
-test("the Board retains incomplete plans, and folds finished archived groups to a line", async ({
+test("the Board draws no group without a line on it, and a group's plan on its lines", async ({
   page,
 }) => {
-  // Tall enough for every band at once: the Board draws only the lines near the view.
   await page.setViewportSize({ width: 1280, height: 2000 });
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
@@ -917,101 +912,58 @@ test("the Board retains incomplete plans, and folds finished archived groups to 
   });
   await openBoard(page);
   const board = page.getByTestId("rail-board");
-  const band = (group: string) =>
-    board.locator(`[data-testid="rail-group"][data-group="${group}"]`);
+  const pick = (group: string) =>
+    board.locator(`[data-testid="board-group-pick"][data-group="${group}"]`);
+  const tagged = (group: string) =>
+    board
+      .getByTestId("rail-row")
+      .filter({ has: page.getByTestId("rail-group-tag").filter({ hasText: group }) });
   const chip = (threadId: string) =>
     board.locator(`[data-testid="rail-worker"][data-thread-id="${threadId}"]`);
   const archived = ["v030-review", "deps-majors", "riley-feedback", "infra"];
 
-  // An incomplete recorded plan stays visible even when every worker is archived.
-  await expect(band("q4-platform")).toBeVisible();
-  await expect(band("nightly-builds")).toBeVisible();
+  // No bands. A group whose workers are all archived has no line, so the Board doesn't draw it,
+  // even with steps of its plan to come; the filter offers only groups with a line.
+  await expect(board.getByTestId("rail-group")).toHaveCount(0);
   for (const group of archived) {
-    await expect(band(group)).toBeVisible();
-    await expect(band(group)).not.toHaveAttribute("data-finished", "true");
-    await expect(band(group).getByTestId("rail-group-toggle")).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    await expect(band(group).getByTestId("rail-group-plan")).toHaveText("Edit plan");
-    await expect(band(group).getByTestId("stage-stepper")).toBeVisible();
-    await expect(band(group).getByTestId("rail-row")).toHaveCount(0);
+    await expect(tagged(group)).toHaveCount(0);
+    await expect(pick(group)).toHaveCount(0);
   }
-  await expect(band("v030-review").getByTestId("stage-stepper")).toHaveAttribute(
-    "data-stage",
-    "fix",
-  );
-  await expect(band("v030-review").getByTestId("rail-group-stage-chip")).toHaveAttribute(
-    "title",
-    /Fixes in; waiting on a last look before merging\./,
-  );
   for (const id of made.archivedGroups) await expect(chip(id)).toHaveCount(0);
   await expect(chip(made.nightly)).toBeVisible();
+  await expect(pick("nightly-builds")).toBeVisible();
 
-  // With the recorded plan at its final step, the all-archived group really is finished.
-  const completed = await page.evaluate(async (id) => {
-    const state = await window.gramMock!.setOrchestratorStage(id, {
-      group: "deps-majors",
-      plan: ["bump", "fix types", "merge"],
-      stage: "merge",
-      note: "TypeScript waits on the Effect release.",
-    });
-    return state.groups?.["deps-majors"]?.stage;
-  }, made.workspaceId);
-  expect(completed).toMatchObject({
-    plan: ["bump", "fix types", "merge"],
-    stage: "merge",
-    setBy: "user",
-  });
-  await expect(band("deps-majors")).toHaveCount(0);
-
-  // An unplanned group whose last worker is archived goes too, without a reload.
+  // Its last worker archived, a group goes from the filter too, without a reload.
   await page.evaluate((id) => window.gramMock?.park(id, true), made.nightly);
-  await expect(band("nightly-builds")).toHaveCount(0);
   await expect(chip(made.nightly)).toHaveCount(0);
+  await expect(pick("nightly-builds")).toHaveCount(0);
 
-  // Shown, finished groups come after those still going, folded; incomplete plans stay open.
-  await page.getByTestId("shell-titlebar").getByTestId("rail-show-archived").click();
-  const deps = band("deps-majors");
-  await expect(deps).toHaveAttribute("data-finished", "true");
-  await expect(deps.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "false");
-  await expect(deps.getByTestId("rail-group-state")).toHaveText("Archived");
-  await expect(deps).toContainText("3 features");
-  await expect(deps.getByTestId("rail-group-stage-chip")).toContainText("merge");
-  await expect(deps.getByTestId("rail-group-plan")).toHaveCount(0);
-  const order = await board
-    .getByTestId("rail-group")
-    .evaluateAll((bands) =>
-      bands.map((el) => [el.getAttribute("data-group"), el.hasAttribute("data-finished")]),
-    );
-  const firstFinished = order.findIndex(([, finished]) => finished);
-  expect(order.slice(firstFinished).every(([, finished]) => finished)).toBe(true);
-  expect(order.map(([group]) => group)).toEqual(
-    expect.arrayContaining([
-      "q4-platform",
-      ...archived.filter((g) => g !== "deps-majors"),
-      "q3-cleanup",
-      "deps-majors",
-      "nightly-builds",
-    ]),
+  // Shown, finished lines come back with their group's tag and its plan in their Stage cells.
+  await page.evaluate(
+    (id) =>
+      window.gramMock!.setOrchestratorStage(id, {
+        group: "deps-majors",
+        plan: ["bump", "fix types", "merge"],
+        stage: "merge",
+        note: "TypeScript waits on the Effect release.",
+      }),
+    made.workspaceId,
   );
-
-  // A click opens it: its plan, its note and its lines.
-  await deps.getByTestId("rail-group-toggle").click();
-  await expect(deps.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "true");
-  await expect(deps.getByTestId("rail-group-stage-chip")).toHaveAttribute(
+  await page.getByTestId("shell-titlebar").getByTestId("rail-show-archived").click();
+  const deps = tagged("deps-majors");
+  await expect(deps).toHaveCount(3);
+  await expect(deps.first().getByTestId("rail-plan-name")).toHaveText("merge · 3 of 3");
+  await expect(deps.first().getByTestId("rail-plan")).toHaveAttribute(
     "title",
     /TypeScript waits on the Effect release\./,
   );
-  await expect(deps.getByTestId("rail-row")).toHaveCount(3);
   for (const id of made.archivedGroups) await expect(chip(id)).toHaveCount(1);
   await page.getByTestId("shell-titlebar").getByTestId("rail-show-archived").click();
-  await expect(band("deps-majors")).toHaveCount(0);
-  await expect(band("infra")).toBeVisible();
+  await expect(deps).toHaveCount(0);
   for (const id of made.archivedGroups) await expect(chip(id)).toHaveCount(0);
 });
 
-test("a group's band holds its workers on their stations", async ({ page }) => {
+test("a group's lines hold their workers on their stations", async ({ page }) => {
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await page.evaluate(async () => {
@@ -1020,15 +972,13 @@ test("a group's band holds its workers on their stations", async ({ page }) => {
     return seeded;
   });
   const { waits } = made;
-  // The Board view, where the group's band holds its workers on their stations.
+  // The Board view, picked down to the group: its lines hold their workers on their stations.
   await openBoard(page);
   await expectBoard(page, made.orchestratorThreadId);
-  const band = page
-    .getByTestId("rail-board")
-    .locator('[data-testid="rail-group"][data-group="casefile-cleanup"]');
-  await expect(band.getByTestId("rail-group-toggle")).toHaveAttribute("aria-expanded", "true");
+  const board = page.getByTestId("rail-board");
+  await board.locator('[data-testid="board-group-pick"][data-group="casefile-cleanup"]').click();
   const chip = (threadId: string) =>
-    band.locator(`[data-testid="rail-worker"][data-thread-id="${threadId}"]`);
+    board.locator(`[data-testid="rail-worker"][data-thread-id="${threadId}"]`);
   await expect(chip(waits.running)).toHaveAttribute("data-station", "working");
   await expect(chip(waits.ci)).toHaveAttribute("data-station", "checks");
   await expect(chip(waits.owners)).toHaveAttribute("data-station", "review");
@@ -1062,9 +1012,10 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   const mail = board.locator('[data-testid="rail-row"][data-feature="mail-trigger"]');
   const chip = (threadId: string) =>
     board.locator(`[data-testid="rail-worker"][data-thread-id="${threadId}"]`);
-  // Its group says once that it needs you; the line doesn't say it again.
-  await expect(board.getByTestId("rail-group-state")).toHaveText("Needs you");
-  await expect(mail.getByTestId("rail-needs")).toHaveCount(0);
+  // A line that needs you says so on itself: there is no band to say it for it.
+  await expect(board.getByTestId("rail-group-state")).toHaveCount(0);
+  await expect(board.getByTestId("rail-needs")).not.toHaveCount(0);
+  await expect(mail).toBeVisible();
   await expect(chip(made.working)).toHaveAttribute("data-station", "working");
   await expect(chip(made.waiting[0])).toHaveAttribute("data-tone", "needs");
   await expect(chip(made.waiting[1])).toHaveAttribute("data-tone", "needs");
@@ -1120,7 +1071,7 @@ test("the Board shows workers by station, pauses from its header, and fits a nar
   await expect(page).toHaveURL(new RegExp(`/t/${made.briefed}$`));
 });
 
-test("stages step along a plan, groups band their features, and a worker spans repos", async ({
+test("stages step along a plan, groups tag their features, and a worker spans repos", async ({
   page,
 }) => {
   await page.goto("/t/t-flaky");
@@ -1129,68 +1080,40 @@ test("stages step along a plan, groups band their features, and a worker spans r
   await openBoard(page);
   const board = page.getByTestId("rail-board");
 
-  // The group is a band over its two features, with the stage of the whole; the third stands alone.
-  const band = board.getByTestId("rail-group");
-  await expect(band).toHaveCount(1);
-  await expect(band.getByTestId("rail-group-toggle")).toContainText("q4-platform");
-  await expect(band).toContainText("2 features");
-  await expect(band.getByTestId("rail-group-state")).toHaveText("Needs you");
-  await expect(band.getByTestId("rail-row")).toHaveCount(2);
+  // No band: the group's two features are lines with its name as a tag; the third is in none.
+  await expect(board.getByTestId("rail-group")).toHaveCount(0);
   await expect(board.getByTestId("rail-row")).toHaveCount(3);
-  await expect(board.getByTestId("rail-row").last()).toHaveAttribute(
-    "data-feature",
-    "docs-refresh",
-  );
-  const groupStepper = band.getByTestId("rail-group-stage").getByTestId("stage-stepper");
-  await expect(groupStepper).toHaveAttribute("data-stage", "build features");
-  await expect(groupStepper.getByTestId("stage-step")).toHaveText([
-    /build features/,
-    /merge/,
-    /release candidate/,
-    /test RC/,
-    /release/,
-  ]);
+  await expect(board.getByTestId("rail-group-tag")).toHaveText(["q4-platform", "q4-platform"]);
+  const docs = board.locator('[data-testid="rail-row"][data-feature="docs-refresh"]');
+  await expect(docs.getByTestId("rail-group-tag")).toHaveCount(0);
 
-  // A feature's plan: where it stands in it, and whose word that is, in a chip; the stations say
-  // how far the work has come, so the line draws no steps.
+  // A line says where it stands once, in its Stage cell: its own plan before its group's, with
+  // whose word that is on hover, in place of the station bar.
   const mail = board.locator('[data-testid="rail-row"][data-feature="mail-trigger"]');
-  const chip = mail.getByTestId("rail-stage-chip");
-  await expect(mail.getByTestId("stage-stepper")).toHaveCount(0);
-  await expect(chip).toContainText("build");
-  await expect(chip).toContainText("2/5");
-  await expect(chip).toHaveAttribute("title", /set by the orchestrator · 2h ago/);
-  await expect(chip).toHaveAttribute("title", /contract is settled/);
-  // A free label is one chip, and one nobody has touched for a day says so.
+  const plan = mail.getByTestId("rail-plan");
+  const name = mail.getByTestId("rail-plan-name");
+  await expect(plan).toHaveAttribute("data-of", "feature");
+  await expect(name).toHaveText("build · 2 of 5");
+  await expect(mail.getByTestId("stage-step")).toHaveCount(5);
+  await expect(plan).toHaveAttribute("title", /set by the orchestrator · 2h ago/);
+  await expect(plan).toHaveAttribute("title", /contract is settled/);
+  await expect(mail.getByTestId("rail-stage-chip")).toHaveCount(0);
+  // A free label is its name alone, and one nobody has touched for a day says so on hover.
   const paging = board.locator('[data-testid="rail-row"][data-feature="registry-paging"]');
-  const label = paging.getByTestId("rail-stage-chip");
-  await expect(label).toHaveText("waiting on the API team");
-  await expect(paging.getByTestId("stage-stepper")).toHaveCount(0);
-  await expect(label).toHaveAttribute("data-stale", "true");
-  await expect(label).toHaveAttribute("title", /set by you · 1d ago/);
+  await expect(paging.getByTestId("rail-plan-name")).toHaveText("waiting on the API team");
+  await expect(paging.getByTestId("stage-step")).toHaveCount(0);
+  await expect(paging.getByTestId("rail-plan")).toHaveAttribute(
+    "title",
+    /set by you · 1d ago, which may be out of date/,
+  );
 
-  // The orchestrator moves the feature on, then the group: both follow.
-  const advance = (target: { feature: string } | { group: string }) =>
-    page.evaluate(
-      ([workspaceId, to]) => window.gramMock?.advanceOrchestrationStage(workspaceId, to),
-      [made.workspaceId, target] as const,
-    );
-  await advance({ feature: "mail-trigger" });
-  await expect(chip).toContainText("preview deployed");
-  await expect(chip).toContainText("3/5");
-  await expect(chip).toHaveAttribute("title", /just now/);
-  await advance({ group: "q4-platform" });
-  await expect(groupStepper).toHaveAttribute("data-stage", "merge");
-
-  // The band folds its lines away, and the line in no group is still there to scroll to.
-  const toggle = band.getByTestId("rail-group-toggle");
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await expect(mail.locator("xpath=ancestor::*[@inert]")).toHaveCount(1);
-  const alone = board.getByTestId("rail-row").last().getByTestId("rail-feature");
-  await alone.scrollIntoViewIfNeeded();
-  await expect(alone).toBeInViewport();
-  await toggle.click();
-  await expect(mail.locator("xpath=ancestor::*[@inert]")).toHaveCount(0);
+  // The orchestrator moves the feature on, and its line follows.
+  await page.evaluate(
+    ([workspaceId, to]) => window.gramMock?.advanceOrchestrationStage(workspaceId, to),
+    [made.workspaceId, { feature: "mail-trigger" }] as const,
+  );
+  await expect(name).toHaveText("preview deployed · 3 of 5");
+  await expect(plan).toHaveAttribute("title", /just now/);
 
   // One worker holds the change in three repos; its thread says which, and what follows the first.
   await board
@@ -1253,10 +1176,7 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   const stepper = sheet.getByTestId("stage-stepper");
   await stepper.getByRole("button", { name: "merge in order (upcoming)" }).click();
   await expect(stepper).toHaveAttribute("data-stage", "merge in order");
-  await expect(mail.getByTestId("rail-stage-chip")).toHaveAttribute(
-    "title",
-    /set by you · just now/,
-  );
+  await expect(mail.getByTestId("rail-plan")).toHaveAttribute("title", /set by you · just now/);
   const stored = () =>
     page.evaluate(async (id) => {
       const all = await window.gramMock!.listWorkspaces();
@@ -1320,18 +1240,9 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   ]);
   await page.keyboard.press("Escape");
   await expect(sheet).toBeHidden();
-  await expect(mail.getByTestId("rail-stage-chip")).toContainText("preview up");
+  await expect(mail.getByTestId("rail-plan-name")).toContainText("preview up");
 
-  // A group's stage is set the same way, and a feature with no stage gets one from the editor.
-  const band = board.getByTestId("rail-group");
-  await band
-    .getByTestId("rail-group-stage")
-    .getByRole("button", { name: "merge (upcoming)" })
-    .click();
-  await expect(band.getByTestId("rail-group-stage").getByTestId("stage-stepper")).toHaveAttribute(
-    "data-stage",
-    "merge",
-  );
+  // A feature with no stage gets one from the editor.
   await menu("docs-refresh");
   await page.getByRole("menuitem", { name: "Set stage…" }).click();
   // The form unfolds inert for a frame, and text filled into it then goes nowhere without a word;
@@ -1340,21 +1251,22 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   await sheet.getByTestId("stage-editor-label").fill("waiting on screenshots");
   await sheet.getByTestId("stage-editor-save").click();
   await page.keyboard.press("Escape");
-  await expect(row("docs-refresh").getByTestId("rail-stage-chip")).toHaveText(
+  await expect(row("docs-refresh").getByTestId("rail-plan-name")).toHaveText(
     "waiting on screenshots",
   );
 
   // Into the group, out of it again, and into one made on the spot.
   const groups = page.getByTestId("feature-group-menu");
-  await expect(band.getByTestId("rail-row")).toHaveCount(2);
+  const inQ4 = board.getByTestId("rail-group-tag").filter({ hasText: "q4-platform" });
+  await expect(inQ4).toHaveCount(2);
   await menu("docs-refresh");
   await page.getByTestId("feature-menu-group").click();
   await groups.getByRole("menuitem", { name: "q4-platform" }).click();
-  await expect(band.getByTestId("rail-row")).toHaveCount(3);
+  await expect(inQ4).toHaveCount(3);
   await menu("docs-refresh");
   await page.getByTestId("feature-menu-group").click();
   await groups.getByRole("menuitem", { name: "Remove from q4-platform" }).click();
-  await expect(band.getByTestId("rail-row")).toHaveCount(2);
+  await expect(inQ4).toHaveCount(2);
   await menu("docs-refresh");
   await page.getByTestId("feature-menu-group").click();
   await groups.getByRole("menuitem", { name: "New group…" }).click();
@@ -1362,7 +1274,7 @@ test("a click sets a stage, a plan is edited in place, and a feature changes gro
   await expect(form.getByRole("textbox")).toBeFocused();
   await form.getByRole("textbox").fill("Docs Push");
   await form.getByRole("button", { name: "Move to docs-push" }).click();
-  await expect(board.locator('[data-testid="rail-group"][data-group="docs-push"]')).toBeVisible();
+  await expect(row("docs-refresh").getByTestId("rail-group-tag")).toHaveText("docs-push");
 });
 
 test("a fresh session is always offered from the header, saves to memory first unless unticked, and shows while it runs", async ({
@@ -1783,7 +1695,7 @@ test("merged version PR keeps its monitored publisher and user release stage vis
   await expect(publisher.locator("xpath=ancestor::*[@inert]")).toHaveCount(0);
   const feature = board.locator('[data-testid="rail-row"][data-feature="auth-refresh"]');
   await expect(feature).not.toHaveAttribute("data-finished", "true");
-  await expect(feature.getByTestId("rail-stage-chip")).toContainText("verify artifacts");
+  await expect(feature.getByTestId("rail-plan-name")).toContainText("verify artifacts");
   await publisher.evaluate((element) => element.scrollIntoView({ block: "center" }));
   await expect(publisher).toBeInViewport();
 });

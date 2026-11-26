@@ -1,16 +1,16 @@
 import {
   FEATURE_STATIONS,
   STATION_LABELS,
-  type FeatureStage,
   type FeatureStation,
   type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
 import { Hand, Layers } from "lucide-react";
-import { useMemo, type MouseEvent, type ReactNode } from "react";
+import { useMemo, useRef, type MouseEvent, type ReactNode } from "react";
 
 import { Hint } from "@/components/hint";
 import { formatStamp } from "@/lib/time";
+import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import type { RowPlace } from "@/lib/virtual-rows";
 import { FeatureMenu, PausedBadge } from "@/orchestration/feature-sheet";
@@ -22,10 +22,14 @@ import { shownPrNumbers, useWorkerPrChips, WorkerPrChips } from "@/orchestration
 import {
   nowBesidePrs,
   overlapHint,
+  stageBehind,
+  type lineStage,
   type RailRow,
   type RailWorker,
 } from "@/orchestration/rail-model";
-import { StageChip } from "@/orchestration/stage-stepper";
+import { stageTitle, stepperModel } from "@/orchestration/stage-model";
+import { StageStepper } from "@/orchestration/stage-stepper";
+import type { useSetStage } from "@/orchestration/use-board-actions";
 import { OwnerMark } from "./board-people";
 import { StatusDot } from "@/orchestration/status-dot";
 import { useOrchestratorLedger } from "@/orchestration/use-orchestration";
@@ -301,19 +305,21 @@ function WorkerCells({
   workspaceId,
   worker,
   station,
+  stageCell,
   asking,
   onOpen,
 }: {
   workspaceId: WorkspaceId;
   worker: RailWorker;
   station: FeatureStation;
+  stageCell?: ReactNode;
   asking: boolean;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
 }) {
   const chips = useWorkerPrChips(worker.threadId, worker.prs);
   return (
     <>
-      <StationSteps station={station} />
+      {stageCell ?? <StationSteps station={station} />}
       <NowCell
         workspaceId={workspaceId}
         worker={worker}
@@ -354,6 +360,82 @@ function SubTask({ children, threadId }: { children: ReactNode; threadId?: Threa
   );
 }
 
+/** The stage a line draws (`lineStage`): the feature's own or its group's. */
+export type LineStage = NonNullable<ReturnType<typeof lineStage>>;
+
+type SetStage = ReturnType<typeof useSetStage>;
+
+function useLineReportAt(workspaceId: WorkspaceId, row: RailRow): number | undefined {
+  const { data: ledger } = useOrchestratorLedger(workspaceId);
+  return useMemo(() => {
+    const threads = new Set(row.card.workers.map((worker) => worker.threadId));
+    const times = (ledger?.features ?? [])
+      .flatMap((feature) => feature.workers)
+      .flatMap((worker) =>
+        threads.has(worker.threadId) && worker.lastReport !== undefined
+          ? [worker.lastReport.at]
+          : [],
+      );
+    return times.length === 0 ? undefined : Math.max(...times);
+  }, [ledger, row.card.workers]);
+}
+
+function PlanCell({
+  workspaceId,
+  row,
+  stage: { stage, target },
+  setStage,
+}: {
+  workspaceId: WorkspaceId;
+  row: RailRow;
+  stage: LineStage;
+  setStage: SetStage | undefined;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const model = stepperModel(stage, useNow(true, ref, 60_000));
+  const behind = stageBehind(stage, useLineReportAt(workspaceId, row));
+  const subject = "group" in target ? target.group : row.title;
+  return (
+    <div
+      ref={ref}
+      data-testid="rail-plan"
+      data-of={"group" in target ? "group" : "feature"}
+      data-behind={behind || undefined}
+      title={stageTitle(model)}
+      className="flex min-w-0 flex-col gap-0.5 pt-0.5"
+    >
+      {model.steps !== undefined && (
+        <StageStepper
+          stage={stage}
+          subject={subject}
+          compact
+          bare
+          behind={behind}
+          className="max-w-32"
+          onSelect={
+            setStage === undefined
+              ? undefined
+              : (name) => {
+                  if (name !== stage.stage) void setStage(target, { stage: name });
+                }
+          }
+        />
+      )}
+      <span data-testid="rail-plan-name" className="truncate text-meta text-muted-foreground">
+        {model.current}
+        {model.position !== undefined && (
+          <span className="tabular-nums">{` · ${model.position}`}</span>
+        )}
+      </span>
+      {behind && (
+        <span data-testid="rail-plan-set" className="text-meta text-muted-foreground tabular-nums">
+          set {formatStamp(stage.setAt)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * A feature in the grid. With one worker, or one held brief, it is one row; with more, a row for
  * the feature, then one for each.
@@ -363,7 +445,7 @@ export function GridLine({
   owners,
   ownerOf,
   stage,
-  needsMark,
+  setStage,
   repos,
   asking,
   onOpen,
@@ -374,8 +456,10 @@ export function GridLine({
   owners?: string | undefined;
   /** Each worker's person's name, where the line's workers work for different people. */
   ownerOf?: ((threadId: ThreadId) => string | undefined) | undefined;
-  stage: FeatureStage | undefined;
-  needsMark: boolean;
+  /** The feature's or its group's stage, drawn in the Stage cell in place of the station bar. */
+  stage?: LineStage | undefined;
+  /** Moves the stage when a step is clicked; without it the plan only shows. */
+  setStage?: SetStage | undefined;
   repos: boolean;
   asking: ReadonlySet<ThreadId>;
   onOpen: (threadId: ThreadId, event: MouseEvent) => void;
@@ -397,6 +481,10 @@ export function GridLine({
   const needs = workers.filter(({ worker }) => worker.tone === "needs").length;
   const onlyHost = useThreadHost(only?.worker.threadId);
   const onlySent = useThreadSent(only?.worker.threadId);
+  const plan =
+    stage === undefined ? undefined : (
+      <PlanCell workspaceId={row.card.workspaceId} row={row} stage={stage} setStage={setStage} />
+    );
   return (
     <li
       ref={place?.ref}
@@ -431,7 +519,7 @@ export function GridLine({
               {row.title}
             </button>
             {row.card.paused === true && <PausedBadge testId="rail-paused" />}
-            {needsMark && row.needs && (
+            {row.needs && (
               <Hand
                 aria-label="Needs you"
                 data-testid="rail-needs"
@@ -443,7 +531,7 @@ export function GridLine({
               className="ml-auto opacity-0 group-hover/line:opacity-100 focus-visible:opacity-100 data-[popup-open]:opacity-100"
             />
           </span>
-          {(stage !== undefined ||
+          {(row.group !== undefined ||
             owners !== undefined ||
             summary !== undefined ||
             repos ||
@@ -457,7 +545,16 @@ export function GridLine({
                 testId="rail-machine"
               />
               {owners !== undefined && <OwnerMark text={owners} testId="rail-owners" />}
-              {stage !== undefined && <StageChip stage={stage} testId="rail-stage-chip" />}
+              {row.group !== undefined && (
+                <span
+                  data-testid="rail-group-tag"
+                  title={`In ${row.group}`}
+                  className="inline-flex min-w-0 items-center gap-1 text-muted-foreground"
+                >
+                  <Layers aria-hidden className="size-icon-row shrink-0" />
+                  <span className="truncate">{row.group}</span>
+                </span>
+              )}
               {repos && (
                 <span data-testid="rail-repos" className="truncate text-muted-foreground">
                   {row.projects.join(" · ")}
@@ -480,17 +577,18 @@ export function GridLine({
             workspaceId={row.card.workspaceId}
             worker={only.worker}
             station={only.station}
+            stageCell={plan}
             asking={asking.has(only.worker.threadId)}
             onOpen={onOpen}
           />
         ) : single && row.held[0] !== undefined ? (
           <>
-            <StationSteps station="briefed" />
+            {plan ?? <StationSteps station="briefed" />}
             {held(row.held[0])}
           </>
         ) : (
           <>
-            <StationSteps station={FEATURE_STATIONS[row.reach] ?? "briefed"} />
+            {plan ?? <StationSteps station={FEATURE_STATIONS[row.reach] ?? "briefed"} />}
             <span data-testid="grid-workers" className="pt-px text-meta text-muted-foreground">
               {workers.length} {workers.length === 1 ? "worker" : "workers"}
               {needs > 0 && (

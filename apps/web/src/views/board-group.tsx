@@ -1,187 +1,79 @@
-import type { FeatureStage, WorkspaceId } from "@gram/contracts";
-import { ChevronRight, Hand, Layers, Pencil } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { Layers } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { RowPlace } from "@/lib/virtual-rows";
-import { Expand, ExpandPresence } from "@/motion";
-import { groupFolded, groupFoldKey, type RailGroup } from "@/orchestration/rail-model";
-import { StageEditor } from "@/orchestration/stage-editor";
-import type { StageTarget } from "@/orchestration/stage-model";
-import { StageChip, StageStepper } from "@/orchestration/stage-stepper";
-import type { useSetStage } from "@/orchestration/use-board-actions";
-import { useLayoutStore } from "@/stores/layout";
-import { StatePill } from "@/thread/orchestration-cards";
-import { presentState } from "@/thread/orchestration-model";
+import type { GroupPick, groupChoices } from "@/orchestration/rail-model";
 
-export type SetStage = ReturnType<typeof useSetStage>;
-
-const planned = (stage: FeatureStage) => stage.plan?.includes(stage.stage) === true;
-
-/** The stage under a feature's name or beside a group's: a chip, then the plan's pips. */
-export function StageLine({
-  stage,
-  subject,
-  target,
-  setStage,
-  testId,
-  className,
-}: {
-  stage: FeatureStage;
-  subject: string;
-  target: StageTarget;
-  setStage: SetStage | undefined;
-  testId: string;
-  className?: string;
-}) {
-  return (
-    <span data-testid={testId} className={cn("flex min-w-0 items-center gap-1.5", className)}>
-      <StageChip stage={stage} testId={`${testId}-chip`} className="shrink-0" />
-      {planned(stage) && (
-        <StageStepper
-          stage={stage}
-          subject={subject}
-          compact
-          bare
-          className="max-w-24 min-w-10 flex-1"
-          onSelect={
-            setStage === undefined
-              ? undefined
-              : (name) => {
-                  if (name !== stage.stage) void setStage(target, { stage: name });
-                }
-          }
-        />
-      )}
-    </span>
-  );
-}
-
-const ROW_ACTION =
-  "inline-flex shrink-0 items-center gap-1 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+const CHIP =
+  "shrink-0 gap-1 text-muted-foreground aria-pressed:bg-accent aria-pressed:text-foreground";
 
 /**
- * Several features run as one effort: a band over their lines with the state and the stage of the
- * whole, which folds them away. It says once that the group needs you, in its state or a mark beside
- * it; its lines don't say it again. A finished group starts folded to one line; either way the fold is
- * remembered per workspace.
+ * The Board's filter by group, above the lines: every line, one group's or those in none, each
+ * with how many lines it keeps. A group is a tag on its lines, not a band over them, so this is
+ * where the Board shows one effort's lines together. A group with no line on the Board has no
+ * choice, and with no line in a group there is no filter.
  */
-export function GroupBand({
-  workspaceId,
-  group,
-  setStage,
-  editing,
-  onEditingChange,
-  place,
-  children,
+export function GroupFilter({
+  choices,
+  picked,
+  onPick,
+  className,
 }: {
-  workspaceId: WorkspaceId;
-  group: RailGroup;
-  setStage: SetStage;
-  editing: boolean;
-  onEditingChange: (editing: boolean) => void;
-  /** Where the Board's list draws it. */
-  place?: RowPlace | undefined;
-  children: ReactNode;
+  choices: ReturnType<typeof groupChoices>;
+  picked: GroupPick;
+  onPick: (pick: GroupPick) => void;
+  className?: string;
 }) {
-  const key = groupFoldKey(workspaceId, group);
-  const listed = useLayoutStore((s) => s.workspacesCollapsedNodes.includes(key));
-  const folded = groupFolded(group, listed);
-  const linesId = useId();
-  const count = group.rows.length;
-  const target: StageTarget = { group: group.group };
-  const state = group.state === undefined ? undefined : presentState(group.state);
-  const needs = state?.tone !== "needs" && group.rows.some((row) => row.needs);
+  if (choices.groups.length === 0) return null;
+  const isPicked = (group: string) =>
+    picked !== undefined && picked !== "ungrouped" && picked.group === group;
   return (
-    <li
-      ref={place?.ref}
-      data-index={place?.["data-index"]}
-      style={place?.style}
-      className={place?.className}
-      data-testid="rail-group"
-      data-group={group.group}
-      data-folded={folded}
-      data-finished={group.finished || undefined}
-      aria-label={`Group ${group.group}`}
+    <div
+      data-testid="board-group-filter"
+      role="group"
+      aria-label="Show group"
+      className={cn("flex shrink-0 flex-wrap gap-1", className)}
     >
-      <div
-        className={cn(
-          "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 bg-card/40 px-4",
-          folded ? "py-1.5" : "py-2",
-        )}
+      <Button
+        size="xs"
+        variant="ghost"
+        data-testid="board-group-pick"
+        aria-pressed={picked === undefined}
+        onClick={() => onPick(undefined)}
+        className={CHIP}
       >
-        <button
-          type="button"
-          data-testid="rail-group-toggle"
-          aria-expanded={!folded}
-          aria-controls={linesId}
-          onClick={() => useLayoutStore.getState().toggleWorkspaceNode(key)}
-          className="flex min-w-0 items-center gap-1.5 rounded-sm text-reading font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        All
+      </Button>
+      {choices.groups.map(({ group, count }) => (
+        <Button
+          key={group}
+          size="xs"
+          variant="ghost"
+          data-testid="board-group-pick"
+          data-group={group}
+          aria-pressed={isPicked(group)}
+          onClick={() => onPick(isPicked(group) ? undefined : { group })}
+          className={CHIP}
         >
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              "size-icon-chip shrink-0 text-muted-foreground transition-transform duration-(--dur-fast)",
-              !folded && "rotate-90",
-            )}
-          />
-          <Layers aria-hidden className="size-icon-row shrink-0 text-muted-foreground" />
-          <span className={cn("min-w-0 truncate", group.finished && "text-muted-foreground")}>
-            {group.group}
-          </span>
-        </button>
-        {state !== undefined && <StatePill state={state} testId="rail-group-state" />}
-        {needs && (
-          <Hand
-            aria-label="Needs you"
-            data-testid="rail-needs"
-            className="size-icon-row shrink-0 text-status-needs-mark"
-          />
-        )}
-        <span className="shrink-0 text-meta text-muted-foreground tabular-nums">
-          {count} {count === 1 ? "feature" : "features"}
-        </span>
-        {group.stage !== undefined && (
-          <StageLine
-            stage={group.stage}
-            subject={group.group}
-            target={target}
-            setStage={folded ? undefined : setStage}
-            testId="rail-group-stage"
-            className="max-w-64"
-          />
-        )}
-        {!folded && (
-          <button
-            type="button"
-            data-testid="rail-group-plan"
-            aria-expanded={editing}
-            onClick={() => onEditingChange(!editing)}
-            className={ROW_ACTION}
-          >
-            <Pencil aria-hidden className="size-icon-row" />
-            {group.stage === undefined ? "Set stage" : "Edit plan"}
-          </button>
-        )}
-      </div>
-      <ExpandPresence open={editing && !folded}>
-        <div className="px-4 pt-1 pb-3">
-          <StageEditor
-            subject={group.group}
-            stage={group.stage}
-            onSave={(input) => setStage(target, input)}
-            onCancel={() => onEditingChange(false)}
-          />
-        </div>
-      </ExpandPresence>
-      <Expand open={!folded} id={linesId}>
-        <ul
-          aria-label={`Features in ${group.group}`}
-          className="divide-y divide-border/60 shadow-[inset_2px_0_0_var(--color-border-strong)]"
+          <Layers aria-hidden className="size-icon-row" />
+          <span className="max-w-40 truncate">{group}</span>
+          <span className="tabular-nums opacity-80">{count}</span>
+        </Button>
+      ))}
+      {choices.ungrouped > 0 && (
+        <Button
+          size="xs"
+          variant="ghost"
+          data-testid="board-group-pick"
+          data-group=""
+          aria-pressed={picked === "ungrouped"}
+          onClick={() => onPick(picked === "ungrouped" ? undefined : "ungrouped")}
+          className={CHIP}
         >
-          {children}
-        </ul>
-      </Expand>
-    </li>
+          No group
+          <span className="tabular-nums opacity-80">{choices.ungrouped}</span>
+        </Button>
+      )}
+    </div>
   );
 }
