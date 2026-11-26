@@ -17,6 +17,7 @@ import {
   Doc,
   DocList,
   DocMeta,
+  DocArchiveFields,
   DocOpenedFields,
   DocReadFields,
   DocSaveFields,
@@ -128,6 +129,21 @@ export const FileRpcs = RpcGroup.make(
   }),
   Rpc.make("docs.save", {
     payload: DocSaveFields,
+    success: DocMeta,
+    error: errors(NotFound, InvalidState, FsError),
+  }),
+  Rpc.make("docs.listArchived", {
+    payload: DocsListFields,
+    success: DocList,
+    error: errors(InvalidState, FsError),
+  }),
+  Rpc.make("docs.archive", {
+    payload: DocArchiveFields,
+    success: DocMeta,
+    error: errors(NotFound, InvalidState, FsError),
+  }),
+  Rpc.make("docs.restore", {
+    payload: DocArchiveFields,
     success: DocMeta,
     error: errors(NotFound, InvalidState, FsError),
   }),

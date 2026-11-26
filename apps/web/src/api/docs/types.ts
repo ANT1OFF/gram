@@ -2,8 +2,17 @@ import type { Doc, DocId, DocList, DocMeta, ThreadId, WorkspaceId } from "@gram/
 
 /** `docs.*`: the workspace docs its threads publish (`publish_doc`), kept in Gram's own state. */
 export interface DocsApi {
-  /** The workspace's docs, newest first, without their text. */
+  /** The workspace's active docs, newest first, without their text, and how many are archived. */
   listDocs(workspaceId: WorkspaceId): Promise<DocList>;
+  /** Its archived docs, the latest archived first (`docs.listArchived`). */
+  listArchivedDocs(workspaceId: WorkspaceId): Promise<DocList>;
+  /** Archives the doc as the user (`docs.archive`): it leaves the list for the Archived section. */
+  archiveDoc(workspaceId: WorkspaceId, id: DocId): Promise<DocMeta>;
+  /**
+   * Restores an archived doc as the user (`docs.restore`). Rejects with `InvalidState`, saying
+   * what to do, while the workspace's active docs are full or its PR has another active doc.
+   */
+  restoreDoc(workspaceId: WorkspaceId, id: DocId): Promise<DocMeta>;
   /** One doc with its Markdown; rejects with `NotFound` once it is gone. */
   readDoc(workspaceId: WorkspaceId, id: DocId): Promise<Doc>;
   /**

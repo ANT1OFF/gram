@@ -5,6 +5,7 @@ import { useRef, useState, type ComponentProps } from "react";
 
 import { useApi } from "@/api/context";
 import { errorMessage, isNotFound } from "@/api/errors";
+import { useServes } from "@/api/use-serves";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,7 @@ export function DocView({
   const api = useApi();
   const queryClient = useQueryClient();
   const doc = useDoc(workspaceId, id);
+  const restores = useServes("docs.restore");
   useMountEffect(() => {
     api.markDocOpened(workspaceId, id).catch(() => undefined);
   });
@@ -74,6 +76,7 @@ export function DocView({
   const [draft, setDraft] = useState<{ text: string; revision: number } | undefined>();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | undefined>();
+  const [restoreError, setRestoreError] = useState<string | undefined>();
   const [copied = false, flash] = useFlash(1500);
 
   const back = (
@@ -113,6 +116,20 @@ export function DocView({
   const data = doc.data;
   const edited = data.updatedAt !== data.createdAt || data.revision > 1;
   const movedOn = draft !== undefined && draft.revision !== data.revision;
+  const archived = data.archivedAt !== undefined;
+
+  const restore = async () => {
+    setSaving(true);
+    setRestoreError(undefined);
+    try {
+      await api.restoreDoc(workspaceId, id);
+      await queryClient.invalidateQueries({ queryKey: ["docs", workspaceId] });
+    } catch (error) {
+      setRestoreError(errorMessage(error).replace(/^InvalidState: /, ""));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const save = async () => {
     if (draft === undefined) return;
@@ -147,11 +164,25 @@ export function DocView({
           By {data.authorTitle} · {formatStamp(data.createdAt, now)}
           {edited &&
             ` · updated ${formatStamp(data.updatedAt, now)}${data.updatedBy === "user" ? " by you" : ""}`}
+          {data.archivedAt !== undefined && ` · archived ${formatStamp(data.archivedAt, now)}`}
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          {archived && restores && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="doc-view-restore"
+              disabled={saving}
+              onClick={() => void restore()}
+            >
+              Restore
+            </Button>
+          )}
           <Button
             type="button"
             size="sm"
+            hidden={archived}
             variant={draft === undefined ? "outline" : "secondary"}
             aria-pressed={draft !== undefined}
             data-testid="doc-edit"
@@ -176,6 +207,11 @@ export function DocView({
             {copied ? "Copied" : "Copy Markdown"}
           </Button>
         </div>
+        {restoreError !== undefined && (
+          <p role="alert" data-testid="doc-restore-error" className="text-meta text-destructive">
+            {restoreError}
+          </p>
+        )}
       </header>
       {draft === undefined ? (
         <div

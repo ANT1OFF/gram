@@ -5,6 +5,9 @@ import type { DocsApi } from "./types";
 export const docsRpc = ({ client }: RpcContext): DocsApi => ({
   listDocs: (workspaceId) => run(client["docs.list"]({ workspaceId })),
   readDoc: (workspaceId, id) => run(client["docs.read"]({ workspaceId, id })),
+  listArchivedDocs: (workspaceId) => run(client["docs.listArchived"]({ workspaceId })),
+  archiveDoc: (workspaceId, id) => run(client["docs.archive"]({ workspaceId, id })),
+  restoreDoc: (workspaceId, id) => run(client["docs.restore"]({ workspaceId, id })),
   saveDoc: (workspaceId, id, content, revision) =>
     run(client["docs.save"]({ workspaceId, id, content, revision })),
   hideDoc: (threadId, docId) => run(client["thread.hideDoc"]({ threadId, docId })),
