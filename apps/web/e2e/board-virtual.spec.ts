@@ -198,13 +198,18 @@ test("picking a group draws its lines alone, edge to edge, and All draws every l
   await expect(board(page).locator('[data-testid="rail-row"][data-feature="bulk-0"]')).toHaveCount(
     0,
   );
-  await expect
-    .poll(() => board(page).getByTestId("rail-group-tag").count())
-    .toBe(await entries(page).count());
+  // Every drawn line is the group's.
+  const untagged = () =>
+    board(page)
+      .getByTestId("rail-row")
+      .filter({ hasNot: page.getByTestId("rail-group-tag") })
+      .count();
+  await expect.poll(untagged).toBe(0);
+  await expect(board(page).getByTestId("rail-row")).not.toHaveCount(0);
   await expect.poll(contiguous(page)).toBe(true);
   await all.click();
-  await expect(
-    board(page).locator('[data-testid="rail-row"][data-feature="bulk-0"]'),
-  ).toBeVisible();
+  await expect(all).toHaveAttribute("aria-pressed", "true");
+  // Lines in no group are drawn again; which of the 60 are near the view depends on its height.
+  await expect.poll(untagged).toBeGreaterThan(0);
   await expect.poll(contiguous(page)).toBe(true);
 });
