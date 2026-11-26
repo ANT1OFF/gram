@@ -234,7 +234,7 @@ test("Keep microphone ready holds it from focus, hands a press what it heard, an
   expect(await microphone(page)).toEqual({ opened: 1, running: 1 });
 
   // Inside the app: a reload would drop the microphone by itself.
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
   await expect(page.getByTestId("voice-input-settings")).toContainText(
     "microphone indicator stays lit",
@@ -286,7 +286,7 @@ test("a double tap of Right ⌥ keeps listening until the next press; Sounds off
   expect(await tones(page)).toEqual([]);
 
   // The key and the sound settings, where they're changed.
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
   const section = page.getByTestId("voice-input-settings");
   await expect(section.getByTestId("dictate-key")).toHaveText(/^Right (⌥|Alt)$/);
@@ -351,7 +351,7 @@ test("what commits is cleaned up, the live partial never, and Settings turns eac
   await composer.press("ControlOrMeta+Shift+Space");
   await expect(composer).toHaveValue("Rename foo_bar\ndone");
 
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await settingsNav(page).getByRole("link", { name: "Voice", exact: true }).click();
   const section = page.getByTestId("voice-input-settings");
   for (const name of ["Remove filler words", "Spoken formatting", "Spoken symbols"])

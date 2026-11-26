@@ -148,7 +148,8 @@
     {
       "files": ["apps/web/src/**", "apps/web/e2e-embed/**"],
       "rules": {
-        "gram/lucide-stroke": "error"
+        "gram/lucide-stroke": "error",
+        "gram/link-not-button": "error"
       }
     },
     {

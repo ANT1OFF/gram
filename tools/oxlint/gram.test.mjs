@@ -822,6 +822,39 @@ describe("lucide-stroke", () => {
   });
 });
 
+describe("link-not-button", () => {
+  const rule = "gram/link-not-button";
+
+  it("refuses a Button that renders a Link", () => {
+    const found = lint(
+      `const a = <Button render={<Link to="/settings/usage" />} nativeButton={false} />;
+      const b = (
+        <Button size="sm" render={<Link to="/settings/diagnostics" />} nativeButton={false}>
+          Details
+        </Button>
+      );
+    `,
+      rule,
+      ".tsx",
+    );
+    expect(found.map((d) => d.labels[0].span.line)).toEqual([1, 3]);
+    expect(found[0].message).toContain("buttonVariants");
+  });
+
+  it("allows a Link styled as a button, and a Button that renders anything else", () => {
+    expect(
+      lint(
+        `const a = <Link to="/usage" className={buttonVariants({ variant: "outline" })} />;
+        const b = <Button render={<a href="https://example.com" />} />;
+        const c = <Button onClick={go}>Go</Button>;
+      `,
+        rule,
+        ".tsx",
+      ),
+    ).toEqual([]);
+  });
+});
+
 describe("clock-24h", () => {
   const rule = "gram/clock-24h";
 

@@ -106,5 +106,9 @@ test("with nothing reported, the page says where limits come from", async ({ pag
   await expect(page.getByTestId("usage-settings-none")).toBeVisible();
   await expect(page.getByTestId("usage-provider")).toHaveCount(0);
   // Settings lists it, and its search finds it by what it holds.
-  await expect(page.getByRole("link", { name: "Usage", exact: true })).toBeVisible();
+  await expect(
+    page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: "Usage", exact: true }),
+  ).toBeVisible();
 });

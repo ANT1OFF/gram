@@ -5,7 +5,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { agentLabel } from "@/agents/agent-label";
 import { Hint } from "@/components/hint";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Meter } from "@/components/ui/meter";
 import { agoText } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -236,17 +236,16 @@ function UsageLink({ className }: { className?: string | undefined }) {
       label="Usage"
       side="bottom"
       render={
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <Link
+          to="/settings/usage"
           aria-label="Usage"
+          data-slot="button"
           data-testid="usage-link"
           className={cn(
+            buttonVariants({ variant: "ghost", size: "icon-sm" }),
             "text-muted-foreground data-[status=active]:bg-muted data-[status=active]:text-foreground",
             className,
           )}
-          render={<Link to="/settings/usage" />}
-          nativeButton={false}
         />
       }
     >

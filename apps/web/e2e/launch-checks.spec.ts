@@ -239,7 +239,7 @@ test("a dismissed problem that still stands leaves the row for a dot on Settings
   const dot = page.getByTestId("top-left-settings-dot");
   const settings = page
     .getByTestId("top-left-nav")
-    .getByRole("button", { name: /^Settings\b/ })
+    .getByRole("link", { name: /^Settings\b/ })
     .first();
   await expect(banner).toContainText("gh isn't signed in. Run gh auth login");
   // While the banner says it, Settings carries no second mark.

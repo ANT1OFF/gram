@@ -101,9 +101,9 @@ test("top navigation explains real keyboard focus and preserves routes and modif
   await openOverviewDensity(page, 180);
   const sidebar = page.getByTestId("overview-sidebar");
   // Usage has one way in, the title bar's meter, and none in the sidebar's header.
-  await expect(sidebar.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "Usage", exact: true })).toHaveCount(0);
   const usage = page.getByTestId("usage-meter");
-  const settings = sidebar.getByRole("button", { name: "Settings", exact: true });
+  const settings = sidebar.getByRole("link", { name: "Settings", exact: true });
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
   const before = await page.evaluate(async () => ({
     settings: await window.gramMock!.getSettings(),
@@ -182,7 +182,7 @@ test("empty sidebar keeps the top actions and Settings reachable", async ({ page
   await expect(sidebar.getByTestId("overview-section-solo")).toHaveCount(0);
   for (const name of names)
     await expect(sidebar.getByRole("button", { name, exact: true })).toBeVisible();
-  await sidebar.getByRole("button", { name: "Settings", exact: true }).click();
+  await sidebar.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings/);
 });
 

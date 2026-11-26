@@ -14,7 +14,7 @@ test("a /model typed into a thread moves its model picker, and is offered in Set
   await expect(picker).toHaveAccessibleName(/claude-preview\[1m\]/);
 
   // In-app navigation: a reload would start the mock's threads over.
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page
     .getByRole("navigation", { name: "Settings sections" })
     .getByRole("link", { name: "Agents & models", exact: true })

@@ -335,7 +335,7 @@ const sidebarSections = (page: Page) => {
   } as const;
   // Settings keeps the overview's column for its Back strip, so each box's effect shows on leaving.
   const open = async () => {
-    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(group).toBeVisible();
   };
   const leave = async () => {

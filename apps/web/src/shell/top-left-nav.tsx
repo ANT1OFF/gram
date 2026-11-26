@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Settings } from "lucide-react";
 
 import { Hint } from "@/components/hint";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { useShortcutHint, withHint } from "@/keyboard/use-shortcut-hint";
 import { useLaunchIssues } from "@/launch-checks/banner";
 import { useSettingsLink } from "@/settings/open-settings";
@@ -51,18 +51,16 @@ export function TopLeftNav({
         label={settingsLabel}
         side={hintSide}
         render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
+          <Link
+            {...settingsLink}
             aria-label={
               setup.length === 0
                 ? "Settings"
                 : `Settings, ${setup.length === 1 ? "1 setup problem" : `${setup.length} setup problems`}`
             }
             data-setup={setup.length > 0 || undefined}
-            className={NAV}
-            render={<Link {...settingsLink} />}
-            nativeButton={false}
+            data-slot="button"
+            className={cn(buttonVariants({ variant: "ghost", size: "icon-sm", className: NAV }))}
           />
         }
       >

@@ -45,7 +45,7 @@ test("applies keybinding overrides, flags a clash and resets one", async ({ page
     await expect(page.getByTestId("right-panel")).toBeHidden({ timeout: 500 });
   }).toPass();
 
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await openSettingsPage(page, "Keyboard");
   const settings = page.getByTestId("keyboard-settings");
   const sidebarRow = settings.getByTestId("binding-sidebar.toggle");
