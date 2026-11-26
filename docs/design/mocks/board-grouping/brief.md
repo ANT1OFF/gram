@@ -55,7 +55,9 @@ and sometimes moves a stage.
 
 ## Out of scope
 
-The helper-model task removal (its own feature), the people strip and clash line
+Thread plans written by the helper model, which are being removed (remove-helper-suggested-tasks,
+worker 6cd9dfdc). Every plan drawn here is a `set_stage` plan the orchestrator set. Plans that
+agents set themselves may come later, pending that worker. Also out: the people strip and clash line
 (board-owners), the phone Board, the stage editor's form, and the Done band's own design.
 
 ## Open questions
