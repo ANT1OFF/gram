@@ -254,7 +254,7 @@ test("signing in from Settings restarts the agent's idle sessions", async ({ pag
   await threadRow(page, threadId).click();
   await expect(page).toHaveURL(new RegExp(`/t/${threadId}$`));
 
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await openSettingsPage(page, "Connectors");
   const settings = page.getByTestId("connectors-settings");
   const example = settings.getByRole("row", { name: "example", exact: true });

@@ -39,7 +39,7 @@ test("an agent's request for a new host asks once, and Always lists it under Age
   await expect(card).toHaveCount(0);
   expect(await page.evaluate(() => window.gramMock?.agentBrowseHosts)).toEqual([HOST]);
 
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   const hosts = page.getByTestId("agent-browse-hosts");
   const row = hosts.getByRole("listitem", { name: HOST });
   await expect(row).toBeVisible();

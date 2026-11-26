@@ -50,12 +50,12 @@ test("Settings sits beside History in the overview, or at the title bar's left",
     "Compact sidebar: a strip that opens on hover",
   );
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
-  await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Usage", exact: true })).toHaveCount(0);
   await expect(titlebar(page).getByTestId("inbox-button")).toHaveCount(0);
 
-  await nav.getByRole("button", { name: "Settings", exact: true }).hover();
+  await nav.getByRole("link", { name: "Settings", exact: true }).hover();
   await expect(hint).toHaveText(/^Settings \(.+\)$/);
-  await nav.getByRole("button", { name: "Settings", exact: true }).click();
+  await nav.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
   // Settings is a place of its own: the overview steps aside, the nav with it, and the title bar
   // has Back and the page's name in place of the workspace and its views. The needs-you pill keeps
@@ -79,7 +79,7 @@ test("Settings sits beside History in the overview, or at the title bar's left",
   await expect(overview(page)).toHaveCount(0);
   await expect(page.getByTestId("top-left-nav")).toHaveCount(1);
   const moved = titlebar(page).getByTestId("top-left-nav");
-  await moved.getByRole("button", { name: "Settings", exact: true }).click();
+  await moved.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/general$/);
   await page.getByTestId("settings-back").click();
   await expect(page).toHaveURL(/\/t\/t-flaky$/);
@@ -97,7 +97,7 @@ test("usage has one way in: an icon before any reading, then the meter, which wa
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
   const link = titlebar(page).getByTestId("usage-link");
   await expect(link).toBeVisible();
-  await expect(page.getByRole("button", { name: "Usage", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Usage", exact: true })).toHaveCount(1);
   await link.hover();
   await expect(hint).toHaveText("Usage");
   const box = (await link.boundingBox())!;

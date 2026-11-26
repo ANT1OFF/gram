@@ -29,7 +29,7 @@ import { Fragment, useId, useState } from "react";
 import { useApi } from "@/api/context";
 import { errorMessage } from "@/api/errors";
 import type { Api } from "@/api/types";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -247,14 +247,13 @@ export function AiHelpersSection() {
             label="Model"
             description="Helpers run on your default gateway, and there isn't one yet."
           >
-            <Button
-              size="sm"
-              variant="outline"
-              render={<Link to="/settings/gateways" />}
-              nativeButton={false}
+            <Link
+              to="/settings/gateways"
+              data-slot="button"
+              className={buttonVariants({ size: "sm", variant: "outline" })}
             >
               Set up a gateway
-            </Button>
+            </Link>
           </SettingRow>
         ) : (
           <>

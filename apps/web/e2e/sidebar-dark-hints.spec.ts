@@ -64,7 +64,7 @@ for (const mode of ["light", "dark"] as const) {
     await openOverviewDensity(page, 280);
     const hint = page.locator('[data-slot="tooltip-content"][data-open]');
     const sidebar = page.getByTestId("overview-sidebar");
-    const settings = sidebar.getByRole("button", { name: "Settings", exact: true });
+    const settings = sidebar.getByRole("link", { name: "Settings", exact: true });
     await settings.hover();
     await expect(hint).toHaveText(/^Settings \(.+\)$/);
     await expect(hint).toHaveCSS("opacity", "1");
@@ -110,7 +110,7 @@ test("all built-in dark palettes keep readable quiet hint panels across appearan
   await openOverviewDensity(page, 280);
   await page
     .getByTestId("overview-sidebar")
-    .getByRole("button", { name: "Settings", exact: true })
+    .getByRole("link", { name: "Settings", exact: true })
     .hover();
   const hint = page.locator('[data-slot="tooltip-content"][data-open]');
   await expect(hint).toContainText("Settings");

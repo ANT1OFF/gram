@@ -213,8 +213,7 @@ describe("LaunchChecksBanner", () => {
     ).toEqual(["claude-signed-out", "gh-missing"]);
     // The command to run is set as code.
     expect(banner.querySelector("code")?.textContent).toBe("claude");
-    // A real link to Diagnostics, though Base UI's Button names it a button.
-    expect(screen.getByRole("button", { name: "Details" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Details" }).getAttribute("href")).toBe(
       "/settings/diagnostics",
     );
 

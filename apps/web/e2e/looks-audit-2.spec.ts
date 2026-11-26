@@ -567,7 +567,7 @@ test("Motion Off stops every CSS animation and transition; Reduced keeps fades o
   const row = palette.getByRole("option").first();
   await row.hover();
   expect(await cssAnimations(), "Off leaves no CSS animation or transition running").toBe(0);
-  const button = page.getByRole("button", { name: "Settings", exact: true });
+  const button = page.getByRole("link", { name: "Settings", exact: true });
   await page.keyboard.press("Escape");
   expect(
     await button.evaluate((el) => getComputedStyle(el).transitionDuration),

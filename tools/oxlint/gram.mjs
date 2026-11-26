@@ -49,6 +49,9 @@
 // license headers and docs on exports stay, and only what a change adds is checked.
 //
 // And Settings opened through `settings/open-settings.ts`: see `settings-entry.mjs`.
+//
+// And a link styled as a button stays a link (`gram/link-not-button`): a `Button` rendering a
+// `Link` makes `<a href role="button">`; see `link-not-button.mjs`.
 
 import { dirname, relative, resolve } from "node:path";
 import { ALLOWLISTS, MAX_LINES } from "./allowlists.mjs";
@@ -58,6 +61,7 @@ import { noComment } from "./no-comment.mjs";
 import { noRawGit } from "./no-raw-git.mjs";
 import { remoteGitOnly } from "./remote-git-only.mjs";
 import { noTimer } from "./no-timer.mjs";
+import { linkNotButton } from "./link-not-button.mjs";
 import { settingsEntry } from "./settings-entry.mjs";
 
 const BARE_FORKS = new Set([
@@ -499,6 +503,7 @@ export default {
         };
       },
     },
+    "link-not-button": linkNotButton,
     "no-raw-git": noRawGit,
     "remote-git-only": remoteGitOnly,
     "settings-entry": settingsEntry,

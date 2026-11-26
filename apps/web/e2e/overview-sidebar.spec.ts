@@ -1101,8 +1101,8 @@ test("⌘B hides an automatic compact overview, the focus going to the composer,
   // Settings sits at the strip's foot, once; hidden, it goes to the title bar.
   await expect(page.getByTestId("top-left-nav")).toHaveCount(1);
   const nav = rail(page).getByTestId("top-left-nav");
-  await expect(nav.getByRole("button", { name: "Usage", exact: true })).toHaveCount(0);
-  await expect(nav.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Usage", exact: true })).toHaveCount(0);
+  await expect(nav.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   expect((await nav.boundingBox())!.width).toBeLessThanOrEqual(60);
 
   // The strip's Hide sidebar leads it, in the spot the title bar's Show sidebar then takes, which

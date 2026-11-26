@@ -17,7 +17,7 @@ test("searches shortcuts, filters by group and clash, and keeps the file's path 
   });
   await page.goto("/t/t-deps");
   await expect(page.getByTestId("pane-header")).toBeVisible();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await openSettingsPage(page, "Keyboard");
   const settings = page.getByTestId("keyboard-settings");
   const palette = settings.getByTestId("binding-palette.open");

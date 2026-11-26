@@ -7,7 +7,7 @@ const J = /⌘⇧J|Ctrl\+Shift\+J/;
 test("records a shortcut, takes another action's keys, and cancels on Escape", async ({ page }) => {
   await page.goto("/t/t-deps");
   await expect(page.getByTestId("pane-header")).toBeVisible();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await openSettingsPage(page, "Keyboard");
   const settings = page.getByTestId("keyboard-settings");
   const dialog = page.getByTestId("key-capture-dialog");

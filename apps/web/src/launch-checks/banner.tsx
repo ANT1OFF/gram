@@ -6,7 +6,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { Hint } from "@/components/hint";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { lazyPart } from "@/lib/lazy-part";
 import { cn } from "@/lib/utils";
 import { useDiagnostics, useFeature } from "@/settings/use-diagnostics";
@@ -197,14 +197,13 @@ export function LaunchChecksBanner() {
         ))}
       </ul>
       <div className="flex shrink-0 gap-1">
-        <Button
-          size="sm"
-          variant="ghost"
-          render={<Link to="/settings/diagnostics" />}
-          nativeButton={false}
+        <Link
+          to="/settings/diagnostics"
+          data-slot="button"
+          className={buttonVariants({ size: "sm", variant: "ghost" })}
         >
           Details
-        </Button>
+        </Link>
         <Button size="sm" variant="ghost" disabled={checking} onClick={() => void runRecheck()}>
           {checking ? "Checking…" : "Re-check"}
         </Button>

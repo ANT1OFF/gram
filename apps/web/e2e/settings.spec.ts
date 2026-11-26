@@ -421,7 +421,7 @@ test("Settings is focused: the overview gives way to Back, and General's section
   await expect(page.getByTestId("overview-sidebar")).toBeVisible();
   await page
     .getByTestId("top-left-nav")
-    .getByRole("button", { name: "Settings", exact: true })
+    .getByRole("link", { name: "Settings", exact: true })
     .click();
   await expect(page).toHaveURL(/\/settings\/general$/);
   // One column of navigation, not two: the overview steps aside, and the title bar says where you
