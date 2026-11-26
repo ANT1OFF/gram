@@ -68,6 +68,7 @@ const docsApi = (docs: DocMeta[], content = REPORT) => {
     updatedBy: "user" as const,
     bytes: text.length,
   }));
+  const markDocOpened = vi.fn<Api["markDocOpened"]>(async () => undefined);
   const api: Partial<Api> = {
     listDocs: vi.fn(async () => ({ docs })),
     readDoc: vi.fn(async (_ws, id): Promise<Doc> => ({
@@ -75,6 +76,7 @@ const docsApi = (docs: DocMeta[], content = REPORT) => {
       content,
     })),
     saveDoc,
+    markDocOpened,
     hideDoc: vi.fn<Api["hideDoc"]>(async (threadId, id) => {
       useThreadsStore.setState((s) => {
         const held = s.byId[threadId]!;
@@ -82,7 +84,7 @@ const docsApi = (docs: DocMeta[], content = REPORT) => {
       });
     }),
   };
-  return { api, saveDoc };
+  return { api, saveDoc, markDocOpened };
 };
 
 const summary = (id: ThreadId, workspaceId: WorkspaceId | undefined): ThreadSummary =>
@@ -237,7 +239,7 @@ describe("the Docs tab's list", () => {
 
 describe("DocsPanel", () => {
   it("lists the workspace's docs and opens one, rendered with its 24-hour times", async () => {
-    const { api } = docsApi([
+    const { api, markDocOpened } = docsApi([
       meta(1, { title: "Gap analysis", updatedAt: NOW - 5 * MINUTE, revision: 2 }),
       meta(2),
     ]);
@@ -246,6 +248,8 @@ describe("DocsPanel", () => {
     expect(rows[0]!.textContent).toContain("Opening words of doc 1.");
     fireEvent.click(rows[0]!);
     expect(await screen.findByTestId("doc-title")).toHaveProperty("textContent", "Gap analysis");
+    // Opening it keeps it from automatic archiving for a while.
+    expect(markDocOpened).toHaveBeenCalledWith(WS, "doc-1");
     const stamps = screen.getByTestId("doc-meta").textContent;
     expect(stamps).toMatch(/^By cp-artifacts · \d{2}:\d{2} · updated \d{2}:\d{2}$/);
     const body = screen.getByTestId("doc-body");

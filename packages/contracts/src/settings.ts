@@ -10,6 +10,7 @@ import {
   HelperSource,
   type HelperKind,
 } from "./helper.ts";
+import { DocsArchiveKeep } from "./docs.ts";
 import { PaletteId, ThreadId } from "./ids.ts";
 import type { ReviewRequestHolds } from "./review-requests.ts";
 import { DEFAULT_REVIEW_BOTS, ReviewBot } from "./review.ts";
@@ -614,6 +615,12 @@ export const WorkspaceSettings = Schema.Struct({
   worktreeSweepFreeDays: Schema.optionalKey(SweepDays),
   /** Days after a thread finished before its worktree is removed; read through `worktreeSweepOf`. */
   worktreeSweepRemoveDays: Schema.optionalKey(SweepDays),
+  /** Days after a PR merges or closes before its doc is archived; read through `docsArchiveOf`. */
+  docsArchivePrDays: Schema.optionalKey(SweepDays),
+  /** Days after a worker is archived before its other docs are; read through `docsArchiveOf`. */
+  docsArchiveWorkerDays: Schema.optionalKey(SweepDays),
+  /** Archived docs a workspace keeps before the earliest archived go; read through `docsArchiveOf`. */
+  docsArchiveKeep: Schema.optionalKey(DocsArchiveKeep),
   /**
    * The only MCP servers a Claude orchestrator loads beside Gram's own, each a server's name
    * or a URL pattern (how a claude.ai connector is named). Read through `orchestratorConnectors`;

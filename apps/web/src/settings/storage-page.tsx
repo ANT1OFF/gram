@@ -30,6 +30,7 @@ import { formatBytes } from "@/thread/orchestration-model";
 
 import { NumberField, OptionGroup, Toggle } from "./fields";
 import { SettingDescription } from "./help-tip";
+import { DocsStorage } from "./storage-docs";
 import { GROUP_TITLE, SETTINGS_CARD } from "./settings-group";
 import {
   bulkTargets,
@@ -146,6 +147,7 @@ export function StoragePage() {
         <CleanUpInactive onReview={setPlanning} />
         <AutomaticCleanup />
       </div>
+      <DocsStorage />
       {status !== undefined && (
         <p
           role="status"

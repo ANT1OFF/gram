@@ -8,4 +8,7 @@ export const docsRpc = ({ client }: RpcContext): DocsApi => ({
   saveDoc: (workspaceId, id, content, revision) =>
     run(client["docs.save"]({ workspaceId, id, content, revision })),
   hideDoc: (threadId, docId) => run(client["thread.hideDoc"]({ threadId, docId })),
+  markDocOpened: (workspaceId, id) => run(client["docs.opened"]({ workspaceId, id })),
+  archiveDocsOlderThan: async (days) =>
+    (await run(client["docs.archiveOlderThan"]({ days }))).archived,
 });

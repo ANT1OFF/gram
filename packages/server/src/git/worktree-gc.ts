@@ -48,6 +48,8 @@ import { ThreadRuntimes, type ClaimGuard } from "../runtime/thread-runtimes.ts";
 import { TerminalGate } from "../terminal/gate.ts";
 import { Orchestration } from "../orchestration/service.ts";
 import { GitStatePublisher } from "./publisher.ts";
+import { sweepDocs } from "../docs/docs-sweep.ts";
+import { Docs } from "../docs/docs.ts";
 import { cleanupNotes, underWorktreesFolder, type Cleaned } from "./storage.ts";
 import { cachedFolderSize, forgetFolderSize } from "./worktree-size.ts";
 import { DAY_MS } from "../zone-time.ts";
@@ -664,7 +666,10 @@ const sweepOnce = (
 
 const SWEEP_EVERY = Duration.minutes(15);
 
-/** Runs `sweepOnce` every `SWEEP_EVERY` while the setting is on, until the scope closes. */
+/**
+ * Runs `sweepOnce` every `SWEEP_EVERY` while the setting is on, then the docs' own sweep
+ * (`sweepDocs`), which its own settings govern, until the scope closes.
+ */
 export const WorktreeSweepLive: Layer.Layer<
   never,
   never,
@@ -673,7 +678,20 @@ export const WorktreeSweepLive: Layer.Layer<
   Effect.gen(function* () {
     const store = yield* ThreadStore;
     const orchestration = Option.getOrUndefined(yield* Effect.serviceOption(Orchestration));
-    const pass = Effect.gen(function* () {
+    const docs = Option.getOrUndefined(yield* Effect.serviceOption(Docs));
+    const publisher = yield* GitStatePublisher;
+    const docsPass =
+      docs === undefined
+        ? Effect.void
+        : sweepDocs(docs, store, publisher).pipe(
+            Effect.flatMap((counts) =>
+              counts.archived + counts.marked === 0
+                ? Effect.void
+                : Effect.logInfo("docs sweep").pipe(Effect.annotateLogs({ ...counts })),
+            ),
+            Effect.catchCause(() => Effect.logWarning("docs sweep pass failed")),
+          );
+    const worktreePass = Effect.gen(function* () {
       const settings = yield* store.getSettings;
       const sweep = worktreeSweepOf(settings);
       if (sweep === undefined) return;
@@ -685,6 +703,7 @@ export const WorktreeSweepLive: Layer.Layer<
       for (const { workspaceId, note } of notes)
         yield* orchestration.noteQuietly(workspaceId, note);
     }).pipe(Effect.catchCause(() => Effect.logWarning("worktree sweep pass failed")));
+    const pass = worktreePass.pipe(Effect.andThen(docsPass));
     yield* Effect.sleep(SWEEP_EVERY).pipe(
       Effect.andThen(pass.pipe(Effect.repeat(Schedule.spaced(SWEEP_EVERY)))),
       Effect.forkScoped,

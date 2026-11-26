@@ -16,4 +16,11 @@ export interface DocsApi {
    * (`thread.hideDoc`), so every client stops showing it and a later save doesn't bring it back.
    */
   hideDoc(threadId: ThreadId, id: DocId): Promise<void>;
+  /** The pane opened the doc, which keeps it from automatic archiving for a while (`docs.opened`). */
+  markDocOpened(workspaceId: WorkspaceId, id: DocId): Promise<void>;
+  /**
+   * Archives every workspace's docs the user neither saved nor opened in the last `days`
+   * (`docs.archiveOlderThan`); resolves to how many went.
+   */
+  archiveDocsOlderThan(days: number): Promise<number>;
 }

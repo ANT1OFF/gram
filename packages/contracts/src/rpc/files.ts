@@ -13,7 +13,17 @@ import {
 import { FsSearchFields, FsSearchResult } from "../fs-search.ts";
 import { FolderListing, FsListing, FsTree, FsFile } from "../fs.ts";
 import { ThreadId } from "../ids.ts";
-import { Doc, DocList, DocMeta, DocReadFields, DocSaveFields, DocsListFields } from "../docs.ts";
+import {
+  Doc,
+  DocList,
+  DocMeta,
+  DocOpenedFields,
+  DocReadFields,
+  DocSaveFields,
+  DocsArchived,
+  DocsArchiveOlderFields,
+  DocsListFields,
+} from "../docs.ts";
 import { WorkspaceOutputsFields, WorkspaceOutputsPage } from "../outputs.ts";
 import { FileImage } from "../thread-ui.ts";
 import { ProjectVocabulary, ProjectVocabularyFields } from "../vocabulary.ts";
@@ -120,5 +130,14 @@ export const FileRpcs = RpcGroup.make(
     payload: DocSaveFields,
     success: DocMeta,
     error: errors(NotFound, InvalidState, FsError),
+  }),
+  Rpc.make("docs.opened", {
+    payload: DocOpenedFields,
+    error: errors(InvalidState, FsError),
+  }),
+  Rpc.make("docs.archiveOlderThan", {
+    payload: DocsArchiveOlderFields,
+    success: DocsArchived,
+    error: errors(InvalidState, FsError),
   }),
 );

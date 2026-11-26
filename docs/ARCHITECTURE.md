@@ -61,7 +61,10 @@ CLI/session owners and its [offline scenario guidance](../packages/agents/script
   first. Only an archived doc can be deleted, by the orchestrator or the user. Each save keeps the
   version it replaces in `history/<id>/<revision>.doc`, the last 10. A doc may be bound to a PR
   (`pr`: the author's bound PR, or one a reviewer names). A workspace keeps one active doc per
-  PR, which any of its threads may update, so review rounds fold into it. A save is one rename, so a
+  PR, which any of its threads may update, so review rounds fold into it. [The docs sweep](../packages/server/src/docs/docs-sweep.ts),
+  on the worktree sweep's timer, archives a PR's doc some days after its PR merges or closes and a
+  worker's other docs some days after it is archived (Settings, Storage), never the orchestrator's
+  or one the user opened or saved in the last 14 days. A save is one rename, so a
   failed write leaves the last doc whole and a read always pairs text with its revision. Ids are
   slugs, so every path is a few checked segments; [the file layer](../packages/server/src/docs/doc-files.ts)
   pins every folder from the docs root down by identity for each operation and refuses a link in
