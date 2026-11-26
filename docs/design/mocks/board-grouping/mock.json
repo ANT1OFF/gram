@@ -1,0 +1,41 @@
+{
+  "title": "Board grouping",
+  "slug": "board-grouping",
+  "status": "approved",
+  "template": "options",
+  "current": 1,
+  "approved": 1,
+  "versions": [
+    {
+      "n": 1,
+      "file": "v1.html",
+      "created": "2026-11-26"
+    }
+  ],
+  "directions": [
+    {
+      "name": "A Flat lines",
+      "board": "a-flat-lines",
+      "shots": {
+        "dark": "shots/a-flat-lines-dark.png",
+        "light": "shots/a-flat-lines-light.png"
+      }
+    },
+    {
+      "name": "B Earned bands",
+      "board": "b-earned-bands",
+      "shots": {
+        "dark": "shots/b-earned-bands-dark.png",
+        "light": "shots/b-earned-bands-light.png"
+      }
+    },
+    {
+      "name": "C By state",
+      "board": "c-by-state",
+      "shots": {
+        "dark": "shots/c-by-state-dark.png",
+        "light": "shots/c-by-state-light.png"
+      }
+    }
+  ]
+}
