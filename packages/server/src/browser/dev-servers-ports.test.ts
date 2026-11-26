@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- scripts the IPv6 connection probe's answer, which a real network can't be made to give on cue */
 import { EventEmitter } from "node:events";
 import { connect, Socket } from "node:net";
 import type * as Net from "node:net";

@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- stands in for a machine with no shasum */
 // The stable tool's phases end to end against a synthetic GitHub (testing/fake-github.mjs) and a
 // fake `gh` (testing/fake-gh.mjs): the draft's validation, the read-only update check through the
 // app's own feed, and publishing.

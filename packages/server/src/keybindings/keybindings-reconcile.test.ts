@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- replaces fs.watch, whose events a real filesystem may drop or delay */
 import type * as NativeFs from "node:fs";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";

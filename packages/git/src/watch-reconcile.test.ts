@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- replaces the native watcher, which may deliver no event at all, and scripts the git state the reconcile reads, with no git */
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

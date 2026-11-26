@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- steps into Effect's FiberMap.run, to see when a routine's timer registers */
 // Event routines through the real engine: the first look seeds and fires for nothing; a new event
 // starts one worker with the event fenced in its brief, once; a burst is one run; events wait while
 // the last worker is live, through the cooldown and through a pause; a restart neither fires again

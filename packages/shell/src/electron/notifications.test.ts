@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- Electron runs only inside its own binary, so the test stands in for it, and for the settings file it reads */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** An Electron notification as far as `windows.ts` drives one. */

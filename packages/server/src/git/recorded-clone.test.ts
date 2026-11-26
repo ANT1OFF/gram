@@ -7,16 +7,12 @@ import type { Project } from "@gram/contracts";
 import { Proc, ProcLive, ProcTimeout } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { vi } from "vitest";
 import { cloneIdentityOf } from "../host/repos.ts";
 import { effectiveOriginsChecked, recordedCloneIdentity } from "./recorded-clone.ts";
 import { hasGit, makeRepo, removeDirStrict, run, tempDir } from "./test-repo.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
 
-const relay = vi.hoisted(() => ({ on: true }));
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  githubRelayed: () => relay.on,
-}));
+markGithubRelayed(true);
 
 const project = {
   id: "p-1",
@@ -31,7 +27,7 @@ const check = (url: string) =>
 describe("a new checkout's clone identity", () => {
   it.effect("is the live one when it names the recorded repository by ssh", () =>
     Effect.gen(function* () {
-      relay.on = true;
+      markGithubRelayed(true);
       const ssh = cloneIdentityOf("git@github.com:acme/web.git");
       expect(yield* check("git@github.com:acme/web.git")).toMatchObject({ success: ssh });
     }),
@@ -39,14 +35,14 @@ describe("a new checkout's clone identity", () => {
 
   it.effect("is refused behind a GitHub route when it names another repository", () =>
     Effect.gen(function* () {
-      relay.on = true;
+      markGithubRelayed(true);
       expect((yield* check("https://github.com/someone/private.git"))._tag).toBe("Failure");
     }),
   );
 
   it.effect("is kept, and the mismatch only logged, without a GitHub route", () =>
     Effect.gen(function* () {
-      relay.on = false;
+      markGithubRelayed(false);
       expect((yield* check("https://github.com/someone/private.git"))._tag).toBe("Success");
     }),
   );
@@ -73,7 +69,7 @@ const checked = (repo: string) =>
 describe.skipIf(!hasGit)("where a project folder's git fetches and pushes origin", () => {
   it.effect("is refused behind a GitHub route when a pushurl or insteadOf sends it elsewhere", () =>
     Effect.gen(function* () {
-      relay.on = true;
+      markGithubRelayed(true);
       const pushurl = yield* folder([
         "remote.origin.pushurl",
         "https://github.com/someone/private.git",
@@ -94,7 +90,7 @@ describe.skipIf(!hasGit)("where a project folder's git fetches and pushes origin
 
   it.effect("is refused behind a GitHub route when the user's own config sends it elsewhere", () =>
     Effect.gen(function* () {
-      relay.on = true;
+      markGithubRelayed(true);
       const { tmp, repo } = yield* folder();
       const global = nodePath.join(tmp, "global.gitconfig");
       fs.writeFileSync(
@@ -117,7 +113,7 @@ describe.skipIf(!hasGit)("where a project folder's git fetches and pushes origin
 
   it.effect("passes a pushurl to the same repository by ssh", () =>
     Effect.gen(function* () {
-      relay.on = true;
+      markGithubRelayed(true);
       const ssh = yield* folder(["remote.origin.pushurl", "git@github.com:acme/web.git"]);
       expect((yield* checked(ssh.repo))._tag).toBe("Success");
     }).pipe(Effect.scoped),
@@ -145,7 +141,7 @@ describe("where a folder's git goes, when git can't say", () => {
     "is refused behind a GitHub route when get-url fails (%s)",
     (failing) =>
       Effect.gen(function* () {
-        relay.on = true;
+        markGithubRelayed(true);
         const out = yield* effectiveOriginsChecked(project, "/work/web").pipe(
           Effect.provide(getUrlFails(failing)),
           Effect.result,
@@ -156,7 +152,7 @@ describe("where a folder's git goes, when git can't say", () => {
 
   it.effect("is only logged, and goes ahead, without a GitHub route", () =>
     Effect.gen(function* () {
-      relay.on = false;
+      markGithubRelayed(false);
       const out = yield* effectiveOriginsChecked(project, "/work/web").pipe(
         Effect.provide(getUrlFails("timeout")),
         Effect.result,
@@ -169,7 +165,7 @@ describe("where a folder's git goes, when git can't say", () => {
 describe.skipIf(!hasGit)("where a project folder's large files go", () => {
   it.effect("is refused behind a GitHub route when LFS is sent to another repository", () =>
     Effect.gen(function* () {
-      relay.on = true;
+      markGithubRelayed(true);
       const config = yield* folder([
         "remote.origin.lfsurl",
         "https://github.com/someone/private.git/info/lfs",
@@ -200,7 +196,7 @@ describe.skipIf(!hasGit)("where a project folder's large files go", () => {
 
   it.effect("is refused behind a GitHub route when an insteadOf sends origin to a local path", () =>
     Effect.gen(function* () {
-      relay.on = true;
+      markGithubRelayed(true);
       const local = yield* folder(["url./tmp/elsewhere/.insteadOf", "https://github.com/acme/"]);
       expect((yield* checked(local.repo))._tag).toBe("Failure");
     }).pipe(Effect.scoped),

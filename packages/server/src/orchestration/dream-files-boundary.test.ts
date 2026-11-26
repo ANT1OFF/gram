@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- steps into the anchored-file helper and file opens at their native boundary, to race them */
 import type * as NativeFiles from "./anchored-files.ts";
 import type * as FsPromises from "node:fs/promises";
 import { afterEach, expect, it, vi } from "vitest";

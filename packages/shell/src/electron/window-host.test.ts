@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- Electron runs only inside its own binary, so the test stands in for it, and for the saved-windows file */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** A BrowserWindow as far as the shell's window host and `createWindow` touch one. */

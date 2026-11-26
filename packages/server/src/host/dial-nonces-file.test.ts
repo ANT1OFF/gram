@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- makes futimes and lutimes fail, as some filesystems do */
 import type * as Fs from "node:fs";
 import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

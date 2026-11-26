@@ -1,5 +1,4 @@
 import { describe, expect, it } from "@effect/vitest";
-import { vi } from "vitest";
 import {
   DEFAULT_SETTINGS,
   type GitState,
@@ -31,14 +30,12 @@ import {
   makeReviewRequestsPoller,
   ReviewRequestsPoller,
 } from "./review-requests.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
+
+markGithubRelayed(false);
 
 // Off unless a test turns it on: behind an embedding deployment's GitHub route, the polls read with
 // the deployment's access, so an agent is shown only what its thread works in.
-const relay = vi.hoisted(() => ({ on: false }));
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  githubRelayed: () => relay.on,
-}));
 
 /** The tools run no subprocess here: the thread store holds every origin they read. */
 const noProc = { run: () => Effect.die("no subprocess") } as unknown as Proc["Service"];
@@ -950,8 +947,8 @@ describe("ReviewRequestsPoller's open PRs", () => {
 describe("review requests and open PRs behind a GitHub route", () => {
   it.effect("are shown to an agent only for repositories its thread works in", () =>
     Effect.gen(function* () {
-      relay.on = true;
-      yield* Effect.addFinalizer(() => Effect.sync(() => void (relay.on = false)));
+      markGithubRelayed(true);
+      yield* Effect.addFinalizer(() => Effect.sync(() => markGithubRelayed(false)));
       const web = cloneIdentityOf("https://github.com/acme/web.git")!;
       yield* addThread("t-web", "/work/web", { branch: "feat/one", cloneIdentity: web });
       fake.own = [mine("acme/web", 3), mine("acme/api", 4)];

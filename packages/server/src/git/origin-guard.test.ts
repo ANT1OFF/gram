@@ -16,19 +16,15 @@ import {
 } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { vi } from "vitest";
 import * as nodePath from "node:path";
 import { cloneIdentityOf } from "../host/repos.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { checked, fixture, layer } from "./local-checks-fixture.ts";
 import { storeOriginGuard } from "./origin-guard.ts";
 import { hasGit, makeRepo, removeDirStrict, run, tempDir } from "./test-repo.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
 
-const relay = vi.hoisted(() => ({ on: true }));
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  githubRelayed: () => relay.on,
-}));
+markGithubRelayed(true);
 
 /** Every git the code under test starts, by its arguments. */
 const spawned: Array<ReadonlyArray<string>> = [];
@@ -55,7 +51,7 @@ let worktree = "";
 let project: Project;
 
 beforeEach(() => {
-  relay.on = true;
+  markGithubRelayed(true);
   spawned.length = 0;
   const tmp = tempDir();
   dirs.push(tmp);
@@ -158,7 +154,7 @@ describe.skipIf(!hasGit)("the server's git, behind a GitHub route, to a rewritte
 
   it.effect("fetches as before without a route", () =>
     Effect.gen(function* () {
-      relay.on = false;
+      markGithubRelayed(false);
       yield* attempt(fetchOriginBranch(repo, "origin/main"));
       expect(reachedRemote()).toBe(true);
     }),

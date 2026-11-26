@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- counts the coverage helpers a scan makes for itself */
 import { expect, it, vi } from "vitest";
 import { makeCodexUsageLedger } from "@gram/agents/codex";
 import type * as Coverage from "./codex-history-coverage.ts";

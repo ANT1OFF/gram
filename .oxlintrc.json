@@ -48,6 +48,10 @@
     "anti-slop/no-reflect-apply": "error",
     "anti-slop/no-reflect-get": "error",
     "anti-slop/no-widen-then-assert": "error",
+    // A test replaces a dependency through a real seam, not by swapping the module it imports.
+    // Where the dependency is the platform itself (Electron, a native addon, a failure Node
+    // must be made to give), the file says so on its disable.
+    "anti-slop/no-module-mocking": "error",
     "typescript/no-floating-promises": [
       "error",
       {
@@ -112,6 +116,14 @@
         "typescript/require-array-sort-compare": "error",
         // `${value}` of an object reads "[object Object]": narrow it, or say how it reads.
         "typescript/restrict-template-expressions": ["error", { "allowNever": true }]
+      }
+    },
+    {
+      "files": ["apps/web/**"],
+      "rules": {
+        // Mid-migration: the web app's router mocks move to a real router in the changes that
+        // follow.
+        "anti-slop/no-module-mocking": "off"
       }
     },
     {

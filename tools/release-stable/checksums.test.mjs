@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- proves checksum verification spawns no process */
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

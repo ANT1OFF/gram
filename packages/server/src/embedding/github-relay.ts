@@ -71,6 +71,14 @@ export const ghThreadEnv = (threadId: ThreadId | string): Readonly<Record<string
 /** Whether this server's `gh` goes through a relay: true once one started. */
 export const githubRelayed = (): boolean => relaying;
 
+/**
+ * Says whether this server's `gh` goes through a relay. `GitHubRelayLive` marks it as its relay
+ * starts and stops; a test of code that acts differently under a relay marks it the same way.
+ */
+export const markGithubRelayed = (on: boolean): void => {
+  relaying = on;
+};
+
 /** The thread a request's `Authorization` names, if it names one. */
 export const threadOfAuthorization = (value: string | undefined): string | undefined => {
   const match = /^(?:token|bearer)\s+(\S+)$/i.exec(value?.trim() ?? "");
@@ -212,7 +220,7 @@ export const GitHubRelayLive: Layer.Layer<never, Error, ServerConfig | ThreadSto
           Effect.promise(
             () =>
               new Promise<void>((resolve) => {
-                relaying = false;
+                markGithubRelayed(false);
                 server.close(() => resolve());
               }),
           ),
@@ -221,7 +229,7 @@ export const GitHubRelayLive: Layer.Layer<never, Error, ServerConfig | ThreadSto
       process.env["GH_TOKEN"] = PLACEHOLDER;
       delete process.env["GITHUB_TOKEN"];
       delete process.env["GH_ENTERPRISE_TOKEN"];
-      relaying = true;
+      markGithubRelayed(true);
       yield* Effect.logInfo("GitHub relay: gh goes through the configured route");
     }),
   );

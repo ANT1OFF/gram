@@ -4,18 +4,14 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { GhCallEnv, Pr } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { vi } from "vitest";
 import { RuntimeTestLayer } from "../runtime/test-harness.ts";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { gitPlatformTest } from "./platform.ts";
 import { GitStatePublisher, GitStatePublisherLive } from "./publisher.ts";
 import { hasGit, makeRepo, removeDir, tempDir } from "./test-repo.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
 
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  githubRelayed: () => true,
-  ghThreadEnv: (threadId: string) => ({ GH_TOKEN: `gram-thread:${threadId}` }),
-}));
+markGithubRelayed(true);
 
 /** The `GH_TOKEN` each branch lookup was made under, `""` for none. */
 const branchLookups: Array<string> = [];

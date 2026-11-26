@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- Electron runs only inside its own binary, so the test stands in for it, and for the settings file it reads and writes */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({

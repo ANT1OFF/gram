@@ -4,13 +4,10 @@ import { describe, expect, it } from "@effect/vitest";
 import { GhCallEnv } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
-import { vi } from "vitest";
 import { logDefects } from "./common.ts";
+import { markGithubRelayed } from "../../embedding/github-relay.ts";
 
-vi.mock("../../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  ghThreadEnv: (threadId: string) => ({ GH_TOKEN: `gram-thread:${threadId}` }),
-}));
+markGithubRelayed(true);
 
 const group = { requests: new Map() } as unknown as Parameters<typeof logDefects>[0];
 const token = Effect.gen(function* () {
