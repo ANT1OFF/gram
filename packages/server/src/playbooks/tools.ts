@@ -59,7 +59,9 @@ export const PlaybookAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* AppToolRegistry;
     yield* registry.register(
-      variantPerSetOfOfferedPlaybooks().map(({ audience, playbooks }) => readPlaybook(audience, playbooks)),
+      variantPerSetOfOfferedPlaybooks().map(({ audience, playbooks }) =>
+        readPlaybook(audience, playbooks),
+      ),
     );
   }),
 );
