@@ -230,8 +230,8 @@ export const readDocTool = (
               updatedBy: doc.updatedBy,
               ...archivedOf(doc),
             })),
-            active: counts.active,
-            archived: counts.archived,
+            active: archived === true ? counts.active : all.length,
+            archived: archived === true ? all.length : counts.archived,
             ...(query === undefined ? {} : { matched: found.length }),
             ...(more > 0
               ? {

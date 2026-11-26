@@ -273,11 +273,9 @@ const historyIn = (at: DocFolder, id: DocId) =>
 
 const purge = (at: DocFolder, arch: DocFolder, id: DocId) =>
   Effect.gen(function* () {
+    const kept = yield* historyOf(at, id, false);
+    if (kept !== undefined) yield* run(id, () => removePinned(kept));
     yield* run(id, () => unlinkPinned(arch, recordName(id)));
-    const kept = yield* historyOf(at, id, false).pipe(Effect.orElseSucceed(() => undefined));
-    if (kept !== undefined) {
-      yield* run(id, () => removePinned(kept)).pipe(Effect.ignore);
-    }
   });
 
 const activeOf = (meta: DocMeta): DocMeta => {
@@ -465,12 +463,14 @@ export const makeDocs = (
           if (kept === undefined) return yield* refuse("The doc's history folder couldn't be made");
           const old = yield* recordOf(beforeMeta, before);
           yield* run(meta.id, () => writePinned(kept, `${previous.revision}${RECORD}`, old, hooks));
+          yield* run(meta.id, () => writePinned(at, recordName(meta.id), record, hooks));
           const versions = yield* historyIn(at, meta.id);
           for (const extra of versions.slice(historyKeep)) {
             yield* run(meta.id, () => unlinkPinned(kept, `${extra}${RECORD}`));
           }
+        } else {
+          yield* run(meta.id, () => writePinned(at, recordName(meta.id), record, hooks));
         }
-        yield* run(meta.id, () => writePinned(at, recordName(meta.id), record, hooks));
         yield* publishChanged(meta.workspaceId);
       }),
     );
@@ -481,12 +481,19 @@ export const makeDocs = (
       yield* run(id, () => unlinkPinned(folders.from, recordName(id)));
     });
 
-  const purgeOverCap = (at: DocFolder, arch: DocFolder, workspaceId: WorkspaceId) =>
+  const purgeOverCap = (
+    at: DocFolder,
+    arch: DocFolder,
+    workspaceId: WorkspaceId,
+    justArchived: DocId,
+  ) =>
     Effect.gen(function* () {
       const names = idsIn(yield* run("archive", () => listPinned(arch)));
       if (names.length <= archiveMax) return;
-      const archived = yield* listArchivedIn(at, workspaceId);
-      for (const old of archived.slice(archiveMax).toReversed()) {
+      const others = (yield* listArchivedIn(at, workspaceId)).filter(
+        (meta) => meta.id !== justArchived,
+      );
+      for (const old of others.slice(archiveMax - 1).toReversed()) {
         yield* purge(at, arch, old.id).pipe(Effect.ignore);
       }
     });
@@ -635,7 +642,7 @@ export const makeDocs = (
             const arch = yield* archiveOf(at, true);
             if (arch === undefined) return yield* refuse("The docs archive couldn't be made");
             yield* move(id, record, { from: at, to: arch });
-            yield* purgeOverCap(at, arch, workspaceId);
+            yield* purgeOverCap(at, arch, workspaceId, id);
             yield* publishChanged(workspaceId);
           }),
         );

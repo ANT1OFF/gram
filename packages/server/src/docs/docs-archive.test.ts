@@ -11,8 +11,10 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { DocFileHooks } from "./doc-files.ts";
 import { type DocAuthor, type DocLimits, makeDocs } from "./docs.ts";
 
 const WS = "ws-archive" as WorkspaceId;
@@ -27,7 +29,7 @@ const ORCHESTRATOR: DocAuthor = {
   orchestrator: true,
 };
 
-const setup = (limits?: DocLimits) =>
+const setup = (limits?: DocLimits, hooks?: DocFileHooks) =>
   Effect.gen(function* () {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "gram-docs-archive-")));
     yield* Effect.addFinalizer(() =>
@@ -35,7 +37,7 @@ const setup = (limits?: DocLimits) =>
     );
     const root = join(dir, "docs");
     let changed = 0;
-    const docs = makeDocs(root, () => Effect.sync(() => void changed++), undefined, limits);
+    const docs = makeDocs(root, () => Effect.sync(() => void changed++), hooks, limits);
     const publish = (title: string, author = worker(1), content = `${title} text`) =>
       docs
         .publish({ workspaceId: WS, author, title, content })
@@ -166,6 +168,20 @@ describe("archived docs", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("never purge the doc just archived, even when the clock stepped back", () =>
+    Effect.gen(function* () {
+      const { docs, publish } = yield* setup({ archiveMax: 1 });
+      const a = yield* publish("A");
+      const b = yield* publish("B");
+      yield* TestClock.setTime(10_000);
+      yield* docs.archive(WS, a, worker(1), "manual");
+      yield* TestClock.setTime(5_000);
+      yield* docs.archive(WS, b, worker(1), "manual");
+      expect((yield* docs.listArchived(WS)).map((doc) => doc.id)).toEqual([b]);
+      expect((yield* docs.read(WS, b)).content).toBe("B text");
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("refuse an agent's update or the user's save until restored", () =>
     Effect.gen(function* () {
       const { docs, publish } = yield* setup();
@@ -221,6 +237,33 @@ describe("doc history", () => {
       expect((yield* docs.read(WS, id, 2)).content).toBe("v2");
       yield* docs.restore(WS, id, worker(1));
       expect(yield* docs.history(WS, id)).toEqual([3, 2]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("keeps every kept version when an update fails to save", () =>
+    Effect.gen(function* () {
+      let failMain: string | undefined;
+      const { root, docs, publish } = yield* setup(
+        { historyKeep: 2 },
+        {
+          rename: async (from, to) => {
+            if (to === failMain) throw Object.assign(new Error("no space"), { code: "ENOSPC" });
+            await rename(from, to);
+          },
+        },
+      );
+      const id = yield* publish("Plan", worker(1), "v1");
+      const update = (revision: number, content: string) =>
+        docs.publish({ workspaceId: WS, author: worker(1), id, revision, content });
+      yield* update(1, "v2");
+      yield* update(2, "v3");
+      expect(yield* docs.history(WS, id)).toEqual([2, 1]);
+      failMain = join(root, WS, `${id}.doc`);
+      expect((yield* Effect.flip(update(3, "v4")))._tag).toBe("FsError");
+      failMain = undefined;
+      expect((yield* docs.read(WS, id)).content).toBe("v3");
+      expect((yield* docs.read(WS, id, 1)).content).toBe("v1");
+      expect((yield* docs.read(WS, id, 2)).content).toBe("v2");
     }).pipe(Effect.scoped),
   );
 
