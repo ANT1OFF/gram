@@ -4144,10 +4144,7 @@ export const SHOTS: readonly Shot[] = [
       await openWaitingOn(page, true);
       await page.setViewportSize({ width: 1728, height: 1095 });
       await openPanelTab(page.getByTestId("right-panel"), "Workers");
-      await page
-        .getByTestId("workers-group-waiting")
-        .getByText("Retire the old export")
-        .waitFor();
+      await page.getByTestId("workers-group-waiting").getByText("Retire the old export").waitFor();
       await page.mouse.move(1700, 1080);
     },
   },
