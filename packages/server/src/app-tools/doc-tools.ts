@@ -3,6 +3,8 @@ import {
   DOC_HISTORY_KEEP,
   DOC_LIST_MAX,
   DOC_MAX_BYTES,
+  DOC_PR_REPO_PATTERN,
+  DocPr,
   DOC_TITLE_MAX,
   DocId,
   type DocCardData,
@@ -48,7 +50,17 @@ const authorOf = (thread: Thread): DocAuthor => ({
   orchestrator: thread.role === "orchestrator",
 });
 
-const cardOf = (published: PublishedDoc, at: number): DocCardData => ({
+const prOfThread = (thread: Thread): DocPr | undefined =>
+  thread.boundPr === undefined || !DOC_PR_REPO_PATTERN.test(thread.boundPr.repo)
+    ? undefined
+    : { repo: thread.boundPr.repo, number: thread.boundPr.number };
+
+const prText = (pr: DocPr) => `${pr.repo}#${pr.number}`;
+
+const cardOf = (
+  published: PublishedDoc & { readonly action: "published" | "updated" },
+  at: number,
+): DocCardData => ({
   id: published.meta.id,
   workspaceId: published.meta.workspaceId,
   title: published.meta.title,
@@ -85,6 +97,7 @@ const publishInput = Schema.Struct({
   content: Schema.String,
   id: Schema.optionalKey(DocId),
   revision: Schema.optionalKey(Schema.Int),
+  pr: Schema.optionalKey(Schema.NullOr(DocPr)),
 });
 
 const EARLIER_DOCS_MAX = 5;
@@ -107,13 +120,28 @@ export const publishDocTool = (
         "this tool or read_doc last gave you, with the whole new `content`; if the revision " +
         "moved on, the user edited it: read_doc it and work their edit in. A later pass on one " +
         "subject updates its doc. " +
-        "You may update your own docs; an orchestrator its workers' too.",
+        "You may update your own docs; an orchestrator its workers' too. A new doc is about your " +
+        'bound PR, or the one `pr` ({repo: "owner/repo", number}) names when you review ' +
+        "another's; `pr: null` binds none. A workspace keeps one active doc per PR: publishing " +
+        "another for it writes nothing and returns that doc's id and revision. Any thread in the " +
+        "workspace may update a PR's doc: read_doc it and add your round as a new section at the " +
+        "top, newest first, keeping the rounds before it.",
     },
     input: publishInput,
     rejectExcessProperties: true,
     handle: (threadId, input) =>
       Effect.gen(function* () {
         const { thread, workspaceId } = yield* callerIn(store, PUBLISH, threadId);
+        if (input.id !== undefined && input.pr !== undefined) {
+          return yield* new AppToolError({
+            tool: PUBLISH,
+            message: "`pr` names the PR a new doc is about; an update keeps the doc's own.",
+          });
+        }
+        const pr =
+          input.id !== undefined || input.pr === null
+            ? undefined
+            : (input.pr ?? prOfThread(thread));
         const published = yield* docs
           .publish({
             workspaceId,
@@ -122,8 +150,26 @@ export const publishDocTool = (
             title: input.title,
             content: input.content,
             revision: input.revision,
+            pr,
           })
           .pipe(Effect.mapError(failed(PUBLISH)));
+        if (published.action === "existing") {
+          const doc = published.meta;
+          return {
+            id: doc.id,
+            title: doc.title,
+            revision: doc.revision,
+            existing: true,
+            published: false,
+            pr: prText(pr!),
+            note: `${prText(pr!)} already has a doc, ${doc.title}, so nothing was published.`,
+            next:
+              `Fold your round into it: read_doc id "${doc.id}", put your round at the top as a ` +
+              `new section, newest first, and call ${PUBLISH} with id "${doc.id}", revision ` +
+              `${doc.revision} and the whole content. If yours is about another subject, not ` +
+              `a round on this PR, call ${PUBLISH} again with \`pr: null\`.`,
+          };
+        }
         const card = cardOf(published, published.meta.updatedAt);
         const relayed = yield* showCards(runtimes, thread, card);
         const earlier =
@@ -138,6 +184,7 @@ export const publishDocTool = (
           title: published.meta.title,
           revision: published.meta.revision,
           [published.action]: true,
+          ...(published.meta.pr === undefined ? {} : { pr: prText(published.meta.pr) }),
           shown: relayed
             ? "as a card in your transcript and your orchestrator's chat"
             : "as a card in your transcript",
@@ -172,8 +219,8 @@ const matches = (doc: DocMeta, query: string) => {
     .toLowerCase()
     .split(/\s+/)
     .filter((word) => word !== "");
-  const text = `${doc.title} ${doc.id}`.toLowerCase();
-  return words.every((word) => text.includes(word));
+  const title = doc.title.toLowerCase();
+  return doc.id === query.trim() || words.every((word) => title.includes(word));
 };
 
 /**
@@ -228,6 +275,7 @@ export const readDocTool = (
               revision: doc.revision,
               updatedAt: new Date(doc.updatedAt).toISOString(),
               updatedBy: doc.updatedBy,
+              ...(doc.pr === undefined ? {} : { pr: prText(doc.pr) }),
               ...archivedOf(doc),
             })),
             active: archived === true ? counts.active : all.length,
@@ -250,6 +298,7 @@ export const readDocTool = (
           revision: doc.revision,
           updatedAt: new Date(doc.updatedAt).toISOString(),
           updatedBy: doc.updatedBy,
+          ...(doc.pr === undefined ? {} : { pr: prText(doc.pr) }),
           ...archivedOf(doc),
           ...(earlier.length === 0 ? {} : { earlierRevisions: earlier }),
           content: doc.content,

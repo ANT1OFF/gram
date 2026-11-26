@@ -59,7 +59,9 @@ CLI/session owners and its [offline scenario guidance](../packages/agents/script
   uploaded. An archived doc moves to `archive/` beside them, with `archivedAt` and a reason; the
   200-doc cap counts active docs only, and the archive keeps 2,000, purging the earliest archived
   first. Only an archived doc can be deleted, by the orchestrator or the user. Each save keeps the
-  version it replaces in `history/<id>/<revision>.doc`, the last 10. A save is one rename, so a
+  version it replaces in `history/<id>/<revision>.doc`, the last 10. A doc may be bound to a PR
+  (`pr`: the author's bound PR, or one a reviewer names). A workspace keeps one active doc per
+  PR, which any of its threads may update, so review rounds fold into it. A save is one rename, so a
   failed write leaves the last doc whole and a read always pairs text with its revision. Ids are
   slugs, so every path is a few checked segments; [the file layer](../packages/server/src/docs/doc-files.ts)
   pins every folder from the docs root down by identity for each operation and refuses a link in
