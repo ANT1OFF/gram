@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-/* oxlint-disable anti-slop/no-module-mocking -- moves to renderInRouter with the menu-cap fix it exposes (WQ303; see #1065) */
 import { DEFAULT_SETTINGS, type ThreadId, type WorkspaceId } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -10,7 +9,7 @@ import { WorkspaceMenuItems } from "@/orchestration/workspace-menu-items";
 import { RowMenuItems, WorkerMenuItems, WorkerRowMenuItems } from "@/thread/row-menu";
 import { ThreadMenu } from "@/thread/thread-menu";
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { FOLD_ALL, useTitlebarSlot } from "@/shell/titlebar-slot";
 import { useLayoutStore, type PaletteScope } from "@/stores/layout";
@@ -19,21 +18,6 @@ import { useThreadsStore } from "@/stores/threads";
 import { CommandPalette } from "./command-palette";
 import { LABEL_WORD_CAP, labelWords } from "./menu-caps";
 import { expectCapped, labelOf } from "./menu-test-utils";
-
-/** The route the palette reads: the thread or workspace in view. */
-let params: Record<string, string> = {};
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to: _to, params: _params, ...rest }: Record<string, unknown>) => (
-    <a href="#" {...rest}>
-      {children as ReactNode}
-    </a>
-  ),
-  useNavigate: () => vi.fn(),
-  useParams: () => params,
-  useLocation: (options?: { select?: (location: { pathname: string }) => unknown }) =>
-    options?.select ? options.select({ pathname: "/" }) : { pathname: "/" },
-}));
 
 let api: MockApi;
 let made: Awaited<ReturnType<MockApi["simulateOrchestration"]>> & { workspaceId: WorkspaceId };
@@ -75,7 +59,6 @@ beforeEach(async () => {
       },
     }),
   );
-  params = {};
 });
 
 afterEach(() => {
@@ -85,12 +68,12 @@ afterEach(() => {
 
 /** Renders `items` as an open context menu and reads its top-level items. */
 async function itemsOf(items: ReactNode): Promise<string[]> {
-  const view = renderWithApi(
+  const view = await renderInRouter(
     <ContextMenu open>
       <ContextMenuTrigger render={<div />} />
       <ContextMenuContent>{items}</ContextMenuContent>
     </ContextMenu>,
-    api,
+    { api },
   );
   const menu = await screen.findByRole("menu");
   await within(menu).findByRole("menuitem", { name: "More…" });
@@ -138,7 +121,7 @@ describe("context menu caps", () => {
 
   it("keeps the pane header's thread menu to the cap", async () => {
     for (const threadId of ["t-flaky" as ThreadId, busiest, made.orchestratorThreadId]) {
-      const view = renderWithApi(<ThreadMenu threadId={threadId} />, api);
+      const view = await renderInRouter(<ThreadMenu threadId={threadId} />, { api });
       fireEvent.click(screen.getByRole("button", { name: "Thread menu" }));
       const menu = await screen.findByTestId("thread-menu");
       await within(menu).findByRole("menuitem", { name: "More…" });
@@ -164,7 +147,7 @@ describe("context menu caps", () => {
       }),
     );
     act(() => useTitlebarSlot.getState().setFold(FOLD_ALL));
-    const view = renderWithApi(<ThreadMenu threadId={busiest} />, api);
+    const view = await renderInRouter(<ThreadMenu threadId={busiest} />, { api });
     fireEvent.click(screen.getByRole("button", { name: "Thread menu" }));
     const menu = await screen.findByTestId("thread-menu");
     await within(menu).findByRole("menuitem", { name: "More…" });
@@ -191,14 +174,14 @@ describe("context menu caps", () => {
   it("opens ⌘K scoped to the row's thread, or the orchestrator's workspace, from More…", async () => {
     const scopes: (PaletteScope | undefined)[] = [];
     for (const id of [busiest, made.orchestratorThreadId]) {
-      const view = renderWithApi(
+      const view = await renderInRouter(
         <ContextMenu open>
           <ContextMenuTrigger render={<div />} />
           <ContextMenuContent>
             <RowMenuItems threadId={id} />
           </ContextMenuContent>
         </ContextMenu>,
-        api,
+        { api },
       );
       fireEvent.click(await screen.findByRole("menuitem", { name: "More…" }));
       // It opens once the menu has closed and given focus back.
@@ -225,10 +208,10 @@ const paletteSections = () =>
       ]),
   );
 
-/** Renders the palette open on `query`, scoped or not, and waits for its commands. */
-async function openPalette(query: string, scope?: PaletteScope) {
+/** Renders the palette open on `query` at `path`, scoped or not, and waits for its commands. */
+async function openPalette(query: string, scope?: PaletteScope, path = "/") {
   act(() => useLayoutStore.getState().openPalette(query, scope));
-  const view = renderWithApi(<CommandPalette />, api);
+  const view = await renderInRouter(<CommandPalette />, { api, path });
   await screen.findAllByRole("option");
   await new Promise((resolve) => setTimeout(resolve, 50));
   return view;
@@ -246,22 +229,22 @@ function expectNoSubtitles(name: string) {
 
 describe("palette commands", () => {
   it("carry no subtitle and a short label, on a thread, an orchestrator and a board", async () => {
-    const views: Record<string, string>[] = [
-      { threadId: "t-flaky" },
-      { threadId: made.orchestratorThreadId },
-      { threadId: busiest },
-      { workspaceId: made.workspaceId },
-      {},
+    // A workspace is in view on its own pages: its files, or its memory.
+    const paths = [
+      "/t/t-flaky",
+      `/t/${made.orchestratorThreadId}`,
+      `/t/${busiest}`,
+      `/w/${made.workspaceId}/files`,
+      "/",
     ];
-    for (const view of views) {
-      params = view;
-      const rendered = await openPalette(">");
-      expectNoSubtitles(`> on ${JSON.stringify(view)}`);
+    for (const path of paths) {
+      const rendered = await openPalette(">", undefined, path);
+      expectNoSubtitles(`> on ${path}`);
       // Typed, the commands of what is in view join them, under the same caps.
       act(() => {
         fireEvent.change(screen.getByRole("combobox"), { target: { value: ">e" } });
       });
-      expectNoSubtitles(`>e on ${JSON.stringify(view)}`);
+      expectNoSubtitles(`>e on ${path}`);
       rendered.unmount();
       useLayoutStore.getState().closePalette();
     }

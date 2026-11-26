@@ -36,8 +36,8 @@ const forkDialog = lazyPart(() => import("./fork-dialog"));
  */
 export function useThreadMenu(threadId: ThreadId): {
   /**
-   * The menu's items: "Continue in Codex…" first, the orchestrator's too, then the folder, Fork and
-   * the thread verbs.
+   * The menu's items: "Continue in Codex…" first, the orchestrator's too, then the folder (in
+   * More… while Continue-in is offered, so the menu keeps to MENU_CAP), Fork and the thread verbs.
    */
   items: (itemClassName: string) => ReactNode;
   /** The dialogs the items open, and a failed fork's line: render them beside the menu. */
@@ -102,7 +102,7 @@ export function useThreadMenu(threadId: ThreadId): {
           <div role="separator" className="-mx-1 my-1 h-px bg-border" />
         </>
       )}
-      {local && (
+      {local && !offer.offered && (
         <Menu.Item
           disabled={folder === undefined}
           className={itemClassName}
@@ -215,7 +215,7 @@ export function AllActivityItem({
 
 /**
  * The pane header's "…" menu: "Continue in Codex…" first, then opening the folder in the
- * editor, forking the thread, its own verbs and More…, then an orchestrator chat's Show all
+ * editor (in More… while Continue-in is offered), forking the thread, its own verbs and More…, then an orchestrator chat's Show all
  * activity (the title bar keeps it under View). More… has the rest: the branch to copy and
  * push (the agents' working detail, kept out of the bar and its menu), the worker's or
  * orchestrator's links, other windows, revealing the folder, forking into a worktree. A thread the
