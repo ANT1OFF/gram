@@ -1,5 +1,10 @@
 import { isMap, isScalar, parseDocument } from "yaml";
-import { folded, foldedAsBefore, plainCharacters } from "./memory-filter-text.ts";
+import {
+  folded,
+  foldedAsBefore,
+  foreignCredentialWord,
+  plainCharacters,
+} from "./memory-filter-text.ts";
 
 const CREDENTIAL_KEY =
   "(?:api|access|secret|private|ssh|deploy|signing|encryption|decryption|licen[cs]e|master|client|service|account|gpg|pgp|root|admin|app|webhook|session|auth|hmac|rsa|aes|kms)[\\s_-]*keys?|keys?[\\s_-]*(?:pairs?|files?|ids?|material|phrases?)";
@@ -57,6 +62,45 @@ const weakShaped = (text: string): boolean => {
   return false;
 };
 
+const BARE_KEY = /(?:^|[^a-z0-9])keys?(?=$|[^a-z0-9])/gi;
+
+const PASSWORD_SHAPED_WORD =
+  /(?<![A-Za-z0-9])(?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{8,}(?![A-Za-z0-9])/;
+
+const PRODUCT_KEY =
+  /(?<![A-Za-z0-9-])(?=[A-Z0-9-]*\d)(?=[A-Z0-9-]*[A-Z])[A-Z0-9]{4,}(?:-[A-Z0-9]{4,}){2,}(?![A-Za-z0-9-])/;
+
+const TABLE_ROW = /^\s*\|/;
+
+const valueShapedWord = (text: string): boolean =>
+  PASSWORD_SHAPED_WORD.test(text) || PRODUCT_KEY.test(text);
+
+const onlyLinking = (rest: string): boolean =>
+  rest
+    .split(/[\s"'`*_:=.,;()[\]|]+/)
+    .every((word) => word === "" || LINKING.test(word) || /^(?:for|it|the|this|that)$/i.test(word));
+
+const keyValueScope = (lines: ReadonlyArray<string>, at: number, rest: string): string => {
+  const scope = [rest];
+  if (TABLE_ROW.test(lines[at]!)) {
+    for (let row = at + 1; row < lines.length && TABLE_ROW.test(lines[row]!); row++) {
+      scope.push(lines[row]!);
+    }
+  } else if (onlyLinking(rest) && at + 1 < lines.length) {
+    scope.push(lines[at + 1]!);
+  }
+  return scope.join("\n");
+};
+
+const bareKeyWithValue = (text: string): boolean => {
+  const lines = text.split(/\r?\n/);
+  return lines.some((line, at) =>
+    [...line.matchAll(BARE_KEY)].some((match) =>
+      valueShapedWord(keyValueScope(lines, at, line.slice((match.index ?? 0) + match[0].length))),
+    ),
+  );
+};
+
 const directiveLine = (text: string): boolean =>
   text.split(/\r?\n/).some((line) => {
     const bare = line
@@ -95,6 +139,7 @@ const credentialWords = (text: string): boolean =>
   STRONG_WORD.test(splitCompounds(text)) ||
   STEM.test(text) ||
   weakShaped(text) ||
+  bareKeyWithValue(text) ||
   directiveLine(text);
 
 const ARN_PREFIX =
@@ -355,7 +400,7 @@ const proseProblem = (raw: string): ProseProblem | undefined => {
   const obscured = obscuredProblem(text);
   if (obscured !== undefined) return obscured;
   const views = foldings(text).map(withoutArnColons);
-  if (views.some(credentialShaped)) return CREDENTIAL;
+  if (views.some(credentialShaped) || foreignCredentialWord(text)) return CREDENTIAL;
   return views.some(tokenShaped) ? TOKEN : undefined;
 };
 
@@ -554,12 +599,11 @@ const indent = (line: string): number => /^[ \t]*/.exec(line)![0].length;
 
 const LIST_ITEM = /^\s*(?:[-*+]|\d{1,3}[.)])\s/;
 
-const PASSWORD_SHAPED_WORD =
-  /(?<![A-Za-z0-9])(?=[A-Za-z0-9]*[a-z])(?=[A-Za-z0-9]*[A-Z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{8,}(?![A-Za-z0-9])/;
-
 const couldBeValue = (lines: ReadonlyArray<string>, block: Block): boolean => {
   const text = lines.slice(block.from, block.to + 1);
-  if (opensRegion(text[0]!) || PASSWORD_SHAPED_WORD.test(text.join("\n"))) return true;
+  if (opensRegion(text[0]!) || TABLE_ROW.test(text[0]!) || valueShapedWord(text.join("\n"))) {
+    return true;
+  }
   return text.every(
     (line) =>
       line
@@ -577,6 +621,12 @@ const valueNeighboursInFlatNote = (
 ): ReadonlyArray<number> => {
   const block = blocks[at]!;
   const taken: Array<number> = [];
+  const depth = indent(lines[block.from]!);
+  if (depth > 0) {
+    let parent = at - 1;
+    while (parent >= 0 && indent(lines[blocks[parent]!.from]!) >= depth) parent--;
+    if (parent >= 0) taken.push(parent);
+  }
   let next = at + 1;
   while (next < blocks.length && indent(lines[blocks[next]!.from]!) > indent(lines[block.from]!)) {
     taken.push(next++);
@@ -643,27 +693,26 @@ export const workerView = (path: string, text: string): WorkerView => {
     proseProblem(lines.slice(block.from, block.to + 1).join("\n")),
   );
   const flat = blocks.every((block) => headingLevel(lines[block.from]!) === 0);
-  for (let spreading = true; spreading;) {
-    spreading = false;
-    blocks.forEach((block, at) => {
-      const why = problems[at];
-      if (why === undefined) return;
-      const take = (other: number, reason: boolean) => {
-        if (reason && other >= 0 && other < blocks.length && problems[other] === undefined) {
-          problems[other] = why;
-          spreading = true;
-        }
-      };
-      const next = blocks[at + 1];
-      const leads = flat
-        ? leadsIntoValueBeside(lines, block, next)
-        : leadsIntoValue(lines[block.to]!);
-      take(at + 1, leads || bareTokens(lines, next));
-      take(at - 1, followsValue(lines[block.from]!) || bareTokens(lines, blocks[at - 1]));
-      if (flat && why === CREDENTIAL) {
-        for (const other of valueNeighboursInFlatNote(lines, blocks, at)) take(other, true);
+  const own = [...problems];
+  const pending = problems.flatMap((why, index) => (why === undefined ? [] : [index]));
+  for (let at = pending.pop(); at !== undefined; at = pending.pop()) {
+    const block = blocks[at]!;
+    const why = problems[at]!;
+    const take = (other: number, reason: boolean) => {
+      if (reason && other >= 0 && other < blocks.length && problems[other] === undefined) {
+        problems[other] = why;
+        pending.push(other);
       }
-    });
+    };
+    const next = blocks[at + 1];
+    const leads = flat
+      ? leadsIntoValueBeside(lines, block, next)
+      : leadsIntoValue(lines[block.to]!);
+    take(at + 1, leads || bareTokens(lines, next));
+    take(at - 1, followsValue(lines[block.from]!) || bareTokens(lines, blocks[at - 1]));
+    if (flat && own[at] === CREDENTIAL) {
+      for (const other of valueNeighboursInFlatNote(lines, blocks, at)) take(other, true);
+    }
   }
   if (!flat) {
     const named = problems.flatMap((why, index) => (why === CREDENTIAL ? [index] : []));

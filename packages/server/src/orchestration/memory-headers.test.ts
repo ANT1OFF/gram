@@ -457,6 +457,30 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["a bare key with a value", "a.md", "key: orchard", false],
     ["a bare key assigned", "a.md", "Set key=Orchard7Lantern first.", false],
     ["a key pair", "a.md", "The key pair for the bastion lives with ops.", false],
+    // A bare `key` with a value later in its sentence, table row or next line.
+    [
+      "a key's value later in the sentence",
+      "a.md",
+      "The WPA key for the office is Orchard7Lantern.",
+      false,
+    ],
+    [
+      "a key's value after a clause",
+      "a.md",
+      "- 2026-11-25: rotated the staging box; the key for it is now Orchard7Lantern, ask amy.",
+      false,
+    ],
+    ["a key value", "a.md", "The key value is Orchard7Lantern.", false],
+    [
+      "a key column's value in a later row",
+      "a.md",
+      "| service | key |\n|---|---|\n| grafana | a1B2c3D4e5F6g7H |",
+      false,
+    ],
+    ["a key and its value in one row", "a.md", "| key | Orchard7Lantern |", false],
+    ["a key's value on the next line", "a.md", "The key\nOrchard7Lantern", false],
+    ["a key is, then its value on the next line", "a.md", "The key is\nOrchard7Lantern", false],
+    ["a product key", "a.md", "The product key for the build box is ABCDE-12345-FGHIJ.", false],
     // Characters that hide or disguise text, which still hold a note back whole.
     ["a bidi override", "a.md", "see \u202Etoken", false],
     ["tag characters", "a.md", "see\u{E0041}\u{E0042} it", false],
@@ -475,6 +499,23 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["a ratio sign for a colon", "a.md", "session\u2236orchard-willow", false],
     ["a no-break space before a pair", "a.md", "x\u00A0amy:orchard", false],
     ["a fullwidth entity", "a.md", "see \uFF06#103;hp", false],
+    // The security review of #1080: credential words spelt with characters it lets through.
+    ["a Greek lunate sigma in a word", "a.md", "se\u03F2ret: orchard", false],
+    ["a Greek gamma in a word", "a.md", "ke\u03B3: orchard", false],
+    ["a Cyrillic izhitsa in a word", "a.md", "en\u0475: orchard", false],
+    ["a Hebrew letter in a word", "a.md", "passw\u05E1rd: orchard", false],
+    [
+      "negative circled letters",
+      "a.md",
+      "\u{1F15F}\u{1F150}\u{1F162}\u{1F162}\u{1F166}\u{1F15E}\u{1F161}\u{1F153}: orchard",
+      false,
+    ],
+    ["a key emoji as the label", "a.md", "\u{1F511}: Orchard7Lantern", false],
+    ["an Armenian full stop for a colon", "a.md", "amy\u0589Orchard7Lantern", false],
+    ["a password in Russian", "a.md", "\u041F\u0430\u0440\u043E\u043B\u044C: orchard", false],
+    ["a password in Chinese", "a.md", "\u5BC6\u7801: orchard", false],
+    ["a variation selector after punctuation", "a.md", "ok a.\uFE0F b", false],
+    ["an invisible musical symbol", "a.md", "x \u{1D159} y", false],
     ["a key with full-length lines", "a.md", PEM_REAL, false],
     ["a key with full-length lines, fenced", "a.md", `\`\`\`\n${PEM_REAL}\n\`\`\``, false],
     [
@@ -612,6 +653,31 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["a key that is no credential", "notes.md", "- Key decisions sort by key, not by date.", true],
     ["typography and emoji", "style/voice.md", TYPOGRAPHY, true],
     ["accented and non-Latin letters", "people.md", LETTERS, true],
+    [
+      "a key with no value after it",
+      "notes.md",
+      "Each object hashes to its key; verification follows.",
+      true,
+    ],
+    [
+      "a table's primary key",
+      "schema.md",
+      "The primary key of the threads table is the thread id.",
+      true,
+    ],
+    ["keys on a keyboard", "ui.md", "Press the Esc key to close, then use the arrow keys.", true],
+    [
+      "a key in a table row",
+      "schema.md",
+      "| table | key |\n|---|---|\n| threads | thread id |",
+      true,
+    ],
+    [
+      "flags and lettered emoji",
+      "travel.md",
+      "Offices in \u{1F1F3}\u{1F1F4} and \u{1F1F8}\u{1F1EA}; blood type \u{1F170}\uFE0F.",
+      true,
+    ],
     ["paths and versions", "release.md", "Release notes go in CHANGELOG.md before 1.10.1.", true],
     ["a short path", "repo-layout.md", "Server tests live in packages/server/src.", true],
     [
@@ -718,6 +784,15 @@ describe("workerView, a value split from what names it", () => {
       "The staging passwords:\n\n- amy Orchard7Lantern\n- bob Willow3Harbor\n- cy Harbor9Orchard",
     ],
     ["before a sentence naming it", "orchard lantern seven\n\nThat is the staging password."],
+    // The security review of #1080, finding 2: values a flat note's rules once left showing.
+    [
+      "a wide table after a label",
+      "Staging passwords\n\n| user | one | two | three | four | five | six |\n| amy | orchard | lantern | seven | harbor | willow | maple |",
+    ],
+    [
+      "a parent item a nested one names",
+      "- orchard lantern seven harbor willow maple birch\n  - that is the staging password",
+    ],
     [
       "as the heading over a sentence naming it",
       "### Orchard7Lantern\n\nThat is the staging password.",
@@ -823,6 +898,17 @@ describe("workerView, a value split from what names it", () => {
       ),
       withheld: [{ from: 6, to: 6, problem: "something shaped like a credential" }],
     });
+  });
+
+  it("withholds a long flat list's credential bullet and its short neighbour only, quickly", () => {
+    const items = Array.from({ length: 3000 }, (_, at) => `- 2026-11-20: entry ${at} reads.`);
+    const note = [...items, "- Ten percent fewer tokens this week, across every worker we run."];
+    const started = performance.now();
+    const view = workerView("long.md", note.join("\n"));
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(view.kind === "shown" && view.withheld).toEqual([
+      { from: 3000, to: 3001, problem: "something shaped like a credential" },
+    ]);
   });
 
   it("withholds a note with no headings whole when a credential leaves nothing plain", () => {

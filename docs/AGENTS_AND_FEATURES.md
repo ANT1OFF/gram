@@ -1173,8 +1173,11 @@ heading as high, or the whole note when no heading comes first but one comes lat
 with no headings at all (a flat list of dated entries) it takes only what could hold its value
 instead: its nested items, the list it introduces with a `:`, and the blocks beside it that are a
 few words a line, a code fence or a password-shaped word; the dated entries around it still read.
-A bare `key` (an object's key, a key decision) is no credential word unless a value follows it;
-an `api key`, `deploy key`, `private_key` or `key pair` is. A block shaped like a token,
+A bare `key` (an object's key, a key decision) is no credential word unless a value follows it
+(`key: x`), or a password- or product-key-shaped word comes after it in its line, the table rows
+under it or, when its line ends on it, the next line; an `api key`, `deploy key`, `private_key` or
+`key pair` always is. Credential words in Russian, Greek, Chinese, Japanese, Korean, Arabic,
+Hebrew, Hindi and Thai count too. A block shaped like a token,
 which bounds itself, goes alone, with the next block when it ends leading into a value (`is:`)
 and the bare runs of token characters beside it. What a worker is shown always passes the
 whole-note checks below. A note is held back whole when nothing plain would be left, when its
@@ -1185,7 +1188,9 @@ Arabic, Hebrew, Devanagari and Thai letters, with the checks reading look-alikes
 and `:`-like signs as the ASCII they pass for. What isn't: control and format characters
 (zero-width, bidi overrides, tags), private-use and unassigned code points, invisible letters,
 runs of variation selectors or stacked marks, fullwidth and mathematical letters, small capitals
-and IPA, other look-alike scripts, and a word mixing Latin with Greek or Cyrillic look-alikes: `memory_list` names it under
+and IPA, other look-alike scripts, a variation selector after anything but an emoji or keycap
+base, and a word mixing Latin letters with letters of any other script (unit letters such as `μ`
+and `Ω` aside): `memory_list` names it under
 `keptFromWorkers` and `memory_read` refuses it (`kept_from_workers`) with the line and the kind
 of problem. The memory editor says which, beside the file. ARNs (the colons of
 `arn:partition:service:region:account:` are structure, the resource is still checked), account
