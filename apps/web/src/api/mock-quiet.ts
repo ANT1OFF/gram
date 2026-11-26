@@ -125,8 +125,8 @@ export async function simulateQuietBusy(
  * `casefiles` as `simulateQuietBusy` leaves it, with a worker more for each other kind of wait the
  * sidebar names: a timed wake, a release run it watches, a usage limit it waits out, a merge Gram
  * makes once ready, a wake on another PR and one on main moving; two runs watched at once, a wake
- * on a release, and a timed wake two days off; and the orchestrator resting on wakes of its own,
- * one for the release worker to finish.
+ * on a release, and a timed wake two days off on a worker whose PR merged; and the orchestrator
+ * resting on wakes of its own, one for the release worker to finish.
  * Times sit on the half hour after now, so a shot's labels move only with the clock's half hour.
  */
 export async function simulateWaitingOn(
@@ -249,6 +249,33 @@ export async function simulateWaitingOn(
     condition: { kind: "releasePublished", source: "github", name: "example/search-lib" },
   });
   const later = await spawn("casefile-export", "Retire the old export", "retire-export");
+  host.setGit(later.id, {
+    repo: true,
+    branch: later.checkout.branch!,
+    worktree: true,
+    head: "346".padEnd(40, "c"),
+    changesToken: "mock-waiting-346",
+    changedFiles: 0,
+    base: "origin/main",
+    behindBase: 0,
+    aheadBase: 0,
+    conflicts: false,
+    upstream: "synced",
+    origin,
+    pr: {
+      number: 346,
+      state: "MERGED",
+      url: `https://github.com/${origin}/pull/346`,
+      title: later.title,
+      isDraft: false,
+      checks: "passing",
+      headMatches: true,
+      aheadOfPr: false,
+      baseRef: "main",
+      headRef: later.checkout.branch!,
+    },
+  });
+  host.replace({ ...later, completedAt: Date.now(), completedReason: "prMerged" });
   wake(later.id, base + 2 * 24 * 60 * minute, "Remove the old export once nobody uses it");
   wake(busy.orchestratorThreadId, base + 10 * minute, "Check #341 and #343, then merge the index");
   wake(busy.orchestratorThreadId, base + 240 * minute, "Announce 2.4.0", {

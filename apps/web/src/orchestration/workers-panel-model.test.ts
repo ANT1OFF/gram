@@ -11,7 +11,12 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import type { RailTone } from "./rail-model";
-import { workersByTab, type WorkerRow, type WorkersByTab } from "./workers-model";
+import {
+  ledgerWorkersOver,
+  workersByTab,
+  type WorkerRow,
+  type WorkersByTab,
+} from "./workers-model";
 import {
   filteredGroups,
   filterLabel,
@@ -117,7 +122,8 @@ describe("the Workers tab's groups", () => {
     expect(groupOf(row("d", "waiting"), NONE)).toBe("waiting");
     expect(groupOf(row("e", "attention"), NONE)).toBe("stopped");
     expect(groupOf(row("f", "idle"), NONE)).toBe("stopped");
-    expect(groupOf(row("g", "merged"), NONE)).toBe("done");
+    // Merged with something still pending (its row's tab is Now): it waits, as the sidebar has it.
+    expect(groupOf(row("g", "merged"), NONE)).toBe("waiting");
     expect(groupOf(row("h", "idle", { tab: "done", glyph: "merged" }), NONE)).toBe("done");
     // An ask put away for Later, a failure dismissed: no item, so not counted as needing you here
     // when the badge and the Inbox don't count it; at rest, its dot still says why.
@@ -152,6 +158,33 @@ describe("the Workers tab's groups", () => {
     expect(ids(groups, "running")).toEqual(["run"]);
     expect(ids(groups, "done")).toEqual(["shipped"]);
     expect(groups.reduce((sum, group) => sum + group.rows.length, 0)).toBe(5);
+  });
+
+  it("keeps a merged worker with a wake or a monitored run in Waiting, and one with nothing in Done", () => {
+    const at = NOW + 3 * 24 * 60 * MINUTE;
+    const ledger = ledgerOf([
+      worker("timed", "merged", { wakes: [{ id: "w1", at, note: "look again" }] }),
+      worker("watching", "merged", {
+        runWatches: [{ repo: "acme/api", runId: 42, since: NOW - MINUTE }],
+      }),
+      worker("finished", "merged"),
+    ]);
+    const byId = {
+      timed: summary("timed", "idle", { completedAt: NOW - 5 * MINUTE }),
+      watching: summary("watching", "idle", { completedAt: NOW - 5 * MINUTE }),
+      finished: summary("finished", "idle", { completedAt: NOW - 5 * MINUTE }),
+    };
+    const tabs = workersByTab(ledger, { byId, statusDetail: {}, now: NOW });
+    const groups = statusGroups(tabs, byId, NOW, NONE);
+    expect(ids(groups, "waiting")).toEqual(["timed", "watching"]);
+    expect(ids(groups, "done")).toEqual(["finished"]);
+    // The sidebar's live count is every worker not over: Waiting has exactly those.
+    const over = ledgerWorkersOver(ledger, byId);
+    expect([...over].filter(([, done]) => !done).map(([id]) => id)).toEqual(["timed", "watching"]);
+    // Its row says what it waits for and when, as the sidebar's does.
+    const timed = groups.find((group) => group.id === "waiting")!.rows[0]!;
+    expect(timed.source.waiting?.kind).toBe("timer");
+    expect(timed.line).toContain("18 Oct 14:40");
   });
 
   it("filters by search over the title, feature and repo", () => {

@@ -4136,6 +4136,19 @@ export const SHOTS: readonly Shot[] = [
     element: (page) => page.getByTestId("overview-sidebar"),
   },
   {
+    name: "workers-panel-waiting",
+    title:
+      "The Workers panel beside the sidebar over every kind of wait: finished workers still watching a run sit in Waiting with the sidebar's live ones, not in Done",
+    open: async (page) => {
+      await seedMockSettings(page, { panel: { open: true } });
+      await openWaitingOn(page, true);
+      await page.setViewportSize({ width: 1728, height: 1095 });
+      await openPanelTab(page.getByTestId("right-panel"), "Workers");
+      await page.getByTestId("workers-group-waiting").getByText("Retire the old export").waitFor();
+      await page.mouse.move(1700, 1080);
+    },
+  },
+  {
     name: "sidebar-waiting-kinds-narrow",
     title: "Every kind of wait in the sidebar at its narrowest, 180 px",
     open: async (page) => {

@@ -49,7 +49,7 @@ const TONE_GROUP: Readonly<Record<RailTone, StatusGroupId>> = {
   waiting: "waiting",
   attention: "stopped",
   idle: "stopped",
-  merged: "done",
+  merged: "waiting",
 };
 
 export interface PanelRow {
@@ -156,7 +156,9 @@ export const placementWords = (
 /**
  * Which group a ⌘J row goes in: Needs you when the needs-you list has an item on its thread
  * (`needing`, from `needsYouThreads` over the workspace's `needsYouIn`), Done when its work is over,
- * else by its tone.
+ * else by its tone. Over is its tab, the rule the sidebar keeps a worker by (`workerShown`): one
+ * merged or delivered with something still pending (a wake, a monitored run, an open PR, you
+ * holding it) has a merged tone yet counts among the sidebar's live workers, so it is in Waiting.
  */
 export const groupOf = (row: WorkerRow, needing: ReadonlySet<ThreadId>): StatusGroupId =>
   needing.has(row.threadId) ? "needs" : row.tab === "done" ? "done" : TONE_GROUP[row.tone];
