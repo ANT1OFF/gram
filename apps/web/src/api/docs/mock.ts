@@ -49,11 +49,42 @@ export function createDocsMock(world: MockWorld) {
   const api: DocsApi = {
     listDocs: async (workspaceId) => {
       await world.delay(20);
-      const list = [...of(workspaceId).values()]
+      const all = [...of(workspaceId).values()];
+      const list = all
         .filter((doc) => doc.archivedAt === undefined)
         .map(metaOf)
         .toSorted((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+      return { docs: list, archived: all.length - list.length };
+    },
+    listArchivedDocs: async (workspaceId) => {
+      await world.delay(20);
+      const list = [...of(workspaceId).values()]
+        .filter((doc) => doc.archivedAt !== undefined)
+        .map(metaOf)
+        .toSorted((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0) || a.id.localeCompare(b.id));
       return { docs: list };
+    },
+    archiveDoc: async (workspaceId, id) => {
+      await world.delay(20);
+      const doc = of(workspaceId).get(id);
+      if (doc === undefined) throw new Error(`NotFound: No doc ${id} in this workspace`);
+      if (doc.archivedAt !== undefined)
+        throw new Error(`InvalidState: ${doc.title} is archived already`);
+      const archived: Doc = { ...doc, archivedAt: Date.now(), archivedReason: "manual" };
+      of(workspaceId).set(id, archived);
+      world.emit({ type: "docs.changed", workspaceId });
+      return metaOf(archived);
+    },
+    restoreDoc: async (workspaceId, id) => {
+      await world.delay(20);
+      const doc = of(workspaceId).get(id);
+      if (doc === undefined) throw new Error(`NotFound: No doc ${id} in this workspace`);
+      if (doc.archivedAt === undefined)
+        throw new Error(`InvalidState: ${doc.title} isn't archived`);
+      const { archivedAt: _at, archivedReason: _reason, ...restored } = doc;
+      of(workspaceId).set(id, restored);
+      world.emit({ type: "docs.changed", workspaceId });
+      return metaOf(restored);
     },
     readDoc: async (workspaceId, id) => {
       await world.delay(20);

@@ -1,6 +1,6 @@
 import type { DocMeta, ThreadId, WorkspaceId } from "@gram/contracts";
 import { FileText } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { EmptyState } from "@/components/empty-state";
 import { QueryError } from "@/components/not-available";
@@ -8,15 +8,19 @@ import { useNow } from "@/lib/use-now";
 import { useMessageOrchestrator } from "@/orchestration/message-orchestrator";
 import { PanelMessage } from "@/panels/panel-message";
 
+import { useServes } from "@/api/use-serves";
+
+import { ArchivedDocs, DocArchiveButton } from "./docs-archived";
 import { useDocPane } from "./doc-pane-store";
-import { useDocs } from "./doc-queries";
+import { matchesDocQuery, useDocs } from "./doc-queries";
 import { DocView } from "./doc-view";
 import { DocRow } from "./docs-strip";
 
 /**
- * The right panel's Docs tab: the docs of the workspace the window is on (its orchestrator's, or the
- * viewed thread's), newest first, or the one a card, the chip above the composer or a row opened.
- * Docs live in Gram's own state on this machine.
+ * The right panel's Docs tab: the active docs of the workspace the window is on (its
+ * orchestrator's, or the viewed thread's), newest first, searchable by title, each with Archive,
+ * and its archived docs folded below; or the one a card, the chip above the composer or a row
+ * opened. Docs live in Gram's own state on this machine.
  */
 export function DocsPanel({ workspaceId }: { workspaceId: WorkspaceId | undefined }) {
   const open = useDocPane((s) => (workspaceId === undefined ? undefined : s.open[workspaceId]));
@@ -69,12 +73,17 @@ function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
   const ref = useRef<HTMLElement>(null);
   const now = useNow(true, ref, 60_000);
   const messageOrchestrator = useMessageOrchestrator();
+  const archives = useServes("docs.archive");
+  const [query, setQuery] = useState("");
+  const [actionError, setActionError] = useState<string>();
   if (docs.error) return <QueryError error={docs.error} feature="Docs" />;
   if (docs.data === undefined) return <PanelMessage loading>Reading docs…</PanelMessage>;
-  const list = docs.data.docs;
+  const all = docs.data.docs;
+  const archivedCount = docs.data.archived ?? 0;
+  const list = all.filter((doc) => matchesDocQuery(doc, query));
   const groups = docsByAuthor(list);
   const grouped = groups.length > 1;
-  if (list.length === 0) {
+  if (all.length === 0 && archivedCount === 0) {
     return (
       <EmptyState
         testId="docs-empty"
@@ -99,6 +108,25 @@ function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
         Reports, plans and analyses this workspace's threads published. They stay in Gram on this
         computer, outside your repos.
       </p>
+      <input
+        type="search"
+        aria-label="Search docs"
+        placeholder="Search by title"
+        data-testid="docs-search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        className="rounded-md border border-edge bg-transparent px-2.5 py-1.5 text-meta outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      />
+      {actionError !== undefined && (
+        <p role="alert" data-testid="docs-action-error" className="text-meta text-destructive">
+          {actionError}
+        </p>
+      )}
+      {list.length === 0 && (
+        <p className="text-meta text-muted-foreground">
+          {all.length === 0 ? "Every doc here is archived." : "No doc matches."}
+        </p>
+      )}
       {groups.map((group) => (
         <section
           key={group.authorThreadId}
@@ -121,19 +149,31 @@ function DocsList({ workspaceId }: { workspaceId: WorkspaceId }) {
           )}
           <ul className="flex flex-col gap-1">
             {group.docs.map((doc) => (
-              <li key={doc.id}>
-                <DocRow
-                  doc={doc}
-                  now={now}
-                  excerpt
-                  grouped={grouped}
-                  onOpen={() => setOpen(workspaceId, doc.id)}
-                />
+              <li key={doc.id} className="flex items-start gap-1">
+                <div className="min-w-0 flex-1">
+                  <DocRow
+                    doc={doc}
+                    now={now}
+                    excerpt
+                    grouped={grouped}
+                    onOpen={() => setOpen(workspaceId, doc.id)}
+                  />
+                </div>
+                {archives && (
+                  <DocArchiveButton workspaceId={workspaceId} doc={doc} onError={setActionError} />
+                )}
               </li>
             ))}
           </ul>
         </section>
       ))}
+      <ArchivedDocs
+        workspaceId={workspaceId}
+        count={archivedCount}
+        query={query}
+        now={now}
+        onError={setActionError}
+      />
     </section>
   );
 }

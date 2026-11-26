@@ -129,11 +129,20 @@ export type DocMeta = typeof DocMeta.Type;
 export const Doc = Schema.Struct({ ...DocMeta.fields, content: Schema.String });
 export type Doc = typeof Doc.Type;
 
-/** Newest first by `updatedAt`. */
-export const DocList = Schema.Struct({ docs: Schema.Array(DocMeta) });
+/**
+ * Active docs newest first by `updatedAt`, or archived ones the latest archived first. An active
+ * listing also counts the archive (`archived`); a server older than the archive leaves it out.
+ */
+export const DocList = Schema.Struct({
+  docs: Schema.Array(DocMeta),
+  archived: Schema.optionalKey(Schema.Int),
+});
 export type DocList = typeof DocList.Type;
 
 export const DocsListFields = { workspaceId: WorkspaceId };
+/** The pane's Archive and Restore on a doc's row, as the user. */
+export const DocArchiveFields = { workspaceId: WorkspaceId, id: DocId };
+
 /** The pane opened a doc: it is kept from automatic archiving for a while. */
 export const DocOpenedFields = { workspaceId: WorkspaceId, id: DocId };
 
