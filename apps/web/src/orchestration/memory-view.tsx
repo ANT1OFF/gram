@@ -216,8 +216,7 @@ function FileEditor({
       />
       {file.data?.keptFromWorkers !== undefined && !dirty && (
         <p role="status" data-testid="memory-kept-from-workers" className="text-meta text-warning">
-          Workers can't read this file: {file.data.keptFromWorkers}. The orchestrator still reads it
-          in full.
+          {file.data.keptFromWorkers}. The orchestrator still reads it in full.
         </p>
       )}
       {movedUnder && (

@@ -20,7 +20,7 @@ export interface DreamsApi {
   automaticDreamStatus(workspaceId: WorkspaceId): Promise<AutomaticDreamStatus>;
   /** The files of the workspace's adopted memory version. */
   listMemory(workspaceId: WorkspaceId): Promise<readonly MemoryFileInfo[]>;
-  /** `keptFromWorkers`: why workers can't read the file, when they can't. */
+  /** `keptFromWorkers`: what of the file workers can't read, and why, as a sentence, when any. */
   readMemory(
     workspaceId: WorkspaceId,
     path: string,

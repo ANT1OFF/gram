@@ -2,7 +2,7 @@
 // closed `---` block that is a flat map of plain scalars with no `private` anywhere. Every unusual
 // YAML feature, alone or mixed into otherwise plain headers, must be denied; plain ones allowed.
 import { describe, expect, it } from "vitest";
-import { workerMayEnter, workerMayRead } from "./memory.ts";
+import { workerMayEnter, workerMayRead, workerView } from "./memory.ts";
 
 /** A small seeded PRNG (mulberry32), so a failure names a seed that reproduces it. */
 const prng = (seed: number) => () => {
@@ -125,6 +125,31 @@ const WRAPPED_BY_4 = (
     .toString("base64")
     .match(/.{1,4}/g) ?? []
 ).join("\n");
+const ARN = "arn:aws:eks:eu-north-1:123456789012:cluster/trading-main";
+const OPENAI = ["sk", "proj", "abcdefghijklmnopqrstuvwxyz0123456789ABCD"].join("-");
+const GITLAB = ["glpat", "abcdefghij0123456789"].join("-");
+const AWS_ID = ["AKIA", "ABCDEFGHIJ012345"].join("");
+const HUGGING = ["hf", "abcdefghijklmnopqrstuvwxyzABCDEFGH"].join("_");
+const ANTHROPIC = ["sk", "ant", "api03", "abcdefghijklmnopqrstuvwxyz0123456789ABCDEF"].join("-");
+const GH_OAUTH = ["gho", "abcdefghijklmnopqrstuvwxyz0123456789AB"].join("_");
+const GH_PAT = [
+  "github",
+  "pat",
+  "11ABCDEFG0123456789",
+  "abcdefghijklmnopqrstuvwxyz0123456789",
+].join("_");
+const AWS_SECRET = ["Zq8Lr2Vx9Tn4Wp7Ks1Hd6Fj3", "m5Gc0Ya8Ue2Io4Rt"].join("/");
+/** An AWS key id of pronounceable letters, which a plain-word check alone would pass. */
+const AWS_ID_WORDS = ["AKIA", "BABEBIBOBUBABEBI"].join("");
+const PEM_BODY = (
+  Buffer.from(Array.from({ length: 144 }, (_, at) => (at * 37 + 11) % 256))
+    .toString("base64")
+    .match(/.{1,64}/g) ?? []
+).join("\n");
+const PEM_REAL = `${PEM_BEGIN}\n${PEM_BODY}\n${PEM_END}`;
+const JWT = ["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiIxMjM0NTY3ODkwIn0", "c2lnbmF0dXJlLXZhbHVl"].join(
+  ".",
+);
 /** `GH` in base64, wrapped every 12 characters as the reviewer sent it. */
 const WRAPPED_BASE64 = (
   Buffer.from(GH)
@@ -347,6 +372,89 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
     ["a random letter name", "abcdefghijklmnopqrstuvwxyz.md", "Ordinary prose.", false],
     ["an alternating name", "a1b2c3d4.md", "Ordinary prose.", false],
     ["a token-shaped folder", `${SLACK}/notes.md`, "Ordinary prose.", false],
+    // Identifiers that once hid a whole workspace's memory from its workers, and real secrets
+    // written beside them, which still don't read.
+    ["an ARN as a kubectl context", "infra.md", `- kubectl context ${ARN}.`, true],
+    ["an ARN as a value", "infra.md", `- Run kubectl --context=${ARN} get pods.`, true],
+    ["a code span closing after login", "infra.md", "Run `aws sso login` first.", true],
+    [
+      "a profile in a code span",
+      "infra.md",
+      "Sign in with `aws --profile trading-prod sso login` first.",
+      true,
+    ],
+    ["an env var naming a profile", "infra.md", "Set AWS_PROFILE=trading-prod first.", true],
+    ["an account id in a bucket name", "infra.md", "Bucket trading-builds-123456789012.", true],
+    ["an instance id", "infra.md", "Instance i-0abc123def4567890 runs the bot.", true],
+    [
+      "a thread id, capitalised",
+      "MEMORY.md",
+      "- Thread 6b4c4c3d-7cb9-585e-aa23-6b2705f071cf: we squash-merge.",
+      true,
+    ],
+    [
+      "a SHA after its PR number",
+      "MEMORY.md",
+      "- 2026-11-24 (#1067, 25cdc1e4b43fe1e8): no module mocking.",
+      true,
+    ],
+    ["a SHA a PR merged as", "decisions.md", `PR #1067 merged as ${SHA}.`, true],
+    ["an arrow", "MEMORY.md", "- Squash merges \u2192 always, \u2265 2 reviews \u2713", true],
+    ["a token after an ARN", "infra.md", `${ARN} ${GH}`, false],
+    ["a token as an ARN's resource", "infra.md", `arn:aws:s3:::${GH}`, false],
+    ["a record in an ARN's resource", "infra.md", "arn:aws:iam::123456789012:user/a:b:c:d", false],
+    [
+      "a secret in an ARN",
+      "infra.md",
+      `arn:aws:secretsmanager:eu-north-1:123456789012:secret:db`,
+      false,
+    ],
+    ["a token in an env var", "infra.md", `DEPLOY_HOOK=${GH}`, false],
+    ["a mixed run in an env var", "infra.md", "AWS_PROFILE=a1b2c3d4e5f6g7h8i9", false],
+    ["text in hex a PR merged as", "decisions.md", `PR #1067 merged as ${HEX_TEXT}.`, false],
+    ["a SHA beside a credential word", "decisions.md", `Merged as ${SHA}, the api key.`, false],
+    ["an instance id as a session", "infra.md", "The session is i-0abc123def4567890.", false],
+    ["an OpenAI key", "a.md", `Use ${OPENAI} for the evals.`, false],
+    ["a GitLab token", "a.md", `Use ${GITLAB} for the mirror.`, false],
+    ["an AWS access key id", "a.md", `The bot runs as ${AWS_ID}.`, false],
+    ["a Hugging Face token", "a.md", `Pull with ${HUGGING}.`, false],
+    ["a bearer JWT", "a.md", `Authorization: Bearer ${JWT}`, false],
+    ["a bare JWT", "a.md", `Use ${JWT} for the call.`, false],
+    // The security review of #1072: shapes the identifier allowances must not let through.
+    ["an Anthropic key", "a.md", `Evals use ${ANTHROPIC}.`, false],
+    ["a GitHub OAuth token", "a.md", `The app holds ${GH_OAUTH}.`, false],
+    ["a fine-grained GitHub token", "a.md", `CI uses ${GH_PAT}.`, false],
+    ["a bare AWS secret key", "a.md", `It signs with ${AWS_SECRET} today.`, false],
+    [
+      "a pronounceable AWS key id after an ARN",
+      "a.md",
+      `arn:aws:s3:::builds/${AWS_ID_WORDS}`,
+      false,
+    ],
+    [
+      "a pronounceable AWS key id in a slug",
+      "a.md",
+      `Bucket trading-123456789012-${AWS_ID_WORDS}.`,
+      false,
+    ],
+    ["a short password as an env var", "a.md", "Set GRAFANA_ADMIN=Orchard7Lantern first.", false],
+    ["a short password, short name", "a.md", "ADMIN=Orchard7Lantern", false],
+    ["a short mixed code as an env var", "a.md", "DEPLOY_CODE=Ab3dE5gH7jK9mN1", false],
+    ["a pair after an ARN", "a.md", `${ARN} appuser:Orchard7Lantern`, false],
+    ["a key with full-length lines", "a.md", PEM_REAL, false],
+    ["a key with full-length lines, fenced", "a.md", `\`\`\`\n${PEM_REAL}\n\`\`\``, false],
+    [
+      "a key with full-length lines, in a list item",
+      "a.md",
+      `- The key:\n  ${PEM_REAL.split("\n").join("\n  ")}`,
+      false,
+    ],
+    [
+      "JSON over lines",
+      "a.md",
+      `{\n  "type": "service_account",\n  "client_email": "bot@example.test",\n  "private_key_id": "${SHA}"\n}`,
+      false,
+    ],
     // Plain prose a worker still reads: not over-blocked.
     ["a word on each line", "days.md", "Mondays\nTuesdays\nWednesdays\nrelease-notes", true],
     [
@@ -478,6 +586,165 @@ const CASES: ReadonlyArray<readonly [label: string, path: string, text: string, 
 describe("workerMayRead, every review's cases", () => {
   it.each(CASES)("%s", (_label, path, text, allowed) => {
     expect(workerMayRead(path, text)).toBe(allowed);
+  });
+});
+
+const PLAIN = [
+  "# Notes",
+  "## Conventions",
+  "- We squash-merge.",
+  "- Tabs, not spaces.",
+  "## Staging",
+];
+
+/** `text` in its own section of a note, after a plain one, as a note with headings has it. */
+const inNote = (text: string) =>
+  [PLAIN[0], "", PLAIN[1], "", PLAIN[2], PLAIN[3], "", PLAIN[4], "", text, ""].join("\n");
+
+const MARKER = /^(?:[-*+] |\d{1,3}[.)] |#{1,6} )?\[lines? [\d–]+ withheld from workers\]$/;
+
+/** A worker's view of `text` shows nothing but lines of `plain` and markers, or nothing at all. */
+const showsOnly = (path: string, text: string, plain: ReadonlyArray<string>) => {
+  const view = workerView(path, text);
+  if (view.kind === "hidden") return;
+  for (const line of view.text.split("\n")) {
+    if (line.trim() === "" || MARKER.test(line)) continue;
+    expect(plain, `${JSON.stringify(line)} shown`).toContain(line);
+  }
+  expect(workerMayRead(path, view.text)).toBe(true);
+};
+
+const SECRETS = CASES.filter(([, , , allowed]) => !allowed);
+
+describe("workerView, each secret a worker may not read", () => {
+  it.each(SECRETS)("%s: alone, it shows nothing of it", (_label, path, text) => {
+    expect(workerMayRead(path, text)).toBe(false);
+    expect(workerView(path, text).kind).toBe("hidden");
+  });
+
+  it.each(SECRETS.filter(([, , text]) => !/^(?:---|\+\+\+|<!--)/.test(text)))(
+    "%s: between plain blocks, it shows only them",
+    (_label, path, text) => {
+      const note = inNote(text);
+      expect(workerMayRead(path, note)).toBe(false);
+      showsOnly(path, note, PLAIN);
+    },
+  );
+});
+
+describe("workerView, a value split from what names it", () => {
+  const BASE64 = Buffer.from(GH).toString("base64");
+  const SPLIT: ReadonlyArray<readonly [label: string, text: string]> = [
+    ["after a blank line", "- The staging password is:\n\norchard-willow"],
+    ["under a heading", "## Password\n\norchard-willow"],
+    ["as the next list item", "- Bearer\n- orchard-willow"],
+    ["as a paragraph's next line", "The dsn\norchard-willow"],
+    ["before what names it", "orchard willow\n\nis the staging password."],
+    ["before a list item naming it", "- orchard willow\n- = the staging password"],
+    // The security review of #1072, finding 1: low-entropy values a block away from their name.
+    [
+      "a list under a heading that names it",
+      "## Test accounts (passwords)\n\n- amy / Orchard7Lantern\n- bob / Willow3Harbor",
+    ],
+    [
+      "under a heading naming it mid-way",
+      "## Passwords for the staging box\n\ndeploy / Orchard7Lantern",
+    ],
+    [
+      "fenced after a sentence naming it",
+      "Use this password for the staging admin (ask before rotating).\n\n```\nOrchard7Lantern\n```",
+    ],
+    ["a nested list item", "- Staging admin password (shared with ops)\n  - orchard lantern seven"],
+    [
+      "the third item after a lead-in",
+      "The staging passwords:\n\n- amy Orchard7Lantern\n- bob Willow3Harbor\n- cy Harbor9Orchard",
+    ],
+    ["before a sentence naming it", "orchard lantern seven\n\nThat is the staging password."],
+    [
+      "as the heading over a sentence naming it",
+      "### Orchard7Lantern\n\nThat is the staging password.",
+    ],
+    [
+      "a table split by a blank line",
+      "| user | password |\n| --- | --- |\n\n| amy | Orchard7Lantern |",
+    ],
+    ["JSON split by a blank line", '{"user": "amy",\n\n"password": "Orchard7Lantern"}'],
+    ["under a subsection", "Passwords are below.\n\n### Admin\n\nOrchard7Lantern"],
+    [
+      "base64 as list items",
+      [BASE64.slice(0, 16), ...(BASE64.slice(16).match(/.{1,4}/g) ?? [])]
+        .map((piece) => `- ${piece}`)
+        .join("\n"),
+    ],
+    [
+      "base64 over blank lines",
+      [BASE64.slice(0, 16), ...(BASE64.slice(16).match(/.{1,4}/g) ?? [])].join("\n\n"),
+    ],
+    [
+      "an encrypted key's body after its header",
+      `${PEM_BEGIN}\nProc-Type: 4,ENCRYPTED\n\nb3Blbg==\n${PEM_END}`,
+    ],
+  ];
+
+  it.each(SPLIT)("%s: shows none of it, and the plain section still", (_label, text) => {
+    const note = inNote(text);
+    expect(workerMayRead("notes.md", note)).toBe(false);
+    showsOnly("notes.md", note, PLAIN);
+    const view = workerView("notes.md", note);
+    expect(view.kind === "shown" && view.text.includes(PLAIN[2]!)).toBe(true);
+  });
+
+  it("withholds a credential's section, and shows the sections around it", () => {
+    const note = [
+      "# Notes",
+      "",
+      "## Conventions",
+      "",
+      "- We squash-merge.",
+      "",
+      "## Staging",
+      "",
+      "- Keep the API key out of logs.",
+      "- Deploys go through the pipeline.",
+      "",
+      "## Style",
+      "",
+      "- Tabs, not spaces.",
+      "",
+    ].join("\n");
+    expect(workerView("notes.md", note)).toEqual({
+      kind: "shown",
+      text: [
+        "# Notes",
+        "",
+        "## Conventions",
+        "",
+        "- We squash-merge.",
+        "",
+        "## Staging",
+        "",
+        "- [lines 9–10 withheld from workers]",
+        "",
+        "## Style",
+        "",
+        "- Tabs, not spaces.",
+        "",
+      ].join("\n"),
+      withheld: [{ from: 9, to: 10, problem: "something shaped like a credential" }],
+    });
+  });
+
+  it("withholds a note with no heading whole when it names a credential", () => {
+    const note = "- We squash-merge.\n- Keep the API key out of logs.\n";
+    expect(workerView("notes.md", note).kind).toBe("hidden");
+  });
+
+  it("withholds only the block a self-delimited token is in", () => {
+    const note = inNote(`- Webhook ${SLACK}\n- Deploys go through the pipeline.`);
+    const view = workerView("notes.md", note);
+    expect(view.kind === "shown" && view.text.includes("Deploys go through the pipeline.")).toBe(
+      true,
+    );
   });
 });
 

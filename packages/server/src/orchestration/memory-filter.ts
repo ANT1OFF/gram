@@ -46,7 +46,7 @@ const weakShaped = (text: string): boolean => {
     const next = rest
       .split(/[;,\n!?]|\.(?=\s|$)/)[0]!
       .split(/\s+/)
-      .filter((word) => word !== "" && !LINKING.test(word))
+      .filter((word) => word !== "" && !LINKING.test(word) && !/^["'`]+$/.test(word))
       .slice(0, 1)
       .map((word) => word.replace(/[).\]}]+$/, ""));
     if (next.some((word) => valueLike(word) && !/^[A-Za-z_][\w.-]*=/.test(word))) return true;
@@ -94,7 +94,7 @@ const credentialWords = (text: string): boolean =>
   weakShaped(text) ||
   directiveLine(text);
 
-const PLAIN_CHARS = /^[\t\n\r\x20-\x7E–—‘’“”…•·À-ÖØ-öø-ÿ]*$/;
+const PLAIN_CHARS = /^[\t\n\r\x20-\x7E–—‘’“”…•·À-ÖØ-öø-ÿ→←↑↓↔⇒⇐⇔≥≤≈≠±×÷§€£✓✔✗✘✅❌]*$/;
 
 const FOLDS: Readonly<Record<string, string>> = {
   ß: "ss",
@@ -113,6 +113,14 @@ const folded = (text: string): string =>
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/[ßæÆøØðÐþÞ]/g, (letter) => FOLDS[letter] ?? letter);
+
+const ARN_PREFIX =
+  /(?<![A-Za-z0-9_-])arn:(aws(?:-cn|-us-gov|-iso(?:-[a-z])?)?):([a-z][a-z0-9-]{1,62}):((?:[a-z]{2}(?:-[a-z]+)+-\d)?):(\d{12}|aws)?:(?=[A-Za-z0-9])/g;
+
+const withoutArnColons = (text: string): string =>
+  text.replace(ARN_PREFIX, (_arn, partition: string, service: string, region: string, account) =>
+    ["arn", partition, service, region, account ?? "", ""].join("~"),
+  );
 
 const ENCODED = /\\[uUxX]|%[0-9a-fA-F]{2}|&#|&[A-Za-z][A-Za-z0-9]*;/;
 
@@ -223,17 +231,23 @@ const clauseAround = (text: string, start: number, end: number): string => {
 };
 
 const CITED_SHA =
-  /(?<=\b(?:head|commits?|at|sha1?|rev|revision)[\s`'"(#]{1,3})(?<![0-9A-Za-z_])[0-9a-f]{7,40}(?![0-9A-Za-z_])|(?<![0-9A-Za-z_])[0-9a-f]{7,40}(?=…|\.\.\.)/g;
+  /(?<=(?:\b(?:[Hh]ead|[Cc]ommits?|at|SHA|[Ss]ha1?|[Rr]ev|[Rr]evision|[Mm]erged as|[Ss]quashed as|[Ll]anded as|[Ff]ixed in)|#\d{1,6},?)[\s`'"(#]{1,3})(?<![0-9A-Za-z_])[0-9a-f]{7,40}(?![0-9A-Za-z_])|(?<![0-9A-Za-z_])[0-9a-f]{7,40}(?=…|\.\.\.)/g;
 
 const withoutShas = (text: string): string =>
   text.replace(CITED_SHA, (sha, offset: number) => {
     const clause = clauseAround(text, offset, offset + sha.length);
+    const at = clause.indexOf(sha);
     const cited =
-      !ASSIGNMENT.test(clause) && !credentialWord(clause) && printableRun(hexBytes(sha)) < 8;
+      !ASSIGNMENT.test(clause.slice(0, at)) &&
+      !clause.slice(at + sha.length).includes("=") &&
+      !credentialWord(clause) &&
+      printableRun(hexBytes(sha)) < 8;
     return cited ? " " : sha;
   });
 
 const TOKEN_PREFIX = /^(?:xox[a-z]|gh[pousr]|glpat|akia|asia|sk|pk|rk|hf|shpat|shpss)$/;
+
+const AWS_KEY_ID = /^(?:akia|asia)[a-z0-9]{16}$/;
 
 const DATE_DIGITS = /^(?:19|20)\d{2}(?:0[1-9]|1[0-2])?(?:0[1-9]|[12]\d|3[01])?$/;
 
@@ -245,7 +259,7 @@ const pronounceable = (letters: string): boolean =>
 const plainWord = (word: string): boolean => {
   const lower = word.toLowerCase();
   if (lower === "") return true;
-  if (TOKEN_PREFIX.test(lower)) return false;
+  if (TOKEN_PREFIX.test(lower) || AWS_KEY_ID.test(lower)) return false;
   const runs = lower.match(/[a-z]+|\d+/g) ?? [];
   if (runs.length > 3 || (runs.length === 3 && lower.length > 8)) return false;
   for (const run of runs) {
@@ -266,7 +280,7 @@ const withoutPaths = (text: string): string =>
   );
 
 const CITED_ID =
-  /(?<=\b(?:threads?|workers?|workspaces?|features?|runs?|tasks?)[\s`'"(#:]{1,3})(?<![0-9A-Za-z_])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9A-Za-z_])/g;
+  /(?<=\b(?:[Tt]hreads?|[Ww]orkers?|[Ww]orkspaces?|[Ff]eatures?|[Rr]uns?|[Tt]asks?|[Pp]rojects?|[Rr]equests?|[Tt]races?|[Jj]obs?|[Ii]d|ID|UUID|[Uu]uid)[\s`'"(#:]{1,3})(?<![0-9A-Za-z_])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?![0-9A-Za-z_])|(?<![0-9A-Za-z_])(?:i|vpc|subnet|sg|ami|vol|snap|eni|igw|nat|rtb|lt|tgw|vpce|pcx)-(?:[0-9a-f]{8}|[0-9a-f]{17})(?![0-9A-Za-z_])/g;
 
 const withoutIds = (text: string): string =>
   text.replace(CITED_ID, (id, offset: number) =>
@@ -277,22 +291,32 @@ const SLUG = /(?<![A-Za-z0-9+/=_-])[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)+(?![A-Za-z0-
 
 const slugPiece = (piece: string): boolean =>
   /^\d+$/.test(piece)
-    ? piece.length <= 4 || DATE_DIGITS.test(piece)
+    ? piece.length <= 4 || piece.length === 12 || DATE_DIGITS.test(piece)
     : /^(?:[A-Za-z][a-z]*|[A-Z]+)$/.test(piece) &&
       pronounceable(piece.toLowerCase()) &&
-      !TOKEN_PREFIX.test(piece.toLowerCase());
+      !TOKEN_PREFIX.test(piece.toLowerCase()) &&
+      !AWS_KEY_ID.test(piece.toLowerCase());
+
+const NAME_VALUE =
+  /(?<![A-Za-z0-9+/=_-])([A-Za-z][A-Za-z0-9_]*)=([a-z0-9]+(?:[-_.][a-z0-9]+)+)(?![A-Za-z0-9+/=_-])/g;
+
+const plainSlugValue = (value: string): boolean => value.split(/[-_.]/).every(slugPiece);
 
 const withoutSlugs = (text: string): string =>
-  text.replace(SLUG, (slug) => {
-    const pieces = slug.split(/[-_]/);
-    const letters = pieces.filter((piece) => /^[A-Za-z]+$/.test(piece)).join("");
-    const plain =
-      pieces.every(slugPiece) &&
-      pieces.some((piece) => /^[A-Za-z]{2,}$/.test(piece)) &&
-      pronounceable(letters.toLowerCase()) &&
-      printableRun(base64Bytes(slug.replace(/[-_]/g, ""))) < 12;
-    return plain ? " " : slug;
-  });
+  text
+    .replace(NAME_VALUE, (pair, name: string, value: string) =>
+      plainSlugValue(value) ? `${name} ${value}` : pair,
+    )
+    .replace(SLUG, (slug) => {
+      const pieces = slug.split(/[-_]/);
+      const letters = pieces.filter((piece) => /^[A-Za-z]+$/.test(piece)).join("");
+      const plain =
+        pieces.every(slugPiece) &&
+        pieces.some((piece) => /^[A-Za-z]{2,}$/.test(piece)) &&
+        pronounceable(letters.toLowerCase()) &&
+        printableRun(base64Bytes(slug.replace(/[-_]/g, ""))) < 12;
+      return plain ? " " : slug;
+    });
 
 type ProseProblem =
   | "characters other than plain text"
@@ -305,7 +329,7 @@ const proseProblem = (text: string): ProseProblem | undefined => {
   if (!PLAIN_CHARS.test(text)) return "characters other than plain text";
   if (ENCODED.test(text)) return "escape or encoding syntax";
   if (openDelimiter(text)) return "a code fence, quote or key block left open";
-  const ascii = folded(text);
+  const ascii = withoutArnColons(folded(text));
   if (
     USERINFO.test(ascii) ||
     CONNECTION_STRING.test(ascii) ||
@@ -389,6 +413,237 @@ export const workerReadProblem = (path: string, text?: string): WorkerReadProble
  */
 export const workerMayRead = (path: string, text?: string): boolean =>
   workerReadProblem(path, text) === undefined;
+
+/** Lines a worker's view of a note leaves out, 1-based and inclusive, and why. */
+export interface WithheldLines {
+  readonly from: number;
+  readonly to: number;
+  readonly problem: string;
+}
+
+/**
+ * A memory note as a worker reads it. `hidden` when the worker may not read any of it: its name or
+ * header isn't plain, it hides something no part can be judged apart (characters other than plain
+ * text, escape syntax, a delimiter left open), or nothing plain is left once the rest is withheld.
+ * Otherwise `shown`, with every block that holds a problem replaced by one line naming the lines it
+ * stood for; `withheld` lists them.
+ */
+export type WorkerView =
+  | { readonly kind: "hidden"; readonly problem: WorkerReadProblem }
+  | {
+      readonly kind: "shown";
+      readonly text: string;
+      readonly withheld: ReadonlyArray<WithheldLines>;
+    };
+
+const BLOCK_START = /^\s*(?:[-*+]|\d{1,3}[.)])\s|^\s{0,3}#{1,6}\s/;
+
+const HEADING = /^\s{0,3}(#{1,6})\s/;
+
+const headingLevel = (line: string): number => HEADING.exec(line)?.[1]?.length ?? 0;
+
+const BLOCK_PREFIX = /^\s*(?:[-*+]|\d{1,3}[.)]|#{1,6})\s+/;
+
+const FENCE = /^\s*(?:```|~~~)/;
+
+const KEY_BEGIN = /-----BEGIN /;
+
+const KEY_END = /-----END /;
+
+const BARE_TOKEN_LINE = /^\s*(?:[-*+]\s+|\d{1,3}[.)]\s+)?["'`]?[A-Za-z0-9+/=_-]+["'`]?[,;]?\s*$/;
+
+interface Block {
+  readonly from: number;
+  readonly to: number;
+}
+
+const opensRegion = (line: string) => FENCE.test(line) || KEY_BEGIN.test(line);
+
+const blocksOf = (lines: ReadonlyArray<string>, start: number): Array<Block> => {
+  const blocks: Array<Block> = [];
+  let at = start;
+  while (at < lines.length) {
+    const line = lines[at]!;
+    if (line.trim() === "") {
+      at++;
+      continue;
+    }
+    let to = at;
+    if (opensRegion(line) && !(KEY_BEGIN.test(line) && KEY_END.test(line))) {
+      const closes = FENCE.test(line) ? FENCE : KEY_END;
+      to = at + 1;
+      while (to < lines.length - 1 && !closes.test(lines[to]!)) to++;
+      to = Math.min(to, lines.length - 1);
+    } else {
+      while (
+        to + 1 < lines.length &&
+        lines[to + 1]!.trim() !== "" &&
+        !BLOCK_START.test(lines[to + 1]!) &&
+        !opensRegion(lines[to + 1]!)
+      ) {
+        to++;
+      }
+    }
+    blocks.push({ from: at, to });
+    at = to + 1;
+  }
+  return blocks;
+};
+
+const bodyStart = (lines: ReadonlyArray<string>): number => {
+  const first = lines.findIndex((line) => line.trim() !== "");
+  if (first === -1 || !/^\uFEFF?---[ \t]*$/.test(lines[first]!)) return 0;
+  const close = lines.findIndex((line, at) => at > first && /^---[ \t]*$/.test(line));
+  return close === -1 ? 0 : close + 1;
+};
+
+const leadsIntoValue = (line: string): boolean => {
+  const bare = folded(line)
+    .trim()
+    .replace(/["'`*_)\]]+$/, "");
+  if (/(?:[:=>→]|->)$/.test(bare)) return true;
+  const last = bare.split(/[\s(["'`]+/).pop() ?? "";
+  return LINKING.test(last) || credentialWord(last);
+};
+
+const followsValue = (line: string): boolean => {
+  const bare = folded(line).replace(BLOCK_PREFIX, "").trim();
+  return /^(?:[:=]|->|=>|→)/.test(bare) || LINKING.test(bare.split(/\s+/)[0] ?? "");
+};
+
+const credentialSection = (
+  lines: ReadonlyArray<string>,
+  blocks: ReadonlyArray<Block>,
+  at: number,
+) => {
+  const level = (index: number) => headingLevel(lines[blocks[index]!.from]!);
+  let from = at;
+  let depth = level(at);
+  if (depth === 0) {
+    while (from > 0 && level(from - 1) === 0) from--;
+    const heading = from - 1;
+    if (heading >= 0) {
+      depth = level(heading);
+      const title = lines[blocks[heading]!.from]!.replace(HEADING, "").trim();
+      if (!/\s/.test(title) && /\d|[a-z][A-Z]/.test(title)) from = heading;
+    }
+  }
+  const inSection = (index: number) => depth === 0 || level(index) === 0 || level(index) > depth;
+  let to = at;
+  while (to + 1 < blocks.length && inSection(to + 1)) to++;
+  return { from, to };
+};
+
+const bareTokens = (lines: ReadonlyArray<string>, block: Block | undefined): boolean =>
+  block !== undefined &&
+  lines.slice(block.from, block.to + 1).every((line) => BARE_TOKEN_LINE.test(line));
+
+const spanName = (from: number, to: number): string =>
+  from === to ? `line ${from}` : `lines ${from}–${to}`;
+
+const describeWithheld = (withheld: ReadonlyArray<WithheldLines>): string =>
+  withheld.map((lines) => `${spanName(lines.from, lines.to)} (${lines.problem})`).join(", ");
+
+/**
+ * The note at `path` as a worker reads it (`WorkerView`). What a worker is shown always passes the
+ * same prose checks a whole note must (`workerMayRead`), markers and all; a block withheld for a
+ * value takes the next block with it when it ends leading into one, the block before when it
+ * starts following one, and the bare runs of token characters beside it; a block shaped like a
+ * credential, whose value no check bounds, takes its whole section: for a heading, its
+ * subsections too; otherwise from the heading above to the next as high, or the whole note. So no
+ * piece of a value split across blocks is left showing.
+ */
+export const workerView = (path: string, text: string): WorkerView => {
+  const problem = workerReadProblem(path, text);
+  if (problem === undefined) return { kind: "shown", text, withheld: [] };
+  const hidden: WorkerView = { kind: "hidden", problem };
+  if (problem.kind !== "text") return hidden;
+  if (!PLAIN_CHARS.test(text) || ENCODED.test(text) || openDelimiter(text)) return hidden;
+  const lines = text.split(/\r?\n/);
+  const body = bodyStart(lines);
+  if (body > 0 && proseProblem(lines.slice(0, body).join("\n")) !== undefined) return hidden;
+  const blocks = blocksOf(lines, body);
+  const problems: Array<ProseProblem | undefined> = blocks.map((block) =>
+    proseProblem(lines.slice(block.from, block.to + 1).join("\n")),
+  );
+  for (let spreading = true; spreading;) {
+    spreading = false;
+    blocks.forEach((block, at) => {
+      const why = problems[at];
+      if (why === undefined) return;
+      const take = (other: number, reason: boolean) => {
+        if (reason && other >= 0 && other < blocks.length && problems[other] === undefined) {
+          problems[other] = why;
+          spreading = true;
+        }
+      };
+      take(at + 1, leadsIntoValue(lines[block.to]!) || bareTokens(lines, blocks[at + 1]));
+      take(at - 1, followsValue(lines[block.from]!) || bareTokens(lines, blocks[at - 1]));
+    });
+  }
+  const CREDENTIAL: ProseProblem = "something shaped like a credential";
+  const named = problems.flatMap((why, index) => (why === CREDENTIAL ? [index] : []));
+  for (const at of named) {
+    const section = credentialSection(lines, blocks, at);
+    for (let other = section.from; other <= section.to; other++) {
+      problems[other] ??= CREDENTIAL;
+    }
+  }
+  const plainLeft = blocks.some(
+    (block, index) => problems[index] === undefined && headingLevel(lines[block.from]!) === 0,
+  );
+  if (!plainLeft) return hidden;
+  const shown: Array<string> = [];
+  const withheld: Array<WithheldLines> = [];
+  let at = 0;
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index]!;
+    while (at < block.from) shown.push(lines[at++]!);
+    const why = problems[index];
+    if (why === undefined) {
+      while (at <= block.to) shown.push(lines[at++]!);
+      continue;
+    }
+    let last = index;
+    while (last + 1 < blocks.length && problems[last + 1] !== undefined) last++;
+    const end = blocks[last]!.to;
+    const kinds = new Set(problems.slice(index, last + 1));
+    const kind = kinds.has(CREDENTIAL) ? CREDENTIAL : why;
+    const prefix = BLOCK_PREFIX.exec(lines[block.from]!)?.[0] ?? "";
+    shown.push(`${prefix}[${spanName(block.from + 1, end + 1)} withheld from workers]`);
+    withheld.push({ from: block.from + 1, to: end + 1, problem: kind });
+    at = end + 1;
+    index = last;
+  }
+  while (at < lines.length) shown.push(lines[at++]!);
+  const view = shown.join("\n");
+  return proseProblem(view) === undefined ? { kind: "shown", text: view, withheld } : hidden;
+};
+
+/**
+ * What a worker sees of the note at `path`, given its text: the text it is `shown`, if any; why it
+ * reads none or only part of it (`withheld`, by line and kind of problem, never the text), which
+ * `memory_list` names; and `note`, the same as a sentence for the memory editor.
+ */
+export interface WorkerSight {
+  readonly shown?: string;
+  readonly withheld?: string;
+  readonly note?: string;
+}
+
+/** `workerView` of a note, as `memory_list`, `memory_read` and the memory editor tell it. */
+export const workerSees = (path: string, text: string): WorkerSight => {
+  const view = workerView(path, text);
+  if (view.kind === "hidden") {
+    const { kind, reason } = view.problem;
+    const note = `Workers can't read this file: ${reason}`;
+    return kind === "text" ? { withheld: reason, note } : { note };
+  }
+  if (view.withheld.length === 0) return { shown: view.text };
+  const lines = describeWithheld(view.withheld);
+  const note = `Workers read this file without ${lines}`;
+  return { shown: view.text, withheld: `read without ${lines}`, note };
+};
 
 const plainScalar = (node: unknown): boolean =>
   isScalar(node) &&

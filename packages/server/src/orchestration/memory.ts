@@ -24,9 +24,9 @@ import { anchoredTree } from "./anchored-tree.ts";
 import type { AnchoredOptions } from "./anchored-files.ts";
 import { isInside, realPath } from "@gram/git";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
-import { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
+import { workerMayEnter, workerMayRead, workerReadProblem, workerSees } from "./memory-filter.ts";
 
-export { workerMayEnter, workerMayRead, workerReadProblem } from "./memory-filter.ts";
+export { workerMayEnter, workerMayRead, workerReadProblem, workerView } from "./memory-filter.ts";
 export { MEMORY_INDEX_TEMPLATE } from "./memory-template.ts";
 export type { MemoryVersionSource } from "./memory-versions.ts";
 import { MEMORY_INDEX_TEMPLATE } from "./memory-template.ts";
@@ -66,7 +66,10 @@ const SEGMENT_MAX_LENGTH = 100;
 const byPath = (a: { readonly path: string }, b: { readonly path: string }) =>
   a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 
-/** What a worker's `memory_list` gives: the files it can read, and those kept from it, with why. */
+/**
+ * What a worker's `memory_list` gives: the files it can read, and those kept from it, whole or in
+ * part, with why. A file in both is one it reads with lines withheld.
+ */
 export interface WorkerMemoryListing {
   readonly files: ReadonlyArray<MemoryFile>;
   readonly withheld: ReadonlyArray<{ readonly path: string; readonly reason: string }>;
@@ -141,20 +144,22 @@ export interface OrchestrationMemoryShape {
   /**
    * `list` as a worker sees it: through the anchored tree (every folder below the data root opened
    * without following a link, so no symlink in any ancestor can lead out of this workspace), and
-   * without the files `workerMayRead` keeps from workers. A file the prose checks hold back (not one
-   * named for a credential or marked private) is named under `withheld` with the reason, so a worker knows it is there and why it
-   * can't read it, rather than taking memory to be empty.
+   * without the files `workerMayRead` keeps from workers by name. A file `workerSees` withholds for
+   * its text, whole or in part (not one named for a credential or marked private), is named under
+   * `withheld` with the reason, so a worker knows it is there and why it can't read it, or all of
+   * it, rather than taking memory to be empty.
    */
   listForWorker(workspaceId: string): Effect.Effect<WorkerMemoryListing, MemoryError>;
   /**
-   * `read` as a worker sees it: through the anchored tree, and `NotFound` for a file
+   * `read` as a worker sees it (`workerSees`): through the anchored tree, and `NotFound` for a file
    * `workerMayRead` keeps from workers by its name or by its front matter (`private: true`). A file
-   * the prose checks hold back is refused with the line and kind of problem (`workerReadProblem`).
+   * the prose checks hide whole is refused with the line and kind of problem; otherwise its text,
+   * every block that holds a problem replaced by a line naming the lines withheld.
    */
   readForWorker(workspaceId: string, path: string): Effect.Effect<string, MemoryError>;
   /**
-   * Why a worker can't read the file at `path` (`workerReadProblem` of its text), or `undefined`
-   * when it can: what the memory editor shows beside a file workers don't see.
+   * What a worker can't read of the file at `path` (`workerSees` of its text), as a sentence, or
+   * `undefined` when it reads it all: what the memory editor shows beside the file.
    */
   workerProblem(workspaceId: string, path: string): Effect.Effect<string | undefined, MemoryError>;
   /** `MEMORY.md`, or `""` when there is none yet. */
@@ -248,7 +253,7 @@ export const memorySnapshotDigest = (snapshot: MemorySnapshot): string => {
 const refuse = (message: string) => new InvalidState({ message });
 
 const keptFromWorkers = (path: string) =>
-  `kept_from_workers: ${path} is kept from workers, by its name or its text, so only the orchestrator can change it.`;
+  `kept_from_workers: ${path} is kept from workers, whole or in part, by its name or its text, so only the orchestrator can change it.`;
 
 const keptFromWorkerReads = (path: string, reason: string) =>
   `kept_from_workers: Workers can't read ${path}: ${reason}. The orchestrator reads it in full, so ask it for what you need; the user can reword that line in the memory editor.`;
@@ -938,11 +943,9 @@ const make = (root: string): OrchestrationMemoryShape => {
                 .readText(workspaceId, `${within}/${path}`, within, path, MEMORY_READ_MAX_BYTES)
                 .pipe(Effect.orElseSucceed(() => undefined));
               if (text === undefined) continue;
-              const problem = workerReadProblem(path, text);
-              if (problem !== undefined) {
-                if (problem.kind === "text") withheld.push({ path, reason: problem.reason });
-                continue;
-              }
+              const sight = workerSees(path, text);
+              if (sight.withheld !== undefined) withheld.push({ path, reason: sight.withheld });
+              if (sight.shown === undefined) continue;
               if (file.kind === "file" && file.stats !== undefined) {
                 files.push({
                   path,
@@ -1180,12 +1183,10 @@ const make = (root: string): OrchestrationMemoryShape => {
             path,
             MEMORY_READ_MAX_BYTES,
           );
-          const problem = workerReadProblem(path, text);
-          if (problem?.kind === "text") {
-            return yield* refuse(keptFromWorkerReads(path, problem.reason));
-          }
-          if (problem !== undefined) return yield* missing;
-          return redactText(text);
+          const sight = workerSees(path, text);
+          if (sight.shown !== undefined) return redactText(sight.shown);
+          if (sight.withheld === undefined) return yield* missing;
+          return yield* refuse(keptFromWorkerReads(path, sight.withheld));
         }),
       ),
 
@@ -1193,13 +1194,13 @@ const make = (root: string): OrchestrationMemoryShape => {
       guarded(workspaceId, path, () =>
         Effect.gen(function* () {
           const named = workerReadProblem(path);
-          if (named !== undefined) return named.reason;
+          if (named !== undefined) return `Workers can't read this file: ${named.reason}`;
           const version = yield* adopted(workspaceId);
           if (version === undefined) return undefined;
           const within = versionRel(version);
           const rel = `${within}/${path}`;
           if ((yield* resolveInTree(workspaceId, rel, within)).kind !== "file") return undefined;
-          return workerReadProblem(path, yield* readText(workspaceId, rel, within, path))?.reason;
+          return workerSees(path, yield* readText(workspaceId, rel, within, path)).note;
         }),
       ),
 
