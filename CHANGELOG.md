@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.45.0](https://github.com/ANT1OFF/gram/compare/v1.44.0...v1.45.0) (2026-11-26)
+
+
+### Features
+
+* remove the helper's suggested follow-up tasks and its thread plans ([#1078](https://github.com/ANT1OFF/gram/issues/1078)) ([92454e3](https://github.com/ANT1OFF/gram/commit/92454e39db5c068aff4398db594e4a6e591449f8))
+* the Board draws one line per feature, with its plan in the Stage cell and its group as a tag ([#1077](https://github.com/ANT1OFF/gram/issues/1077)) ([2e3106e](https://github.com/ANT1OFF/gram/commit/2e3106e2772dc4de84a392f39c70bc0b0b72a50c))
+
+
+### Bug Fixes
+
+* workers read flat memory notes, ordinary typography and an object's key ([#1080](https://github.com/ANT1OFF/gram/issues/1080)) ([0ca6a0e](https://github.com/ANT1OFF/gram/commit/0ca6a0e6b3dc8631c02abcb57f286a6804ce02ce))
+
 ## [1.44.0](https://github.com/ANT1OFF/gram/compare/v1.43.0...v1.44.0) (2026-11-26)
 
 
