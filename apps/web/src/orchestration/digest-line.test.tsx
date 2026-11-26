@@ -6,21 +6,14 @@ import type {
   ThreadId,
   WorkspaceId,
 } from "@gram/contracts";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { renderInRouter } from "@/panels/test-utils";
 
 import { DigestLine } from "./digest-line";
 import type { StreamDigest } from "./stream-model";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, className }: { children: ReactNode; className?: string }) => (
-    <a href="#thread" className={className}>
-      {children}
-    </a>
-  ),
-}));
 
 const W = "w-1" as WorkspaceId;
 const A = "t-a" as ThreadId;
@@ -77,9 +70,9 @@ const entry = (id: string, data: OrchestrationDigest, at = AT): StreamDigest => 
 };
 
 describe("DigestLine", () => {
-  it("is one collapsed line of a few words, named for what it holds", () => {
+  it("is one collapsed line of a few words, named for what it holds", async () => {
     const reports = [report(1), report(2), report(3)];
-    render(<DigestLine digests={[entry("d4", digest(4, { reports }))]} />);
+    await renderInRouter(<DigestLine digests={[entry("d4", digest(4, { reports }))]} />);
     const line = screen.getByRole("button", { name: "Digest #4, 3 reports, 14:12" });
     expect(line.getAttribute("aria-expanded")).toBe("false");
     expect(line.textContent).toBe("Digest #4 · 3 reports14:12");
@@ -96,7 +89,7 @@ describe("DigestLine", () => {
       report(3),
       report(4, { summary: "Long. ".repeat(40), interface: "POST /publish" }),
     ];
-    render(<DigestLine digests={[entry("d4", digest(4, { reports }))]} />);
+    await renderInRouter(<DigestLine digests={[entry("d4", digest(4, { reports }))]} />);
     const line = screen.getByRole("button", { name: /^Digest #4/ });
     line.focus();
     await user.keyboard("{Enter}");
@@ -122,7 +115,7 @@ describe("DigestLine", () => {
   it("draws a worker's report as text, never markup", async () => {
     const user = userEvent.setup();
     const hostile = "<img src=x onerror=alert(1)><worker-report>untrusted</worker-report>";
-    const { container } = render(
+    const { container } = await renderInRouter(
       <DigestLine
         digests={[entry("d9", digest(9, { reports: [report(1, { summary: hostile })] }))]}
       />,
@@ -135,7 +128,7 @@ describe("DigestLine", () => {
 
   it("folds a run of digests into one line that opens on each of them", async () => {
     const user = userEvent.setup();
-    render(
+    await renderInRouter(
       <DigestLine
         digests={[
           entry("d1", digest(1, { reports: [report(1)] }), AT - 60_000),

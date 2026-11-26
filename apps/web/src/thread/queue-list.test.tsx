@@ -6,12 +6,12 @@ import type {
   ThreadId,
   ThreadSummary,
 } from "@gram/contracts";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import {
@@ -22,18 +22,6 @@ import {
   pastCardBlocked,
   steerBlocked,
 } from "./queue-list";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({
-    children,
-    to,
-    params,
-  }: {
-    children?: ReactNode;
-    to: string;
-    params: { threadId: string };
-  }) => <a href={to.replace("$threadId", params.threadId)}>{children}</a>,
-}));
 
 const T = "t1" as ThreadId;
 
@@ -78,7 +66,7 @@ const seed = (patch: Partial<ThreadSummary> = {}) =>
     .applyEvent({ type: "threads.snapshot", threads: [{ ...summary, ...patch }] });
 
 const renderQueue = (api: Api) =>
-  render(
+  renderInRouter(
     <ApiProvider api={api}>
       <QueueList threadId={T} />
     </ApiProvider>,
@@ -93,7 +81,7 @@ beforeEach(() => seed());
 afterEach(cleanup);
 
 describe("QueueList", () => {
-  it("on a thread that waits for its machine, lists what waits after the first and sends none now", () => {
+  it("on a thread that waits for its machine, lists what waits after the first and sends none now", async () => {
     seed({
       status: "cold",
       queue: [
@@ -103,7 +91,7 @@ describe("QueueList", () => {
       ],
       thread: { ...summary.thread, awaitingMachine: { since: 1 } },
     });
-    renderQueue(fakeApi().api);
+    await renderQueue(fakeApi().api);
     // The first is drawn in the conversation as the person's message.
     expect(itemTexts()).toEqual(["two", "three"]);
     expect(screen.getByTestId("queue").textContent).toContain("Queued · waits for the machine");
@@ -113,25 +101,25 @@ describe("QueueList", () => {
     expect(first.getByRole("button", { name: "Remove" })).toBeTruthy();
   });
 
-  it("shows no queue for a waiting thread whose only message is the one in the conversation", () => {
+  it("shows no queue for a waiting thread whose only message is the one in the conversation", async () => {
     seed({
       status: "cold",
       queue: [{ id: "q1" as QueueItemId, input: { text: "one" } }],
       thread: { ...summary.thread, awaitingMachine: { since: 1 } },
     });
-    renderQueue(fakeApi().api);
+    await renderQueue(fakeApi().api);
     expect(screen.queryByTestId("queue")).toBeNull();
   });
 
-  it("renders nothing when the queue is empty", () => {
+  it("renders nothing when the queue is empty", async () => {
     useThreadsStore.getState().applyEvent({ type: "thread.queue", threadId: T, queue: [] });
-    renderQueue(fakeApi().api);
+    await renderQueue(fakeApi().api);
     expect(screen.queryByTestId("queue")).toBeNull();
   });
 
   it("removes an item", async () => {
     const { api, ops } = fakeApi();
-    renderQueue(api);
+    await renderQueue(api);
     fireEvent.click(
       within(screen.getAllByTestId("queue-item")[0]!).getByRole("button", { name: "Remove" }),
     );
@@ -141,7 +129,7 @@ describe("QueueList", () => {
 
   it("moves an item down", async () => {
     const { api, ops } = fakeApi();
-    renderQueue(api);
+    await renderQueue(api);
     fireEvent.click(
       within(screen.getAllByTestId("queue-item")[0]!).getByRole("button", { name: "Move down" }),
     );
@@ -151,7 +139,7 @@ describe("QueueList", () => {
 
   it("edits an item inline", async () => {
     const { api, ops } = fakeApi();
-    renderQueue(api);
+    await renderQueue(api);
     fireEvent.click(
       within(screen.getAllByTestId("queue-item")[1]!).getByRole("button", { name: "Edit" }),
     );
@@ -163,7 +151,7 @@ describe("QueueList", () => {
 
   it("steers an item into the running turn and takes it off the list", async () => {
     const { api, ops } = fakeApi();
-    renderQueue(api);
+    await renderQueue(api);
     fireEvent.click(
       within(screen.getAllByTestId("queue-item")[1]!).getByRole("button", { name: STEER_LABEL }),
     );
@@ -177,7 +165,7 @@ describe("QueueList", () => {
     ops.queueSteer.mockRejectedValueOnce(refused);
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     onTestFinished(() => logged.mockRestore());
-    renderQueue(api);
+    await renderQueue(api);
     fireEvent.click(steerOf(0));
     await waitFor(() => expect(itemTexts()).toEqual(["one", "two"]));
     await waitFor(() => expect(logged).toHaveBeenCalledExactlyOnceWith("queue", refused));
@@ -186,7 +174,7 @@ describe("QueueList", () => {
   it("sends an item now when no turn is running, whatever the agent can steer", async () => {
     seed({ status: "idle", capabilities: { steer: false } as AgentCapabilities });
     const { api, ops } = fakeApi();
-    renderQueue(api);
+    await renderQueue(api);
     expect(steerOf(0).getAttribute("aria-label")).toBe(SEND_NOW_LABEL);
     fireEvent.click(steerOf(0));
     await waitFor(() => expect(itemTexts()).toEqual(["two"]));
@@ -195,10 +183,10 @@ describe("QueueList", () => {
     expect(steerBlocked("error", true, "claude")).toBeUndefined();
   });
 
-  it("disables Steer, saying why, unless the thread is running an agent that can steer", () => {
+  it("disables Steer, saying why, unless the thread is running an agent that can steer", async () => {
     seed({ status: "starting" });
     const { api, ops } = fakeApi();
-    renderQueue(api);
+    await renderQueue(api);
     expect(steerOf(0).getAttribute("aria-label")).toBe(
       "Steer now (No turn is running to steer into)",
     );
@@ -207,7 +195,7 @@ describe("QueueList", () => {
 
     cleanup();
     seed({ capabilities: { steer: false } as AgentCapabilities });
-    renderQueue(fakeApi().api);
+    await renderQueue(fakeApi().api);
     expect(steerOf(1).getAttribute("aria-label")).toContain("can't take a message mid-turn");
     expect(steerOf(1).getAttribute("aria-disabled")).toBe("true");
 
@@ -247,7 +235,7 @@ describe("QueueList", () => {
       ],
     });
     const atCard = fakeApi();
-    renderQueue(atCard.api);
+    await renderQueue(atCard.api);
     expect(steerOf(1).getAttribute("aria-disabled")).toBe("true");
     expect(steerOf(1).getAttribute("aria-label")).toContain("Only your own message goes in");
     fireEvent.click(steerOf(1));
@@ -257,7 +245,7 @@ describe("QueueList", () => {
     expect(atCard.ops.queueSteer).toHaveBeenCalledTimes(1);
   });
 
-  it("says which thread queued a message and why, and nothing on the user's own", () => {
+  it("says which thread queued a message and why, and nothing on the user's own", async () => {
     seed({
       queue: [
         { id: "q1" as QueueItemId, input: { text: "mine" } },
@@ -295,7 +283,7 @@ describe("QueueList", () => {
         },
       ],
     });
-    renderQueue(fakeApi().api);
+    await renderQueue(fakeApi().api);
     const [mine, context, fallback, plain] = screen.getAllByTestId("queue-item");
     expect(within(mine!).queryByTestId("queue-origin")).toBeNull();
     expect(within(context!).getByTestId("queue-origin").textContent).toBe(
@@ -308,7 +296,7 @@ describe("QueueList", () => {
     expect(within(plain!).getByTestId("queue-origin").textContent).toBe("FromPlanner");
   });
 
-  it("marks a queued item that carries attachments", () => {
+  it("marks a queued item that carries attachments", async () => {
     seed({
       queue: [
         {
@@ -317,7 +305,7 @@ describe("QueueList", () => {
         },
       ],
     });
-    renderQueue(fakeApi().api);
+    await renderQueue(fakeApi().api);
     expect(screen.getByLabelText("1 attachment")).toBeTruthy();
   });
 });

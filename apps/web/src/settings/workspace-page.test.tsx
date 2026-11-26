@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, type ProjectId, type Settings } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { useUndoToasts } from "@/stores/undo-toasts";
@@ -13,17 +12,6 @@ import { useThreadDialogs } from "@/thread/thread-dialogs-store";
 
 import { WorkspaceSettingsPage } from "./workspace-page";
 import { WorkspacesSettings } from "./workspace-settings";
-
-const navigate = vi.fn(async (_to: unknown) => {});
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, ...props }: { children?: ReactNode; "data-testid"?: string }) => (
-    <a href="#" data-testid={props["data-testid"]}>
-      {children}
-    </a>
-  ),
-  useNavigate: () => navigate,
-}));
 
 const settings: Settings = {
   ...DEFAULT_SETTINGS,
@@ -63,7 +51,7 @@ describe("a workspace's settings page", () => {
     const { api, state } = await mount();
     const thread = await api.openOrchestrator({ workspaceId: state.workspace.id });
     useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread });
-    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, { api });
     const open = await screen.findByTestId("switch-orchestrator-open");
     expect(open.textContent).toBe("Continue in Codex…");
     fireEvent.click(open);
@@ -81,7 +69,7 @@ describe("a workspace's settings page", () => {
     } as never);
     const thread = await api.openOrchestrator({ workspaceId: state.workspace.id });
     useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread });
-    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, { api });
     await screen.findByTestId("orchestrator-current");
     await act(async () => {});
     expect(screen.queryByTestId("switch-orchestrator-open")).toBeNull();
@@ -89,7 +77,7 @@ describe("a workspace's settings page", () => {
 
   it("saves a change at once and offers Undo, which puts back what was there", async () => {
     const { api, state, stored } = await mount();
-    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, { api });
     const autonomy = await screen.findByTestId("autonomy");
     expect(autonomy.getAttribute("data-value")).toBe("full");
     fireEvent.click(within(autonomy).getByRole("radio", { name: "Supervised" }));
@@ -111,7 +99,7 @@ describe("a workspace's settings page", () => {
     // This control explicitly uses Full, independently of future new-workspace defaults.
     await api.setOrchestratorCharter(state.workspace.id, { ...charter, autonomy: "full" });
     useThreadsStore.getState().applyEvent({ type: "thread.upsert", thread });
-    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, { api });
     const current = await screen.findByTestId("orchestrator-current");
     const identity = current.textContent;
     expect((await screen.findByTestId("switch-orchestrator-open")).textContent).toBe(
@@ -151,7 +139,7 @@ describe("a workspace's settings page", () => {
 
   it("removes a repository with Undo, but keeps the home repository", async () => {
     const { api, state, stored } = await mount();
-    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, { api });
     const repos = await screen.findByTestId("workspace-repos");
     const box = (name: string) =>
       within(repos)
@@ -170,7 +158,7 @@ describe("a workspace's settings page", () => {
 
   it("pauses with Undo, and resumes without one", async () => {
     const { api, state, stored } = await mount();
-    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, { api });
     fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
     await waitFor(async () => expect((await stored()).paused?.reason).toBe("user"));
     expect(await screen.findByTestId("workspace-pause-reason")).toBeDefined();
@@ -179,7 +167,7 @@ describe("a workspace's settings page", () => {
     useUndoToasts.setState({ toasts: [] });
     await act(() => api.setOrchestratorPaused(state.workspace.id, true));
     cleanup();
-    renderWithApi(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={state.workspace.id} />, { api });
     fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
     await waitFor(async () => expect((await stored()).paused).toBeUndefined());
     expect(useUndoToasts.getState().toasts).toEqual([]);
@@ -187,7 +175,7 @@ describe("a workspace's settings page", () => {
 
   it("says so when the workspace is gone", async () => {
     const { api } = await mount();
-    renderWithApi(<WorkspaceSettingsPage workspaceId={"w-missing" as never} />, api);
+    await renderInRouter(<WorkspaceSettingsPage workspaceId={"w-missing" as never} />, { api });
     expect(await screen.findByTestId("workspace-page-missing")).toBeDefined();
   });
 });
@@ -195,7 +183,7 @@ describe("a workspace's settings page", () => {
 describe("the workspace list", () => {
   it("shows each workspace on a line, with its settings a click away", async () => {
     const { api } = await mount();
-    renderWithApi(<WorkspacesSettings />, api);
+    await renderInRouter(<WorkspacesSettings />, { api });
     const row = await screen.findByRole("listitem", { name: "Workspace platform" });
     expect(within(row).getByTestId("workspace-projects").textContent).toBe("web, api");
     expect(within(row).getByTestId("workspace-autonomy").textContent).toBe("Full");

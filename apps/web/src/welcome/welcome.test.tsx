@@ -1,26 +1,16 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, RECOMMENDED, type LaunchChecks, type Settings } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import { prefillDraftProject } from "@/composer/draft-prefill";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { canStart, runsWith, toolRows } from "./tools";
 import { Welcome } from "./welcome";
 import { useWelcome } from "./welcome-state";
-
-const navigate = vi.fn(async (_to: unknown) => {});
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to }: { children: ReactNode; to: string }) => (
-    <a href={`#${to}`}>{children}</a>
-  ),
-  useNavigate: () => navigate,
-}));
 
 const withOnboarding = (onboarding: Partial<Settings["onboarding"]>): Settings => ({
   ...DEFAULT_SETTINGS,
@@ -48,11 +38,9 @@ function load(settings: Settings, checks: LaunchChecks = ALL_READY) {
   const api = createMockApi({ speed: 0, autoplay: false });
   vi.spyOn(api, "launchChecks").mockResolvedValue(checks);
   const updateSettings = vi.spyOn(api, "updateSettings");
-  const render = () => renderWithApi(<Welcome />, api);
+  const render = () => renderInRouter(<Welcome />, { api });
   return { api, render, updateSettings };
 }
-
-beforeEach(() => navigate.mockClear());
 
 afterEach(() => {
   cleanup();
@@ -65,7 +53,7 @@ describe("first run", () => {
   it("leads with a repository and the agent it runs on, Skip beside Open, the rest folded", async () => {
     const { api, render, updateSettings } = load(withOnboarding({}));
     for (const profile of await api.listProfiles()) await api.removeProfile(profile.id);
-    render();
+    await render();
 
     const welcome = within(await screen.findByTestId("welcome"));
     // It leads with the repository: the screen's heading is the action.
@@ -115,18 +103,14 @@ describe("first run", () => {
 
   it("opens the new-workspace sheet on the picked repository, and stays until a workspace is made", async () => {
     const { render, updateSettings } = load(withOnboarding({}));
-    render();
+    const { router } = await render();
     const welcome = within(await screen.findByTestId("welcome"));
     // A pick alone opens nothing; Open does.
     fireEvent.click(await welcome.findByRole("radio", { name: /^api/ }));
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
     fireEvent.click(welcome.getByTestId("welcome-open"));
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({
-        to: "/new-workspace",
-        search: { repo: "p-api", read: true },
-      }),
-    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/new-workspace"));
+    expect(router.state.location.search).toEqual({ repo: "p-api", read: true });
     // Leaving the sheet with Esc comes back here; the sheet records it done. Going on keeps the
     // Recommended setup, on, so the new workspace starts on it; nothing else is recorded.
     expect(screen.getByTestId("welcome")).toBeTruthy();
@@ -137,7 +121,7 @@ describe("first run", () => {
 
   it("keeps the Recommended setup off when switched off here, and saves it only on going on", async () => {
     const { render, updateSettings } = load(withOnboarding({}));
-    render();
+    await render();
     const welcome = within(await screen.findByTestId("welcome"));
     const toggle = welcome.getByTestId("welcome-recommended-switch");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
@@ -158,25 +142,21 @@ describe("first run", () => {
   it("adds a repository found in the default folder before opening the sheet on it", async () => {
     const { api, render } = load(withOnboarding({}));
     const add = vi.spyOn(api, "addProject");
-    render();
+    const { router } = await render();
     const welcome = within(await screen.findByTestId("welcome"));
     // A double-click opens the row it is on.
     const infra = await welcome.findByRole("radio", { name: /^infra/ });
     fireEvent.doubleClick(infra);
     await waitFor(() => expect(add).toHaveBeenCalledWith("/Users/dev/Documents/code/infra"));
     const project = await add.mock.results[0]!.value;
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({
-        to: "/new-workspace",
-        search: { repo: project.id, read: true },
-      }),
-    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/new-workspace"));
+    expect(router.state.location.search).toEqual({ repo: project.id, read: true });
   });
 
   it("makes Open a folder… the primary action when there is no repository to pick", async () => {
     const { api, render } = load(withOnboarding({}));
     vi.spyOn(api, "listRepositories").mockResolvedValue({ repos: [] });
-    render();
+    await render();
     const welcome = within(await screen.findByTestId("welcome"));
     const folder = await welcome.findByRole("button", { name: "Open a folder…" });
     await waitFor(() => expect(api.listRepositories).toHaveBeenCalled());
@@ -195,7 +175,7 @@ describe("first run", () => {
     vi.spyOn(api, "listRepositories").mockResolvedValue({
       repos: [...repos, { name: "billing", root: "/Users/dev/work/billing" }],
     });
-    render();
+    await render();
     const welcome = within(await screen.findByTestId("welcome"));
     const search = await welcome.findByRole("searchbox", { name: "Find a repository" });
     expect(document.activeElement).toBe(search);
@@ -217,7 +197,7 @@ describe("first run", () => {
 
   it("is skipped for good", async () => {
     const { render, updateSettings } = load(withOnboarding({}));
-    render();
+    await render();
     const welcome = within(await screen.findByTestId("welcome"));
     fireEvent.click(welcome.getByRole("button", { name: "Skip" }));
     expect(screen.queryByTestId("welcome")).toBeNull();
@@ -231,7 +211,7 @@ describe("first run", () => {
       ...ALL_READY,
       claudeSignIn: "notSignedIn",
     });
-    render();
+    await render();
     const welcome = within(await screen.findByTestId("welcome"));
     const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
       "listitem",
@@ -251,7 +231,7 @@ describe("first run", () => {
       tools: ALL_READY.tools.filter((tool) => tool.tool !== "claude"),
       claudeSignIn: "unknown",
     });
-    render();
+    await render();
     const welcome = within(await screen.findByTestId("welcome"));
     const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
       "listitem",
@@ -275,7 +255,7 @@ describe("first run", () => {
       claudeSignIn: "unknown",
       codexSignIn: "notSignedIn",
     });
-    render();
+    await render();
     const welcome = within(await screen.findByTestId("welcome"));
     const rows = within(await welcome.findByRole("list", { name: "Tools to set up" })).getAllByRole(
       "listitem",
@@ -293,7 +273,7 @@ describe("first run", () => {
 
   it("shows nothing after the first run", async () => {
     const { render, updateSettings } = load(withOnboarding({ welcomeSeen: true }));
-    render();
+    await render();
     await waitFor(() => expect(useWelcome.getState().open).toBe(false));
     expect(screen.queryByTestId("welcome")).toBeNull();
     expect(updateSettings).not.toHaveBeenCalled();
