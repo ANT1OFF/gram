@@ -4520,7 +4520,7 @@ export const SHOTS: readonly Shot[] = [
   },
   {
     name: "board-groups",
-    title: "Board: lines under their groups' bands, with stages as chips and pips",
+    title: "Board: one line per feature, its plan in the Stage cell and its group as a tag",
     open: async (page) => {
       await openOrchestratorOf(page, async () => {
         const made = await window.gramMock!.simulateReleaseGroup();

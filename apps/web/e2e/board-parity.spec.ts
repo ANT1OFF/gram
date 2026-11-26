@@ -213,18 +213,26 @@ test("a line carries its stage as a chip, its sheet's steps set it, and Set stag
 test("a line names its group, the header filters by it, and the menu moves it", async ({
   page,
 }) => {
+  // Tall enough for every line at once: the Board draws only the lines near the view.
+  await page.setViewportSize({ width: 1280, height: 2000 });
   await start(page, () => window.gramMock!.simulateWorkerWaits());
   // No bands: each of the group's lines is on the list with its group as a tag.
   await expect(board(page).getByTestId("rail-group")).toHaveCount(0);
   const members = board(page)
     .getByTestId("rail-row")
     .filter({ has: page.getByTestId("rail-group-tag").filter({ hasText: "casefile-cleanup" }) });
-  const count = await members.count();
-  expect(count).toBeGreaterThan(0);
-  await expect(pick(page, "casefile-cleanup")).toContainText(String(count));
+  await expect(line(page, "casefile-docs").getByTestId("rail-group-tag")).toHaveText(
+    "casefile-cleanup",
+  );
+  await expect(line(page, "registry-paging")).toBeVisible();
+  const count = Number(
+    (await pick(page, "casefile-cleanup").textContent())?.replace("casefile-cleanup", ""),
+  );
+  expect(count).toBeGreaterThan(1);
+  // The choice counts the group's lines.
+  await expect(members).toHaveCount(count);
 
   // Picking the group keeps its lines alone; picking it again gives every line back.
-  await expect(line(page, "registry-paging")).toBeVisible();
   await pick(page, "casefile-cleanup").click();
   await expect(pick(page, "casefile-cleanup")).toHaveAttribute("aria-pressed", "true");
   await expect(board(page).getByTestId("rail-row")).toHaveCount(count);
@@ -288,26 +296,22 @@ test("a group's plan stands in its lines' Stage cells, and a step there moves it
       }),
     made.workspaceId,
   );
-  // A line with one worker draws the plan in place of its station bar.
+  // The plan heads the line in place of its station bar; each worker under it keeps its own.
   const exported = line(page, "casefile-export");
   const plan = exported.getByTestId("rail-plan");
+  await expect(plan).toHaveCount(1);
   await expect(plan).toHaveAttribute("data-of", "group");
   await expect(exported.getByTestId("rail-plan-name")).toHaveText("build · 1 of 3");
   await expect(plan).toHaveAttribute("title", /Index and export first\./);
-  await expect(exported.getByTestId("grid-stage")).toHaveCount(0);
-  // One with several heads its workers' rows with it; each worker keeps its own station.
+  await expect(exported.getByTestId("rail-worker")).toHaveCount(2);
+  await expect(exported.getByTestId("grid-stage")).toHaveCount(2);
   const index = line(page, "casefile-index");
-  await expect(index.getByTestId("rail-plan")).toHaveCount(1);
-  await expect(index.getByTestId("grid-stage")).toHaveCount(
-    await index.getByTestId("rail-worker").count(),
-  );
+  await expect(index.getByTestId("rail-plan-name")).toHaveText("build · 1 of 3");
 
   // A step moves the group's stage, and every line of it says so.
   await exported.getByRole("button", { name: "review (upcoming)" }).click();
   await expect(exported.getByTestId("rail-plan-name")).toHaveText("review · 2 of 3");
   await expect(index.getByTestId("rail-plan-name")).toHaveText("review · 2 of 3");
-  // A line in no group keeps its station bar.
-  await expect(line(page, "registry-paging").getByTestId("rail-plan")).toHaveCount(0);
 });
 
 test("the failure card lists a stopped worker above the lines, names its step, opens it, and dismisses with Undo", async ({

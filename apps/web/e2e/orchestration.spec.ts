@@ -844,6 +844,8 @@ test("finished work is in History, and a merged worker offers its cleanup", asyn
 test("the Board hides finished work until asked, and remembers that per workspace", async ({
   page,
 }) => {
+  // Tall enough for every line at once: the Board draws only the lines near the view.
+  await page.setViewportSize({ width: 1280, height: 2000 });
   await page.goto("/t/t-flaky");
   await expect(threadRow(page, "t-flaky")).toBeVisible();
   const made = await page.evaluate(async () => {
