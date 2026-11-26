@@ -56,6 +56,23 @@ export type DocArchiveReason = typeof DocArchiveReason.Type;
 const bounded = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const DocTime = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: DOC_TIME_MAX }));
 
+/** `owner/repo`, as GitHub spells a repository. */
+export const DOC_PR_REPO_PATTERN = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
+
+/**
+ * The pull request a doc is about: its author's bound PR, or the one a reviewer names. A workspace
+ * keeps one active doc per PR, and its review rounds fold into it.
+ */
+export const DocPr = Schema.Struct({
+  repo: Schema.String.check(Schema.isPattern(DOC_PR_REPO_PATTERN)),
+  number: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: DOC_REVISION_MAX })),
+});
+export type DocPr = typeof DocPr.Type;
+
+/** Whether two docs' PRs are the same one; GitHub's repository names ignore case. */
+export const sameDocPr = (a: DocPr, b: DocPr): boolean =>
+  a.number === b.number && a.repo.toLowerCase() === b.repo.toLowerCase();
+
 /** What a doc is, without its text. Every field is bounded, so a decoded one is safe to show. */
 export const DocMeta = Schema.Struct({
   id: DocId,
@@ -76,6 +93,8 @@ export const DocMeta = Schema.Struct({
   bytes: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: DOC_MAX_BYTES })),
   /** The opening prose, Markdown stripped, for a card's and a row's thumbnail. */
   excerpt: bounded(DOC_EXCERPT_MAX),
+  /** The PR it is about, when it is one's; any thread in the workspace may update it. */
+  pr: Schema.optionalKey(DocPr),
   /** Epoch ms it was archived; absent while it is active. */
   archivedAt: Schema.optionalKey(DocTime),
   archivedReason: Schema.optionalKey(DocArchiveReason),
