@@ -1,32 +1,20 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { renderInRouter } from "@/panels/test-utils";
 
 import { ALL_SETTINGS_PAGES, isSubpage, SETTINGS_GROUPS, subpagesOf } from "./pages";
 import { SettingsNav } from "./settings-nav";
 
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => () => Promise.resolve(),
-  Link: ({
-    to,
-    children,
-    ...rest
-  }: {
-    to: string;
-    children: React.ReactNode;
-  } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
-    <a href={to} {...rest}>
-      {children}
-    </a>
-  ),
-}));
-
 afterEach(cleanup);
 
 describe("SettingsNav", () => {
-  it("links the groups in order and marks the open one", () => {
+  it("links the groups in order and marks the open one", async () => {
     const onNavigate = vi.fn();
-    render(<SettingsNav groups={SETTINGS_GROUPS} current="about" onNavigate={onNavigate} />);
+    await renderInRouter(
+      <SettingsNav groups={SETTINGS_GROUPS} current="about" onNavigate={onNavigate} />,
+    );
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
     expect(
       within(nav)
@@ -82,9 +70,9 @@ describe("SettingsNav", () => {
     });
   });
 
-  it("lists the open group's own pages under it, the open one current", () => {
+  it("lists the open group's own pages under it, the open one current", async () => {
     const pages = subpagesOf("agents", ALL_SETTINGS_PAGES);
-    render(
+    await renderInRouter(
       <SettingsNav
         groups={SETTINGS_GROUPS}
         current="agents"
@@ -108,8 +96,8 @@ describe("SettingsNav", () => {
     expect(document.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
   });
 
-  it("shows a group's badge", () => {
-    render(
+  it("shows a group's badge", async () => {
+    await renderInRouter(
       <SettingsNav
         groups={SETTINGS_GROUPS}
         current="general"

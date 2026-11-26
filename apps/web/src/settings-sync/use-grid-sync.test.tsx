@@ -1,31 +1,16 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, type Settings, type ThreadId } from "@gram/contracts";
-import { act, cleanup, renderHook } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { act, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiProvider } from "@/api/context";
-import type { Api } from "@/api/types";
 import { resetCurrentWindow } from "@/desktop/window-identity";
 import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
+import { renderInRouter } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
 import { useServerSettings } from "./store";
 import { useGridSync } from "./use-grid-sync";
-
-const router = vi.hoisted(() => ({
-  navigate: vi.fn(),
-  pathname: "/",
-  params: {} as Record<string, string>,
-}));
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => router.navigate,
-  useLocation: ({ select }: { select: (location: { pathname: string }) => string }) =>
-    select({ pathname: router.pathname }),
-  useParams: () => router.params,
-}));
 
 const FOCUSED = "t-last-focused" as ThreadId;
 
@@ -36,13 +21,14 @@ const savedSettings: Settings = {
 };
 
 const updateSettings = vi.fn(() => Promise.resolve(savedSettings));
-const api = { updateSettings } as unknown as Api;
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <ApiProvider api={api}>{children}</ApiProvider>
-);
 
-/** The threads are loaded and the saved settings are in, as on a launch. */
-const launch = () => {
+const GridSync = () => {
+  useGridSync();
+  return null;
+};
+
+/** The threads are loaded and the saved settings are in, as on a launch at `path`. */
+const launch = (path = "/") => {
   useThreadsStore.setState({
     ready: true,
     byId: { [FOCUSED]: { id: FOCUSED } } as unknown as ReturnType<
@@ -50,7 +36,7 @@ const launch = () => {
     >["byId"],
   });
   useServerSettings.setState({ settings: savedSettings });
-  return renderHook(() => useGridSync(), { wrapper });
+  return renderInRouter(<GridSync />, { path, api: { updateSettings } });
 };
 
 /** Mounted by an app in front of Gram that supplies its own home at `/`. */
@@ -58,16 +44,12 @@ const embedWithHome = () =>
   useEmbedShell.setState({ hosted: true, home: () => null, titles: { "/": "Home" } });
 
 beforeEach(() => {
-  vi.useFakeTimers();
   resetCurrentWindow();
-  router.pathname = "/";
-  router.params = {};
 });
 
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
-  router.navigate.mockReset();
   updateSettings.mockClear();
   useEmbedShell.setState(EMPTY_SHELL);
   useLayoutStore.setState({ grid: EMPTY_GRID });
@@ -76,18 +58,16 @@ afterEach(() => {
 });
 
 describe("useGridSync", () => {
-  it("on its own, restores the saved grid and opens its focused thread on a launch at /", () => {
-    launch();
+  it("on its own, restores the saved grid and opens its focused thread on a launch at /", async () => {
+    const { router } = await launch();
 
     expect(useLayoutStore.getState().grid.panes).toEqual([FOCUSED]);
-    expect(router.navigate).toHaveBeenCalledWith({
-      to: "/t/$threadId",
-      params: { threadId: FOCUSED },
-    });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${FOCUSED}`));
   });
 
-  it("on its own, saves a changed grid to the server's settings", () => {
-    launch();
+  it("on its own, saves a changed grid to the server's settings", async () => {
+    await launch();
+    vi.useFakeTimers();
     act(() => useLayoutStore.getState().setGrid(EMPTY_GRID));
     act(() => {
       vi.advanceTimersByTime(1_000);
@@ -98,37 +78,33 @@ describe("useGridSync", () => {
     });
   });
 
-  it("under an embedding app's home, a launch at / restores the grid and stays home", () => {
+  it("under an embedding app's home, a launch at / restores the grid and stays home", async () => {
     embedWithHome();
-    launch();
+    const { router } = await launch();
 
-    expect(router.navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
     expect(useLayoutStore.getState().grid.panes).toEqual([FOCUSED]);
   });
 
-  it("under an embedding app with no home of its own, a launch at / opens the saved focus", () => {
+  it("under an embedding app with no home of its own, a launch at / opens the saved focus", async () => {
     useEmbedShell.setState({ hosted: true });
-    launch();
+    const { router } = await launch();
 
-    expect(router.navigate).toHaveBeenCalledWith({
-      to: "/t/$threadId",
-      params: { threadId: FOCUSED },
-    });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${FOCUSED}`));
   });
 
-  it("under an embedding app, a thread's address opens that thread in the restored grid", () => {
+  it("under an embedding app, a thread's address opens that thread in the restored grid", async () => {
     embedWithHome();
-    router.pathname = "/t/t-linked";
-    router.params = { threadId: "t-linked" };
-    launch();
+    const { router } = await launch("/t/t-linked");
 
-    expect(router.navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/t/t-linked");
     expect(useLayoutStore.getState().grid.panes).toEqual(["t-linked"]);
   });
 
-  it("under an embedding app, a changed grid is saved as the person's own", () => {
+  it("under an embedding app, a changed grid is saved as the person's own", async () => {
     embedWithHome();
-    launch();
+    await launch();
+    vi.useFakeTimers();
     act(() => useLayoutStore.getState().openThread("t-mine" as ThreadId));
     act(() => {
       vi.advanceTimersByTime(1_000);

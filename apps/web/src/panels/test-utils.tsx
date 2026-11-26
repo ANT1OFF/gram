@@ -70,14 +70,23 @@ export function renderWithRouter(ui: ReactNode, api: Partial<Api>) {
 /**
  * Renders `ui` as the page of a real router at `path`, whose routes carry the app's own params
  * (`/t/$threadId`, `/w/$workspaceId/files`, `/settings/$page`, …): for a component that links,
- * navigates or reads where it is. With `api`, inside `renderWithApi`'s providers. Waits for the
+ * navigates or reads where it is; `routes` adds paths of its own, such as an embedding app's
+ * pages. With `api`, inside `renderWithApi`'s providers. Waits for the
  * router's first load, so `ui` is on screen when it returns; `router.state.location` says where
  * a navigation went, and `rerender(next)` shows `next` on the same page, as a parent's new props
  * would.
  */
 export async function renderInRouter(
   ui: ReactNode,
-  { path = "/", api }: { readonly path?: string; readonly api?: Partial<Api> } = {},
+  {
+    path = "/",
+    api,
+    routes = [],
+  }: {
+    readonly path?: string;
+    readonly api?: Partial<Api>;
+    readonly routes?: ReadonlyArray<string>;
+  } = {},
 ) {
   const root = createRootRoute();
   const shown = { ui, listeners: new Set<() => void>() };
@@ -94,6 +103,7 @@ export async function renderInRouter(
         "/w/$workspaceId/memory",
         "/settings/workspaces/$workspaceId",
         "/settings/$page",
+        ...routes,
         "$",
       ].map((route) => createRoute({ getParentRoute: () => root, path: route, component: Page })),
     ),

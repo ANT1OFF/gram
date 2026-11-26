@@ -1,33 +1,18 @@
 // @vitest-environment happy-dom
 import type { ThreadId } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import type { Ask } from "@/orchestration/ask-model";
 import type { NeedsYouItem } from "@/orchestration/needs-you-items";
 import { useDerivedAsks } from "@/orchestration/needs-you-store";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useLayoutStore } from "@/stores/layout";
 
 import { answersOnCard } from "./inbox-detail";
 import { useInboxStore } from "./inbox-store";
 import { InboxView } from "./inbox-view";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children, to: _to, params: _params, ...rest }: Record<string, unknown>) => (
-    <a href="#" {...rest}>
-      {children as ReactNode}
-    </a>
-  ),
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-  useRouterState: (options?: { select?: (state: { location: { pathname: string } }) => unknown }) =>
-    options?.select?.({ location: { pathname: "/" } }),
-  useLocation: (options?: { select?: (location: { pathname: string }) => unknown }) =>
-    options?.select ? options.select({ pathname: "/" }) : { pathname: "/" },
-}));
 
 /** A window `phone` wide or not, as `usePhone` reads it. */
 function stubWidth(phone: boolean) {
@@ -85,7 +70,9 @@ afterEach(() => {
 describe("the Inbox on a phone", () => {
   it("is a full-screen sheet: its title, a Close, one column of cards and no key legend", async () => {
     stubWidth(true);
-    renderWithApi(<InboxView />, createMockApi({ speed: 0, autoplay: false, persist: false }));
+    await renderInRouter(<InboxView />, {
+      api: createMockApi({ speed: 0, autoplay: false, persist: false }),
+    });
     const sheet = await screen.findByTestId("inbox");
     expect(within(sheet).getByTestId("sheet-header").textContent).toContain("Needs you");
     expect(within(sheet).getByTestId("inbox-close").getAttribute("aria-label")).toBe("Close Inbox");
@@ -98,7 +85,9 @@ describe("the Inbox on a phone", () => {
   it("opens a card's thread on a tap when it has nothing to answer in place", async () => {
     stubWidth(true);
     const openThread = vi.spyOn(useLayoutStore.getState(), "openThread");
-    renderWithApi(<InboxView />, createMockApi({ speed: 0, autoplay: false, persist: false }));
+    const { router } = await renderInRouter(<InboxView />, {
+      api: createMockApi({ speed: 0, autoplay: false, persist: false }),
+    });
     const card = await screen.findByTestId("inbox-card");
     expect(within(card).getByTestId("inbox-card-summary").textContent).toBe(
       "Review the migration plan",
@@ -106,11 +95,14 @@ describe("the Inbox on a phone", () => {
     fireEvent.click(within(card).getByTestId("inbox-card-summary"));
     await waitFor(() => expect(useInboxStore.getState().leftForThread).toBe(true));
     expect(openThread).toHaveBeenCalledWith(THREAD);
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/t/${THREAD}`));
   });
 
   it("keeps the two panes and the key legend on a wider window", async () => {
     stubWidth(false);
-    renderWithApi(<InboxView />, createMockApi({ speed: 0, autoplay: false, persist: false }));
+    await renderInRouter(<InboxView />, {
+      api: createMockApi({ speed: 0, autoplay: false, persist: false }),
+    });
     const sheet = await screen.findByTestId("inbox");
     expect(within(sheet).queryByTestId("sheet-header")).toBeNull();
     expect(within(sheet).getByTestId("inbox-keys")).toBeTruthy();

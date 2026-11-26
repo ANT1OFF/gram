@@ -11,18 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import { threadWorking } from "@/orchestration/tree-model";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { ThreadDialogs } from "@/thread/thread-dialogs";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-  useLocation: ({ select }: { select: (location: { pathname: string }) => unknown }) =>
-    select({ pathname: "/" }),
-}));
 
 type Bridge = NonNullable<DesktopBridge["hostedDevice"]>;
 const ORIGIN = "https://gram.example.com";
@@ -123,7 +116,7 @@ afterEach(() => {
 
 const moveIt = async () => {
   useThreadDialogs.getState().open({ kind: "moveThread", threadId });
-  renderWithApi(<ThreadDialogs />, api);
+  await renderInRouter(<ThreadDialogs />, { api });
   await screen.findByTestId("move-thread-dialog");
   fireEvent.click(await screen.findByTestId("move-thread-start"));
 };

@@ -11,19 +11,12 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter, renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { LeftOpenNotice } from "@/thread/moved-away-notice";
 import { ThreadDialogs } from "@/thread/thread-dialogs";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-  useLocation: ({ select }: { select: (location: { pathname: string }) => unknown }) =>
-    select({ pathname: "/" }),
-}));
 
 type Bridge = NonNullable<DesktopBridge["hostedDevice"]>;
 const ORIGIN = "https://gram.example.com";
@@ -148,7 +141,7 @@ afterEach(() => {
 
 const bringIt = async () => {
   useThreadDialogs.getState().open({ kind: "bringThread", threadId });
-  renderWithApi(<ThreadDialogs />, api);
+  await renderInRouter(<ThreadDialogs />, { api });
   await screen.findByTestId("bring-thread-dialog");
   const start = await screen.findByTestId("bring-thread-start");
   await vi.waitFor(() => expect(start.hasAttribute("disabled")).toBe(false));

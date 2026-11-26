@@ -8,21 +8,14 @@ import {
   type HostedMoveProgress,
 } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 import { ThreadDialogs } from "@/thread/thread-dialogs";
 import { useThreadDialogs } from "@/thread/thread-dialogs-store";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-  useLocation: ({ select }: { select: (location: { pathname: string }) => unknown }) =>
-    select({ pathname: "/" }),
-}));
 
 type Bridge = NonNullable<DesktopBridge["hostedDevice"]>;
 const ORIGIN = "https://gram.example.com";
@@ -141,7 +134,7 @@ afterEach(() => {
 
 const open = async () => {
   useThreadDialogs.getState().open({ kind: "moveWorkspace", workspaceId });
-  renderWithApi(<ThreadDialogs />, api);
+  await renderInRouter(<ThreadDialogs />, { api });
   return screen.findByTestId("move-workspace-dialog");
 };
 
@@ -234,13 +227,13 @@ describe("MoveWorkspaceDialog", () => {
   it("is nothing without the hosted features, or without a sign-in", async () => {
     install({}, { hosted: false });
     useThreadDialogs.getState().open({ kind: "moveWorkspace", workspaceId });
-    const first = renderWithApi(<ThreadDialogs />, api);
+    const first = await renderInRouter(<ThreadDialogs />, { api });
     await act(async () => {});
     expect(screen.queryByTestId("move-workspace-dialog")).toBeNull();
     first.unmount();
 
     install({}, { signedIn: false });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderInRouter(<ThreadDialogs />, { api });
     await act(async () => {});
     expect(screen.queryByTestId("move-workspace-dialog")).toBeNull();
   });

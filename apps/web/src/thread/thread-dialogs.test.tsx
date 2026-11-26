@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
 import { installKeyboard, isMac } from "@/keyboard/registry";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -13,15 +13,10 @@ import { useThreadsStore } from "@/stores/threads";
 import { ThreadDialogs } from "./thread-dialogs";
 import { useThreadDialogs } from "./thread-dialogs-store";
 
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => navigate,
-  useParams: () => ({ threadId: "t-flaky" }),
-  useLocation: ({ select }: { select: (location: { pathname: string }) => unknown }) =>
-    select({ pathname: "/t/t-flaky" }),
-}));
-
 const FLAKY = "t-flaky" as ThreadId;
+
+/** The dialogs, on the page of the thread they act on. */
+const renderDialogs = () => renderInRouter(<ThreadDialogs />, { api, path: `/t/${FLAKY}` });
 
 async function seedStore(api: MockApi) {
   const abort = new AbortController();
@@ -56,13 +51,12 @@ afterEach(() => {
   for (const pane of document.querySelectorAll("[data-pane-index]")) pane.remove();
   useThreadDialogs.setState({ dialog: undefined, error: undefined });
   useServerSettings.setState({ settings: undefined });
-  navigate.mockReset();
 });
 
 describe("CloseThreadDialog", () => {
   it("warns, deletes the worktree with picked rules, and forces after a dirty refusal", async () => {
     useThreadDialogs.getState().open({ kind: "close", threadId: FLAKY });
-    renderWithApi(<ThreadDialogs />, api);
+    const { router } = await renderDialogs();
 
     const dialog = await screen.findByTestId("close-thread-dialog");
     expect(dialog.textContent).toContain("5 uncommitted changes and 2 commits not merged to main");
@@ -84,7 +78,7 @@ describe("CloseThreadDialog", () => {
       permissionRules: ["Bash(pnpm test:*)"],
     });
     expect(useLayoutStore.getState().grid.panes).not.toContain(FLAKY);
-    expect(navigate).toHaveBeenCalledWith({ to: "/" });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("just closes a thread on the main checkout", async () => {
@@ -92,7 +86,7 @@ describe("CloseThreadDialog", () => {
       (s) => s.thread.checkout.kind === "main",
     )!;
     useThreadDialogs.getState().open({ kind: "close", threadId: main.thread.id });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderDialogs();
 
     await screen.findByTestId("close-thread-dialog");
     expect(screen.queryByRole("checkbox", { name: /Also delete the worktree/ })).toBeNull();
@@ -109,7 +103,7 @@ describe("CloseThreadDialog", () => {
     });
     const composer = addPaneComposer(1);
     useThreadDialogs.getState().open({ kind: "close", threadId: main.thread.id });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderDialogs();
 
     fireEvent.click(await screen.findByRole("button", { name: "Close thread" }));
     await waitFor(() => expect(screen.queryByTestId("close-thread-dialog")).toBeNull());
@@ -131,7 +125,7 @@ describe("pane shortcuts", () => {
         },
       });
       const composer = addPaneComposer(1);
-      renderWithApi(<ThreadDialogs />, api);
+      await renderDialogs();
 
       fireEvent.keyDown(window, { key: "w", code: "KeyW", metaKey: isMac(), ctrlKey: !isMac() });
       expect(useLayoutStore.getState().grid).toMatchObject({
@@ -149,7 +143,7 @@ describe("other thread dialogs", () => {
   it("renames a thread", async () => {
     const rename = vi.spyOn(api, "rename");
     useThreadDialogs.getState().open({ kind: "rename", threadId: FLAKY });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderDialogs();
 
     fireEvent.change(await screen.findByRole("textbox", { name: "Thread title" }), {
       target: { value: "  Deterministic retry test  " },
@@ -161,7 +155,7 @@ describe("other thread dialogs", () => {
 
   it("creates and deletes labels", async () => {
     useThreadDialogs.getState().open({ kind: "labels" });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderDialogs();
 
     await waitFor(() => expect(screen.getAllByTestId("label-row")).toHaveLength(2));
     fireEvent.click(screen.getByRole("button", { name: "New label" }));
@@ -176,13 +170,13 @@ describe("other thread dialogs", () => {
     const close = vi.spyOn(api, "closeThread");
     const count = Object.keys(useThreadsStore.getState().byId).length;
     useThreadDialogs.getState().open({ kind: "closeAll" });
-    renderWithApi(<ThreadDialogs />, api);
+    const { router } = await renderDialogs();
 
     expect(await screen.findByText(`Close all ${count} threads?`)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Close all" }));
     await waitFor(() => expect(screen.queryByTestId("close-all-dialog")).toBeNull());
     expect(close).toHaveBeenCalledTimes(count);
-    expect(navigate).toHaveBeenCalledWith({ to: "/" });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
   });
 
   it("removes a workspace in one go: its orchestrator, its worker when asked, then the workspace", async () => {
@@ -194,7 +188,7 @@ describe("other thread dialogs", () => {
     const close = vi.spyOn(api, "closeThread");
     const remove = vi.spyOn(api, "removeWorkspace");
     useThreadDialogs.getState().open({ kind: "removeWorkspace", workspaceId: made.workspaceId });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderDialogs();
 
     const dialog = await screen.findByTestId("remove-workspace-dialog");
     expect(dialog.textContent).toContain("Its worker stays open as an ordinary thread");
@@ -220,7 +214,7 @@ describe("other thread dialogs", () => {
     const removal = Promise.withResolvers<void>();
     vi.spyOn(api, "removeWorkspace").mockImplementationOnce(() => removal.promise);
     useThreadDialogs.getState().open({ kind: "removeWorkspace", workspaceId: made.workspaceId });
-    renderWithApi(<ThreadDialogs />, api);
+    await renderDialogs();
 
     await screen.findByTestId("remove-workspace-dialog");
     fireEvent.click(screen.getByRole("checkbox", { name: /Also close its worker/ }));
@@ -246,7 +240,7 @@ describe("other thread dialogs", () => {
   });
 
   it("shows a failed one-click action", async () => {
-    renderWithApi(<ThreadDialogs />, api);
+    await renderDialogs();
     useThreadDialogs.getState().fail("Couldn't pin the thread: offline");
     expect((await screen.findByRole("alert")).textContent).toBe("Couldn't pin the thread: offline");
   });
