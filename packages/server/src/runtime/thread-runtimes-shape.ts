@@ -529,7 +529,7 @@ export interface ThreadRuntimesShape {
    * Raises an approval card that the server answers itself, for app tool calls, whatever the agent.
    * Waits for `respond`; the turn ending or the session closing denies it. `decided` is what the
    * decision hook said in asking for it, which the card's `ask.opened` carries to the host so the
-   * host can take the answer as the approval it asked for. `reach` is who may approve it beyond
+   * host can take the answer as the approval it asked for. `reach` is who may answer it beyond
    * those who may reach the thread (`ApprovalReach`), checked wherever the answer comes from.
    */
   requestApproval(

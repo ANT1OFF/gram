@@ -65,8 +65,9 @@ export interface ServerApprovalRequest {
   readonly toolName: string;
   /** Best-effort snapshot at request creation; resolution must not depend on database access. */
   readonly permissionMode?: PermissionMode;
-  /** Who may approve it, beyond reaching its thread. */
+  /** Who may answer it, beyond reaching its thread. */
   readonly reach: ApprovalReach;
+  readonly shown?: string;
   readonly answer: Deferred.Deferred<ServerApprovalAnswer>;
 }
 
@@ -229,6 +230,7 @@ export const makeServerApprovals = ({
             toolName: fields.toolName,
             answer,
             reach,
+            ...(request.shown === undefined ? {} : { shown: request.shown }),
             ...(thread === undefined ? {} : { permissionMode: thread.mode }),
           });
           serverApprovalOrigins.set(request.id, threadId);
@@ -304,7 +306,12 @@ export const makeServerApprovals = ({
   const unnoteAnswer = (threadId: ThreadId, requestId: RequestId) =>
     eventSink === undefined ? Effect.void : eventSink.noteAnswer(requestId, undefined, threadId);
 
-  const respondToServer = (threadId: ThreadId, requestId: RequestId, answer: RequestAnswer) =>
+  const respondToServer = (
+    threadId: ThreadId,
+    requestId: RequestId,
+    answer: RequestAnswer,
+    shown?: string,
+  ) =>
     Effect.gen(function* () {
       const rt = yield* getRuntime(threadId);
       return yield* locked(
@@ -322,8 +329,16 @@ export const makeServerApprovals = ({
                 status: rt.status,
               });
             }
-            const refused =
-              answer.decision === "allow" ? yield* reachRefusal(pending.reach) : undefined;
+            if (
+              pending.reach === "localAppOnly" &&
+              (pending.shown === undefined || pending.shown !== shown)
+            )
+              return yield* new InvalidState({
+                message: "Answer from the current approval card.",
+                threadId,
+                status: rt.status,
+              });
+            const refused = yield* reachRefusal(pending.reach, answer.decision);
             if (refused !== undefined) {
               return yield* new InvalidState({ message: refused, threadId, status: rt.status });
             }
@@ -493,7 +508,7 @@ export const makeServerApprovals = ({
     shown?: string,
   ) =>
     serverApprovalOrigins.has(requestId)
-      ? respondToServer(threadId, requestId, answer)
+      ? respondToServer(threadId, requestId, answer, shown)
       : respondToSession(threadId, requestId, answer, shown);
 
   const respond: ThreadRuntimesShape["respond"] = deliver;
