@@ -29,7 +29,7 @@ export const listReviewRequestsTool = (
       name: "list_review_requests",
       class: "read",
       description:
-        "List the open pull requests that ask for the user's review, from Gram's cached Review requests list: repo, number, title, author, URL, when it was updated, its checks, review decision, the review bot's verdict, and projectRoot when a known project can check it out. repo keeps one owner/name. refresh asks for a new poll, which is throttled, so the list may not change at once. Read only: never approve, request changes or comment on these PRs as the user. To help with one, read its diff and offer a spawn_task chip such as \"Pre-review #123\", or hand the user a draft with send_file.",
+        "List the open pull requests that ask for the user's review, from Gram's cached Review requests list: Each has its checks, reviews, and projectRoot when a known project can check it out. repo keeps one owner/name. refresh asks for a new poll, which is throttled, so the list may not change at once. Read only: never approve, request changes or comment on these PRs as the user.",
     },
     input: Schema.Struct({
       /** `owner/name`; every repository when absent. */
@@ -79,7 +79,7 @@ export const listOpenPrsTool = (
       name: "list_open_prs",
       class: "read",
       description:
-        "List the user's open pull requests, drafts included, as Gram's Open PRs list holds them: the ones they authored, and open PRs bound to one of their threads though someone else authored them. For each: repo, number, title, URL, isDraft, when it was updated, its head branch, merge state (CLEAN, BLOCKED, BEHIND, DIRTY for conflicts…), checks, review decision, the review bot's verdict, and threadId and threadTitle when a Gram thread owns it (bound to it, or on its head branch). repo keeps one owner/name. refresh asks for a new poll, which is throttled, so the list may not change at once. Read only: to act on one, use the PR tools in the thread that owns it, or send_message to that thread.",
+        "List the user's open pull requests, drafts included, as Gram's Open PRs list holds them: the ones they authored, and open PRs bound to one of their threads though someone else authored them. Each has its merge state, checks, reviews and the Gram thread that owns it, if any. repo keeps one owner/name. refresh asks for a new poll, which is throttled, so the list may not change at once. Read only: to act on one, use the PR tools in the thread that owns it, or send_message to that thread.",
     },
     input: Schema.Struct({
       /** `owner/name`; every repository when absent. */

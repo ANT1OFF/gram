@@ -34,6 +34,7 @@ import { ConnectorConfigs } from "../rpc/handlers/connectors.ts";
 import { WorkspaceAppToolsLive } from "../settings/workspace-tools.ts";
 import { PrAppToolsLive } from "../app-tools/pr-tools.ts";
 import { ReadAppToolsLive } from "../app-tools/read-tools.ts";
+import { PlaybookAppToolsLive } from "../playbooks/tools.ts";
 import { WrapUpAppToolsLive } from "../app-tools/wrap-up-tool.ts";
 import { DocAppToolsLive } from "../app-tools/doc-tools.ts";
 import { PageAppToolsLive } from "../app-tools/page-tools.ts";
@@ -845,6 +846,7 @@ export const ServerCore = Layer.unwrap(
       PrAppToolsLive,
       ReviewAppToolsLive,
       ReadAppToolsLive,
+      PlaybookAppToolsLive,
       WrapUpAppToolsLive,
       DocAppToolsLive,
       PageAppToolsLive,

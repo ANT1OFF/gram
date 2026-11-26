@@ -550,6 +550,25 @@ wait markers, monitor and dream reports, handoffs, and the strip of running suba
 turn shows one "Working" line with its time, in place of a compaction's or a start's steps. It is one switch for every thread, kept across
 launches, and it only changes the view: the trace and the side panels still show the work.
 
+### Playbooks
+
+Three playbooks hold the examples and recovery recipes that the tool descriptions leave
+out: [Deliver a pull request](orchestration/playbooks/deliver-a-pull-request.md),
+[Coordinate workers and wakes](orchestration/playbooks/coordinate-workers-and-wakes.md)
+and [Mock first](orchestration/playbooks/mock-first.md). An agent reads one with the
+`read_playbook` tool, which isn't loaded up front where the client has tool search.
+Each role is offered only its own: every thread gets the pull request playbook, and
+orchestrators and workers get all three. The role prompts say when to read each, and
+Codex's prompts name `read_playbook` among the tools to search for. The tools keep their
+own purpose, rules, effects and approvals. The files are reviewed here and ship with the
+release, beside the server bundle. Native Skills over MCP waits for client support in the
+Agent SDK and Codex.
+
+A tool's listed input schema leaves out what its `run` never takes: the `"Infinity"`,
+`"-Infinity"` and `"NaN"` strings Effect lists beside a number, an integer's safe-integer
+bounds, and `additionalProperties: true`, which is JSON Schema's default. Run still
+decodes each call with the tool's full schema.
+
 Workers may add `evidence: { headSha, gate, pr?, nextStep }` to `report`. These
 bounded, worker-authored claims appear in full before the prose excerpt and in
 compact ledger rows; they do not qualify a server merge gate. The SHA accepts

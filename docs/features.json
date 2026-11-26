@@ -6,12 +6,14 @@
       "purpose": "A workspace is one or more repositories with one orchestrator thread that briefs, spawns and steers workers.",
       "code": [
         "packages/server/src/orchestration/**",
+        "packages/server/src/playbooks/**",
         "apps/web/src/orchestration/**",
         "apps/web/src/routes/new-workspace.tsx",
         "apps/web/src/settings/workspace*"
       ],
       "tests": [
         "packages/server/src/orchestration/**/*.test.ts",
+        "packages/server/src/playbooks/*.test.ts",
         "apps/web/src/orchestration/**/*.test.{ts,tsx}",
         "apps/web/e2e/orchestrat*.spec.ts",
         "apps/web/e2e/workspace*.spec.ts"
@@ -19,6 +21,7 @@
       "docs": [
         "docs/AGENTS_AND_FEATURES.md#overview",
         "docs/AGENTS_AND_FEATURES.md#orchestration-context",
+        "docs/AGENTS_AND_FEATURES.md#playbooks",
         "docs/AGENTS_AND_FEATURES.md#orchestration-tool-inputs"
       ],
       "ui": {

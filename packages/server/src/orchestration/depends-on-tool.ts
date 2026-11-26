@@ -17,7 +17,7 @@ export const makeDependsOn = Effect.gen(function* () {
     descriptor: {
       name: "depends_on",
       class: "self",
-      description: `Declare that a pull request depends on another one (\`pr\`, owner/repo#N or its URL): it can't merge, or can't be finished, until that one has. For your own bound PR, or with \`threadId\` your worker's. The thread is then woken whenever the dependency merges, closes or gets a new push, with no wake to set; merge_when_ready waits for it to merge first unless \`mergeAfter: false\`; and the ledger shows the chain, flagging a dependency that drags on so the dependent PR can be stacked on its branch instead. \`remove: true\` drops it. Needs a bound PR (pr_bind); at most ${MAX_PR_DEPENDENCIES} per PR; a PR already merged or closed is refused. What an orchestrator declares, its worker can't drop.`,
+      description: `Declare that a pull request depends on another one (\`pr\`, owner/repo#N or its URL): it can't merge, or can't be finished, until that one has. For your own bound PR, or with \`threadId\` your worker's. The thread is then woken whenever the dependency merges, closes or gets a new push, with no wake to set; merge_when_ready waits for it to merge first unless \`mergeAfter: false\`; and the ledger shows the chain, flagging one that drags on. \`remove: true\` drops it. Needs a bound PR (pr_bind); at most ${MAX_PR_DEPENDENCIES} per PR; a PR already merged or closed is refused. What an orchestrator declares, its worker can't drop.`,
     },
     audience: ["orchestrator", "worker"],
     input: Schema.Struct({

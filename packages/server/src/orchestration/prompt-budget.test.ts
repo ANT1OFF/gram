@@ -4,6 +4,7 @@
 // anyone deciding it should. Lower a limit when its text shrinks; raise one only on purpose, in
 // the change that needs the room, and say so there.
 import { describe, expect, it } from "@effect/vitest";
+import { listedInputSchema } from "@gram/agents";
 import type { AgentKind, Autonomy, ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -103,11 +104,17 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * description was cut to two sentences first. The prompts are measured as a hosted session gets
  * them from here on (`workerMachines`, `ownMachine`, `sharedMachine`), which they weren't before:
  * the lines on machines are the longest variant; measured then at 67,962 and 43,560.
+ * All three lowered on 2026-11-26. `read_playbook` came in with three on-demand playbooks
+ * (docs/orchestration/playbooks/), which took the examples and recovery recipes out of some thirty
+ * tool descriptions, and a line in each role prompt on when to read them. Tools are now measured
+ * by their listed input schema (`listedInputSchema`), as sessions get them: without Effect's
+ * non-finite number strings, safe-integer bounds and default `additionalProperties`. Measured
+ * then at 65,134, 41,438 and 22,191.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 67_980,
-  worker: 43_580,
-  plain: 23_650,
+  orchestrator: 65_150,
+  worker: 41_450,
+  plain: 22_200,
 };
 
 const AUTONOMIES: ReadonlyArray<Autonomy> = ["supervised", "publish", "full"];
@@ -171,7 +178,8 @@ describe.skipIf(!hasGit)("prompt size budget", () => {
                   sum +
                   tool.descriptor.name.length +
                   tool.descriptor.description.length +
-                  JSON.stringify(Schema.toJsonSchemaDocument(tool.input).schema).length,
+                  JSON.stringify(listedInputSchema(Schema.toJsonSchemaDocument(tool.input).schema))
+                    .length,
                 0,
               );
             const prompt = longestPrompt(role);

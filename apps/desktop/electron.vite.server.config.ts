@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "electron-vite";
+import { PLAYBOOKS } from "@gram/server/playbooks";
 import { bundledPackages } from "../../tools/notices/bundled-packages.mjs";
 import { commandWorkerPlugin, hostProcessPlugin, nativeProbePlugin } from "./proc-worker-build.ts";
 import { shippedBuild, shippedOutput } from "./shipped-code.ts";
@@ -31,6 +32,24 @@ export default defineConfig({
             originalFileName: serverRequire.resolve("ghostty-web/ghostty-vt.wasm"),
             source: readFileSync(serverRequire.resolve("ghostty-web/ghostty-vt.wasm")),
           });
+        },
+      },
+      {
+        // The playbooks `read_playbook` serves, from the docs they are reviewed in. A packaged app
+        // has no docs folder, so they ship beside the bundle, where `playbooks.ts` looks first.
+        name: "gram:playbooks",
+        generateBundle() {
+          for (const playbook of PLAYBOOKS) {
+            const source = fileURLToPath(
+              new URL(`../../docs/orchestration/playbooks/${playbook.file}`, import.meta.url),
+            );
+            this.emitFile({
+              type: "asset",
+              fileName: `playbooks/${playbook.file}`,
+              originalFileName: source,
+              source: readFileSync(source, "utf8"),
+            });
+          }
         },
       },
     ],

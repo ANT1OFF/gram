@@ -23,7 +23,7 @@ export const IssueAppToolsLive = Layer.effectDiscard(
         name: "report_issue",
         class: "outward",
         description:
-          "File an issue about Gram itself (this app, not the user's project) on its GitHub repo: a bug, a feature request or a question. File only what the user asked for or clearly wants, and search_issues first so you don't file a duplicate. Write it concretely: for a bug, what was done, what happened, what was expected, and the steps that reproduce it; for a feature, the problem it solves. Leave out secrets, private code and anything from the conversation the user wouldn't post. For a failure, read_app_logs first and quote the lines that show it as evidence. With includeDiagnostics (the default) a footer names the Gram version, OS, agent and model. The user sees the exact text on a card and approves every call.",
+          "File an issue about Gram itself (this app, not the user's project) on its GitHub repo: a bug, a feature request or a question. File only what the user asked for or clearly wants, and search_issues first so you don't file a duplicate. Write it concretely. Leave out secrets, private code and anything from the conversation the user wouldn't post. For a failure, quote read_app_logs lines as evidence. With includeDiagnostics (the default) a footer names the Gram version, OS, agent and model. The user sees the exact text on a card and approves every call.",
       },
       input: Schema.Struct({
         kind: IssueKind,

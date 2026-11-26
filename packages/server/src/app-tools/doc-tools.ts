@@ -112,14 +112,14 @@ export const publishDocTool = (
       name: PUBLISH,
       class: "self",
       description:
-        "Publish a document (a report, plan, analysis or write-up) as a doc card the user reads " +
+        "Publish a document as a doc card the user reads " +
         "and edits in Gram's doc pane. It is Markdown kept in Gram's own state for this " +
-        "workspace: not written to any repo and not uploaded anywhere, unlike claude.ai's " +
-        `Artifact. A new doc takes \`title\` (at most ${DOC_TITLE_MAX} characters) and \`content\` ` +
+        "workspace: not written to any repo and not uploaded anywhere. " +
+        `A new doc takes \`title\` (at most ${DOC_TITLE_MAX} characters) and \`content\` ` +
         `(at most ${DOC_MAX_BYTES / 1024} KB). To update one, pass its \`id\` and the \`revision\` ` +
         "this tool or read_doc last gave you, with the whole new `content`; if the revision " +
         "moved on, the user edited it: read_doc it and work their edit in. A later pass on one " +
-        "subject (a re-review, a new version) updates that doc; a new doc is for a new subject. " +
+        "subject updates its doc. " +
         "You may update your own docs; an orchestrator its workers' too. A new doc is about your " +
         'bound PR, or the one `pr` ({repo: "owner/repo", number}) names when you review ' +
         "another's; `pr: null` binds none. A workspace keeps one active doc per PR: publishing " +

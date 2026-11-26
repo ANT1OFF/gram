@@ -12,7 +12,12 @@ import {
   type Tool,
   type RequestId,
 } from "@modelcontextprotocol/sdk/types.js";
-import { appToolAnnotations, appToolResultContent, type AppTool } from "@gram/agents";
+import {
+  appToolAnnotations,
+  appToolResultContent,
+  listedInputSchema,
+  type AppTool,
+} from "@gram/agents";
 import { CORE_APP_TOOLS } from "@gram/agents/claude";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -32,10 +37,12 @@ export const toolInputSchema = (tool: AppTool): Tool["inputSchema"] => {
     throw new Error(`App tool ${tool.descriptor.name} input must be an object schema`);
   }
   return {
-    ...withTupleItems({
-      ...doc.schema,
-      ...(Object.keys(doc.definitions).length === 0 ? {} : { $defs: doc.definitions }),
-    }),
+    ...withTupleItems(
+      listedInputSchema({
+        ...doc.schema,
+        ...(Object.keys(doc.definitions).length === 0 ? {} : { $defs: doc.definitions }),
+      }),
+    ),
     type: "object",
   };
 };
