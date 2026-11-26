@@ -124,7 +124,7 @@ test("Archive parks a quiet feature's workers and it leaves the Board; a busy on
 
   // auth-refresh is merged, with nothing running, so it has left the Board for Done until Show
   // finished brings it back; from its sheet, Archive parks it. Its group, q3-cleanup, is finished, so
-  // its band is folded to one line until opened. It is the Board's last entry, drawn once scrolled to.
+  // its line is among the Board's last entries, drawn once scrolled to.
   const showFinished = page.getByTestId("shell-titlebar").getByTestId("rail-show-archived");
   await expect(line(page, "auth-refresh")).toHaveCount(0);
   await showFinished.click();
@@ -134,11 +134,6 @@ test("Archive parks a quiet feature's workers and it leaves the Board; a busy on
     .evaluate((list) => {
       list.closest<HTMLElement>(".overflow-y-auto")!.scrollTop = 1e6;
     });
-  await page
-    .getByTestId("rail-board")
-    .locator('[data-testid="rail-group"][data-group="q3-cleanup"]')
-    .getByTestId("rail-group-toggle")
-    .click();
   const parked = await line(page, "auth-refresh")
     .getByTestId("rail-worker")
     .first()
