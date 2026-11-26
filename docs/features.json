@@ -972,9 +972,14 @@
       "code": [
         "apps/web/src/docs/**",
         "packages/server/src/docs/**",
+        "packages/server/src/app-tools/doc-tools.ts",
         "packages/server/src/outputs/**"
       ],
-      "tests": ["packages/server/src/docs/*.test.ts", "packages/server/src/outputs/*.test.ts"],
+      "tests": [
+        "packages/server/src/docs/*.test.ts",
+        "packages/server/src/app-tools/doc-tools.test.ts",
+        "packages/server/src/outputs/*.test.ts"
+      ],
       "docs": ["docs/AGENTS_AND_FEATURES.md#workspace-shared-folder"]
     },
     {

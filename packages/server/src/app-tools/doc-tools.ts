@@ -1,9 +1,12 @@
 import {
   AppToolError,
+  DOC_HISTORY_KEEP,
+  DOC_LIST_MAX,
   DOC_MAX_BYTES,
   DOC_TITLE_MAX,
   DocId,
   type DocCardData,
+  type DocMeta,
   type GramUIMessageChunk,
   type Thread,
   type ThreadId,
@@ -11,7 +14,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { Docs, type DocsShape, type PublishedDoc } from "../docs/docs.ts";
+import { Docs, type DocAuthor, type DocsShape, type PublishedDoc } from "../docs/docs.ts";
 import { ThreadStore, type ThreadStoreShape } from "../persistence/thread-store.ts";
 import { ThreadRuntimes, type ThreadRuntimesShape } from "../runtime/thread-runtimes.ts";
 import { defineAppTool, failed } from "./definition.ts";
@@ -19,6 +22,8 @@ import { AppToolRegistry } from "./registry.ts";
 
 const PUBLISH = "publish_doc";
 const READ = "read_doc";
+const ARCHIVE = "archive_doc";
+const DELETE = "delete_doc";
 
 const NOT_IN_WORKSPACE =
   "Docs belong to a workspace, and this thread isn't in one. Write the file in your checkout " +
@@ -36,6 +41,12 @@ const callerIn = (store: Pick<ThreadStoreShape, "getThread">, tool: string, thre
     }
     return { thread, workspaceId: thread.workspaceId };
   });
+
+const authorOf = (thread: Thread): DocAuthor => ({
+  threadId: thread.id,
+  title: thread.title,
+  orchestrator: thread.role === "orchestrator",
+});
 
 const cardOf = (published: PublishedDoc, at: number): DocCardData => ({
   id: published.meta.id,
@@ -106,11 +117,7 @@ export const publishDocTool = (
         const published = yield* docs
           .publish({
             workspaceId,
-            author: {
-              threadId,
-              title: thread.title,
-              orchestrator: thread.role === "orchestrator",
-            },
+            author: authorOf(thread),
             id: input.id,
             title: input.title,
             content: input.content,
@@ -145,11 +152,36 @@ export const publishDocTool = (
       }),
   });
 
-const readInput = Schema.Struct({ id: Schema.optionalKey(DocId) });
+const readInput = Schema.Struct({
+  id: Schema.optionalKey(DocId),
+  revision: Schema.optionalKey(Schema.Int),
+  archived: Schema.optionalKey(Schema.Boolean),
+  query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+});
 
-/** `read_doc`: the workspace's docs, or one doc's Markdown and revision, the user's edits included. */
+const archivedOf = (doc: DocMeta) =>
+  doc.archivedAt === undefined
+    ? {}
+    : {
+        archivedAt: new Date(doc.archivedAt).toISOString(),
+        archivedReason: doc.archivedReason ?? "manual",
+      };
+
+const matches = (doc: DocMeta, query: string) => {
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word !== "");
+  const text = `${doc.title} ${doc.id}`.toLowerCase();
+  return words.every((word) => text.includes(word));
+};
+
+/**
+ * `read_doc`: a listing of the workspace's active docs (or its archive), at most `DOC_LIST_MAX`
+ * and the rest counted, or one doc's Markdown and revision, the user's edits included.
+ */
 export const readDocTool = (
-  docs: Pick<DocsShape, "list" | "read">,
+  docs: Pick<DocsShape, "list" | "listArchived" | "counts" | "read" | "history">,
   store: Pick<ThreadStoreShape, "getThread">,
 ) =>
   defineAppTool({
@@ -157,20 +189,38 @@ export const readDocTool = (
       name: READ,
       class: "self",
       description:
-        "Read this workspace's docs (published with publish_doc). Without `id`, lists them: id, " +
-        "title, author, revision and when and by whom each was last saved. With `id`, returns that " +
-        "doc's Markdown and its current revision, the user's edits included; pass that revision " +
-        "to publish_doc to update it.",
+        "Read this workspace's docs (published with publish_doc). Without `id`, lists the active " +
+        `docs, newest first, at most ${DOC_LIST_MAX}, with counts of the rest: id, title, author, ` +
+        "revision and when and by whom each was last saved. `query` keeps those whose title has " +
+        "its words; `archived: true` lists the archive instead. With `id`, returns that doc's " +
+        "Markdown and its current revision, the user's edits included, archived or not; pass " +
+        `that revision to publish_doc to update it. The ${DOC_HISTORY_KEEP} versions before ` +
+        "it are kept: `earlierRevisions` names them and `revision` reads one.",
     },
     input: readInput,
     rejectExcessProperties: true,
-    handle: (threadId, { id }) =>
+    handle: (threadId, { id, revision, archived, query }) =>
       Effect.gen(function* () {
         const { workspaceId } = yield* callerIn(store, READ, threadId);
         if (id === undefined) {
-          const list = yield* docs.list(workspaceId).pipe(Effect.mapError(failed(READ)));
+          if (revision !== undefined) {
+            return yield* new AppToolError({
+              tool: READ,
+              message: "`revision` reads an earlier version of one doc: pass its `id` too.",
+            });
+          }
+          const all = yield* (
+            archived === true ? docs.listArchived(workspaceId) : docs.list(workspaceId)
+          ).pipe(Effect.mapError(failed(READ)));
+          const counts = yield* docs.counts(workspaceId).pipe(Effect.mapError(failed(READ)));
+          const found =
+            query === undefined || query.trim() === ""
+              ? all
+              : all.filter((doc) => matches(doc, query));
+          const shown = found.slice(0, DOC_LIST_MAX);
+          const more = found.length - shown.length;
           return {
-            docs: list.map((doc) => ({
+            docs: shown.map((doc) => ({
               id: doc.id,
               title: doc.title,
               author: doc.authorTitle,
@@ -178,10 +228,21 @@ export const readDocTool = (
               revision: doc.revision,
               updatedAt: new Date(doc.updatedAt).toISOString(),
               updatedBy: doc.updatedBy,
+              ...archivedOf(doc),
             })),
+            active: archived === true ? counts.active : all.length,
+            archived: archived === true ? all.length : counts.archived,
+            ...(query === undefined ? {} : { matched: found.length }),
+            ...(more > 0
+              ? {
+                  more,
+                  note: `${more} more not listed. Pass \`query\` with words from the title to find one.`,
+                }
+              : {}),
           };
         }
-        const doc = yield* docs.read(workspaceId, id).pipe(Effect.mapError(failed(READ)));
+        const doc = yield* docs.read(workspaceId, id, revision).pipe(Effect.mapError(failed(READ)));
+        const earlier = yield* docs.history(workspaceId, id).pipe(Effect.orElseSucceed(() => []));
         return {
           id: doc.id,
           title: doc.title,
@@ -189,18 +250,91 @@ export const readDocTool = (
           revision: doc.revision,
           updatedAt: new Date(doc.updatedAt).toISOString(),
           updatedBy: doc.updatedBy,
+          ...archivedOf(doc),
+          ...(earlier.length === 0 ? {} : { earlierRevisions: earlier }),
           content: doc.content,
         };
       }),
   });
 
-/** Registers `publish_doc` and `read_doc` over the workspace docs. */
+const archiveInput = Schema.Struct({ id: DocId, restore: Schema.optionalKey(Schema.Boolean) });
+
+/** `archive_doc`: moves a doc to the workspace's archive, or with `restore` back out of it. */
+export const archiveDocTool = (
+  docs: Pick<DocsShape, "archive" | "restore">,
+  store: Pick<ThreadStoreShape, "getThread">,
+) =>
+  defineAppTool({
+    descriptor: {
+      name: ARCHIVE,
+      class: "self",
+      description:
+        "Archive a doc you're done with: it leaves the doc pane's list and read_doc's listing, " +
+        "and stops counting toward the workspace's active docs, but read_doc still reads it by " +
+        "`id` and lists it with `archived: true`. `restore: true` brings an archived doc back. " +
+        "You may archive and restore your own docs; an orchestrator its workers' too.",
+    },
+    input: archiveInput,
+    rejectExcessProperties: true,
+    handle: (threadId, { id, restore }) =>
+      Effect.gen(function* () {
+        const { thread, workspaceId } = yield* callerIn(store, ARCHIVE, threadId);
+        const by = authorOf(thread);
+        if (restore === true) {
+          const meta = yield* docs
+            .restore(workspaceId, id, by)
+            .pipe(Effect.mapError(failed(ARCHIVE)));
+          return { id: meta.id, title: meta.title, revision: meta.revision, restored: true };
+        }
+        const meta = yield* docs
+          .archive(workspaceId, id, by, "manual")
+          .pipe(Effect.mapError(failed(ARCHIVE)));
+        return {
+          id: meta.id,
+          title: meta.title,
+          archived: true,
+          next: `To bring it back, call ${ARCHIVE} with id "${meta.id}" and restore: true.`,
+        };
+      }),
+  });
+
+/** `delete_doc`: the orchestrator's permanent removal of a doc it, or a worker, archived. */
+export const deleteDocTool = (
+  docs: Pick<DocsShape, "remove">,
+  store: Pick<ThreadStoreShape, "getThread">,
+) =>
+  defineAppTool({
+    descriptor: {
+      name: DELETE,
+      class: "self",
+      description:
+        "Delete an archived doc for good, with its earlier versions. Only an archived doc can " +
+        "be deleted: archive it with archive_doc first. Archiving is usually enough, since the " +
+        "archive keeps the oldest docs only until it is full.",
+    },
+    audience: ["orchestrator"],
+    input: Schema.Struct({ id: DocId }),
+    rejectExcessProperties: true,
+    handle: (threadId, { id }) =>
+      Effect.gen(function* () {
+        const { thread, workspaceId } = yield* callerIn(store, DELETE, threadId);
+        yield* docs.remove(workspaceId, id, authorOf(thread)).pipe(Effect.mapError(failed(DELETE)));
+        return { id, deleted: true };
+      }),
+  });
+
+/** Registers the doc tools over the workspace docs. */
 export const DocAppToolsLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* AppToolRegistry;
     const docs = yield* Docs;
     const store = yield* ThreadStore;
     const runtimes = yield* ThreadRuntimes;
-    yield* registry.register([publishDocTool(docs, store, runtimes), readDocTool(docs, store)]);
+    yield* registry.register([
+      publishDocTool(docs, store, runtimes),
+      readDocTool(docs, store),
+      archiveDocTool(docs, store),
+      deleteDocTool(docs, store),
+    ]);
   }),
 );

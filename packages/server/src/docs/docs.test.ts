@@ -478,8 +478,9 @@ describe("doc review findings", () => {
       const read = yield* docs.read(WS, meta.id);
       expect([read.revision, read.content]).toEqual([1, "rev 1"]);
       expect((yield* docs.list(WS)).map((doc) => doc.revision)).toEqual([1]);
-      // No temp file is left behind.
-      expect(readdirSync(join(root, WS))).toEqual([`${meta.id}.doc`]);
+      // No temp file is left behind, beside the doc or in its history.
+      expect(readdirSync(join(root, WS)).toSorted()).toEqual(["history", `${meta.id}.doc`]);
+      expect(readdirSync(join(root, WS, "history", meta.id))).toEqual([]);
       full = false;
       const saved = yield* docs.publish({
         workspaceId: WS,
