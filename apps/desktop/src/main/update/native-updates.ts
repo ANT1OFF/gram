@@ -12,6 +12,7 @@ import type { CandidateSnapshot } from "./native-snapshot.ts";
 import { UpdateTeardownRefused } from "./shutdown.ts";
 import { nodeTimers } from "@gram/shell/core";
 import * as Predicate from "effect/Predicate";
+import { inspect } from "node:util";
 
 /** The first automatic check waits for launch to settle. */
 export const STARTUP_CHECK_DELAY_MS = 15_000;
@@ -562,7 +563,10 @@ export function createNativeUpdates(options: NativeUpdatesOptions): NativeUpdate
         }, attempt > 1);
       } catch (error) {
         if (!staged) {
-          log("warn", `update: restart refused: ${error instanceof Error ? error.message : error}`);
+          log(
+            "warn",
+            `update: restart refused: ${error instanceof Error ? error.message : inspect(error)}`,
+          );
           if (invoked) {
             if (!(await boundedDisarm())) {
               await forget();

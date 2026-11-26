@@ -45,9 +45,14 @@ const folderOf = (
 /** Whether the update's locks can be taken in `home` at all: it is this user's own folder. */
 export const lockableFolder = (home: string): boolean => folderOf(home) !== undefined;
 
+const errstrOf = (error: unknown) => {
+  const errstr = fieldsOf(error).get("errstr");
+  return typeof errstr === "string" ? errstr : "";
+};
+
 const busy = (error: unknown) =>
   /SQLITE_BUSY|SQLITE_LOCKED|database is locked/i.test(
-    `${errnoCode(error) ?? ""} ${fieldsOf(error).get("errstr") ?? ""} ${String(error)}`,
+    `${errnoCode(error) ?? ""} ${errstrOf(error)} ${String(error)}`,
   );
 
 const TAKE_WAIT_MS = 250;

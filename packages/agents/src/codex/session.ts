@@ -143,7 +143,8 @@ const unavailableNaming =
     return missing.length === 0
       ? failed
       : new AgentUnavailable({
-          ...failed,
+          agent: failed.agent,
+          ...(failed.reason === undefined ? {} : { reason: failed.reason }),
           message: `${failed.message}; missing ${missing.join(", ")}`,
         });
   };
