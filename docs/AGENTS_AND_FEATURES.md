@@ -1142,11 +1142,23 @@ every one of them reads it and writes it with `memory_append` (a dated entry, no
 what is stale and keeping the index true; nothing locks writing to it.
 
 A worker sees only plain notes: a file named for a credential or with front matter marking it
-private reads as missing, as before. A file whose text holds something shaped like a credential
-or token is held back whole, never cut; `memory_list` names it under `keptFromWorkers` and
-`memory_read` refuses it (`kept_from_workers`) with the line and the kind of problem, never the
-text, and the memory editor says the same beside the file. Cited SHAs and thread ids, plain paths
-and long hyphenated names (`qa-2026-11-19-use-cases`) are not taken for tokens. A worker whose
+private reads as missing, as before. Where a note's text holds something shaped like a
+credential or token, the worker reads the rest of it with each block that holds one (a
+paragraph, a list item with its continuation lines, a heading, a code fence or key block) replaced
+by a line naming the lines withheld; `memory_list` lists the note and names it under
+`keptFromWorkers` too, as read without those lines, with the kind of problem, never the text. A block withheld that ends leading
+into a value (`is:`, a credential word) takes the next block with it, and one beside bare runs of
+token characters takes them too, so no piece of a value shows apart from what names it, and what
+a worker is shown always passes the whole-note checks below. A note is held back whole when
+nothing plain would be left, when its front matter or a delimiter isn't plain, or when it holds
+characters other than plain text or escape syntax, which no part can be judged apart from:
+`memory_list` names it under `keptFromWorkers` and `memory_read` refuses it (`kept_from_workers`)
+with the line and the kind of problem. The memory editor says which, beside the file. ARNs (the
+colons of `arn:partition:service:region:account:` are structure, the resource is still checked),
+account ids, cited SHAs (after `at`, `head`, `commit`, `merged as` or a PR number), cited UUIDs
+(after `thread`, `run`, `request`, `id` and the like, capitalised or not), EC2-style resource ids, plain
+paths, `NAME=value` pairs of plain words and long hyphenated names (`qa-2026-11-19-use-cases`)
+are not taken for tokens; an uncited UUID or full-length hex run still is. A worker whose
 orchestrator no longer holds the workspace is told which of that is the case. Source:
 [memory filter](../packages/server/src/orchestration/memory-filter.ts).
 
@@ -1169,17 +1181,18 @@ may leave it out, as before. Every write is scrubbed, size-capped, kept in the n
 shown as a diff in the writer's transcript.
 
 A worker changes only what it can see, into what every worker can still see: a write, append,
-edit or delete of a file the read filter below keeps from workers, or a write whose text the
-filter would keep from them, is refused (`kept_from_workers`), so a worker's write never touches
-or creates orchestrator-only memory. A worker's reads go through the anchored tree, every folder below the data root opened without
+edit or delete of a file the read filter below keeps from workers, whole or in part, or a write
+whose text the filter would keep from them, is refused (`kept_from_workers`), so a worker's
+write never touches or creates orchestrator-only memory. A worker's reads go through the anchored tree, every folder below the data root opened without
 following a link, so no symlink anywhere in the path, standing or swapped in mid-read, leads into
 another workspace. What a worker reads of memory is an allow-list that fails closed
 (`orchestration/memory-filter.ts`). It lists only names of lowercase words joined by `-`, in
 folders named the same way, ending `.md`, with no credential word and no token shape in them (a
 known token prefix like `xoxb`, long digit runs, letter-and-digit alternation, random letters,
 base64 of text), and the `MEMORY.md` index. It reads a file only when the file is plainly safe
-prose: printable ASCII, typographic punctuation and Latin-1 letters (folded to ASCII before any
-check); no escape or encoding syntax (`\u`, `\x`, `%XX`, `&#`, `&name;`) or delimiter left open;
+prose: printable ASCII, typographic punctuation, Latin-1 letters (folded to ASCII before any
+check) and a few symbols that are no letter (arrows, `≥ ≤ ≈ ≠ ± × ÷`, `§ € £`, check marks);
+no escape or encoding syntax (`\u`, `\x`, `%XX`, `&#`, `&name;`) or delimiter left open;
 no URL or network-path userinfo (`//…@`, `user:pass@`), connection string (`Key=value;` fields),
 password-file record (four or more non-empty `:`-separated fields, as in `.pgpass`, not IPv6),
 `user:pass` pair ending a short line or as a value (`login=amy:pw`), Redis ACL rule or `AUTH`
@@ -1190,11 +1203,13 @@ a word ending in `pw` like `bindpw`), nor a weak one (auth, session, pass, env, 
 login, bind) with a value right after it or leading a bare directive line (`AUTH amy orchard`,
 not a sentence), camelCase and snake_case split first; no base64 or hex that
 decodes to text, however it is split (spaces, lines, commas, list markers, quotes); and no
-token-like run once cited commit SHAs (a pure hex run after `at`, `head`, `commit` or `sha`, or
-before `…`, in a clause with no assignment or credential word) and plain paths are taken out. A
+token-like run once cited commit SHAs (a pure hex run after `at`, `head`, `commit`, `sha`,
+`merged as` or a PR number, or before `…`, in a clause with no assignment before it and no
+credential word) and plain paths are taken out. A
 header, if any, is one closed `---` block that is a flat map of plain scalars with no `private` in
-it. Anything else is dropped whole, never redacted or partly shown; the orchestrator sees it
-all. A worker can still offer a lasting fact with `learned` on `report` (up to 500 characters)
+it. A worker's reads apply these checks block by block as above, and its writes to the whole
+note; the orchestrator sees it all. A worker can still offer a lasting fact with `learned` on
+`report` (up to 500 characters)
 instead of writing it; the digest shows it to the orchestrator, which records it only when it
 holds for later work. Solo
 threads have no workspace memory.
