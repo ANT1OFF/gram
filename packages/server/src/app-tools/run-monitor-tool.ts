@@ -18,7 +18,7 @@ export const makeRunMonitorTool = Effect.gen(function* () {
       name: "run_monitor",
       class: "self",
       description:
-        "Watch a GitHub Actions run, such as a release build or a deploy, and end your turn: when it completes, Gram sends one message here with its conclusion, failed jobs and link. Name it by `run` (id or page URL) or by `workflow` (file name or name; `branch` narrows it) for its latest run; `repo` defaults to the thread's PR's, else origin's. A completed run is answered at once. It survives a restart. enabled: false stops watching `run`, or every run. Use it instead of `gh run watch`, which holds your turn and dies with it; for a PR's own checks, use pr_review_monitor.",
+        "Watch a GitHub Actions run and end your turn: when it completes, Gram sends one message here with its conclusion, failed jobs and link. Name it by `run` (id or page URL) or by `workflow` (file name or name; `branch` narrows it) for its latest run; `repo` defaults to the thread's PR's, else origin's. A completed run is answered at once. It survives a restart. enabled: false stops watching `run`, or every run. Use it instead of `gh run watch`; for a PR's own checks, use pr_review_monitor.",
     },
     input: Schema.Struct({
       run: Schema.optionalKey(Schema.String),

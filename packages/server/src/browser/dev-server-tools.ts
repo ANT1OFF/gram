@@ -43,7 +43,7 @@ interface DevServerDeps {
   readonly runtimes: Pick<ThreadRuntimesShape, "requestApproval">;
 }
 
-const HOW = `Servers are named in ${LAUNCH_FILES[0]} (or ${LAUNCH_FILES[1]}) in the thread's folder: {"configurations": [{"name": "web", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "--", "--port", "\${port}"], "port": 5173}]}, optional "cwd" (relative) and "env". The port given is passed as PORT and in place of \${port}; when it's taken, the next free one is used.`;
+const HOW = `Servers are named in ${LAUNCH_FILES[0]} (or ${LAUNCH_FILES[1]}) in the thread's folder: \`configurations\`, each with \`name\`, \`runtimeExecutable\`, \`runtimeArgs\` and \`port\`, and optional relative \`cwd\` and \`env\`. The port given is passed as PORT and in place of \${port}; when it's taken, the next free one is used.`;
 
 const time = (at: number) =>
   new Date(at).toLocaleTimeString("en-GB", {

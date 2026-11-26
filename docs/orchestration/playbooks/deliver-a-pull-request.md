@@ -77,7 +77,17 @@ check in place of CI:
 - With no configured command it refuses: the local gate is off, and merges rely on CI and GitHub's rules.
 - Self-reported checks ("tests pass locally") never count.
 
-## 6. When it stops
+## 6. Someone else's pull request
+
+- `list_open_prs` and `list_review_requests` only read. To act on a pull request a Gram thread owns,
+  use the PR tools in that thread, or `send_message` it.
+- To help with a review the user was asked for, read the diff and offer a `spawn_task` chip ("Pre-review
+  #123"), or hand the user a draft with `send_file`. Never approve, request changes or comment as the
+  user.
+- `set_auto_merge` is for a pull request outside solo development. If it stays open once clean, call it
+  again; branch protection still applies.
+
+## 7. When it stops
 
 Explain a stop from its recorded state (`pr_status`, the result's `waiting`, the refusal's text), and
 fix what is yours:

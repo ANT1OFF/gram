@@ -463,7 +463,7 @@ export const ReadAppToolsLive = Layer.effectDiscard(
         name: "list_threads",
         class: "read",
         description:
-          'Other Gram threads: title, status, activity line, branch, agent and project. Use it to check whether someone is already working on something. A workspace\'s orchestrator has `role: "orchestrator"` and its `workspace` by name, and a worker has `role: "worker"` and its `orchestratorThreadId`, with `askedByThreadId` when another thread\'s message led the orchestrator to start it: work for a workspace goes to its orchestrator (send_message), not to one of its workers. To mention a thread to the user, link it as [title](#threadId).',
+          'Other Gram threads: title, status, activity line, branch, agent and project. A workspace\'s orchestrator has `role: "orchestrator"` and its `workspace` by name, and a worker has `role: "worker"` and its `orchestratorThreadId`, with `askedByThreadId` when another thread\'s message led the orchestrator to start it: work for a workspace goes to its orchestrator (send_message), not to one of its workers. To mention a thread to the user, link it as [title](#threadId).',
       },
       input: Schema.Struct({
         status: Schema.optionalKey(ThreadStatus),

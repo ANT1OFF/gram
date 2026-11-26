@@ -34,7 +34,7 @@ const readPlaybook = (
     descriptor: {
       name: TOOL,
       class: "read",
-      description: `A Gram playbook: the examples and recovery recipes the tools leave out. ${playbooks.map((playbook) => `\`${playbook.name}\`: ${playbook.when}.`).join(" ")} Read one before that job, or when its tools stop you.`,
+      description: "Read a Gram playbook: the recipes its tools' descriptions leave out.",
     },
     audience,
     input: Schema.Struct({ name: Schema.Literals([first ?? "", ...rest]) }),

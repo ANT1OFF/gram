@@ -460,7 +460,7 @@ export const PrAppToolsLive = Layer.effectDiscard(
         name: "set_auto_merge",
         class: "outward",
         description:
-          "Merge a thread's pull request once GitHub allows it, or with enabled: false turn its auto-merge off: this thread's, or threadId's; its bound PR, else its branch's, unless number names another in the same repo. Solo development must use merge_when_ready for its CI and hold gates. A PR that can merge now (CLEAN) merges at once, pinned to the head its badge showed; otherwise GitHub auto-merge is armed. The result's `merged` or `autoMerge` says which. Retry if its PR stays open once clean; branch protection still applies. The user approves every call, except a worker on its own PR, or an orchestrator on its worker's, at `full`: its branch's PR in a workspace project. Unverified ownership at full refuses with repair steps, never a card.",
+          "Merge a thread's pull request once GitHub allows it, or with enabled: false turn its auto-merge off: this thread's, or threadId's; its bound PR, else its branch's, unless number names another in the same repo. Solo development must use merge_when_ready for its CI and hold gates. A PR that can merge now (CLEAN) merges at once, pinned to the head its badge showed; otherwise GitHub auto-merge is armed. The result's `merged` or `autoMerge` says which. branch protection still applies. The user approves every call, except a worker on its own PR, or an orchestrator on its worker's, at `full`: its branch's PR in a workspace project. Unverified ownership at full refuses with repair steps, never a card.",
       },
       input: Schema.Struct({
         enabled: Schema.optionalKey(Schema.Boolean),

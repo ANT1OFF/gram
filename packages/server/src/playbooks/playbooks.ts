@@ -14,8 +14,6 @@ export interface Playbook {
   readonly name: string;
   /** The file under `docs/orchestration/playbooks/`. */
   readonly file: string;
-  /** When to read it, for the tool's description. */
-  readonly when: string;
   /** The roles it is for; `read_playbook` offers it to no other. */
   readonly audience: ReadonlyArray<Exclude<ToolAudience, "dream">>;
 }
@@ -24,13 +22,16 @@ export const PLAYBOOKS: ReadonlyArray<Playbook> = [
   {
     name: "deliver-a-pull-request",
     file: "deliver-a-pull-request.md",
-    when: "binding, monitors, dependencies, merge holds, the solo local check, a stopped merge",
     audience: ["plain", "worker", "orchestrator"],
   },
   {
     name: "coordinate-workers-and-wakes",
     file: "coordinate-workers-and-wakes.md",
-    when: "choosing and placing workers, reading the ledger, a monitor or a wake, recovery and hand-off",
+    audience: ["worker", "orchestrator"],
+  },
+  {
+    name: "mock-first",
+    file: "mock-first.md",
     audience: ["worker", "orchestrator"],
   },
 ];

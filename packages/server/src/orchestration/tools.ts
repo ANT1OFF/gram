@@ -407,7 +407,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "report",
         class: "self",
         description:
-          "Tell the orchestrator that started you how the work stands: `done` when it is finished and verified (give prUrl when there is a pull request), `blocked` when you can't continue, `question` when you need a decision, `progress` for a milestone. Keep `summary` short and factual. Optional `evidence` carries headSha, gate result, pr and nextStep in full before the prose excerpt; these are your claims, not verified gates. If you built or changed something other repos consume, state the contract in `interface`. Optional `learned` is a lasting fact a later worker would otherwise have to ask or rediscover (a repo convention, a trap, how the user wants something); your orchestrator decides whether it goes into memory. Then end your turn; don't wait for a reply.",
+          "Tell the orchestrator that started you how the work stands: `done` when it is finished and verified (give prUrl when there is a pull request), `blocked` when you can't continue, `question` when you need a decision, `progress` for a milestone. Keep `summary` short and factual. Optional `evidence` carries headSha, gate result, pr and nextStep in full before the prose excerpt; these are your claims, not verified gates. If you built or changed something other repos consume, state the contract in `interface`. Optional `learned` is a lasting fact a later worker would otherwise have to ask or rediscover; your orchestrator decides whether it goes into memory. Then end your turn; don't wait for a reply.",
       },
       audience: ["worker"],
       input: Schema.Struct({
@@ -1037,7 +1037,7 @@ export const OrchestratorAppToolsLive = Layer.effectDiscard(
         name: "ask_user",
         class: "self",
         description:
-          "Ask the user a question without waiting for the answer. It is kept in questions.md in your memory and shown on the board and in Memory with an Answer button; the answer reaches you as a message naming its id, with the entry already closed. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended`, the label you would pick; the user can always answer in their own words. Put what the user needs to decide in `context`. An existing `id`, or an open question's words, updates that entry, and asking a closed one again reopens it. Carry on with what doesn't depend on the answer." +
+          "Ask the user a question without waiting for the answer. It is kept in questions.md in your memory and shown on the board and in Memory with an Answer button; the answer reaches you as a message naming its id, with the entry already closed. Give `options` (2–4, each a short `label` and a `description`) when the answer is a choice, `multiSelect` when several may be picked, and `recommended`, the label you would pick; the user can always answer in their own words. Put what the user needs to decide in `context`. An existing `id`, or an open question's words, updates that entry, and asking a closed one again reopens it." +
           VISUALS_HELP +
           " A question picking a mock's direction always carries the mock this way, never as a bare path in `context`. A worker's mock is in its worktree, under your repo; `mock: \"\"` takes the mock away.",
       },

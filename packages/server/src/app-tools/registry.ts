@@ -633,9 +633,7 @@ export class AppToolRegistry extends Context.Service<AppToolRegistry, AppToolReg
             "Offer the user a chip that starts an independent thread, outside this workspace: not " +
             "a worker, so it has no place on the board, and you get no reports or digests from it. " +
             "Work for this workspace goes to `spawn_worker` instead. Use this only for work that " +
-            "belongs outside it (work the user asked to keep separate, a repo or topic unrelated " +
-            "to the workspace, a one-off the user will drive themselves), and say why in `reason`, " +
-            "which the chip shows. " +
+            "belongs outside it, and say why in `reason`, which the chip shows. " +
             whereTaskStarts,
         },
         audience: ["orchestrator"],

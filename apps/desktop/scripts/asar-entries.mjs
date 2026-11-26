@@ -16,6 +16,7 @@ export const ASAR_ENTRIES = [
   // The playbooks read_playbook serves; read from beside the bundle.
   "out/server/playbooks/deliver-a-pull-request.md",
   "out/server/playbooks/coordinate-workers-and-wakes.md",
+  "out/server/playbooks/mock-first.md",
   "out/preload/index.js",
   // Pinned pages' clipboard guard, their only preload.
   "out/page-guard/page-guard.js",

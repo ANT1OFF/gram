@@ -8,7 +8,7 @@ import type { ThreadId } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as z from "zod";
-import { appToolAnnotations, appToolResultContent } from "../app-tools.ts";
+import { appToolAnnotations, appToolResultContent, listedInputSchema } from "../app-tools.ts";
 import type { AppTool, AppToolRegistryPort, RemoteAppTools, ToolAudience } from "../host.ts";
 import * as Predicate from "effect/Predicate";
 
@@ -53,10 +53,7 @@ export interface McpServerFactory {
  */
 export const toZodObject = (schema: Schema.Codec<unknown, unknown>): z.ZodObject => {
   const doc = Schema.toJsonSchemaDocument(schema);
-  const zod = z.fromJSONSchema({
-    ...doc.schema,
-    $defs: doc.definitions,
-  });
+  const zod = z.fromJSONSchema(listedInputSchema({ ...doc.schema, $defs: doc.definitions }));
   if (!(zod instanceof z.ZodObject)) {
     throw new Error(`App tool input must be an object schema, got ${zod.def.type}`);
   }

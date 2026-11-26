@@ -59,3 +59,57 @@ export const appToolAnnotations = (toolClass: AppToolClass): AppToolAnnotations 
     : toolClass === "outward" || toolClass === "outwardGated"
       ? { readOnlyHint: false, openWorldHint: true }
       : { readOnlyHint: false };
+
+const NON_FINITE = ["Infinity", "-Infinity", "NaN"];
+
+const isNonFiniteAlternative = (branch: unknown): boolean => {
+  if (!Predicate.isObject(branch) || branch["type"] !== "string") return false;
+  const words: unknown = branch["enum"];
+  return (
+    Array.isArray(words) &&
+    words.length === NON_FINITE.length &&
+    NON_FINITE.every((word) => words.includes(word))
+  );
+};
+
+/**
+ * An app tool's input JSON Schema as a session lists it, without what Effect's JSON Schema adds and
+ * a tool's `run` never takes: the `"Infinity"`, `"-Infinity"` and `"NaN"` strings beside a number
+ * (run decodes numbers only), an integer's safe-integer bounds (run enforces them), and
+ * `additionalProperties: true`, which is JSON Schema's default (zod's `fromJSONSchema` too).
+ */
+export const listedInputSchema = (
+  schema: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(schema)) out[key] = listedValue(value);
+  const anyOf = out["anyOf"];
+  if (
+    Array.isArray(anyOf) &&
+    anyOf.length === 2 &&
+    Predicate.isObject(anyOf[0]) &&
+    anyOf[0]["type"] === "number" &&
+    Object.keys(anyOf[0]).length === 1 &&
+    isNonFiniteAlternative(anyOf[1])
+  ) {
+    delete out["anyOf"];
+    out["type"] = "number";
+  }
+  if (
+    out["type"] === "integer" &&
+    out["minimum"] === Number.MIN_SAFE_INTEGER &&
+    out["maximum"] === Number.MAX_SAFE_INTEGER
+  ) {
+    delete out["minimum"];
+    delete out["maximum"];
+  }
+  if (out["additionalProperties"] === true) delete out["additionalProperties"];
+  return out;
+};
+
+const listedValue = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(listedValue)
+    : Predicate.isObject(value)
+      ? listedInputSchema(value)
+      : value;

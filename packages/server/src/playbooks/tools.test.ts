@@ -50,7 +50,12 @@ describe("read_playbook", () => {
       Effect.gen(function* () {
         const pr = onDisk("deliver-a-pull-request.md");
         const coordinate = onDisk("coordinate-workers-and-wakes.md");
+        const mock = onDisk("mock-first.md");
         for (const audience of ["orchestrator", "worker"] as const) {
+          expect(yield* readAs(audience, "mock-first")).toMatchObject({
+            bound: true,
+            read: { _tag: "Success", success: mock },
+          });
           expect(yield* readAs(audience, "deliver-a-pull-request")).toMatchObject({
             bound: true,
             read: { _tag: "Success", success: pr },
@@ -65,6 +70,10 @@ describe("read_playbook", () => {
           read: { _tag: "Success", success: pr },
         });
         expect(yield* readAs("plain", "coordinate-workers-and-wakes")).toMatchObject({
+          bound: true,
+          read: { _tag: "Failure" },
+        });
+        expect(yield* readAs("plain", "mock-first")).toMatchObject({
           bound: true,
           read: { _tag: "Failure" },
         });

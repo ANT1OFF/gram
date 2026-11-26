@@ -29,7 +29,7 @@ import { TEST_CONFIG, waitFor } from "../runtime/test-harness.ts";
 import { captureLogs } from "@gram/agents/testing/logs";
 import { ThreadRuntimes } from "../runtime/thread-runtimes.ts";
 import { appToolsAt } from "../host/remote-app-tools.ts";
-import { McpRoute } from "./http-mcp.ts";
+import { McpRoute, toolInputSchema } from "./http-mcp.ts";
 import { mcpConnectionFor, McpTokens } from "./mcp-tokens.ts";
 import { AppToolRegistry } from "./registry.ts";
 
@@ -772,4 +772,32 @@ describe("HTTP MCP teardown", () => {
         expect(state.cancelled).toBe(true);
       }).pipe(Effect.scoped),
   );
+});
+
+describe("a listed input schema", () => {
+  effectTest("promises only what the tool's run accepts, without JSON Schema's defaults", () => {
+    const input = Schema.Struct({
+      count: Schema.Int,
+      at: Schema.Number,
+      place: Schema.optionalKey(Schema.Struct({ x: Schema.Number })),
+    });
+    const tool: AppTool = {
+      descriptor: { name: "measure", class: "read", description: "Measures." },
+      input,
+      run: () => Effect.succeed("ok"),
+    };
+    // Run decodes numbers only, so a listed "Infinity" alternative would be refused once sent.
+    expect(Exit.isFailure(Schema.decodeUnknownExit(input)({ count: 1, at: "Infinity" }))).toBe(
+      true,
+    );
+    expect(toolInputSchema(tool)).toEqual({
+      type: "object",
+      properties: {
+        count: { type: "integer" },
+        at: { type: "number" },
+        place: { type: "object", properties: { x: { type: "number" } }, required: ["x"] },
+      },
+      required: ["count", "at"],
+    });
+  });
 });

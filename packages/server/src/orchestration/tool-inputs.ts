@@ -22,7 +22,7 @@ export const questionEdit = (tool: string, edit: QuestionEdit) =>
 
 /** What a question's options show, as `ask_user` and `ask_question` describe it to the agent. */
 export const VISUALS_HELP =
-  " When the options are a mock's directions, give each an `image` (a screenshot, such as shots/a-inbox-dark.png) and a `preview` (its page and board, such as v1.html#a-inbox), and name the mock in `mock` (its mock.json or a page): the card shows each thumbnail and opens its board in Preview. Paths are relative to your folder or absolute, inside your worktree or repo.";
+  " For a mock's directions, give each option an `image` (a screenshot) and a `preview` (its page and board), and name the mock in `mock` (its mock.json or a page), with paths relative to your folder or absolute, inside your worktree or repo; read_playbook mock-first.";
 
 export const questionOptions = Schema.Array(
   Schema.Struct({
