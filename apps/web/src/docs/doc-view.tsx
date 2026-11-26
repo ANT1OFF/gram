@@ -8,6 +8,7 @@ import { errorMessage, isNotFound } from "@/api/errors";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { QueryError } from "@/components/not-available";
 import { Button } from "@/components/ui/button";
+import { useMountEffect } from "@/lib/effects";
 import { formatStamp } from "@/lib/time";
 import { useNow } from "@/lib/use-now";
 import { PanelMessage } from "@/panels/panel-message";
@@ -65,6 +66,9 @@ export function DocView({
   const api = useApi();
   const queryClient = useQueryClient();
   const doc = useDoc(workspaceId, id);
+  useMountEffect(() => {
+    api.markDocOpened(workspaceId, id).catch(() => undefined);
+  });
   const ref = useRef<HTMLElement>(null);
   const now = useNow(true, ref, 60_000);
   const [draft, setDraft] = useState<{ text: string; revision: number } | undefined>();

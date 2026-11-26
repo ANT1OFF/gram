@@ -178,6 +178,8 @@ export const MEMBER_RPCS: ReadonlySet<string> = new Set([
   "connectors.catalogue",
   "connectors.configured",
   "connectors.list",
+  "docs.archiveOlderThan",
+  "docs.opened",
   "docs.save",
   "dream.adopt",
   "dream.automaticStatus",

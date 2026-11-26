@@ -50,6 +50,7 @@ export function createDocsMock(world: MockWorld) {
     listDocs: async (workspaceId) => {
       await world.delay(20);
       const list = [...of(workspaceId).values()]
+        .filter((doc) => doc.archivedAt === undefined)
         .map(metaOf)
         .toSorted((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
       return { docs: list };
@@ -86,6 +87,26 @@ export function createDocsMock(world: MockWorld) {
     hideDoc: async (threadId, id) => {
       await world.delay(20);
       world.replaceThread(hideDoc(world.summary(threadId).thread, id));
+    },
+    markDocOpened: async (workspaceId, id) => {
+      await world.delay(10);
+      const doc = of(workspaceId).get(id);
+      if (doc !== undefined) of(workspaceId).set(id, { ...doc, userSeenAt: Date.now() });
+    },
+    archiveDocsOlderThan: async (days) => {
+      await world.delay(30);
+      const cutoff = Date.now() - days * 86_400_000;
+      let archived = 0;
+      for (const [workspaceId, byId] of docs) {
+        for (const doc of byId.values()) {
+          const seen = Math.max(doc.updatedAt, doc.userSeenAt ?? 0);
+          if (doc.archivedAt !== undefined || seen >= cutoff) continue;
+          byId.set(doc.id, { ...doc, archivedAt: Date.now(), archivedReason: "manual" });
+          archived++;
+        }
+        if (archived > 0) world.emit({ type: "docs.changed", workspaceId });
+      }
+      return archived;
     },
   };
 

@@ -21,8 +21,18 @@ export const DOC_MAX_BYTES = 256 * 1024;
  * archived. Archived docs don't count.
  */
 export const DOCS_PER_WORKSPACE_MAX = 200;
-/** The most archived docs a workspace keeps; archiving past it purges the oldest archived first. */
+/**
+ * The archived docs a workspace keeps by default ("Keep archived docs" on the Storage page);
+ * archiving past it purges the earliest archived first.
+ */
 export const DOCS_ARCHIVE_MAX = 2000;
+/** The range "Keep archived docs" takes. */
+export const DOCS_ARCHIVE_KEEP_MIN = 10;
+export const DOCS_ARCHIVE_KEEP_MAX = 5000;
+/** "Keep archived docs", as Settings stores it. */
+export const DocsArchiveKeep = Schema.Int.check(
+  Schema.isBetween({ minimum: DOCS_ARCHIVE_KEEP_MIN, maximum: DOCS_ARCHIVE_KEEP_MAX }),
+);
 /** Earlier versions kept per doc, besides the current one; a save past it drops the oldest. */
 export const DOC_HISTORY_KEEP = 10;
 /** The most docs one `read_doc` listing names; the rest are counted. */
@@ -95,6 +105,15 @@ export const DocMeta = Schema.Struct({
   excerpt: bounded(DOC_EXCERPT_MAX),
   /** The PR it is about, when it is one's; any thread in the workspace may update it. */
   pr: Schema.optionalKey(DocPr),
+  /** Epoch ms the sweep first saw its PR merged or closed; it is archived some days after. */
+  prSettledAt: Schema.optionalKey(DocTime),
+  /** Published by the workspace's orchestrator, so never archived automatically. */
+  authorOrchestrator: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * Epoch ms the user last opened or saved it in the doc pane. Within `DOC_USER_KEEP_DAYS` of it,
+   * it is never archived automatically.
+   */
+  userSeenAt: Schema.optionalKey(DocTime),
   /** Epoch ms it was archived; absent while it is active. */
   archivedAt: Schema.optionalKey(DocTime),
   archivedReason: Schema.optionalKey(DocArchiveReason),
@@ -109,6 +128,20 @@ export const DocList = Schema.Struct({ docs: Schema.Array(DocMeta) });
 export type DocList = typeof DocList.Type;
 
 export const DocsListFields = { workspaceId: WorkspaceId };
+/** The pane opened a doc: it is kept from automatic archiving for a while. */
+export const DocOpenedFields = { workspaceId: WorkspaceId, id: DocId };
+
+/** The most days "Archive docs older than…" takes. */
+export const DOC_ARCHIVE_DAYS_MAX = 3650;
+/** "Archive docs older than…" from the Storage page, across every workspace. */
+export const DocsArchiveOlderFields = {
+  days: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: DOC_ARCHIVE_DAYS_MAX })),
+};
+export const DocsArchived = Schema.Struct({ archived: Schema.Int });
+export type DocsArchived = typeof DocsArchived.Type;
+
+/** Days after the user opened or saved a doc in which it is never archived automatically. */
+export const DOC_USER_KEEP_DAYS = 14;
 export const DocReadFields = { workspaceId: WorkspaceId, id: DocId };
 
 /**

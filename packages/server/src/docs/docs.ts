@@ -3,60 +3,75 @@ import {
   type DocArchiveReason,
   type DocPr,
   DOC_HISTORY_KEEP,
-  DOC_ID_PATTERN,
   DOC_MAX_BYTES,
-  DOC_META_MAX_BYTES,
   type DocEditor,
   docExcerpt,
-  DocId,
-  DocMeta,
+  type DocId,
+  type DocMeta,
   DOCS_ARCHIVE_MAX,
   DOCS_PER_WORKSPACE_MAX,
   docTitle,
-  errnoCode,
+  docsArchiveOf,
   sameDocPr,
-  FsError,
-  InvalidState,
+  type FsError,
+  type InvalidState,
   NotFound,
   redactText,
-  type ThreadId,
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
-import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 import { ServerConfig } from "../config.ts";
 import { EventHub } from "../events/event-hub.ts";
 import { makeKeyedLock } from "../git/keyed-lock.ts";
+import { ThreadStore } from "../persistence/thread-store.ts";
 import {
-  DocRefusal,
   listPinned,
   openFolder,
-  openSub,
   readPinned,
-  removePinned,
   unlinkPinned,
   writePinned,
   type DocFileHooks,
   type DocFolder,
 } from "./doc-files.ts";
+import {
+  activeOf,
+  archivedAtOf,
+  archivedRefusal,
+  archiveOf,
+  checkContent,
+  checkedId,
+  HEAD_MAX,
+  historyIn,
+  historyOf,
+  idsIn,
+  isAuthor,
+  kb,
+  metaOf,
+  newDocId,
+  notFound,
+  notYours,
+  purge,
+  RECORD,
+  RECORD_MAX,
+  recordName,
+  recordOf,
+  refuse,
+  run,
+  unreadable,
+  type DocActor,
+  type DocAuthor,
+} from "./doc-records.ts";
+
+export { newDocId, type DocActor, type DocAuthor } from "./doc-records.ts";
 
 const WORKSPACE_SEGMENT = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type DocError = InvalidState | NotFound | FsError;
-
-/** Who is publishing: the calling thread, as the app tool resolves it from the store. */
-export interface DocAuthor {
-  readonly threadId: ThreadId;
-  readonly title: string;
-  /** The workspace's orchestrator, which may update any of its workers' docs. */
-  readonly orchestrator: boolean;
-}
 
 export interface PublishDocInput {
   readonly workspaceId: WorkspaceId;
@@ -74,12 +89,6 @@ export interface PublishDocInput {
    */
   readonly pr?: DocPr | undefined;
 }
-
-/**
- * Who archives, restores or deletes a doc: an agent, as the app tool resolves it, or the user from
- * the doc pane, who may do any of it.
- */
-export type DocActor = DocAuthor | "user";
 
 export type PublishedDoc =
   | { readonly meta: DocMeta; readonly action: "published" | "updated" }
@@ -146,163 +155,35 @@ export interface DocsShape {
     id: DocId,
     by: DocActor,
   ) => Effect.Effect<void, DocError>;
+  /**
+   * The sweep's archive: the doc is read again under the lock and archived only while `due` still
+   * holds of it, so a user's open or an agent's update since the sweep looked keeps it. `undefined`
+   * when it no longer was due, or is gone.
+   */
+  readonly archiveIfDue: (
+    workspaceId: WorkspaceId,
+    id: DocId,
+    reason: DocArchiveReason,
+    due: (meta: DocMeta) => boolean,
+  ) => Effect.Effect<DocMeta | undefined, DocError>;
+  /**
+   * Changes an active doc's metadata alone, under the lock: no revision, history or event, and
+   * the text as it was. `change` returning `undefined` writes nothing.
+   */
+  readonly mark: (
+    workspaceId: WorkspaceId,
+    id: DocId,
+    change: (meta: DocMeta) => DocMeta | undefined,
+  ) => Effect.Effect<void, InvalidState | FsError>;
 }
 
-/** Limits a test can lower. */
+/** Limits a test can lower; `archiveKeep` is the user's "Keep archived docs", read per archive. */
 export interface DocLimits {
   readonly activeMax?: number;
   readonly archiveMax?: number;
+  readonly archiveKeep?: Effect.Effect<number>;
   readonly historyKeep?: number;
 }
-
-const refuse = (message: string) => new InvalidState({ message });
-
-const codeOf = (error: unknown): unknown => errnoCode(error);
-
-const fsError = (shown: string, error: unknown) => {
-  const code = codeOf(error);
-  return new FsError({
-    path: shown,
-    message: `Can't access the doc ${shown} (${typeof code === "string" ? code : "unknown error"})`,
-  });
-};
-
-const kb = (bytes: number) => `${Math.ceil(bytes / 1024)} KB`;
-
-/** `gap-analysis-3f9a2c`: the title's words, then six random hex digits. */
-export const newDocId = (title: string): DocId => {
-  const words = title
-    .slice(0, 200)
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48)
-    .replace(/-+$/, "");
-  const id = `${words === "" ? "doc" : words}-${randomBytes(3).toString("hex")}`;
-  return DocId.make(id);
-};
-
-const decodeMeta = Schema.decodeUnknownOption(DocMeta);
-
-const RECORD = ".doc";
-const recordName = (id: DocId) => `${id}${RECORD}`;
-const ARCHIVE_DIR = "archive";
-const HISTORY_DIR = "history";
-const HISTORY_RECORD = /^([1-9][0-9]{0,9})\.doc$/;
-const idsIn = (names: ReadonlyArray<string>): DocId[] =>
-  names.flatMap((name) => {
-    if (!name.endsWith(RECORD)) return [];
-    const id = name.slice(0, -RECORD.length);
-    return DOC_ID_PATTERN.test(id) ? [DocId.make(id)] : [];
-  });
-const HEAD_MAX = DOC_META_MAX_BYTES + 1;
-const RECORD_MAX = HEAD_MAX + DOC_MAX_BYTES;
-
-const checkedId = (id: string) =>
-  DOC_ID_PATTERN.test(id)
-    ? Effect.succeed(DocId.make(id))
-    : Effect.fail(refuse(`${id} isn't a doc id`));
-
-const notFound = (id: string) =>
-  new NotFound({ entity: "file", id, message: `No doc ${id} in this workspace` });
-
-const unreadable = (id: string) =>
-  refuse(`The doc ${id}'s details don't read, so it wasn't opened`);
-
-const metaOf = (head: string, workspaceId: WorkspaceId, id: DocId): DocMeta | undefined => {
-  const end = head.indexOf("\n");
-  if (end < 0 || end > DOC_META_MAX_BYTES) return undefined;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(head.slice(0, end));
-  } catch {
-    return undefined;
-  }
-  const meta = decodeMeta(parsed);
-  if (meta._tag === "None" || meta.value.id !== id || meta.value.workspaceId !== workspaceId) {
-    return undefined;
-  }
-  return meta.value;
-};
-
-const recordOf = (meta: DocMeta, content: string) => {
-  if (decodeMeta(meta)._tag === "None") {
-    return Effect.fail(refuse("The doc's details are out of bounds, so it wasn't saved"));
-  }
-  const line = JSON.stringify(meta);
-  if (Buffer.byteLength(line, "utf8") > DOC_META_MAX_BYTES) {
-    return Effect.fail(refuse("The doc's details are too long, so it wasn't saved"));
-  }
-  return Effect.succeed(`${line}\n${content}`);
-};
-
-const checkContent = (content: string) => {
-  const bytes = Buffer.byteLength(content, "utf8");
-  return bytes > DOC_MAX_BYTES
-    ? Effect.fail(refuse(`A doc holds at most ${kb(DOC_MAX_BYTES)}; this one is ${kb(bytes)}`))
-    : Effect.succeed(bytes);
-};
-
-const run = <A>(shown: string, io: () => Promise<A>): Effect.Effect<A, InvalidState | FsError> =>
-  Effect.tryPromise({ try: io, catch: (error) => error }).pipe(
-    Effect.catch((error) =>
-      Effect.fail(error instanceof DocRefusal ? refuse(error.message) : fsError(shown, error)),
-    ),
-  );
-
-const archiveOf = (at: DocFolder, create: boolean) =>
-  run("archive", () => openSub(at, ARCHIVE_DIR, create));
-
-const historyOf = (at: DocFolder, id: DocId, create: boolean) =>
-  Effect.gen(function* () {
-    const all = yield* run("history", () => openSub(at, HISTORY_DIR, create));
-    if (all === undefined) return undefined;
-    return yield* run("history", () => openSub(all, id, create));
-  });
-
-const archivedAtOf = (meta: DocMeta) => meta.archivedAt ?? meta.updatedAt;
-
-const historyIn = (at: DocFolder, id: DocId) =>
-  Effect.gen(function* () {
-    const kept = yield* historyOf(at, id, false);
-    if (kept === undefined) return [];
-    const names = yield* run("history", () => listPinned(kept));
-    return names
-      .flatMap((name) => {
-        const match = HISTORY_RECORD.exec(name);
-        return match === null ? [] : [Number(match[1])];
-      })
-      .toSorted((a, b) => b - a);
-  });
-
-const purge = (at: DocFolder, arch: DocFolder, id: DocId) =>
-  Effect.gen(function* () {
-    const kept = yield* historyOf(at, id, false);
-    if (kept !== undefined) yield* run(id, () => removePinned(kept));
-    yield* run(id, () => unlinkPinned(arch, recordName(id)));
-  });
-
-const activeOf = (meta: DocMeta): DocMeta => {
-  const { archivedAt: _at, archivedReason: _reason, ...active } = meta;
-  return active;
-};
-
-const isAuthor = (meta: DocMeta, by: DocActor) =>
-  by === "user" || by.orchestrator || meta.authorThreadId === by.threadId;
-
-const notYours = (meta: DocMeta, doing: string) =>
-  refuse(
-    `${meta.title} was published by ${meta.authorTitle}: only that thread, the workspace's ` +
-      `orchestrator or the user may ${doing} it.`,
-  );
-
-const archivedRefusal = (meta: DocMeta) =>
-  refuse(
-    `${meta.title} is archived. Restore it with archive_doc (id "${meta.id}", restore: true) ` +
-      "to change it, or publish a new doc.",
-  );
 
 /**
  * The docs under `root`, one folder per workspace, its archive and its docs' histories inside.
@@ -316,7 +197,10 @@ export const makeDocs = (
 ): DocsShape => {
   const locks = makeKeyedLock<string>();
   const activeMax = limits.activeMax ?? DOCS_PER_WORKSPACE_MAX;
-  const archiveMax = limits.archiveMax ?? DOCS_ARCHIVE_MAX;
+  const archiveMaxNow =
+    limits.archiveMax !== undefined
+      ? Effect.succeed(limits.archiveMax)
+      : (limits.archiveKeep ?? Effect.succeed(DOCS_ARCHIVE_MAX));
   const historyKeep = limits.historyKeep ?? DOC_HISTORY_KEEP;
 
   const folder = (workspaceId: WorkspaceId, create: boolean) =>
@@ -494,6 +378,7 @@ export const makeDocs = (
     justArchived: DocId,
   ) =>
     Effect.gen(function* () {
+      const archiveMax = Math.max(1, yield* archiveMaxNow);
       const names = idsIn(yield* run("archive", () => listPinned(arch)));
       if (names.length <= archiveMax) return;
       const others = (yield* listArchivedIn(at, workspaceId)).filter(
@@ -549,6 +434,7 @@ export const makeDocs = (
             bytes,
             excerpt: docExcerpt(content),
             ...(pr === undefined ? {} : { pr }),
+            ...(input.author.orchestrator ? { authorOrchestrator: true as const } : {}),
           };
           yield* commit(at, meta, content);
           return { meta, action: "published" as const };
@@ -630,13 +516,20 @@ export const makeDocs = (
           revision: current.revision + 1,
           bytes,
           excerpt: docExcerpt(content),
+          userSeenAt: now,
         };
         yield* commit(at, meta, content, previous);
         return meta;
       }),
     );
 
-  const archive: DocsShape["archive"] = (workspaceId, rawId, by, reason) =>
+  const archiveWith = (
+    workspaceId: WorkspaceId,
+    rawId: DocId,
+    by: DocActor,
+    reason: DocArchiveReason,
+    due?: (meta: DocMeta) => boolean,
+  ) =>
     locks.withLock(
       workspaceId,
       Effect.gen(function* () {
@@ -651,6 +544,7 @@ export const makeDocs = (
         }
         const { content, ...current } = doc;
         if (!isAuthor(current, by)) return yield* notYours(current, "archive");
+        if (due !== undefined && !due(current)) return undefined;
         const now = yield* Clock.currentTimeMillis;
         const meta: DocMeta = { ...current, archivedAt: now, archivedReason: reason };
         const record = yield* recordOf(meta, content);
@@ -664,6 +558,44 @@ export const makeDocs = (
           }),
         );
         return meta;
+      }),
+    );
+
+  const archive: DocsShape["archive"] = (workspaceId, id, by, reason) =>
+    archiveWith(workspaceId, id, by, reason).pipe(
+      Effect.flatMap((meta) =>
+        meta === undefined ? Effect.fail(notFound(id)) : Effect.succeed(meta),
+      ),
+    );
+
+  const archiveIfDue: DocsShape["archiveIfDue"] = (workspaceId, id, reason, due) =>
+    archiveWith(workspaceId, id, "sweep", reason, due).pipe(
+      Effect.catchTag("NotFound", () => Effect.succeed(undefined)),
+    );
+
+  const mark: DocsShape["mark"] = (workspaceId, rawId, change) =>
+    locks.withLock(
+      workspaceId,
+      Effect.gen(function* () {
+        const id = yield* checkedId(rawId);
+        const at = yield* folder(workspaceId, false);
+        if (at === undefined) return;
+        const doc = yield* readDoc(at, workspaceId, id);
+        if (doc === undefined) return;
+        const { content, ...current } = doc;
+        const next = change(current);
+        if (next === undefined) return;
+        const meta: DocMeta = {
+          ...next,
+          id: current.id,
+          workspaceId: current.workspaceId,
+          revision: current.revision,
+          bytes: current.bytes,
+        };
+        const record = yield* recordOf(meta, content);
+        yield* Effect.uninterruptible(
+          run(id, () => writePinned(at, recordName(id), record, hooks)),
+        );
       }),
     );
 
@@ -682,7 +614,7 @@ export const makeDocs = (
           return yield* notFound(id);
         }
         const { content, ...archived } = doc;
-        if (!isAuthor(archived, by)) return yield* notYours(archived, "restore");
+        if (by === "sweep" || !isAuthor(archived, by)) return yield* notYours(archived, "restore");
         const active = yield* listIn(at, workspaceId);
         const stillActive = active.some((each) => each.id === id);
         const pr = archived.pr;
@@ -722,7 +654,7 @@ export const makeDocs = (
       workspaceId,
       Effect.gen(function* () {
         const id = yield* checkedId(rawId);
-        if (by !== "user" && !by.orchestrator) {
+        if (by === "sweep" || (by !== "user" && !by.orchestrator)) {
           return yield* refuse(
             "Only the workspace's orchestrator or the user may delete a doc. Archive it with " +
               "archive_doc instead.",
@@ -748,19 +680,41 @@ export const makeDocs = (
       }),
     );
 
-  return { list, listArchived, counts, read, history, publish, save, archive, restore, remove };
+  return {
+    list,
+    listArchived,
+    counts,
+    read,
+    history,
+    publish,
+    save,
+    archive,
+    restore,
+    remove,
+    archiveIfDue,
+    mark,
+  };
 };
 
 /** The workspaces' docs, under `<dataDir>/docs`. */
 export class Docs extends Context.Service<Docs, DocsShape>()("@gram/server/Docs") {
-  static readonly layer: Layer.Layer<Docs, never, ServerConfig | EventHub> = Layer.effect(
-    Docs,
-    Effect.gen(function* () {
-      const config = yield* ServerConfig;
-      const hub = yield* EventHub;
-      return makeDocs(join(config.dataDir, "docs"), (workspaceId) =>
-        hub.publish({ type: "docs.changed", workspaceId }).pipe(Effect.asVoid),
-      );
-    }),
-  );
+  static readonly layer: Layer.Layer<Docs, never, ServerConfig | EventHub | ThreadStore> =
+    Layer.effect(
+      Docs,
+      Effect.gen(function* () {
+        const config = yield* ServerConfig;
+        const hub = yield* EventHub;
+        const store = yield* ThreadStore;
+        return makeDocs(
+          join(config.dataDir, "docs"),
+          (workspaceId) => hub.publish({ type: "docs.changed", workspaceId }).pipe(Effect.asVoid),
+          undefined,
+          {
+            archiveKeep: store.getSettings.pipe(
+              Effect.map((settings) => docsArchiveOf(settings).keep),
+            ),
+          },
+        );
+      }),
+    );
 }

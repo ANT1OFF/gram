@@ -49,6 +49,7 @@ import {
   worktreeSweepOf,
   usageHistoryEnabled,
 } from "./settings.ts";
+import { docsArchiveOf } from "./docs-settings.ts";
 import { reviewRequestReady } from "./review-requests.ts";
 import { expectRoundTrip } from "./test-utils.ts";
 import { connectorEntryProblem } from "./workspaces.ts";
@@ -268,6 +269,24 @@ describe("workspaces.continueAfterRestart", () => {
         }),
       ),
     ).toBe(false);
+  });
+});
+
+describe("workspaces.docsArchive", () => {
+  it("archives on 7 and 14 days and keeps 2,000 unless told otherwise, refusing a keep out of range", () => {
+    expect(docsArchiveOf(DEFAULT_SETTINGS)).toEqual({ prDays: 7, workerDays: 14, keep: 2000 });
+    const tuned = applySettingsPatch(DEFAULT_SETTINGS, {
+      workspaces: { docsArchivePrDays: 2, docsArchiveWorkerDays: 30, docsArchiveKeep: 500 },
+    });
+    expectRoundTrip(Settings, tuned);
+    expect(docsArchiveOf(tuned)).toEqual({ prDays: 2, workerDays: 30, keep: 500 });
+    for (const docsArchiveKeep of [0, 9, 5001])
+      expect(() =>
+        Schema.decodeUnknownSync(SettingsPatch)({ workspaces: { docsArchiveKeep } }),
+      ).toThrow();
+    expect(() =>
+      Schema.decodeUnknownSync(SettingsPatch)({ workspaces: { docsArchivePrDays: 0 } }),
+    ).toThrow();
   });
 });
 
