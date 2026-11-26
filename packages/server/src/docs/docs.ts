@@ -685,6 +685,18 @@ export const makeDocs = (
         if (!isAuthor(archived, by)) return yield* notYours(archived, "restore");
         const active = yield* listIn(at, workspaceId);
         const stillActive = active.some((each) => each.id === id);
+        const pr = archived.pr;
+        const samePr =
+          pr === undefined || stillActive
+            ? undefined
+            : active.find((each) => each.pr !== undefined && sameDocPr(each.pr, pr));
+        if (samePr !== undefined) {
+          return yield* refuse(
+            `${samePr.title} is already the active doc for ${pr!.repo}#${pr!.number}, which keeps ` +
+              `one, so ${archived.title} wasn't restored. Archive that one first (archive_doc ` +
+              `id "${samePr.id}"), or read this one and fold what it holds into that.`,
+          );
+        }
         if (!stillActive && active.length >= activeMax) {
           return yield* refuse(
             `This workspace already has ${active.length} active docs, the most it keeps, so ` +

@@ -166,7 +166,8 @@ export const publishDocTool = (
             next:
               `Fold your round into it: read_doc id "${doc.id}", put your round at the top as a ` +
               `new section, newest first, and call ${PUBLISH} with id "${doc.id}", revision ` +
-              `${doc.revision} and the whole content.`,
+              `${doc.revision} and the whole content. If yours is about another subject, not ` +
+              `a round on this PR, call ${PUBLISH} again with \`pr: null\`.`,
           };
         }
         const card = cardOf(published, published.meta.updatedAt);

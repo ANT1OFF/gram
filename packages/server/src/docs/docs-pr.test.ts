@@ -46,12 +46,22 @@ describe("a PR's doc", () => {
         expect(yield* docs.counts(WS)).toEqual({ active: 1, archived: 0 });
 
         // Another PR, or none, is a new doc; filling the active set still finds the PR's.
-        yield* publish("Review of #43", worker(2), { ...PR, number: 43 });
+        const other = yield* publish("Review of #43", worker(2), { ...PR, number: 43 });
         expect((yield* publish("Round 3", worker(3), PR)).action).toBe("existing");
 
         // Once archived, the PR's next doc starts afresh.
         yield* docs.archive(WS, first.meta.id, worker(1), "manual");
-        expect((yield* publish("Review after merge", worker(3), PR)).action).toBe("published");
+        const next = yield* publish("Review after merge", worker(3), PR);
+        expect(next.action).toBe("published");
+        // Restoring the first would make two for the PR: refused, with room to spare, until the
+        // second is archived.
+        yield* docs.archive(WS, other.meta.id, worker(2), "manual");
+        expect((yield* Effect.flip(docs.restore(WS, first.meta.id, "user")))._tag).toBe(
+          "InvalidState",
+        );
+        yield* docs.archive(WS, next.meta.id, worker(3), "manual");
+        yield* docs.restore(WS, first.meta.id, "user");
+        expect((yield* publish("Round 4", worker(2), PR)).meta.id).toBe(first.meta.id);
       }).pipe(Effect.scoped),
   );
 
