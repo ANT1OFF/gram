@@ -1,4 +1,5 @@
 import {
+  InvalidState,
   ORCHESTRATOR_HAS_NO_PR,
   type PrDetailResult,
   type PrStatus,
@@ -193,9 +194,7 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
       const git = world.summary(threadId).git;
       const branch = git?.branch;
       if (branch === undefined) {
-        throw Object.assign(new Error("HEAD isn't on a branch, so there's nothing to push"), {
-          _tag: "InvalidState",
-        });
+        throw new InvalidState({ message: "HEAD isn't on a branch, so there's nothing to push" });
       }
       const first = git?.upstream === undefined;
       published.add(threadId);
@@ -217,9 +216,7 @@ export function createPullRequestsMock(world: MockWorld, deps: PullRequestsDeps)
       await world.delay(200);
       const git = world.summary(threadId).git;
       if (!git?.origin || !published.has(threadId)) {
-        throw Object.assign(new Error("you must first push the current branch to a remote"), {
-          _tag: "InvalidState",
-        });
+        throw new InvalidState({ message: "you must first push the current branch to a remote" });
       }
       const number = 418;
       const url = `https://github.com/${git.origin}/pull/${number}`;

@@ -1,3 +1,4 @@
+import { GitError, WorktreeDirty } from "@gram/contracts";
 import type { BoundPr, GitState, Thread, ThreadId, ThreadSummary } from "@gram/contracts";
 
 import { MockInvalidState } from "./mock-fs";
@@ -29,7 +30,7 @@ const cleanState = (branch: string | undefined, worktree: boolean): GitState => 
   conflicts: false,
 });
 
-const gitError = (message: string) => Object.assign(new Error(message), { _tag: "GitError" });
+const gitError = (message: string) => new GitError({ message });
 
 const extraPath = (root: string, extra: MockExtraWorktree) => `${root}/.worktrees/${extra.folder}`;
 
@@ -105,11 +106,7 @@ export function createMockWorktrees(host: MockWorktreesHost) {
       }
       const { changedFiles } = status(path);
       if (!options.force && changedFiles > 0) {
-        throw Object.assign(new Error(`${path} has uncommitted changes`), {
-          _tag: "WorktreeDirty",
-          path,
-          changedFiles,
-        });
+        throw new WorktreeDirty({ path, changedFiles });
       }
       removed.add(path);
     },

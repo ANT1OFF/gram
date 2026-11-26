@@ -1,4 +1,5 @@
 import {
+  NotFound,
   type ProjectId,
   type ProjectScript,
   type ProjectScripts,
@@ -34,7 +35,11 @@ const fileText = (path: string): string | undefined => {
 const rootOf = (world: MockWorld, projectId: ProjectId): string => {
   const project = world.projects().find((p) => p.id === projectId);
   if (project === undefined)
-    throw Object.assign(new Error("That project no longer exists."), { _tag: "NotFound" });
+    throw new NotFound({
+      entity: "project",
+      id: projectId,
+      message: "That project no longer exists.",
+    });
   return project.root;
 };
 

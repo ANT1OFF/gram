@@ -1,3 +1,4 @@
+import { NotFound } from "@gram/contracts";
 import type { Dream } from "@gram/contracts";
 
 import type { MockFile, MockVersion } from "./mock-dreams";
@@ -89,10 +90,10 @@ export const revertedVersion = (
 ): MockVersion => {
   const before = memory.versions.find((kept) => kept.version === dream.inputs.memoryVersion);
   if (before === undefined) {
-    throw Object.assign(new Error("That memory version no longer exists."), {
-      _tag: "NotFound",
-      entity: "memory version",
+    throw new NotFound({
+      entity: "file",
       id: dream.inputs.memoryVersion,
+      message: "That memory version no longer exists.",
     });
   }
   const next = String(

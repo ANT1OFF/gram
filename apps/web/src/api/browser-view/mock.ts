@@ -1,3 +1,4 @@
+import { InvalidState } from "@gram/contracts";
 import type { BrowserViewEvent, BrowserViewPage, ThreadId } from "@gram/contracts";
 
 import { createChannel, type Channel } from "../channel";
@@ -71,9 +72,7 @@ export const createBrowserViewMock = (): BrowserViewApi & BrowserViewMockControl
       if (!mockServerBrowser()) {
         // eslint-disable-next-line require-yield -- a feed that fails on its first read, as a server without a browser does
         return (async function* (): AsyncGenerator<BrowserViewFeedEvent> {
-          throw Object.assign(new Error("This server runs no browser of its own."), {
-            _tag: "InvalidState",
-          });
+          throw new InvalidState({ message: "This server runs no browser of its own." });
         })();
       }
       const set = watchers.get(threadId) ?? new Set();

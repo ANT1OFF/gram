@@ -3,7 +3,8 @@
 These rules are copied from [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop), which
 is meant to be vendored and then owned by the project that copies it (MIT, see `LICENSE`).
 
-- Upstream commit: `63dbb09f73438e550a6991dc6d778f979ffbf183` (2026-11-20), files from `src/`.
+- Upstream commit: `63dbb09f73438e550a6991dc6d778f979ffbf183` (2026-11-20), files from `src/`;
+  `effect/` holds those from `src/effect/` (the Effect-specific rules).
 - Copied unchanged apart from formatting by `bun fmt`: the rules named in `index.ts`, their tests,
   and the `shared/` helpers they import.
 - Local changes: `index.ts` registers only the rules Gram adopts, and each test hands Vitest's

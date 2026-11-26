@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import {
-  type HostFailed,
-  type WorktreeHookInspection,
-  type WorktreeHookOutcome,
-  type WorktreeHookRequest,
-  type WorktreeHookRun,
+import type {
+  HostFailed,
+  WorktreeHookInspection,
+  WorktreeHookOutcome,
+  WorktreeHookRequest,
+  WorktreeHookRun,
 } from "@gram/contracts";
 import { Proc, type ProcShape } from "@gram/git";
 import * as Effect from "effect/Effect";

@@ -51,23 +51,26 @@ export type WorktreeRemoval = typeof WorktreeRemoval.Type;
 export const RestoreSource = Schema.Literals(["local", "origin", "pr"]);
 export type RestoreSource = typeof RestoreSource.Type;
 
+/** `thread.restoreWorktree` put the worktree back (`RestoreWorktreeResult`). */
+export const WorktreeRestored = Schema.TaggedStruct("restored", {
+  path: Schema.String,
+  branch: Schema.String,
+  source: RestoreSource,
+});
+
+/** `thread.restoreWorktree` found the branch gone (`RestoreWorktreeResult`). */
+export const WorktreeBranchGone = Schema.TaggedStruct("branchGone", {
+  branch: Schema.String,
+  pr: Schema.optionalKey(Schema.Struct({ repo: Schema.String, number: Schema.Int })),
+});
+
 /**
  * What `thread.restoreWorktree` did. `restored`: the worktree is back at its recorded path on its
  * branch, from the local branch, `origin`'s, or the PR's head; what was uncommitted in it is gone
  * for good. `branchGone`: neither the repo nor `origin` has the branch, and nothing was changed;
  * with `pr`, asking again with `fromPr` recreates the branch from that PR's head.
  */
-export const RestoreWorktreeResult = Schema.Union([
-  Schema.TaggedStruct("restored", {
-    path: Schema.String,
-    branch: Schema.String,
-    source: RestoreSource,
-  }),
-  Schema.TaggedStruct("branchGone", {
-    branch: Schema.String,
-    pr: Schema.optionalKey(Schema.Struct({ repo: Schema.String, number: Schema.Int })),
-  }),
-]);
+export const RestoreWorktreeResult = Schema.Union([WorktreeRestored, WorktreeBranchGone]);
 export type RestoreWorktreeResult = typeof RestoreWorktreeResult.Type;
 
 /**

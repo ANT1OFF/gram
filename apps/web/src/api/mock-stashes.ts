@@ -1,7 +1,8 @@
 import {
-  DRAFT_STASH_LIMIT,
   type Attachment,
+  DRAFT_STASH_LIMIT,
   type DraftStash,
+  NotFound,
   type StashId,
   type ThreadId,
 } from "@gram/contracts";
@@ -9,11 +10,7 @@ import {
 const STORAGE_KEY = "gram.mock.draftStashes";
 
 const notFound = (stashId: StashId) =>
-  Object.assign(new Error("That stashed draft is gone"), {
-    _tag: "NotFound",
-    entity: "stash",
-    id: stashId,
-  });
+  new NotFound({ entity: "stash", id: stashId, message: "That stashed draft is gone" });
 
 /**
  * The mock's stashed drafts per thread, newest first. With `persist` they're kept in `localStorage`,

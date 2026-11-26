@@ -1,4 +1,4 @@
-import { GRAM_REPO, type ComposedIssue } from "@gram/contracts";
+import { type ComposedIssue, GitError, GRAM_REPO } from "@gram/contracts";
 
 import { composeMockIssue } from "../mock-issues";
 import { mockLaunchChecks } from "../mock-launch-checks";
@@ -86,7 +86,7 @@ export function createAppMock(world: MockWorld): AppApi & AppMockControls {
     fileIssue: async (draft) => {
       await world.delay(200);
       if (issueFailure.message !== undefined) {
-        throw Object.assign(new Error(issueFailure.message), { _tag: "GitError" });
+        throw new GitError({ message: issueFailure.message });
       }
       filedIssues.push(await previewIssue(draft));
       const number = 160 + filedIssues.length;

@@ -106,6 +106,16 @@
       }
     },
     {
+      "files": ["apps/web/src/**"],
+      "rules": {
+        // The web app's mock backend stands in for the server, so a value of a contract's tagged
+        // type there is built with its own class or schema (`new NotFound(…)`, `.make`) and can't
+        // drift from it. Elsewhere the literal `_tag`s left are local unions with no constructor
+        // to call, so the rule stops at the web app.
+        "anti-slop/no-manual-tagged-construction": "error"
+      }
+    },
+    {
       "files": ["packages/server/src/**", "packages/git/src/**"],
       "rules": {
         "gram/no-raw-path": "error",
@@ -404,7 +414,9 @@
         "typescript/no-unsafe-call": "off",
         "typescript/no-unsafe-member-access": "off",
         "typescript/no-unsafe-return": "off",
-        "typescript/no-unsafe-type-assertion": "off"
+        "typescript/no-unsafe-type-assertion": "off",
+        // A test's expectations name tags as plain objects (`toMatchObject({ _tag: "Done" })`).
+        "anti-slop/no-manual-tagged-construction": "off"
       }
     }
   ],

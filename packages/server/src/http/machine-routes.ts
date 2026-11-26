@@ -1,13 +1,14 @@
 import * as ByteSize from "effect/ByteSize";
 import * as Effect from "effect/Effect";
 import type * as Exit from "effect/Exit";
+import * as Schema from "effect/Schema";
 import {
   HOST_PROTOCOL_VERSION,
   HostFailed,
   HostId,
-  type InvalidState,
+  InvalidState,
   LOCAL_HOST_ID,
-  type NotFound,
+  NotFound,
   sessionHostOf,
 } from "@gram/contracts";
 import {
@@ -152,6 +153,8 @@ export const HOST_PATHS: ReadonlySet<string> = new Set([
   HOST_INSTALL_PATH,
 ]);
 
+const encodeNotFound = Schema.encodeSync(NotFound);
+const encodeInvalidState = Schema.encodeSync(InvalidState);
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 const refuse = (message: string, status = 403) => HttpServerResponse.text(message, { status });
 
@@ -389,12 +392,9 @@ export const machineManagement = (
           Effect.map((value) => json(value)),
           Effect.catch((error) =>
             Effect.succeed(
-              json(
-                error._tag === "NotFound"
-                  ? { _tag: "NotFound", entity: "project", id: error.id, message: error.message }
-                  : { _tag: "InvalidState", message: error.message },
-                error._tag === "NotFound" ? 404 : 422,
-              ),
+              error._tag === "NotFound"
+                ? json(encodeNotFound(error), 404)
+                : json(encodeInvalidState(new InvalidState({ message: error.message })), 422),
             ),
           ),
         );
