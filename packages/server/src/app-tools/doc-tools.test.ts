@@ -8,11 +8,12 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
+import * as TestClock from "effect/testing/TestClock";
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeDocs } from "../docs/docs.ts";
-import { publishDocTool, readDocTool } from "./doc-tools.ts";
+import { archiveDocTool, deleteDocTool, publishDocTool, readDocTool } from "./doc-tools.ts";
 import { bindAppTools } from "./registry.ts";
 
 const WS = "ws-1" as WorkspaceId;
@@ -68,13 +69,23 @@ const setup = Effect.gen(function* () {
   };
   const tools = (threadId: ThreadId) => {
     const bound = bindAppTools(
-      [publishDocTool(docs, store, runtimes), readDocTool(docs, store)],
+      [
+        publishDocTool(docs, store, runtimes),
+        readDocTool(docs, store),
+        archiveDocTool(docs, store),
+        deleteDocTool(docs, store),
+      ],
       threadId,
     );
     const named = (name: string) => bound.find((tool) => tool.descriptor.name === name)!;
-    return { publish: named("publish_doc"), read: named("read_doc") };
+    return {
+      publish: named("publish_doc"),
+      read: named("read_doc"),
+      archive: named("archive_doc"),
+      remove: named("delete_doc"),
+    };
   };
-  return { chunks, tools, root };
+  return { chunks, tools, root, docs };
 });
 
 describe("publish_doc", () => {
@@ -260,6 +271,130 @@ describe("read_doc", () => {
       );
       const listed = (yield* tools(ORCHESTRATOR).read.run({})) as { docs: Array<{ id: string }> };
       expect(listed.docs.map((doc) => doc.id)).toEqual([id]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("read_doc listings", () => {
+  it.effect("names at most 50 active docs, newest first, and counts the rest", () =>
+    Effect.gen(function* () {
+      const { tools } = yield* setup;
+      const { publish, read, archive } = tools(WORKER);
+      const ids: string[] = [];
+      for (let n = 0; n < 53; n++) {
+        yield* TestClock.adjust("1 second");
+        const title = n === 3 ? "Review 3 of the storage PR" : `Review ${n}`;
+        const { id } = (yield* publish.run({ title, content: "x" })) as {
+          id: string;
+        };
+        ids.push(id);
+      }
+      yield* archive.run({ id: ids[0]! });
+      const listed = (yield* read.run({})) as {
+        docs: Array<{ id: string }>;
+        active: number;
+        archived: number;
+        more?: number;
+      };
+      expect(listed.docs).toHaveLength(50);
+      expect(listed.docs[0]!.id).toBe(ids[52]);
+      expect(listed).toMatchObject({ active: 52, archived: 1, more: 2 });
+      expect(listed.docs.map((doc) => doc.id)).not.toContain(ids[0]);
+
+      // `query` reaches past the first 50, by the title's words, case ignored.
+      const found = (yield* read.run({ query: "STORAGE review" })) as {
+        docs: Array<{ id: string }>;
+        matched: number;
+        more?: number;
+      };
+      expect(found.docs.map((doc) => doc.id)).toEqual([ids[3]]);
+      expect(found).toMatchObject({ matched: 1 });
+      expect(found.more).toBeUndefined();
+      expect((yield* read.run({ query: "review" })) as object).toMatchObject({
+        matched: 52,
+        more: 2,
+      });
+
+      const archived = (yield* read.run({ archived: true })) as {
+        docs: Array<{ id: string; archivedAt?: string; archivedReason?: string }>;
+      };
+      expect(archived.docs).toEqual([
+        expect.objectContaining({
+          id: ids[0],
+          archivedAt: expect.any(String),
+          archivedReason: "manual",
+        }),
+      ]);
+      expect((yield* read.run({ archived: true, query: "review 2" })) as object).toMatchObject({
+        docs: [],
+        matched: 0,
+      });
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("reads an archived doc by id, and an earlier version by revision", () =>
+    Effect.gen(function* () {
+      const { tools } = yield* setup;
+      const { publish, read, archive } = tools(WORKER);
+      const { id } = (yield* publish.run({ title: "Plan", content: "v1" })) as { id: string };
+      yield* publish.run({ id, revision: 1, content: "v2" });
+      yield* archive.run({ id });
+      expect(yield* read.run({ id })).toMatchObject({
+        revision: 2,
+        content: "v2",
+        archivedReason: "manual",
+        earlierRevisions: [1],
+      });
+      expect(yield* read.run({ id, revision: 1 })).toMatchObject({ revision: 1, content: "v1" });
+      expect((yield* Effect.flip(read.run({ revision: 1 }))).message).toContain("`id`");
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("archive_doc and delete_doc", () => {
+  it.effect(
+    "let a doc's author or the orchestrator archive and restore it, not another worker",
+    () =>
+      Effect.gen(function* () {
+        const { tools } = yield* setup;
+        const { id } = (yield* tools(WORKER).publish.run({ title: "Plan", content: "x" })) as {
+          id: string;
+        };
+        const other = yield* Effect.flip(tools(GONE_ORCHESTRATOR_WORKER).archive.run({ id }));
+        expect(other).toBeInstanceOf(AppToolError);
+        expect(yield* tools(WORKER).archive.run({ id })).toMatchObject({ id, archived: true });
+        const restoreByOther = yield* Effect.flip(
+          tools(GONE_ORCHESTRATOR_WORKER).archive.run({ id, restore: true }),
+        );
+        expect(restoreByOther).toBeInstanceOf(AppToolError);
+        expect(yield* tools(ORCHESTRATOR).archive.run({ id, restore: true })).toMatchObject({
+          id,
+          restored: true,
+        });
+        expect(yield* tools(ORCHESTRATOR).archive.run({ id })).toMatchObject({ archived: true });
+        expect(yield* Effect.flip(tools(SOLO).archive.run({ id }))).toBeInstanceOf(AppToolError);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("lets only the orchestrator delete, and only an archived doc", () =>
+    Effect.gen(function* () {
+      const { tools, docs } = yield* setup;
+      expect(deleteDocTool(docs, { getThread: () => Effect.die("unused") }).audience).toEqual([
+        "orchestrator",
+      ]);
+      const { id } = (yield* tools(WORKER).publish.run({ title: "Plan", content: "x" })) as {
+        id: string;
+      };
+      // Bound to a worker anyway, the call is still refused: the check is the service's too.
+      yield* tools(WORKER).archive.run({ id });
+      expect(yield* Effect.flip(tools(WORKER).remove.run({ id }))).toBeInstanceOf(AppToolError);
+      yield* tools(WORKER).archive.run({ id, restore: true });
+      const active = yield* Effect.flip(tools(ORCHESTRATOR).remove.run({ id }));
+      expect(active).toBeInstanceOf(AppToolError);
+
+      yield* tools(ORCHESTRATOR).archive.run({ id });
+      expect(yield* tools(ORCHESTRATOR).remove.run({ id })).toEqual({ id, deleted: true });
+      expect(yield* docs.counts(WS)).toEqual({ active: 0, archived: 0 });
     }).pipe(Effect.scoped),
   );
 });

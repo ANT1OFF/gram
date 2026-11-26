@@ -16,8 +16,17 @@ export type DocId = typeof DocId.Type;
 export const DOC_TITLE_MAX = 120;
 /** The most Markdown one doc may hold, in UTF-8 bytes. */
 export const DOC_MAX_BYTES = 256 * 1024;
-/** The most docs a workspace keeps; publishing past it is refused until one goes. */
+/**
+ * The most active docs a workspace keeps; publishing or restoring past it is refused until one is
+ * archived. Archived docs don't count.
+ */
 export const DOCS_PER_WORKSPACE_MAX = 200;
+/** The most archived docs a workspace keeps; archiving past it purges the oldest archived first. */
+export const DOCS_ARCHIVE_MAX = 2000;
+/** Earlier versions kept per doc, besides the current one; a save past it drops the oldest. */
+export const DOC_HISTORY_KEEP = 10;
+/** The most docs one `read_doc` listing names; the rest are counted. */
+export const DOC_LIST_MAX = 50;
 /** Characters of a doc's opening prose its card and list row show as a thumbnail. */
 export const DOC_EXCERPT_MAX = 280;
 
@@ -36,6 +45,13 @@ export const DOC_REF_MAX = 128;
  * publish whose line would pass it is refused, so a doc that was saved can always be read.
  */
 export const DOC_META_MAX_BYTES = 16 * 1024;
+
+/**
+ * Why a doc was archived: by hand (an agent's `archive_doc`, the user's pane, the "older than"
+ * button), or by the sweep once its PR merged or closed, or its worker was archived.
+ */
+export const DocArchiveReason = Schema.Literals(["manual", "pr-merged", "worker-archived"]);
+export type DocArchiveReason = typeof DocArchiveReason.Type;
 
 const bounded = (max: number) => Schema.String.check(Schema.isMaxLength(max));
 const DocTime = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: DOC_TIME_MAX }));
@@ -60,6 +76,9 @@ export const DocMeta = Schema.Struct({
   bytes: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: DOC_MAX_BYTES })),
   /** The opening prose, Markdown stripped, for a card's and a row's thumbnail. */
   excerpt: bounded(DOC_EXCERPT_MAX),
+  /** Epoch ms it was archived; absent while it is active. */
+  archivedAt: Schema.optionalKey(DocTime),
+  archivedReason: Schema.optionalKey(DocArchiveReason),
 });
 export type DocMeta = typeof DocMeta.Type;
 

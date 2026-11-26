@@ -1,7 +1,7 @@
 import { errnoCode } from "@gram/contracts";
 import { randomUUID } from "node:crypto";
 import { constants, type Stats } from "node:fs";
-import { lstat, mkdir, open, readdir, rename, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 /** A refusal whose message is safe to show: it names no absolute path. */
@@ -35,10 +35,13 @@ interface Pin {
   readonly ino: number;
 }
 
-/** Both folders over a workspace's docs, pinned. */
+/**
+ * A folder of docs, with every folder from the docs root down to it pinned: the workspace's own
+ * folder, or one below it (its archive, a doc's history).
+ */
 export interface DocFolder {
   readonly dir: string;
-  readonly pins: readonly [Pin, Pin];
+  readonly pins: readonly Pin[];
 }
 
 const MOVED = "The docs folder changed during the operation, so nothing was read or written";
@@ -123,6 +126,30 @@ export const openFolder = async (
 };
 
 /**
+ * The folder `name` inside `folder`, pinned beneath it: made (0700) when `create` and missing,
+ * `undefined` when missing otherwise. `name` is a fixed name or a checked doc id, never a path.
+ */
+export const openSub = async (
+  folder: DocFolder,
+  name: string,
+  create: boolean,
+): Promise<DocFolder | undefined> => {
+  await stillPinned(folder.pins);
+  const dir = join(folder.dir, name);
+  if (create) {
+    try {
+      await mkdir(dir, { mode: 0o700 });
+    } catch (error) {
+      if (codeOf(error) !== "EEXIST") throw error;
+    }
+  }
+  const dirPin = await pin(dir);
+  if (dirPin === undefined) return undefined;
+  await stillPinned(folder.pins);
+  return { dir, pins: [...folder.pins, dirPin] };
+};
+
+/**
  * `name`'s first `max` bytes, or with `whole` the whole file refused past `max`: read without
  * following a link, from a singly linked regular file, and checked to be the file at the confined
  * path in the pinned folders once read.
@@ -186,6 +213,11 @@ const readOnce = async (
   }
 };
 
+const throwMovedOr = async (folder: DocFolder, error: unknown): Promise<never> => {
+  await stillPinned(folder.pins);
+  throw error;
+};
+
 /**
  * Writes `content` to `name` atomically: a fresh temp file (0600, `O_EXCL`, no link followed) that
  * is checked to be in the pinned folders before any content goes in, then renamed over the target,
@@ -206,7 +238,7 @@ export const writePinned = async (
     temp,
     constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
     0o600,
-  );
+  ).catch((error: unknown) => throwMovedOr(folder, error));
   let closed = false;
   let renamed = false;
   try {
@@ -232,7 +264,28 @@ export const writePinned = async (
   }
 };
 
-/** The names of the regular files in the pinned workspace folder. */
+/** Removes `name` from the pinned folder: the name itself, never what a link points at. */
+export const unlinkPinned = async (folder: DocFolder, name: string): Promise<void> => {
+  await stillPinned(folder.pins);
+  try {
+    await unlink(join(folder.dir, name));
+  } catch (error) {
+    if (codeOf(error) !== "ENOENT") throw error;
+  }
+};
+
+/** Removes the pinned folder's files, then the folder; a folder already gone is no error. */
+export const removePinned = async (folder: DocFolder): Promise<void> => {
+  for (const name of await listPinned(folder)) await unlinkPinned(folder, name);
+  await stillPinned(folder.pins);
+  try {
+    await rmdir(folder.dir);
+  } catch (error) {
+    if (codeOf(error) !== "ENOENT") throw error;
+  }
+};
+
+/** The names of the regular files in the pinned folder. */
 export const listPinned = async (folder: DocFolder): Promise<string[]> => {
   const entries = await readdir(folder.dir, { withFileTypes: true });
   await stillPinned(folder.pins);
