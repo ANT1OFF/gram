@@ -142,13 +142,15 @@ const latestRuns = (cwd: string, repo: string, badge: ExactBadge) =>
     );
     const latest = new Map<string, Record<string, unknown>>();
     for (const run of runs) {
+      const { path, event } = run;
       if (
-        typeof run["path"] !== "string" ||
+        typeof path !== "string" ||
+        typeof event !== "string" ||
         !Number.isSafeInteger(run["id"]) ||
         !Number.isSafeInteger(run["run_attempt"])
       )
         throw new Error("Invalid GitHub workflow identity");
-      const key = `${run["path"]}|${run["event"]}`;
+      const key = `${path}|${event}`;
       const old = latest.get(key);
       if (old === undefined || Number(run["id"]) > Number(old["id"])) latest.set(key, run);
     }
@@ -158,7 +160,7 @@ const latestRuns = (cwd: string, repo: string, badge: ExactBadge) =>
 const runJobs = (cwd: string, repo: string, run: Record<string, unknown>) =>
   Effect.gen(function* () {
     const jobsOut = yield* ghApi(cwd, [
-      `repos/${repo}/actions/runs/${run["id"]}/attempts/${run["run_attempt"]}/jobs?per_page=100`,
+      `repos/${repo}/actions/runs/${Number(run["id"])}/attempts/${Number(run["run_attempt"])}/jobs?per_page=100`,
     ]);
     if (jobsOut.status !== 0 || jobsOut.truncated) throw new Error("Merge CI jobs lookup failed");
     return list(json(jobsOut.stdout), "jobs");

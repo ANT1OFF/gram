@@ -134,7 +134,7 @@ export async function resolveLaunch(
         config.runtimeExecutable,
         config.runtimeArgs,
         rel,
-        Object.entries(config.env ?? {}).toSorted(),
+        Object.entries(config.env ?? {}).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
       ]),
     )
     .digest("hex");

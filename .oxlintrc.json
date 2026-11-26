@@ -59,8 +59,13 @@
     // An async JSX handler is React's own idiom; the handlers catch their own failures.
     "typescript/no-misused-promises": ["error", { "checksVoidReturn": { "attributes": false } }],
     "typescript/use-unknown-in-catch-callback-variable": "error",
-    // Type-aware rules (`--type-aware`, run by tsrs) that the categories above turn on. Each is
-    // off until the change that clears its existing hits turns it back on.
+    // Type-aware rules (`--type-aware`, run by tsrs) that the categories above turn on, measured
+    // and left off: none found a bug in Gram's code. no-misused-spread flags `[...text]`, which
+    // Gram uses on purpose to split by code point, and Schema.Opaque values it takes for classes;
+    // no-base-to-string flags `String(x ?? "")` over parsed protocol fields; the "unnecessary"
+    // and "type constituent" ones only flag dead but harmless code; no-implied-eval only fires in
+    // tests that run the theme's boot script. require-array-sort-compare and
+    // restrict-template-expressions are on for product code, below.
     "typescript/no-base-to-string": "off",
     "typescript/no-duplicate-type-constituents": "off",
     "typescript/no-implied-eval": "off",
@@ -102,7 +107,11 @@
       "files": ["packages/*/src/**", "apps/*/src/**"],
       "rules": {
         "gram/no-raw-git": "error",
-        "gram/no-comment": "error"
+        "gram/no-comment": "error",
+        // A default sort compares as text, so [9, 10] sorts as [10, 9]: give the comparison.
+        "typescript/require-array-sort-compare": "error",
+        // `${value}` of an object reads "[object Object]": narrow it, or say how it reads.
+        "typescript/restrict-template-expressions": ["error", { "allowNever": true }]
       }
     },
     {
@@ -416,7 +425,9 @@
         "typescript/no-unsafe-return": "off",
         "typescript/no-unsafe-type-assertion": "off",
         // A test's expectations name tags as plain objects (`toMatchObject({ _tag: "Done" })`).
-        "anti-slop/no-manual-tagged-construction": "off"
+        "anti-slop/no-manual-tagged-construction": "off",
+        "typescript/require-array-sort-compare": "off",
+        "typescript/restrict-template-expressions": "off"
       }
     }
   ],
