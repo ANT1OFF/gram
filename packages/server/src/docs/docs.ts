@@ -434,7 +434,11 @@ export const makeDocs = (
             bytes,
             excerpt: docExcerpt(content),
             ...(pr === undefined ? {} : { pr }),
-            ...(input.author.orchestrator ? { authorOrchestrator: true as const } : {}),
+            ...(input.author.orchestrator
+              ? { authorRole: "orchestrator" as const }
+              : input.author.worker === true
+                ? { authorRole: "worker" as const }
+                : {}),
           };
           yield* commit(at, meta, content);
           return { meta, action: "published" as const };
@@ -636,7 +640,7 @@ export const makeDocs = (
               "then restore this one.",
           );
         }
-        const meta = activeOf(archived);
+        const meta = activeOf(archived, yield* Clock.currentTimeMillis);
         const record = yield* recordOf(meta, content);
         yield* Effect.uninterruptible(
           Effect.gen(function* () {

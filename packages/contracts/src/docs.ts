@@ -107,8 +107,14 @@ export const DocMeta = Schema.Struct({
   pr: Schema.optionalKey(DocPr),
   /** Epoch ms the sweep first saw its PR merged or closed; it is archived some days after. */
   prSettledAt: Schema.optionalKey(DocTime),
-  /** Published by the workspace's orchestrator, so never archived automatically. */
-  authorOrchestrator: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * Its author's part when it published: the orchestrator's docs are never archived automatically,
+   * and a worker's are some days after it is archived. Absent for a plain thread's, and for a doc
+   * published before this was recorded, which only its PR's merge archives automatically.
+   */
+  authorRole: Schema.optionalKey(Schema.Literals(["orchestrator", "worker"])),
+  /** Epoch ms it was last restored: like the user's open, it keeps it from automatic archiving. */
+  restoredAt: Schema.optionalKey(DocTime),
   /**
    * Epoch ms the user last opened or saved it in the doc pane. Within `DOC_USER_KEEP_DAYS` of it,
    * it is never archived automatically.

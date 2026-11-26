@@ -17,6 +17,7 @@ import * as Effect from "effect/Effect";
 import type { GitStatePublisherShape } from "../git/publisher.ts";
 import type { ThreadStoreShape } from "../persistence/thread-store.ts";
 import { DAY_MS } from "../zone-time.ts";
+import { currentReader, readerMayWorkspace } from "../embedding/readable-by.ts";
 import type { DocsShape } from "./docs.ts";
 
 /** A doc's author as the sweep finds it: an open or closed thread, or none it still knows. */
@@ -32,27 +33,35 @@ export type DocPrState = "open" | "settled";
 /** What the sweep does with one doc. */
 export type DocSweepStep =
   | { readonly kind: "markPrSettled" }
+  | { readonly kind: "clearPrSettled" }
   | { readonly kind: "archive"; readonly reason: DocArchiveReason };
 
 const USER_KEEP_MS = DOC_USER_KEEP_DAYS * DAY_MS;
 
 /**
- * When the user last opened or saved it, `undefined` if never; a doc saved before `userSeenAt`
- * was kept counts its last save.
+ * When someone last chose to keep it: the user opened or saved it, or it was restored. `undefined`
+ * if never. A doc saved before `userSeenAt` was kept counts its last save.
  */
 export const userSeenAtOf = (doc: DocMeta): number | undefined => {
-  const saved = doc.updatedBy === "user" ? doc.updatedAt : undefined;
-  if (doc.userSeenAt === undefined) return saved;
-  return saved === undefined ? doc.userSeenAt : Math.max(doc.userSeenAt, saved);
+  const times = [
+    doc.updatedBy === "user" ? doc.updatedAt : undefined,
+    doc.userSeenAt,
+    doc.restoredAt,
+  ].filter((time) => time !== undefined);
+  return times.length === 0 ? undefined : Math.max(...times);
 };
 
 /**
  * The sweep's step for `doc` at `now`, or `undefined` to leave it. Never archived: an archived doc,
- * one the orchestrator wrote, or one the user opened or saved in the last `DOC_USER_KEEP_DAYS`.
- * A PR's doc is archived `prDays` after the sweep first saw the PR merged or closed (marked first);
- * while the PR is open it stays, and with its PR unknown it goes as a worker's doc does:
- * `workerDays` after its author was archived or closed, or after its last save when the author is
- * gone from every list.
+ * one the orchestrator wrote, or one the user opened or saved, or someone restored, in the last
+ * `DOC_USER_KEEP_DAYS`.
+ *
+ * A PR's doc is archived `prDays` after the sweep first saw its PR merged or closed (marked
+ * first); while the PR is open it stays, and a mark from before it reopened is cleared. With its
+ * PR unknown, it goes as a worker's doc does. A worker's doc (`authorRole`) goes `workerDays`
+ * after its author was archived or closed, or after its last save once the author is gone from
+ * every list. A doc whose author's part wasn't recorded, published before it was, only goes by its
+ * PR: there is no telling an orchestrator's from a worker's once the thread has gone.
  */
 export const docSweepStep = (
   doc: DocMeta,
@@ -62,18 +71,21 @@ export const docSweepStep = (
   now: number,
 ): DocSweepStep | undefined => {
   if (doc.archivedAt !== undefined) return undefined;
-  if (doc.authorOrchestrator === true || author?.orchestrator === true) return undefined;
+  if (doc.authorRole === "orchestrator" || author?.orchestrator === true) return undefined;
+  if (doc.pr !== undefined && prState === "open") {
+    return doc.prSettledAt === undefined ? undefined : { kind: "clearPrSettled" };
+  }
   if (doc.pr !== undefined && prState === "settled" && doc.prSettledAt === undefined) {
     return { kind: "markPrSettled" };
   }
-  const seen = userSeenAtOf(doc);
-  if (seen !== undefined && now - seen < USER_KEEP_MS) return undefined;
+  const kept = userSeenAtOf(doc);
+  if (kept !== undefined && now - kept < USER_KEEP_MS) return undefined;
   if (doc.pr !== undefined && doc.prSettledAt !== undefined) {
     return now - doc.prSettledAt >= policy.prDays * DAY_MS
       ? { kind: "archive", reason: "pr-merged" }
       : undefined;
   }
-  if (doc.pr !== undefined && prState === "open") return undefined;
+  if (doc.authorRole !== "worker") return undefined;
   const since = author === undefined ? doc.updatedAt : author.archivedAt;
   if (since === undefined) return undefined;
   return now - since >= policy.workerDays * DAY_MS
@@ -92,23 +104,37 @@ export const prKeyOfUrl = (url: string): string | undefined => {
 export const prKey = (pr: DocPr): string => `${pr.repo.toLowerCase()}#${pr.number}`;
 
 /**
- * The PRs the threads know of, by `prKey`: settled when any says it merged or closed (a badge, or
- * a merge a thread settled on, which outlives its close), else open while a badge says so.
+ * The PRs the threads know of, by `prKey`. A merge is final, so a merged badge, or a merge a thread
+ * settled on (which outlives its close), makes a PR settled. Otherwise the badge GitHub updated
+ * last says whether it is open or closed, and an open badge wins a tie or an unknown time: a
+ * closed PR can reopen, and a stale closed badge must not archive a live PR's doc.
  */
 export const prStatesOf = (
-  badges: ReadonlyArray<Pick<PrStatus, "url" | "state">>,
+  badges: ReadonlyArray<Pick<PrStatus, "url" | "state" | "updatedAt">>,
   settledMergeUrls: ReadonlyArray<string>,
 ): ReadonlyMap<string, DocPrState> => {
-  const states = new Map<string, DocPrState>();
+  const merged = new Set<string>();
   for (const url of settledMergeUrls) {
     const key = prKeyOfUrl(url);
-    if (key !== undefined) states.set(key, "settled");
+    if (key !== undefined) merged.add(key);
   }
+  const latest = new Map<string, { state: DocPrState; at: number }>();
   for (const badge of badges) {
     const key = prKeyOfUrl(badge.url);
-    if (key === undefined || states.get(key) === "settled") continue;
-    states.set(key, badge.state === "OPEN" ? "open" : "settled");
+    if (key === undefined) continue;
+    if (badge.state === "MERGED") merged.add(key);
+    const at = badge.updatedAt === undefined ? Number.NaN : Date.parse(badge.updatedAt);
+    const state: DocPrState = badge.state === "OPEN" ? "open" : "settled";
+    const known = latest.get(key);
+    const newer =
+      known === undefined ||
+      (Number.isFinite(at) && Number.isFinite(known.at) && at > known.at) ||
+      (state === "open" && !(Number.isFinite(at) && Number.isFinite(known.at) && at < known.at));
+    if (newer) latest.set(key, { state, at });
   }
+  const states = new Map<string, DocPrState>();
+  for (const [key, { state }] of latest) states.set(key, state);
+  for (const key of merged) states.set(key, "settled");
   return states;
 };
 
@@ -153,7 +179,7 @@ export const sweepDocs = (
     const policy = docsArchiveOf(yield* store.getSettings);
     const open = yield* store.listThreads;
     const closed = yield* store.listClosed;
-    const badges: Array<Pick<PrStatus, "url" | "state">> = [];
+    const badges: Array<Pick<PrStatus, "url" | "state" | "updatedAt">> = [];
     for (const thread of open) {
       const bound = yield* publisher.badgeFor(thread);
       if (bound !== undefined) badges.push(bound);
@@ -181,15 +207,17 @@ export const sweepDocs = (
       for (const doc of active) {
         const step = stepOf(doc);
         if (step === undefined) continue;
-        if (step.kind === "markPrSettled") {
-          const ok = yield* docs
-            .mark(workspaceId, doc.id, (meta) =>
-              meta.prSettledAt === undefined ? { ...meta, prSettledAt: now } : undefined,
-            )
-            .pipe(
-              Effect.as(true),
-              Effect.orElseSucceed(() => false),
-            );
+        if (step.kind === "markPrSettled" || step.kind === "clearPrSettled") {
+          const change =
+            step.kind === "markPrSettled"
+              ? (meta: DocMeta) =>
+                  meta.prSettledAt === undefined ? { ...meta, prSettledAt: now } : undefined
+              : ({ prSettledAt, ...meta }: DocMeta) =>
+                  prSettledAt === undefined ? undefined : meta;
+          const ok = yield* docs.mark(workspaceId, doc.id, change).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          );
           if (ok) marked++;
           continue;
         }
@@ -206,8 +234,9 @@ export const sweepDocs = (
   });
 
 /**
- * "Archive docs older than…": every workspace's active docs neither saved nor opened by the user
- * in the last `days`, the orchestrator's included, since the user asked. Returns how many went.
+ * "Archive docs older than…": the active docs, in every workspace the calling person may act on,
+ * neither saved nor opened by the user in the last `days`, the orchestrator's included, since the
+ * user asked. Returns how many went.
  */
 export const archiveDocsOlderThan = (
   docs: Pick<DocsShape, "list" | "archiveIfDue">,
@@ -217,8 +246,10 @@ export const archiveDocsOlderThan = (
   Effect.gen(function* () {
     const cutoff = (yield* Clock.currentTimeMillis) - days * DAY_MS;
     const old = (doc: DocMeta) => Math.max(doc.updatedAt, userSeenAtOf(doc) ?? 0) < cutoff;
+    const reader = yield* currentReader;
     let archived = 0;
     for (const { workspace } of yield* store.listWorkspaces) {
+      if (!readerMayWorkspace(reader, workspace, "act")) continue;
       const active = yield* docs.list(workspace.id).pipe(Effect.orElseSucceed(() => []));
       for (const doc of active.filter(old)) {
         const done = yield* docs

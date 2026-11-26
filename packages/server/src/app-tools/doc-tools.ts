@@ -48,6 +48,7 @@ const authorOf = (thread: Thread): DocAuthor => ({
   threadId: thread.id,
   title: thread.title,
   orchestrator: thread.role === "orchestrator",
+  worker: thread.role !== "orchestrator" && thread.spawnedBy !== undefined,
 });
 
 const prOfThread = (thread: Thread): DocPr | undefined =>

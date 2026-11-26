@@ -30,6 +30,8 @@ export interface DocAuthor {
   readonly title: string;
   /** The workspace's orchestrator, which may update any of its workers' docs. */
   readonly orchestrator: boolean;
+  /** A worker an orchestrator started: its docs archive some days after it is archived. */
+  readonly worker?: boolean | undefined;
 }
 
 /**
@@ -170,9 +172,13 @@ export const purge = (at: DocFolder, arch: DocFolder, id: DocId) =>
     yield* run(id, () => unlinkPinned(arch, recordName(id)));
   });
 
-export const activeOf = (meta: DocMeta): DocMeta => {
-  const { archivedAt: _at, archivedReason: _reason, ...active } = meta;
-  return active;
+/**
+ * An archived doc made active again at `now`: its archive fields and its PR's settled mark go, so
+ * the sweep counts afresh, and `restoredAt` keeps it from automatic archiving for a while.
+ */
+export const activeOf = (meta: DocMeta, now: number): DocMeta => {
+  const { archivedAt: _at, archivedReason: _reason, prSettledAt: _settled, ...active } = meta;
+  return { ...active, restoredAt: now };
 };
 
 export const isAuthor = (meta: DocMeta, by: DocActor) =>

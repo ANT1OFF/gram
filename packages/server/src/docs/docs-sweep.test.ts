@@ -16,6 +16,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { notePrivacy, ReadingAs } from "../embedding/readable-by.ts";
 import { DAY_MS } from "../zone-time.ts";
 import {
   archiveDocsOlderThan,
@@ -43,6 +44,7 @@ const doc = (fields: Partial<DocMeta> = {}): DocMeta => ({
   revision: 1,
   bytes: 1,
   excerpt: "",
+  authorRole: "worker",
   ...fields,
 });
 
@@ -118,7 +120,7 @@ describe("docSweepStep", () => {
   it("never archives the orchestrator's docs, or one the user opened or saved in the last 14 days", () => {
     const old = { updatedAt: now - days(60) };
     expect(
-      docSweepStep(doc({ ...old, authorOrchestrator: true }), undefined, undefined, POLICY, now),
+      docSweepStep(doc({ ...old, authorRole: "orchestrator" }), undefined, undefined, POLICY, now),
     ).toBeUndefined();
     expect(
       docSweepStep(
@@ -157,18 +159,74 @@ describe("docSweepStep", () => {
   });
 });
 
+describe("docSweepStep, after the review of #1074", () => {
+  const now = days(100);
+  const archivedWorker = { orchestrator: false, archivedAt: now - days(20) };
+
+  it("clears a settled mark when the PR is open again, and never archives it meanwhile", () => {
+    const reopened = doc({ pr: PR, prSettledAt: now - days(30), updatedAt: now - days(30) });
+    expect(docSweepStep(reopened, archivedWorker, "open", POLICY, now)).toEqual({
+      kind: "clearPrSettled",
+    });
+    const { prSettledAt: _cleared, ...cleared } = reopened;
+    expect(docSweepStep(cleared, archivedWorker, "open", POLICY, now)).toBeUndefined();
+  });
+
+  it("keeps a restored doc as it keeps one the user opened", () => {
+    const restored = doc({ updatedAt: now - days(60), restoredAt: now - days(1) });
+    expect(docSweepStep(restored, archivedWorker, undefined, POLICY, now)).toBeUndefined();
+    expect(
+      docSweepStep(
+        { ...restored, restoredAt: now - days(15) },
+        archivedWorker,
+        undefined,
+        POLICY,
+        now,
+      ),
+    ).toMatchObject({ kind: "archive" });
+  });
+
+  it("archives a doc whose author's part wasn't recorded only by its PR, never as a worker's", () => {
+    const { authorRole: _role, ...unrecorded } = doc({ updatedAt: now - days(60) });
+    expect(docSweepStep(unrecorded, undefined, undefined, POLICY, now)).toBeUndefined();
+    expect(docSweepStep(unrecorded, archivedWorker, undefined, POLICY, now)).toBeUndefined();
+    expect(
+      docSweepStep(
+        { ...unrecorded, pr: PR, prSettledAt: now - days(8) },
+        undefined,
+        undefined,
+        POLICY,
+        now,
+      ),
+    ).toEqual({ kind: "archive", reason: "pr-merged" });
+  });
+});
+
+const at = (day: string) => `2026-11-${day}T00:00:00Z`;
+
 describe("prStatesOf", () => {
-  it("counts a PR settled when any thread saw it merge or close, whatever an older badge says", () => {
+  it("counts a merge as final, and otherwise trusts the badge GitHub updated last", () => {
     const states = prStatesOf(
       [
-        { url: "https://github.com/ACME/Widgets/pull/42", state: "OPEN" },
-        { url: "https://github.com/acme/widgets/pull/43", state: "CLOSED" },
+        // A stale closed badge, and a newer open one: reopened.
+        { url: "https://github.com/acme/widgets/pull/40", state: "CLOSED", updatedAt: at("20") },
+        { url: "https://github.com/ACME/Widgets/pull/40", state: "OPEN", updatedAt: at("21") },
+        // Closed last: closed.
+        { url: "https://github.com/acme/widgets/pull/41", state: "OPEN", updatedAt: at("20") },
+        { url: "https://github.com/acme/widgets/pull/41", state: "CLOSED", updatedAt: at("21") },
+        // Merged is final, whatever a newer badge says.
+        { url: "https://github.com/acme/widgets/pull/43", state: "MERGED", updatedAt: at("20") },
+        { url: "https://github.com/acme/widgets/pull/43", state: "OPEN", updatedAt: at("21") },
+        // No time to go by: open wins.
+        { url: "https://github.com/acme/widgets/pull/44", state: "CLOSED" },
         { url: "https://github.com/acme/widgets/pull/44", state: "OPEN" },
         { url: "not a url", state: "MERGED" },
       ],
       [PR_URL],
     );
     expect(Object.fromEntries(states)).toEqual({
+      "acme/widgets#40": "open",
+      "acme/widgets#41": "settled",
       "acme/widgets#42": "settled",
       "acme/widgets#43": "settled",
       "acme/widgets#44": "open",
@@ -180,6 +238,7 @@ const worker = (n: number): DocAuthor => ({
   threadId: `t-worker-${n}` as ThreadId,
   title: `Worker ${n}`,
   orchestrator: false,
+  worker: true,
 });
 const ORCHESTRATOR: DocAuthor = {
   threadId: "t-orchestrator" as ThreadId,
@@ -201,11 +260,14 @@ const setup = (limits?: DocLimits) =>
       settings: DEFAULT_SETTINGS satisfies Settings,
       threads: [] as Thread[],
       closed: [] as Array<{ thread: Thread; closedAt: number }>,
-      badges: new Map<string, Pick<PrStatus, "url" | "state">>(),
+      badges: new Map<string, Pick<PrStatus, "url" | "state" | "updatedAt">>(),
+      workspaces: [WS] as WorkspaceId[],
     };
     const store = {
       getSettings: Effect.sync(() => world.settings),
-      listWorkspaces: Effect.succeed([{ workspace: { id: WS } }] as unknown as WorkspaceState[]),
+      listWorkspaces: Effect.sync(
+        () => world.workspaces.map((id) => ({ workspace: { id } })) as unknown as WorkspaceState[],
+      ),
       listThreads: Effect.sync(() => world.threads),
       listClosed: Effect.sync(() => world.closed),
     };
@@ -319,6 +381,26 @@ describe("sweepDocs", () => {
   );
 });
 
+describe("a restored doc", () => {
+  it.effect("isn't archived again by the next pass, and its PR counts afresh", () =>
+    Effect.gen(function* () {
+      const { docs, world, sweep, publish, active } = yield* setup();
+      const review = yield* publish("Review of #42", worker(1), PR);
+      world.threads = [thread("t-worker-1", { parked: true, parkedAt: 0 })];
+      world.badges.set("t-worker-1", { url: PR_URL, state: "MERGED" });
+      yield* sweep;
+      yield* TestClock.setTime(days(8));
+      expect((yield* sweep).archived).toBe(1);
+      const restored = yield* docs.restore(WS, review, worker(1));
+      expect(restored.prSettledAt).toBeUndefined();
+      expect(restored.restoredAt).toBe(days(8));
+      yield* TestClock.setTime(days(9));
+      expect((yield* sweep).archived).toBe(0);
+      expect(yield* active()).toEqual([review]);
+    }).pipe(Effect.scoped),
+  );
+});
+
 describe("archiveDocsOlderThan", () => {
   it.effect("archives every doc neither saved nor opened since, the orchestrator's too", () =>
     Effect.gen(function* () {
@@ -332,6 +414,28 @@ describe("archiveDocsOlderThan", () => {
       expect(yield* archiveDocsOlderThan(docs, store, 7)).toBe(1);
       expect((yield* docs.read(WS, plan)).archivedReason).toBe("manual");
       expect((yield* active()).toSorted()).toEqual([fresh, notes].toSorted());
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("archives nothing in a workspace the calling person may not act on", () =>
+    Effect.gen(function* () {
+      const PRIVATE = "ws-sweep-private" as WorkspaceId;
+      notePrivacy({ id: "t-sweep-private" as ThreadId, readableBy: "alice", workspaceId: PRIVATE });
+      const { docs, world, store, publish } = yield* setup();
+      world.workspaces = [WS, PRIVATE];
+      yield* publish("Ours", worker(1));
+      const theirs = (yield* docs.publish({
+        workspaceId: PRIVATE,
+        author: worker(2),
+        title: "Theirs",
+        content: "x",
+      })).meta.id;
+      yield* TestClock.setTime(days(30));
+      const archived = yield* archiveDocsOlderThan(docs, store, 7).pipe(
+        Effect.provideService(ReadingAs, { subject: "bob" }),
+      );
+      expect(archived).toBe(1);
+      expect((yield* docs.read(PRIVATE, theirs)).archivedAt).toBeUndefined();
     }).pipe(Effect.scoped),
   );
 });
