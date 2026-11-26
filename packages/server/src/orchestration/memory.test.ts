@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- makes a write fail with ENOSPC, as a full disk does */
 import type * as NativeFiles from "./anchored-files.ts";
 import {
   existsSync,

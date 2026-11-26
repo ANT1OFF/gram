@@ -2,7 +2,6 @@
 // handle, so the route answers it for that thread alone.
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { vi } from "vitest";
 import { armedWorkerBadge } from "../app-tools/pr-tools-kit.ts";
 import { hasGit } from "../git/test-repo.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
@@ -16,12 +15,9 @@ import {
   waitReal,
   withServer,
 } from "./test-harness.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
 
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  githubRelayed: () => true,
-  ghThreadEnv: (threadId: string) => ({ GH_TOKEN: `gram-thread:${threadId}` }),
-}));
+markGithubRelayed(true);
 
 describe.skipIf(!hasGit)("GitHub calls made for a thread", () => {
   it.effect(

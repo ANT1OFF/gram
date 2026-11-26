@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- tears the key file's write as a crash mid-write would, which a real disk can't be made to do on cue */
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type * as FsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";

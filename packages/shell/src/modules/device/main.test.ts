@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- Electron runs only inside its own binary, so the test stands in for it */
 import { mkdirSync, mkdtempSync, realpathSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

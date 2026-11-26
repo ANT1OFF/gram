@@ -14,7 +14,6 @@ import { Proc, ProcSpawnError } from "@gram/git";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { vi } from "vitest";
 import { cloneIdentityOf } from "../host/repos.ts";
 import { GhBudget } from "../github/budget.ts";
 import { Orchestration } from "../orchestration/service.ts";
@@ -30,14 +29,11 @@ import {
   prNumberOfMessage,
   readBranch,
 } from "./main-watch.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
+
+markGithubRelayed(false);
 
 // Off unless a test turns it on: behind a GitHub route, each `gh` run carries a thread's handle.
-const relay = vi.hoisted(() => ({ on: false }));
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  githubRelayed: () => relay.on,
-  ghThreadEnv: (threadId: string) => (relay.on ? { GH_TOKEN: `gram-thread:${threadId}` } : {}),
-}));
 
 const run = (
   id: number,
@@ -267,8 +263,8 @@ describe("MainWatchLive", () => {
     const orphan: Fake = { ...f, calls: [], tokens: [] };
     const led: Fake = { ...f, calls: [], tokens: [], orchestrator: "t-orch" };
     return Effect.gen(function* () {
-      relay.on = true;
-      yield* Effect.addFinalizer(() => Effect.sync(() => void (relay.on = false)));
+      markGithubRelayed(true);
+      yield* Effect.addFinalizer(() => Effect.sync(() => markGithubRelayed(false)));
       yield* MainWatch.pipe(
         Effect.flatMap((watch) => watch.poll),
         Effect.provide(layerOf(led)),

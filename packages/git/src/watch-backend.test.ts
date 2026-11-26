@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- watches fs.watch's calls to see which backend a platform gets */
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";

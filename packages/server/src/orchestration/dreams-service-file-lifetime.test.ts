@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- makes the anchored-file helper unavailable and steps into file opens, at their native boundary */
 // Dream file operations held against cancel and rebind, through the anchored helper's boundaries.
 import type * as NativeFiles from "./anchored-files.ts";
 import type * as FsPromises from "node:fs/promises";

@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- stands in for a build that ships no @parcel/watcher native addon */
 import * as nodePath from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { removeDir, tempDir, write } from "./test-utils.ts";

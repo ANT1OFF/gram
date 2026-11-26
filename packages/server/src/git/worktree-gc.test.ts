@@ -23,7 +23,6 @@ import {
 } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { vi } from "vitest";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
 import {
   ARCHIVED_GRACE_MS,
@@ -46,6 +45,9 @@ import {
   type SweepFacts,
   type WorktreeCheck,
 } from "./worktree-gc.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
+
+markGithubRelayed(true);
 
 const DAY = 86_400_000;
 const NOW = 100 * DAY;
@@ -560,11 +562,6 @@ describe("sweepStep", () => {
     expect(sweepStep({ ...withoutPr, free: true }, { ...none, noPrOpen: false })).toBe("free");
   });
 });
-
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  ghThreadEnv: (threadId: string) => ({ GH_TOKEN: `gram-thread:${threadId}` }),
-}));
 
 describe("the sweep's PR lookups", () => {
   it.effect("are made for the worktree's thread", () =>

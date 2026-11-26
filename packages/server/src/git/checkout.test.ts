@@ -6,19 +6,16 @@ import type { Checkout, ProjectId, Thread, ThreadId } from "@gram/contracts";
 import { Checkpoints, readPermissionRules, settingsPath } from "@gram/git";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { vi } from "vitest";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { CheckoutService, type ReleaseCheckoutOptions } from "../runtime/hooks.ts";
 import { GitCheckoutLive } from "./checkout.ts";
 import { gitPlatformTest } from "./platform.ts";
 import { hasGit, makeRepo, removeDir, run, tempDir, write } from "./test-repo.ts";
+import { markGithubRelayed } from "../embedding/github-relay.ts";
+
+markGithubRelayed(false);
 
 // Off unless a test turns it on: behind a GitHub route, a checkout's origin decides its reach.
-const relay = vi.hoisted(() => ({ on: false }));
-vi.mock("../embedding/github-relay.ts", async (actual) => ({
-  ...(await actual<Record<string, unknown>>()),
-  githubRelayed: () => relay.on,
-}));
 
 const TestLayer = GitCheckoutLive.pipe(
   Layer.provideMerge(gitPlatformTest()),
@@ -61,8 +58,8 @@ describe.skipIf(!hasGit)("GitCheckoutLive", () => {
 
   it.live("refuses a new worktree whose origin git pushes elsewhere before fetching anything", () =>
     Effect.gen(function* () {
-      relay.on = true;
-      yield* Effect.addFinalizer(() => Effect.sync(() => void (relay.on = false)));
+      markGithubRelayed(true);
+      yield* Effect.addFinalizer(() => Effect.sync(() => markGithubRelayed(false)));
       const root = repo();
       // origin's branch `feat/y` lives in a local repository the project's URL is rewritten to.
       const upstream = nodePath.join(nodePath.dirname(root), "upstream");

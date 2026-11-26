@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- the preview is installed against a stand-in for Electron, apart from the web proxy, the WebRTC guard and the window lookup, which have their own tests */
 import { EventEmitter } from "node:events";
 import type { IpcMainInvokeEvent } from "electron";
 import { beforeEach, describe, expect, it, vi } from "vitest";

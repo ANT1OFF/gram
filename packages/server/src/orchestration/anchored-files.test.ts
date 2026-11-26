@@ -1,3 +1,4 @@
+/* oxlint-disable anti-slop/no-module-mocking -- records the helper's spawns, and stands in for a machine with no interpreter */
 import type * as ChildProcess from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
 import * as Effect from "effect/Effect";
