@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, type ThreadId, type PaletteFilter } from "@gram/contr
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
@@ -12,9 +12,8 @@ import { CommandPalette, paletteBody } from "./command-palette";
 // The shell preloads the palette's body after first paint; these open it straight away.
 beforeAll(() => paletteBody.preload());
 
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate, useParams: () => ({}) }));
 let api: MockApi;
+let router: Awaited<ReturnType<typeof renderInRouter>>["router"];
 beforeEach(async () => {
   sessionStorage.clear();
   useServerSettings.setState({ settings: { ...DEFAULT_SETTINGS, helpers: { enabled: false } } });
@@ -26,16 +25,15 @@ beforeEach(async () => {
     if (event.type === "threads.snapshot") break;
   }
   abort.abort();
-  navigate.mockClear();
 });
 afterEach(() => {
   cleanup();
   useLayoutStore.getState().closePalette();
   vi.useRealTimers();
 });
-const open = (query: string) => {
+const open = async (query: string) => {
   useLayoutStore.getState().openPalette(query);
-  renderWithApi(<CommandPalette />, api);
+  ({ router } = await renderInRouter(<CommandPalette />, { api }));
   return screen.getByRole("combobox", { name: "Go to, or > for commands" });
 };
 it("renders plain matches before parsing and keeps them first after filters change", async () => {
@@ -48,7 +46,7 @@ it("renders plain matches before parsing and keeps them first after filters chan
       [plain.thread.id]: { ...plain, thread: { ...plain.thread, title: "workers waiting on me" } },
     },
   });
-  open("workers waiting on me");
+  await open("workers waiting on me");
   expect(screen.getByRole("group", { name: "Threads" }).textContent).toContain(
     "workers waiting on me",
   );
@@ -63,7 +61,7 @@ it("renders plain matches before parsing and keeps them first after filters chan
   );
 });
 it("edits and removes chips with keyboard without changing typing or navigating", async () => {
-  const input = open("workers waiting on me");
+  const input = await open("workers waiting on me");
   const kind = await screen.findByRole("combobox", { name: "Kind" });
   fireEvent.keyDown(kind, { key: "ArrowDown" });
   expect((kind as HTMLSelectElement).value).toBe("pr");
@@ -83,10 +81,10 @@ it("edits and removes chips with keyboard without changing typing or navigating"
   const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
   input.dispatchEvent(tab);
   expect(tab.defaultPrevented).toBe(false);
-  expect(navigate).not.toHaveBeenCalled();
+  expect(router.state.location.pathname).toBe("/");
 });
 it("keeps edited and removed chips when typing continues", async () => {
-  const input = open("workers waiting on me");
+  const input = await open("workers waiting on me");
   const kind = await screen.findByRole("combobox", { name: "Kind" });
   fireEvent.change(kind, { target: { value: "pr" } });
   fireEvent.change(input, { target: { value: "workers waiting on me ack" } });
@@ -123,7 +121,7 @@ it("runs unmodified message search and shows helper proposals without applying t
     ],
     truncated: false,
   });
-  open("the broken builds around here");
+  await open("the broken builds around here");
   await waitFor(() =>
     expect(search).toHaveBeenCalledWith("the broken builds around here", { limit: 20 }),
   );
@@ -135,7 +133,7 @@ it("runs unmodified message search and shows helper proposals without applying t
   const add = await screen.findByRole("button", { name: "Add Checks failing" });
   expect(screen.queryByRole("combobox", { name: "State" })).toBeNull();
   expect(screen.queryByRole("group", { name: "Filtered results" })).toBeNull();
-  expect(navigate).not.toHaveBeenCalled();
+  expect(router.state.location.pathname).toBe("/");
   fireEvent.click(add);
   expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "State" }).value).toBe("failing");
   expect(screen.getAllByRole("group")[0]?.getAttribute("aria-label")).toBe("Messages");
@@ -158,7 +156,7 @@ it("lets Tab reach optional helper controls when a literal row has a command sco
       },
     },
   });
-  const input = open("show broken builds please");
+  const input = await open("show broken builds please");
   await screen.findByRole("button", { name: "Suggest filters" });
   const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
   input.dispatchEvent(tab);
@@ -179,7 +177,7 @@ it("discards late helper proposals when the sentence changes", async () => {
         resolve = done;
       }),
   );
-  const input = open("show broken builds please");
+  const input = await open("show broken builds please");
   fireEvent.click(await screen.findByRole("button", { name: "Suggest filters" }));
   await waitFor(() => expect(resolve).toBeDefined());
   fireEvent.change(input, { target: { value: "different sentence now" } });
@@ -187,7 +185,7 @@ it("discards late helper proposals when the sentence changes", async () => {
   expect(screen.queryByRole("button", { name: "Add Checks failing" })).toBeNull();
 });
 it("keeps command mode free of word filters and helpers", async () => {
-  open(">workers waiting on me");
+  await open(">workers waiting on me");
   await waitFor(() => expect(screen.queryByLabelText("Search filters")).toBeNull());
   expect(screen.queryByRole("group", { name: "Filtered results" })).toBeNull();
   expect(

@@ -1,19 +1,13 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, type SelectedHarnessSupport } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { NewThreadDraft } from "./new-thread-draft";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-  useNavigate: () => vi.fn(),
-}));
 
 afterEach(() => {
   cleanup();
@@ -67,7 +61,7 @@ describe("new-thread preflight workflow", () => {
         : { state: "available" },
     }));
     const launch = vi.spyOn(api, "launchChecks");
-    renderWithApi(<NewThreadDraft />, api);
+    await renderInRouter(<NewThreadDraft />, { api });
     await screen.findByText("Sign in with codex login, then retry.");
     expect(screen.getByLabelText("Agent").textContent).toContain("Codex");
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start chat" }).disabled).toBe(
@@ -95,7 +89,7 @@ describe("new-thread preflight workflow", () => {
     const { api, create } = setup(() => ({
       availability: { state: "unknown", reason: "Synthetic unread account status" },
     }));
-    renderWithApi(<NewThreadDraft />, api);
+    await renderInRouter(<NewThreadDraft />, { api });
     await screen.findByText("Unverified: Synthetic unread account status");
     await waitFor(() =>
       expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start chat" }).disabled).toBe(
@@ -120,7 +114,7 @@ describe("new-thread preflight workflow", () => {
     vi.spyOn(api, "browse").mockRejectedValue(
       new Error("not yours to change: this server's own setup comes from its deployment"),
     );
-    renderWithApi(<NewThreadDraft />, api);
+    await renderInRouter(<NewThreadDraft />, { api });
     await waitFor(() =>
       expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start chat" }).disabled).toBe(
         false,

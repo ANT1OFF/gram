@@ -5,17 +5,12 @@ import { useState, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { AgentsSection } from "@/settings/agents-section";
 import { DiagnosticsSection } from "@/settings/diagnostics-section";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { NewThreadDraft } from "./new-thread-draft";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => vi.fn(),
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-}));
 
 afterEach(() => {
   cleanup();
@@ -61,7 +56,7 @@ describe.each([
       throw new Error(`${agent} is unavailable`);
     });
     const save = vi.spyOn(api, "updateSettings");
-    renderWithApi(<Component />, api);
+    await renderInRouter(<Component />, { api });
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent" })).toBeTruthy());
     // Allow query observer mount notifications to run after the discovery placeholder disappears.
     await act(async () => new Promise((resolve) => setTimeout(resolve, 100)));
@@ -85,7 +80,7 @@ describe.each([
     });
     const checks = vi.spyOn(api, "launchChecks");
     const save = vi.spyOn(api, "updateSettings");
-    renderWithApi(<Component />, api);
+    await renderInRouter(<Component />, { api });
     const retry = await screen.findByRole("button", { name: "Retry models" });
     retrying = true;
     fireEvent.click(retry);
@@ -131,7 +126,7 @@ describe.each([
       if (agent === "codex") return offered;
       throw new Error(`${agent} is signed out`);
     });
-    renderWithApi(<Component />, api);
+    await renderInRouter(<Component />, { api });
     const retry = await screen.findByRole("button", { name: "Retry models" });
     fireEvent.click(retry);
     await waitFor(() =>
@@ -172,7 +167,7 @@ describe.each([
       });
       const checks = vi.spyOn(api, "launchChecks");
       const save = vi.spyOn(api, "updateSettings");
-      renderWithApi(<ChooserAndDiagnostics chooser={<Component />} />, api);
+      await renderInRouter(<ChooserAndDiagnostics chooser={<Component />} />, { api });
       await screen.findByRole("button", { name: "Retry models" });
       fireEvent.click(screen.getByRole("button", { name: "Close chooser" }));
       const recheck = await screen.findByRole("button", { name: "Re-check" });

@@ -6,18 +6,13 @@ import {
   type ProfileId,
 } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 
 import { GatewaysSettings, profileIdFor } from "./gateways-section";
 import { chooseFromRowMenu } from "./row-menu-test-utils";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-}));
 
 const LITELLM = "litellm" as ProfileId;
 
@@ -36,7 +31,7 @@ afterEach(cleanup);
 
 describe("GatewaysSettings", () => {
   it("lists profiles with their base URL, model count, default badge and key status", async () => {
-    renderWithApi(<GatewaysSettings />, mockApi());
+    await renderInRouter(<GatewaysSettings />, { api: mockApi() });
     const litellm = within(await card("Personal Gateway"));
     expect(litellm.getByText("Default")).toBeTruthy();
     expect(litellm.getByText("No API key yet")).toBeTruthy();
@@ -53,7 +48,7 @@ describe("GatewaysSettings", () => {
       keyRef: "",
       models: [{ id: "m", name: "M" }],
     });
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
     expect(
       litellm.getByText(/Gateway helper model when selected: gpt-5\.5\./).textContent,
@@ -74,7 +69,7 @@ describe("GatewaysSettings", () => {
     };
     await api.upsertProfile(existing);
     const upsert = vi.spyOn(api, "upsertProfile");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     await card(existing.name);
     expect(screen.queryByRole("form", { name: "Connect the AI gateway" })).toBeNull();
     expect(upsert).not.toHaveBeenCalled();
@@ -83,7 +78,7 @@ describe("GatewaysSettings", () => {
 
   it("asks for an explicit address and never links to placeholder key provisioning", async () => {
     const api = mockApi();
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     fireEvent.click(await screen.findByRole("button", { name: "Add gateway" }));
     const form = within(screen.getByRole("form", { name: "Add gateway" }));
     expect(form.getByLabelText("Base URL")).toHaveProperty("value", "");
@@ -98,7 +93,7 @@ describe("GatewaysSettings", () => {
     const api = mockApi();
     const upsert = vi.spyOn(api, "upsertProfile");
     const setKey = vi.spyOn(api, "setProfileKey");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
 
     fireEvent.click(await screen.findByRole("button", { name: "Add gateway" }));
     const form = within(screen.getByRole("form", { name: "Add gateway" }));
@@ -122,7 +117,7 @@ describe("GatewaysSettings", () => {
   it("adds a gateway with a key, then shows the models found and the new default", async () => {
     const api = await emptyApi();
     const setKey = vi.spyOn(api, "setProfileKey");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
 
     fireEvent.click(await screen.findByRole("button", { name: "Add gateway" }));
     const form = within(screen.getByRole("form", { name: "Add gateway" }));
@@ -150,7 +145,7 @@ describe("GatewaysSettings", () => {
   it("saves a key write-only, replaces it, and removes it", async () => {
     const api = mockApi();
     const setKey = vi.spyOn(api, "setProfileKey");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     const field = litellm.getByLabelText<HTMLInputElement>("API key");
@@ -184,7 +179,7 @@ describe("GatewaysSettings", () => {
   it("keeps a key that failed to save in its field, with the error", async () => {
     const api = mockApi();
     vi.spyOn(api, "setProfileKey").mockRejectedValueOnce(new Error("The key store is locked"));
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     fireEvent.change(litellm.getByLabelText("API key"), { target: { value: "sk-typed" } });
@@ -200,7 +195,7 @@ describe("GatewaysSettings", () => {
     const setKey = vi
       .spyOn(api, "setProfileKey")
       .mockRejectedValueOnce(new Error("The key store is locked"));
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
 
     fireEvent.click(await screen.findByRole("button", { name: "Add gateway" }));
     const form = within(screen.getByRole("form", { name: "Add gateway" }));
@@ -229,7 +224,7 @@ describe("GatewaysSettings", () => {
       persisted: false,
       label: "memory only, until the server stops",
     });
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
     expect(
       await litellm.findByText("Not saved: the key is kept only while the server runs"),
@@ -241,7 +236,7 @@ describe("GatewaysSettings", () => {
     const api = createMockApi({ speed: 0, autoplay: false });
     await api.upsertProfile({ ...EXAMPLE_GATEWAY, keyRef: "", models: [] });
     await api.setProfileKey(EXAMPLE_GATEWAY.id, "synthetic-test-key");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const profile = within(await card(EXAMPLE_GATEWAY.name));
     const field = profile.getByLabelText<HTMLInputElement>("API key");
     expect(field.readOnly).toBe(false);
@@ -260,7 +255,7 @@ describe("GatewaysSettings", () => {
     const api = mockApi();
     await api.setProfileKey(LITELLM, "sk-x");
     vi.spyOn(api, "vaultInfo").mockResolvedValue({ kind, persisted: true, label });
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
     expect(await litellm.findByText(status)).toBeTruthy();
   });
@@ -273,7 +268,7 @@ describe("GatewaysSettings", () => {
       label: "nowhere: no system keyring is available",
     });
     const setKey = vi.spyOn(api, "setProfileKey");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     expect((await litellm.findByRole("status")).textContent).toBe(NO_KEYRING_MESSAGE);
@@ -291,7 +286,7 @@ describe("GatewaysSettings", () => {
       persisted: false,
       label: "nowhere: no system keyring is available",
     });
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     fireEvent.click(await screen.findByRole("button", { name: "Add gateway" }));
     const form = within(await screen.findByRole("form", { name: "Add gateway" }));
     expect(form.queryByLabelText("API key (optional)")).toBeNull();
@@ -301,7 +296,7 @@ describe("GatewaysSettings", () => {
   it("reports a failed model listing without failing the save", async () => {
     const api = mockApi();
     vi.spyOn(api, "setProfileKey").mockResolvedValue({ discoveryError: "401 from gw" });
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     fireEvent.change(litellm.getByLabelText("API key"), { target: { value: "sk-x" } });
@@ -315,7 +310,7 @@ describe("GatewaysSettings", () => {
   it("discovers models once a key is set", async () => {
     const api = mockApi();
     await api.setProfileKey(LITELLM, "sk-x");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     fireEvent.click(litellm.getByRole("button", { name: "Discover models" }));
@@ -329,7 +324,7 @@ describe("GatewaysSettings", () => {
     vi.spyOn(api, "discoverProfileModels").mockRejectedValue(
       Object.assign(new Error("401 from llm.example.test"), { _tag: "GatewayError" }),
     );
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     fireEvent.click(litellm.getByRole("button", { name: "Discover models" }));
@@ -337,7 +332,7 @@ describe("GatewaysSettings", () => {
   });
 
   it("disables discovery until a key is set", async () => {
-    renderWithApi(<GatewaysSettings />, mockApi());
+    await renderInRouter(<GatewaysSettings />, { api: mockApi() });
     const litellm = within(await card("Personal Gateway"));
     expect(
       litellm.getByRole<HTMLButtonElement>("button", { name: "Discover models" }).disabled,
@@ -354,7 +349,7 @@ describe("GatewaysSettings", () => {
       models: [],
     };
     await api.upsertProfile(other);
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
 
     await chooseFromRowMenu(await card("Other"), "Set as default");
     expect(await within(await card("Other")).findByText("Default")).toBeTruthy();
@@ -368,7 +363,7 @@ describe("GatewaysSettings", () => {
   it("removes a gateway after an inline confirmation", async () => {
     const api = mockApi();
     const remove = vi.spyOn(api, "removeProfile");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     await chooseFromRowMenu(await card("Personal Gateway"), "Remove…");
@@ -389,7 +384,7 @@ describe("GatewaysSettings", () => {
   it("imports a key from OpenCode only after consent", async () => {
     const api = mockApi();
     const importKey = vi.spyOn(api, "importProfileKey");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const litellm = within(await card("Personal Gateway"));
 
     fireEvent.click(litellm.getByRole("button", { name: "Import key from OpenCode…" }));
@@ -411,7 +406,7 @@ describe("GatewaysSettings", () => {
   it("imports gateways from the OpenCode and Codex settings while there are none", async () => {
     const api = await emptyApi();
     const seed = vi.spyOn(api, "seedProfiles");
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
 
     expect(await screen.findByText("No gateways yet.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Add gateway" })).toBeTruthy();
@@ -435,7 +430,7 @@ describe("GatewaysSettings", () => {
   it("says when there's nothing to import", async () => {
     const api = await emptyApi();
     vi.spyOn(api, "seedProfiles").mockResolvedValue({ added: 0 });
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
 
     fireEvent.click(
       await screen.findByRole("button", {
@@ -458,7 +453,7 @@ describe("profileIdFor", () => {
 describe("Add OpenRouter", () => {
   it("signs in and makes an OpenRouter profile, on which each agent gets its maker's models", async () => {
     const api = await emptyApi();
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const add = within(await screen.findByRole("region", { name: "Add OpenRouter" }));
     expect(add.getByText(/privacy settings/)).toBeTruthy();
     fireEvent.click(add.getByRole("button", { name: "Sign in with OpenRouter" }));
@@ -477,7 +472,7 @@ describe("Add OpenRouter", () => {
 
   it("takes a pasted key only when it looks like OpenRouter's", async () => {
     const api = await emptyApi();
-    renderWithApi(<GatewaysSettings />, api);
+    await renderInRouter(<GatewaysSettings />, { api });
     const add = within(await screen.findByRole("region", { name: "Add OpenRouter" }));
     fireEvent.click(add.getByRole("button", { name: "Paste a key" }));
     const field = add.getByLabelText("OpenRouter key");

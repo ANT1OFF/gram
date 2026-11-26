@@ -5,9 +5,10 @@ import {
   createRoute,
   createRouter,
   RouterContextProvider,
+  RouterProvider,
 } from "@tanstack/react-router";
-import { render, type RenderResult } from "@testing-library/react";
-import { Fragment, useState, type ReactNode } from "react";
+import { act, render, type RenderResult } from "@testing-library/react";
+import { Fragment, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { ApiProvider } from "@/api/context";
 import { servedAllBut } from "@/api/served";
@@ -23,16 +24,20 @@ function withPanelCalls(api: Partial<Api>): Partial<Api> {
   });
 }
 
-/** Renders `ui` inside a fresh query client (no retries) and the given api. */
-export function renderWithApi(ui: ReactNode, api: Partial<Api>): RenderResult {
+function withApi(ui: ReactNode, api: Partial<Api>): ReactNode {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const provided = "threadFeed" in api && "served" in api ? api : withPanelCalls(api);
   const fake = provided as Api;
-  return render(
+  return (
     <ApiProvider api={fake}>
       <QueryClientProvider client={client}>{ui}</QueryClientProvider>
-    </ApiProvider>,
+    </ApiProvider>
   );
+}
+
+/** Renders `ui` inside a fresh query client (no retries) and the given api. */
+export function renderWithApi(ui: ReactNode, api: Partial<Api>): RenderResult {
+  return render(withApi(ui, api));
 }
 
 /** Remounts `children` on each click of its "Remount" button, as switching back to a thread does. */
@@ -60,4 +65,47 @@ export function renderWithRouter(ui: ReactNode, api: Partial<Api>) {
     api,
   );
   return { ...result, router };
+}
+
+/**
+ * Renders `ui` as the page of a real router at `path`, whose routes carry the app's own params
+ * (`/t/$threadId`, `/w/$workspaceId/files`, `/settings/$page`, …): for a component that links,
+ * navigates or reads where it is. With `api`, inside `renderWithApi`'s providers. Waits for the
+ * router's first load, so `ui` is on screen when it returns; `router.state.location` says where
+ * a navigation went, and `rerender(next)` shows `next` on the same page, as a parent's new props
+ * would.
+ */
+export async function renderInRouter(
+  ui: ReactNode,
+  { path = "/", api }: { readonly path?: string; readonly api?: Partial<Api> } = {},
+) {
+  const root = createRootRoute();
+  const shown = { ui, listeners: new Set<() => void>() };
+  const subscribe = (listener: () => void) => {
+    shown.listeners.add(listener);
+    return () => void shown.listeners.delete(listener);
+  };
+  const Page = () => useSyncExternalStore(subscribe, () => shown.ui);
+  const router = createRouter({
+    routeTree: root.addChildren(
+      [
+        "/t/$threadId",
+        "/w/$workspaceId/files",
+        "/w/$workspaceId/memory",
+        "/settings/workspaces/$workspaceId",
+        "/settings/$page",
+        "$",
+      ].map((route) => createRoute({ getParentRoute: () => root, path: route, component: Page })),
+    ),
+    history: createMemoryHistory({ initialEntries: [path] }),
+  });
+  await router.load();
+  const routed = <RouterProvider router={router} />;
+  const result = render(api === undefined ? routed : withApi(routed, api));
+  const rerender = (next: ReactNode) =>
+    act(() => {
+      shown.ui = next;
+      for (const listener of shown.listeners) listener();
+    });
+  return { ...result, router, rerender };
 }

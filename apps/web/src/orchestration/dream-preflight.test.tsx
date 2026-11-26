@@ -9,21 +9,15 @@ import {
   type WorkspaceState,
 } from "@gram/contracts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { DreamsSection } from "./dreams-section";
 
 /** A kind outside the contract, for the guards that must refuse one. */
 const UNADMITTED = "unadmitted" as string as AgentKind;
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-  useNavigate: () => vi.fn(),
-}));
 
 afterEach(() => {
   cleanup();
@@ -40,7 +34,7 @@ const workspace: WorkspaceState = {
   },
   charter: { maxConcurrentWorkers: 1 },
 };
-const setup = (model: ModelRef, observation: () => Partial<SelectedHarnessSupport>) => {
+const setup = async (model: ModelRef, observation: () => Partial<SelectedHarnessSupport>) => {
   const api = createMockApi({ speed: 0, persist: false, autoplay: false });
   vi.spyOn(api, "listDreams").mockResolvedValue([]);
   vi.spyOn(api, "agentSupport").mockImplementation(async (selected) => ({
@@ -63,14 +57,14 @@ const setup = (model: ModelRef, observation: () => Partial<SelectedHarnessSuppor
   useServerSettings.setState({
     settings: { ...DEFAULT_SETTINGS, agents: { ...DEFAULT_SETTINGS.agents, defaultModel: model } },
   });
-  renderWithApi(
+  await renderInRouter(
     <DreamsSection
       state={workspace}
       reviewing={undefined}
       starting="dream"
       onStartingChange={vi.fn()}
     />,
-    api,
+    { api },
   );
   return { api, preview, start };
 };
@@ -80,7 +74,7 @@ describe("Dream selected-harness preflight", () => {
     "submits explicitly selected per-run auto on the same %s harness without another confirmation",
     async (agent) => {
       const model: ModelRef = { agent, model: "synthetic-selected-model" };
-      const { start } = setup(model, () => ({}));
+      const { start } = await setup(model, () => ({}));
       const review = screen.getByRole<HTMLInputElement>("radio", {
         name: "Let me review it first",
       });
@@ -104,7 +98,7 @@ describe("Dream selected-harness preflight", () => {
     },
   );
   it("does not gather inputs or start for an unqualified installed Codex version", async () => {
-    const { preview, start } = setup({ agent: "codex", model: "synthetic-model" }, () => ({
+    const { preview, start } = await setup({ agent: "codex", model: "synthetic-model" }, () => ({
       support: {
         dream: {
           state: "unknown",
@@ -124,7 +118,7 @@ describe("Dream selected-harness preflight", () => {
   it("describes guided permissions and explicitly submits the shown Codex model after sign-in retry", async () => {
     let signedOut = true;
     const model: ModelRef = { agent: "codex", model: "synthetic-model" };
-    const { preview, start } = setup(model, () => ({
+    const { preview, start } = await setup(model, () => ({
       availability: signedOut
         ? { state: "signedOut", reason: "Sign in with codex login, then retry." }
         : { state: "available" },
@@ -154,15 +148,18 @@ describe("Dream selected-harness preflight", () => {
   });
 
   it("shows the selected unsupported default and never silently switches to Claude", async () => {
-    const { api, preview, start } = setup({ agent: UNADMITTED, model: "synthetic-model" }, () => ({
-      support: {
-        dream: {
-          state: "unsupported",
-          reason: "Synthetic selected harness has no Dream mode.",
-          evidence: "Synthetic transport",
+    const { api, preview, start } = await setup(
+      { agent: UNADMITTED, model: "synthetic-model" },
+      () => ({
+        support: {
+          dream: {
+            state: "unsupported",
+            reason: "Synthetic selected harness has no Dream mode.",
+            evidence: "Synthetic transport",
+          },
         },
-      },
-    }));
+      }),
+    );
     await screen.findByText("Synthetic selected harness has no Dream mode.");
     expect(screen.getByText(/^Your default:.*synthetic-model$/)).toBeDefined();
     expect(

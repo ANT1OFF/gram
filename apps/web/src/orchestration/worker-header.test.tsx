@@ -1,22 +1,17 @@
 // @vitest-environment happy-dom
 import type { ThreadId } from "@gram/contracts";
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { useBindingsStore } from "@/keyboard/bindings-store";
 import { installKeyboard } from "@/keyboard/registry";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import { useBackToOrchestrator } from "./worker-header";
 
 // Esc on a worker goes back to its orchestrator, except where Deny is bound to Esc and an approval
 // waits: then Esc is Deny's, however the binding spells it.
-
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", async (original) => ({
-  ...(await original<object>()),
-  useNavigate: () => navigate,
-}));
 
 const WORKER = "t-worker" as ThreadId;
 const ORCHESTRATOR = "t-orchestrator" as ThreadId;
@@ -42,7 +37,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   uninstall();
-  navigate.mockReset();
   useBindingsStore.setState({ overrides: {} });
   useThreadsStore.setState({ byId: {} });
 });
@@ -50,26 +44,23 @@ afterEach(() => {
 const pressEsc = () => fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
 
 describe("Esc on a worker with an approval waiting", () => {
-  it("goes back while Deny is its default, 3", () => {
-    render(<Worker />);
+  it("goes back while Deny is its default, 3", async () => {
+    const { router } = await renderInRouter(<Worker />);
     pressEsc();
-    expect(navigate).toHaveBeenCalledWith({
-      to: "/t/$threadId",
-      params: { threadId: ORCHESTRATOR },
-    });
+    expect(router.state.location.pathname).toBe(`/t/${ORCHESTRATOR}`);
   });
 
   it.each(["escape", "esc", "Escape", "Esc"])(
     "stays put, the approval's to deny, with Deny bound to %s from mount",
-    (keys) => {
+    async (keys) => {
       useBindingsStore.setState({ overrides: { "approval.deny": keys } });
-      render(<Worker />);
+      const { router } = await renderInRouter(<Worker />);
       pressEsc();
-      expect(navigate).not.toHaveBeenCalled();
+      expect(router.state.location.pathname).toBe("/");
     },
   );
 
-  it("goes back with Deny bound to Esc once no approval waits", () => {
+  it("goes back with Deny bound to Esc once no approval waits", async () => {
     useBindingsStore.setState({ overrides: { "approval.deny": "esc" } });
     useThreadsStore.setState({
       byId: {
@@ -80,8 +71,10 @@ describe("Esc on a worker with an approval waiting", () => {
         },
       } as never,
     });
-    render(<Worker />);
+    const { router } = await renderInRouter(<Worker />);
     pressEsc();
-    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(router.state.location.pathname).toBe(`/t/${ORCHESTRATOR}`);
+    // Once: the one entry it started on, and the orchestrator's.
+    expect(router.history.length).toBe(2);
   });
 });

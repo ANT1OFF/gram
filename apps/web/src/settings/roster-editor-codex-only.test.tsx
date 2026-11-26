@@ -1,20 +1,16 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, type AgentKind, type OrchestratorCharter } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { themeStore } from "@/theme/store";
 
 import { RosterEditor } from "./roster-editor";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-}));
 
 const efforts = ["low", "medium", "high"] as const;
 // Codex alone: Claude Code isn't installed.
@@ -54,7 +50,7 @@ afterEach(() => {
 describe("RosterEditor on a machine with Codex alone", () => {
   it("starts an orchestrator of its own on Codex's Lead, not Claude", async () => {
     current = { maxConcurrentWorkers: 1 };
-    render(
+    await renderInRouter(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >

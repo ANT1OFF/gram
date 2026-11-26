@@ -4,11 +4,9 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Api } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 
 import { ResumeSessions } from "./resume-sessions";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 const ROOT = "/repo";
 
@@ -43,7 +41,7 @@ describe("ResumeSessions preview", () => {
           }
         : {},
     );
-    renderWithApi(<ResumeSessions projectRoot={ROOT} />, api(previewSession));
+    await renderInRouter(<ResumeSessions projectRoot={ROOT} />, { api: api(previewSession) });
 
     await waitFor(() => expect(rows()).toHaveLength(2));
     expect(previewSession).not.toHaveBeenCalled();

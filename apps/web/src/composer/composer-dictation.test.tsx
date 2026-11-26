@@ -7,13 +7,11 @@ import type { StoreApi, UseBoundStore } from "zustand";
 import { createMockApi } from "@/api/mock";
 import type { DictationState } from "@/dictation/session";
 import * as useDictationModule from "@/dictation/use-dictation";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useDraftStore } from "@/stores/drafts";
 import { useThreadsStore } from "@/stores/threads";
 
 import { Composer } from "./composer";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));
 
 interface Heard {
   readonly state: DictationState;
@@ -54,16 +52,16 @@ const hear = (next: Partial<Heard>) => act(() => heard.setState(next));
 
 const THREAD = "t-dictate" as ThreadId;
 
-const setup = () => {
+const setup = async () => {
   useThreadsStore.setState({
     byId: {
       [THREAD]: { status: "idle", thread: { id: THREAD, checkout: { path: "/work/repo" } } },
     } as never,
   });
-  renderWithApi(
-    <Composer threadId={THREAD} focused />,
-    createMockApi({ speed: 0, autoplay: false }),
-  );
+  await renderInRouter(<Composer threadId={THREAD} focused />, {
+    api: createMockApi({ speed: 0, autoplay: false }),
+    path: `/t/${THREAD}`,
+  });
   return screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
 };
 
@@ -76,7 +74,7 @@ afterEach(() => {
 
 describe("Composer dictation", () => {
   it("keeps the full local model failure visible after the transient hint would have expired", async () => {
-    setup();
+    await setup();
     vi.useFakeTimers();
     try {
       const message =
@@ -98,8 +96,8 @@ describe("Composer dictation", () => {
       vi.useRealTimers();
     }
   });
-  it("hides the placeholder from the start of dictation and brings it back after", () => {
-    const textarea = setup();
+  it("hides the placeholder from the start of dictation and brings it back after", async () => {
+    const textarea = await setup();
     expect(textarea.placeholder).toMatch(/^Message…/);
 
     // Before a word is heard, so the first partial never lands on it.
@@ -117,8 +115,8 @@ describe("Composer dictation", () => {
     expect(textarea.placeholder).toMatch(/^Message…/);
   });
 
-  it("brings the placeholder back after Escape, and after an error", () => {
-    const textarea = setup();
+  it("brings the placeholder back after Escape, and after an error", async () => {
+    const textarea = await setup();
     hear({ state: { phase: "listening" }, partial: "Refactor" });
     fireEvent.keyDown(textarea, { key: "Escape" });
     expect(screen.queryByTestId("dictation-partial")).toBeNull();

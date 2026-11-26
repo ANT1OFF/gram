@@ -9,11 +9,12 @@ import {
   type ThreadStatus,
   type ThreadSummary,
 } from "@gram/contracts";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
+import { renderInRouter } from "@/panels/test-utils";
 import { useDraftStore } from "@/stores/drafts";
 import { useThreadsStore } from "@/stores/threads";
 
@@ -76,12 +77,10 @@ const user: GramUIMessage = {
   parts: [{ type: "text", text: "Fix the retry test" }],
 };
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
-
 vi.mock("@/stores/feeds", () => ({ feedMessages: () => [user, assistant] }));
 
 const renderActions = (message: GramUIMessage, rewind: Api["rewind"]) =>
-  render(
+  renderInRouter(
     <ApiProvider api={{ rewind } as unknown as Api}>
       <MessageActions threadId={T} message={message} />
     </ApiProvider>,
@@ -95,7 +94,7 @@ const fromMore = async (testId: string) => {
 
 const rewindRejecting = async (error: unknown) => {
   seed("idle", "history");
-  renderActions(
+  await renderActions(
     assistant,
     vi.fn(async () => Promise.reject(error)),
   );
@@ -115,7 +114,7 @@ describe("MessageActions copy", () => {
     seed("idle", "history");
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    renderActions(assistant, vi.fn());
+    await renderActions(assistant, vi.fn());
 
     fireEvent.click(screen.getByTestId("message-copy"));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Done."));
@@ -127,7 +126,7 @@ describe("MessageActions copy", () => {
     seed("idle", "history");
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    render(
+    await renderInRouter(
       <ApiProvider api={{} as Api}>
         <MessageActions threadId={T} message={assistant} turnEnd />
       </ApiProvider>,
@@ -148,7 +147,7 @@ describe("MessageActions copy", () => {
     seed("idle", "history");
     const writeText = vi.fn(async () => Promise.reject(new Error("Document is not focused")));
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    renderActions(user, vi.fn());
+    await renderActions(user, vi.fn());
 
     fireEvent.click(screen.getByTestId("message-copy"));
     await waitFor(() =>
@@ -167,7 +166,7 @@ describe("MessageActions", () => {
   // bare glyphs. Copy stays in sight; the rest are named in the "…".
   it("shows Copy and the \u2026 alone, every other action named inside it", async () => {
     seed("idle", "history");
-    renderActions(assistant, vi.fn());
+    await renderActions(assistant, vi.fn());
     const row = screen.getByTestId("message-actions");
     expect(
       within(row)
@@ -190,7 +189,7 @@ describe("MessageActions", () => {
   it("rewinds to an assistant message, restoring files when the agent supports it", async () => {
     seed("idle", "historyAndFiles");
     const rewind = vi.fn(async () => {});
-    renderActions(assistant, rewind);
+    await renderActions(assistant, rewind);
 
     fireEvent.click(await fromMore("message-rewind"));
     fireEvent.click(await screen.findByLabelText("Restore files too"));
@@ -202,7 +201,7 @@ describe("MessageActions", () => {
   it("offers history only when capabilities are absent or history-only", async () => {
     for (const rewind of [undefined, "history"] as const) {
       seed("idle", rewind);
-      renderActions(assistant, vi.fn());
+      await renderActions(assistant, vi.fn());
       fireEvent.click(await fromMore("message-rewind"));
       await screen.findByRole("button", { name: "Rewind" });
       expect(screen.queryByLabelText("Restore files too")).toBeNull();
@@ -212,7 +211,7 @@ describe("MessageActions", () => {
 
   it("hides the actions when the agent can't rewind", async () => {
     seed("idle", "none");
-    renderActions(assistant, vi.fn());
+    await renderActions(assistant, vi.fn());
     await fromMore("message-wait");
     expect(screen.queryByTestId("message-rewind")).toBeNull();
   });
@@ -230,7 +229,7 @@ describe("MessageActions", () => {
   it("pre-fills the composer for an edit without rewinding yet", async () => {
     seed("idle", "history");
     const rewind = vi.fn(async () => {});
-    renderActions(user, rewind);
+    await renderActions(user, rewind);
 
     fireEvent.click(await fromMore("message-edit"));
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
@@ -244,7 +243,7 @@ describe("MessageActions", () => {
     "blocks rewinding while %s and says why in words, to sight and to a screen reader",
     async (status) => {
       seed(status, "history");
-      renderActions(assistant, vi.fn());
+      await renderActions(assistant, vi.fn());
       const trigger = await fromMore("message-rewind");
       expect(trigger.getAttribute("aria-disabled")).toBe("true");
       expect(trigger.getAttribute("aria-description")).toBe("Wait for the turn to finish");
@@ -256,7 +255,7 @@ describe("MessageActions", () => {
 
   it("explains a reply without agent message ids and blocks both forks", async () => {
     seed("idle", "history");
-    renderActions({ ...assistant, metadata: {} }, vi.fn());
+    await renderActions({ ...assistant, metadata: {} }, vi.fn());
     const trigger = await fromMore("message-rewind");
     expect(trigger.getAttribute("aria-disabled")).toBe("true");
 

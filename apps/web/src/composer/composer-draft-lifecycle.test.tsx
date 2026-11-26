@@ -5,14 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import { runShortcut } from "@/keyboard/registry";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useDraftStore } from "@/stores/drafts";
 import { useThreadsStore } from "@/stores/threads";
 
 import { Composer } from "./composer";
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 const A = "t-lifecycle-a" as ThreadId;
 const B = "t-lifecycle-b" as ThreadId;
 const field = () => screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
@@ -44,7 +43,7 @@ const paste = async (name: string, ready = true) => {
     );
 };
 
-const setup = (saved: readonly DraftStash[] = []) => {
+const setup = async (saved: readonly DraftStash[] = []) => {
   sessionStorage.setItem("gram.mock.sessionExpired", "0");
   sessionStorage.setItem("gram.mock.agentRuntimes", JSON.stringify({ agents: [] }));
   sessionStorage.setItem(
@@ -84,10 +83,12 @@ const setup = (saved: readonly DraftStash[] = []) => {
   const stashDraft = vi.spyOn(api, "stashDraft");
   const pending = Promise.withResolvers<DraftStash>();
   stashDraft.mockReturnValue(pending.promise);
-  let view = renderWithApi(<Composer threadId={A} focused />, api);
-  const switchTo = (threadId: ThreadId) => {
+  const mount = (threadId: ThreadId) =>
+    renderInRouter(<Composer threadId={threadId} focused />, { api, path: `/t/${threadId}` });
+  let view = await mount(A);
+  const switchTo = async (threadId: ThreadId) => {
     view.unmount();
-    view = renderWithApi(<Composer threadId={threadId} focused />, api);
+    view = await mount(threadId);
   };
   const finishStash = async () => {
     await act(async () =>
@@ -105,7 +106,7 @@ afterEach(() => {
 
 describe("composer draft lifetime", () => {
   it("stash completion conserves newer text and files while storing only the captured draft", async () => {
-    const s = setup();
+    const s = await setup();
     type("Draft A");
     await s.paste("a.txt");
     stash();
@@ -123,7 +124,7 @@ describe("composer draft lifetime", () => {
   });
 
   it("consumes an unchanged stash once and excludes repeated stash/send of the captured draft", async () => {
-    const s = setup();
+    const s = await setup();
     type("Draft A");
     await s.paste("a.txt");
     stash();
@@ -138,21 +139,21 @@ describe("composer draft lifetime", () => {
   });
 
   it("recovers a failed stash beside the newer draft after switching threads", async () => {
-    const s = setup();
+    const s = await setup();
     type("Draft A");
     await s.paste("a.txt");
     stash();
-    s.switchTo(B);
+    await s.switchTo(B);
     type("Other thread");
     await s.paste("other.txt");
-    s.switchTo(A);
+    await s.switchTo(A);
     type("Draft B");
     await s.paste("b.txt");
-    s.switchTo(B);
+    await s.switchTo(B);
     await act(async () => s.pending.reject(new Error("synthetic stash refusal")));
     expect(field().value).toBe("Other thread");
     expect(screen.queryByRole("button", { name: "Remove a.txt" })).toBeNull();
-    s.switchTo(A);
+    await s.switchTo(A);
     expect(field().value).toBe("Draft A\n\nDraft B");
     expect(screen.getAllByTestId("attachment-chip")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Remove a.txt" })).toBeTruthy();
@@ -161,15 +162,15 @@ describe("composer draft lifetime", () => {
   });
 
   it("retains uploads through a remount and ignores completion of a removed upload", async () => {
-    const s = setup();
+    const s = await setup();
     const pendingUpload =
       Promise.withResolvers<Awaited<ReturnType<typeof s.api.uploadAttachment>>>();
     s.upload.mockReturnValueOnce(pendingUpload.promise);
     await s.paste("pending.txt", false);
     await waitFor(() => expect(s.upload).toHaveBeenCalledTimes(1));
-    s.switchTo(B);
+    await s.switchTo(B);
     expect(screen.queryByTestId("attachment-chip")).toBeNull();
-    s.switchTo(A);
+    await s.switchTo(A);
     expect(screen.getByTestId("attachment-chip").getAttribute("data-status")).toBe("uploading");
     // A draft waiting on its upload holds the delivery button; Stop stays its own button beside it.
     expect(screen.getByRole("button", { name: /^Steer$/ }).hasAttribute("disabled")).toBe(true);
@@ -179,15 +180,15 @@ describe("composer draft lifetime", () => {
       pendingUpload.resolve({ path: "/invented/pending.txt", name: "pending.txt" }),
     );
     expect(screen.queryByTestId("attachment-chip")).toBeNull();
-    s.switchTo(B);
-    s.switchTo(A);
+    await s.switchTo(B);
+    await s.switchTo(A);
     expect(screen.queryByTestId("attachment-chip")).toBeNull();
   });
 
   it.each(["send", "steer"] as const)(
     "recovers failed %s refs to its original thread after leaving, then retries exactly once",
     async (operation) => {
-      const s = setup();
+      const s = await setup();
       const pending = Promise.withResolvers<never>();
       s[operation].mockReturnValueOnce(pending.promise);
       type("First draft");
@@ -196,17 +197,17 @@ describe("composer draft lifetime", () => {
       else fireEvent.click(screen.getByRole("button", { name: "Steer" }));
       await waitFor(() => expect(s[operation]).toHaveBeenCalledTimes(1));
       const original = s[operation].mock.calls[0]![1].attachments![0]!;
-      s.switchTo(B);
+      await s.switchTo(B);
       type("Other thread");
       await s.paste("other.txt");
-      s.switchTo(A);
+      await s.switchTo(A);
       type("Newer draft");
       await s.paste("newer.txt");
-      s.switchTo(B);
+      await s.switchTo(B);
       await act(async () => pending.reject(new Error("synthetic send refusal")));
       expect(field().value).toBe("Other thread");
       expect(screen.queryByRole("button", { name: "Remove first.txt" })).toBeNull();
-      s.switchTo(A);
+      await s.switchTo(A);
       expect(field().value).toBe("First draft\n\nNewer draft");
       expect(screen.getAllByTestId("attachment-chip")).toHaveLength(2);
       queue();
@@ -216,14 +217,14 @@ describe("composer draft lifetime", () => {
       expect(retry[1].attachments).toHaveLength(2);
       expect(retry[1].attachments).toContainEqual(original);
       expect(s.upload).toHaveBeenCalledTimes(3);
-      s.switchTo(B);
-      s.switchTo(A);
+      await s.switchTo(B);
+      await s.switchTo(A);
       expect(screen.queryByTestId("attachment-chip")).toBeNull();
     },
   );
 
   it("stash success leaves a newer uploading chip and never resurrects it after removal", async () => {
-    const s = setup();
+    const s = await setup();
     type("Draft A");
     stash();
     const pendingUpload =
@@ -245,7 +246,7 @@ describe("composer transaction ordering", () => {
   it.each([true, false])(
     "an earlier stash completion never consumes a newer failed send (stash succeeds: %s)",
     async (succeeds) => {
-      const s = setup();
+      const s = await setup();
       type("A");
       await s.paste("a.txt");
       stash();
@@ -257,11 +258,11 @@ describe("composer transaction ordering", () => {
       await waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
       type("C");
       await s.paste("c.txt");
-      s.switchTo(B);
+      await s.switchTo(B);
       await act(async () => send.reject(new Error("synthetic newer send refusal")));
       if (succeeds) await s.finishStash();
       else await act(async () => s.pending.reject(new Error("synthetic earlier stash refusal")));
-      s.switchTo(A);
+      await s.switchTo(A);
       expect(field().value).toBe(succeeds ? "B\n\nC" : "A\n\nB\n\nC");
       expect(screen.getAllByTestId("attachment-chip")).toHaveLength(succeeds ? 2 : 3);
       expect(s.stashDraft).toHaveBeenCalledTimes(1);
@@ -274,12 +275,12 @@ describe("composer transaction ordering", () => {
   );
 
   it("stash exclusion survives remount and a later explicit stash consumes only the newer draft", async () => {
-    const s = setup();
+    const s = await setup();
     type("A");
     await s.paste("a.txt");
     stash();
-    s.switchTo(B);
-    s.switchTo(A);
+    await s.switchTo(B);
+    await s.switchTo(A);
     type("B");
     await s.paste("b.txt");
     stash();
@@ -309,7 +310,7 @@ describe("composer transaction ordering", () => {
       attachments: [{ path: "/invented/saved.txt", name: "saved.txt" }],
       createdAt: 1,
     };
-    const s = setup([saved]);
+    const s = await setup([saved]);
     const take = Promise.withResolvers<DraftStash>();
     const takeStash = vi.spyOn(s.api, "takeStash").mockReturnValueOnce(take.promise);
     type("A");
@@ -323,9 +324,9 @@ describe("composer transaction ordering", () => {
     await waitFor(() => expect(takeStash).toHaveBeenCalledTimes(1));
     type("C");
     await s.paste("c.txt");
-    s.switchTo(B);
+    await s.switchTo(B);
     await act(async () => take.resolve(saved));
-    s.switchTo(A);
+    await s.switchTo(A);
     expect(field().value).toBe("Saved D\n\nC");
     expect(screen.getAllByTestId("attachment-chip")).toHaveLength(3);
     for (const name of ["b.txt", "c.txt", "saved.txt"])
@@ -337,7 +338,7 @@ describe("composer transaction ordering", () => {
   it.each(["stash", "send", "steer"] as const)(
     "closing a thread fences a pending %s rollback from a reopened draft",
     async (operation) => {
-      const s = setup();
+      const s = await setup();
       const pending = Promise.withResolvers<never>();
       if (operation !== "stash") s[operation].mockReturnValueOnce(pending.promise);
       type("Old draft");
@@ -348,7 +349,7 @@ describe("composer transaction ordering", () => {
       await waitFor(() =>
         expect(operation === "stash" ? s.stashDraft : s[operation]).toHaveBeenCalledTimes(1),
       );
-      s.switchTo(B);
+      await s.switchTo(B);
       act(() => useThreadsStore.getState().applyEvent({ type: "thread.removed", threadId: A }));
       act(() =>
         useThreadsStore.getState().applyEvent({
@@ -356,7 +357,7 @@ describe("composer transaction ordering", () => {
           thread: { id: A, checkout: { path: "/invented/repo" } } as never,
         }),
       );
-      s.switchTo(A);
+      await s.switchTo(A);
       type("Reopened draft");
       await s.paste("new.txt");
       await act(async () =>
@@ -371,11 +372,11 @@ describe("composer transaction ordering", () => {
 });
 
 it("an old pending stash cannot block or unlock a new stash after thread close/reopen", async () => {
-  const s = setup();
+  const s = await setup();
   type("Old A");
   await s.paste("a.txt");
   stash();
-  s.switchTo(B);
+  await s.switchTo(B);
   act(() => useThreadsStore.getState().applyEvent({ type: "thread.removed", threadId: A }));
   act(() =>
     useThreadsStore.getState().applyEvent({
@@ -383,7 +384,7 @@ it("an old pending stash cannot block or unlock a new stash after thread close/r
       thread: { id: A, checkout: { path: "/invented/repo" } } as never,
     }),
   );
-  s.switchTo(A);
+  await s.switchTo(A);
   const newer = Promise.withResolvers<DraftStash>();
   s.stashDraft.mockReturnValueOnce(newer.promise);
   type("New B");
@@ -413,7 +414,7 @@ it("protects in-flight files in discard requests, then releases that protection 
     attachments: [{ path, name: "a.txt" }],
     createdAt: 1,
   };
-  const s = setup([saved]);
+  const s = await setup([saved]);
   const discard = vi.spyOn(s.api, "removeStash").mockResolvedValue(undefined);
   type("A");
   await s.paste("a.txt");

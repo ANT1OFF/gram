@@ -11,16 +11,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { seedSummaries } from "@/api/mock-scripts";
 import type { CloseThreadOptions, RemoveWorktreeOptions } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useThreadsStore } from "@/stores/threads";
 
 import { finishedWorker } from "./finished-worker";
 import { WorktreesDialog } from "./worktrees-dialog";
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-}));
 
 const entry = (branch: string, overrides: Partial<WorktreeEntry> = {}): WorktreeEntry => ({
   path: `/r/.worktrees/${branch}`,
@@ -197,7 +192,7 @@ describe("WorktreesDialog bulk removal", () => {
       });
       return result;
     });
-    renderWithApi(<WorktreesDialog repoPath="/r" onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath="/r" onClose={() => {}} />, { api });
 
     fireEvent.click(await screen.findByRole("button", { name: "Select all 2" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove 2 worktrees…" }));
@@ -225,7 +220,7 @@ describe("WorktreesDialog bulk removal", () => {
     useThreadsStore.setState({
       byId: { [done.thread.id]: done, [shipped.thread.id]: shipped, [busy.thread.id]: busy },
     });
-    renderWithApi(<WorktreesDialog repoPath="/r" onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath="/r" onClose={() => {}} />, { api });
 
     await screen.findByRole("listitem", { name: "done" });
     expect(within(row("busy")).queryByRole("checkbox")).toBeNull();
@@ -267,7 +262,7 @@ describe("WorktreesDialog bulk removal", () => {
 
   it("selects only unused worktrees and removes several with each one's picked rules", async () => {
     const { api, calls } = fakeApi();
-    renderWithApi(<WorktreesDialog repoPath="/r" onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath="/r" onClose={() => {}} />, { api });
 
     await screen.findByRole("listitem", { name: "a" });
     expect(within(row("Main checkout")).queryByRole("checkbox")).toBeNull();
@@ -303,7 +298,7 @@ describe("WorktreesDialog bulk removal", () => {
 
   it("forces only the worktrees refused as dirty, after confirming", async () => {
     const { api, calls } = fakeApi({ dirtyB: true });
-    renderWithApi(<WorktreesDialog repoPath="/r" onClose={() => {}} />, api);
+    await renderInRouter(<WorktreesDialog repoPath="/r" onClose={() => {}} />, { api });
 
     await screen.findByRole("listitem", { name: "a" });
     fireEvent.click(within(row("a")).getByRole("checkbox", { name: "Select a" }));

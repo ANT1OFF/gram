@@ -11,14 +11,11 @@ import {
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 
 import { MessageActions } from "./message-actions";
-
-const navigate = vi.fn();
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 
 const T = "t1" as ThreadId;
 
@@ -62,7 +59,6 @@ const reply: GramUIMessage = {
 
 afterEach(() => {
   cleanup();
-  navigate.mockReset();
   useLayoutStore.setState({ grid: EMPTY_GRID });
 });
 
@@ -70,27 +66,29 @@ describe("fork actions", () => {
   it("forks from a reply and opens the fork", async () => {
     seed(true);
     const forkThread = vi.fn(async () => thread("t2", { forkedFrom: { threadId: T } }));
-    renderWithApi(<MessageActions threadId={T} message={reply} />, { forkThread });
+    const { router } = await renderInRouter(<MessageActions threadId={T} message={reply} />, {
+      api: { forkThread },
+    });
 
     fireEvent.click(screen.getByTestId("message-more"));
     fireEvent.click(await screen.findByTestId("message-fork"));
     await waitFor(() => expect(forkThread).toHaveBeenCalledWith(T, { fromMessageId: "m2" }));
-    await waitFor(() =>
-      expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: "t2" } }),
-    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/t/t2"));
     expect(useLayoutStore.getState().grid.panes).toEqual(["t2"]);
     expect(useThreadsStore.getState().byId["t2"]?.thread.forkedFrom).toEqual({ threadId: T });
   });
 
   it("continues in the worktree dialog when the source checkout is in use", async () => {
     seed(true);
-    renderWithApi(<MessageActions threadId={T} message={reply} />, {
-      forkThread: async () => {
-        throw new InvalidState({
-          message: "Fork into a new worktree: the source checkout is in use",
-        });
+    await renderInRouter(<MessageActions threadId={T} message={reply} />, {
+      api: {
+        forkThread: async () => {
+          throw new InvalidState({
+            message: "Fork into a new worktree: the source checkout is in use",
+          });
+        },
+        listProjects: async () => [],
       },
-      listProjects: async () => [],
     });
     fireEvent.click(screen.getByTestId("message-more"));
     fireEvent.click(await screen.findByTestId("message-fork"));
@@ -106,12 +104,12 @@ describe("fork actions", () => {
       role: "user",
       parts: [{ type: "text", text: "hi" }],
     };
-    renderWithApi(
+    await renderInRouter(
       <>
         <MessageActions threadId={T} message={reply} />
         <MessageActions threadId={T} message={user} />
       </>,
-      {},
+      { api: {} },
     );
     // The user's message's "…" has no fork in it.
     fireEvent.click(screen.getAllByTestId("message-more")[1]!);
@@ -119,13 +117,15 @@ describe("fork actions", () => {
     expect(screen.queryByTestId("message-fork")).toBeNull();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     cleanup();
-    renderWithApi(<MessageActions threadId={T} message={reply} />, {});
+    const { router } = await renderInRouter(<MessageActions threadId={T} message={reply} />, {
+      api: {},
+    });
     fireEvent.click(screen.getByTestId("message-more"));
     const trigger = await screen.findByTestId("message-fork");
     expect(trigger.getAttribute("aria-disabled")).toBe("true");
     expect(trigger.textContent).toContain("This agent can't fork threads yet");
     fireEvent.click(trigger);
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
     const worktree = screen.getByTestId("message-fork-worktree");
     expect(worktree.getAttribute("aria-disabled")).toBe("true");
     expect(worktree.textContent).toContain("This agent can't fork threads yet");
@@ -134,9 +134,8 @@ describe("fork actions", () => {
   it("opens the worktree dialog from the secondary menu without forking immediately", async () => {
     seed(true);
     const forkThread = vi.fn();
-    renderWithApi(<MessageActions threadId={T} message={reply} />, {
-      forkThread,
-      listProjects: async () => [],
+    await renderInRouter(<MessageActions threadId={T} message={reply} />, {
+      api: { forkThread, listProjects: async () => [] },
     });
     expect(screen.queryByTestId("message-fork-worktree")).toBeNull();
     fireEvent.click(screen.getByTestId("message-more"));
@@ -147,14 +146,16 @@ describe("fork actions", () => {
 
   it("explains a server that can't fork yet", async () => {
     seed(true);
-    renderWithApi(<MessageActions threadId={T} message={reply} />, {
-      forkThread: async () => {
-        throw new NotImplemented({ rpc: "thread.fork" });
+    const { router } = await renderInRouter(<MessageActions threadId={T} message={reply} />, {
+      api: {
+        forkThread: async () => {
+          throw new NotImplemented({ rpc: "thread.fork" });
+        },
       },
     });
     fireEvent.click(screen.getByTestId("message-more"));
     fireEvent.click(await screen.findByTestId("message-fork"));
     expect((await screen.findByRole("alert")).textContent).toBe("Forking isn't available yet.");
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/");
   });
 });

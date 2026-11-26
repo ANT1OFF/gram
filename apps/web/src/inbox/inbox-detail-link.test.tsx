@@ -8,20 +8,13 @@ import {
   type WorkspaceId,
 } from "@gram/contracts";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import type { NeedsYouItem } from "@/orchestration/needs-you-items";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 
 import { InboxDetail } from "./inbox-detail";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-}));
 
 const T = "t-orc" as ThreadId;
 const PR = "https://github.com/example/api/pull/431";
@@ -61,8 +54,10 @@ afterEach(() => {
 });
 
 describe("a step to take with a link", () => {
-  it("opens the link in the browser from the header and from the row", () => {
-    renderWithApi(<InboxDetail item={step(PR)} now={0} onOpenThread={() => {}} />, createMockApi());
+  it("opens the link in the browser from the header and from the row", async () => {
+    await renderInRouter(<InboxDetail item={step(PR)} now={0} onOpenThread={() => {}} />, {
+      api: createMockApi(),
+    });
     fireEvent.click(screen.getByTestId("inbox-open-link"));
     expect(openExternal).toHaveBeenCalledWith(PR);
     fireEvent.click(screen.getByTestId("waiting-open"));
@@ -70,8 +65,10 @@ describe("a step to take with a link", () => {
     expect(openExternal).toHaveBeenLastCalledWith(PR);
   });
 
-  it("lets the title be selected without folding the step, and a plain click folds it", () => {
-    renderWithApi(<InboxDetail item={step(PR)} now={0} onOpenThread={() => {}} />, createMockApi());
+  it("lets the title be selected without folding the step, and a plain click folds it", async () => {
+    await renderInRouter(<InboxDetail item={step(PR)} now={0} onOpenThread={() => {}} />, {
+      api: createMockApi(),
+    });
     const toggle = screen.getByTestId("waiting-item-toggle");
     const title = screen.getByText("Merge example/api#431 by hand");
     const range = document.createRange();
@@ -86,12 +83,11 @@ describe("a step to take with a link", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("offers no Open for a link that isn't http(s)", () => {
+  it("offers no Open for a link that isn't http(s)", async () => {
     for (const link of ["javascript:alert(1)", "file:///etc/passwd"]) {
-      renderWithApi(
-        <InboxDetail item={step(link)} now={0} onOpenThread={() => {}} />,
-        createMockApi(),
-      );
+      await renderInRouter(<InboxDetail item={step(link)} now={0} onOpenThread={() => {}} />, {
+        api: createMockApi(),
+      });
       expect(screen.queryByTestId("inbox-open-link")).toBeNull();
       expect(screen.queryByTestId("waiting-open")).toBeNull();
       cleanup();

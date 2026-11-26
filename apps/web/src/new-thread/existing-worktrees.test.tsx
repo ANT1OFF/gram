@@ -5,12 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import { NewThreadDraft } from "@/composer/new-thread-draft";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter, renderWithApi } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { ExistingWorktrees } from "./existing-worktrees";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 afterEach(() => {
   cleanup();
@@ -45,7 +43,7 @@ describe("NewThreadDraft", () => {
         agents: { ...DEFAULT_SETTINGS.agents, defaultFolder: "~/Documents/code" },
       },
     });
-    renderWithApi(<NewThreadDraft />, createMockApi({ speed: 0, autoplay: false }));
+    await renderInRouter(<NewThreadDraft />, { api: createMockApi({ speed: 0, autoplay: false }) });
     // Its path is under More options, folded while the folder is good.
     await waitFor(() =>
       expect(

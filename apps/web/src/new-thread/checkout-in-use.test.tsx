@@ -7,21 +7,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 
 import { CheckoutInUseNotice, useCheckoutUsers } from "./checkout-in-use";
 
-const navigate = vi.hoisted(() => vi.fn());
-
-vi.mock("@tanstack/react-router", () => ({
-  useNavigate: () => navigate,
-  useParams: () => ({}),
-}));
-
 afterEach(() => {
   cleanup();
-  navigate.mockReset();
   useLayoutStore.setState({ grid: EMPTY_GRID });
 });
 
@@ -32,10 +24,10 @@ const user = (id: string, title: string, parked = false): CheckoutUser => ({
 });
 
 describe("CheckoutInUseNotice", () => {
-  it("names the thread, opens it, and offers a worktree or creating anyway", () => {
+  it("names the thread, opens it, and offers a worktree or creating anyway", async () => {
     const onUseNewWorktree = vi.fn();
     const onCreateAnyway = vi.fn();
-    renderWithApi(
+    const { router } = await renderInRouter(
       <CheckoutInUseNotice
         users={[user("t-docs", "Rewrite the README")]}
         repo
@@ -43,7 +35,7 @@ describe("CheckoutInUseNotice", () => {
         onUseNewWorktree={onUseNewWorktree}
         onCreateAnyway={onCreateAnyway}
       />,
-      {},
+      { api: {} },
     );
 
     expect(screen.getByRole("alert").textContent).toContain(
@@ -51,7 +43,7 @@ describe("CheckoutInUseNotice", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Open “Rewrite the README”" }));
     expect(useLayoutStore.getState().grid.panes).toContain("t-docs");
-    expect(navigate).toHaveBeenCalledWith({ to: "/t/$threadId", params: { threadId: "t-docs" } });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/t/t-docs"));
 
     fireEvent.click(screen.getByRole("button", { name: "Use a new worktree instead" }));
     expect(onUseNewWorktree).toHaveBeenCalledOnce();
@@ -59,15 +51,15 @@ describe("CheckoutInUseNotice", () => {
     expect(onCreateAnyway).toHaveBeenCalledOnce();
   });
 
-  it("says parked threads count, and offers no create-anyway where the server refuses", () => {
-    renderWithApi(
+  it("says parked threads count, and offers no create-anyway where the server refuses", async () => {
+    await renderInRouter(
       <CheckoutInUseNotice
         users={[user("t-a", "Spike"), user("t-b", "Old work", true)]}
         repo={false}
         refused
         onCreateAnyway={vi.fn()}
       />,
-      {},
+      { api: {} },
     );
 
     const alert = screen.getByRole("alert");

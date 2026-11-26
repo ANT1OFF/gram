@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 import type { ThreadId } from "@gram/contracts";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createMockApi, type MockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { EMPTY_GRID, useLayoutStore } from "@/stores/layout";
 import { useThreadsStore } from "@/stores/threads";
 import { useViewStore } from "@/views/view-store";
@@ -21,14 +20,6 @@ import {
 } from "./titlebar-slot";
 import { ThreadGrid } from "./thread-grid";
 
-const route = vi.hoisted(() => ({ threadId: "t-flaky" as string | undefined }));
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children?: ReactNode }) => children,
-  useNavigate: () => vi.fn(),
-  useParams: () => (route.threadId === undefined ? {} : { threadId: route.threadId }),
-}));
-
 const FLAKY = "t-flaky" as ThreadId;
 let api: MockApi;
 let slot: HTMLDivElement;
@@ -41,7 +32,6 @@ beforeEach(async () => {
     if (event.type === "threads.snapshot") break;
   }
   abort.abort();
-  route.threadId = FLAKY;
   useViewStore.setState({ view: "chat" });
   useLayoutStore.setState({ grid: { ...EMPTY_GRID, panes: [FLAKY] } });
   // The shell's title bar offers this place while it carries a thread.
@@ -62,7 +52,7 @@ const pane = () => screen.getByTestId("pane");
 
 describe("a thread's header in the title bar", () => {
   it("moves into the title bar, leaving the pane no bar of its own", async () => {
-    renderWithApi(<ThreadGrid />, api);
+    await renderInRouter(<ThreadGrid />, { api, path: `/t/${FLAKY}` });
     const header = await within(slot).findByTestId("pane-header");
     expect(header.dataset["inTitlebar"]).toBe("true");
     expect(within(pane()).queryByTestId("pane-header")).toBeNull();
@@ -86,12 +76,12 @@ describe("a thread's header in the title bar", () => {
   });
 
   it('keeps the branch out of the bar and its "…"', async () => {
-    renderWithApi(
+    await renderInRouter(
       <>
         <ThreadGrid />
         <TitlebarOverflow orchestration={false} />
       </>,
-      api,
+      { api, path: `/t/${FLAKY}` },
     );
     const header = await within(slot).findByTestId("pane-header");
     expect(within(header).queryByTestId("branch-chip")).toBeNull();
@@ -107,12 +97,12 @@ describe("a thread's header in the title bar", () => {
 
   it("holds the thread's menu and the window's controls in one \"…\", each in words", async () => {
     act(() => useTitlebarSlot.getState().setFold(2));
-    renderWithApi(
+    await renderInRouter(
       <>
         <ThreadGrid />
         <TitlebarOverflow orchestration={false} />
       </>,
-      api,
+      { api, path: `/t/${FLAKY}` },
     );
     await within(slot).findByTestId("pane-header");
     fireEvent.click(screen.getByRole("button", { name: "More" }));
@@ -142,7 +132,7 @@ describe("a thread's header in the title bar", () => {
   });
 
   it("carries an orchestrator's and a worker's header too", async () => {
-    const view = renderWithApi(<ThreadGrid />, api);
+    const view = await renderInRouter(<ThreadGrid />, { api, path: `/t/${FLAKY}` });
     await within(slot).findByTestId("pane-header");
     const { thread } = useThreadsStore.getState().byId[FLAKY]!;
 
@@ -175,7 +165,7 @@ describe("a thread's header in the title bar", () => {
   });
 
   it("stays in the pane for a second pane, Board, or no title bar to go to", async () => {
-    const view = renderWithApi(<ThreadGrid />, api);
+    const view = await renderInRouter(<ThreadGrid />, { api, path: `/t/${FLAKY}` });
     await within(slot).findByTestId("pane-header");
 
     act(() => useViewStore.setState({ view: "board" }));

@@ -22,16 +22,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
 import { choiceFromModel } from "@/composer/default-choice";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { AgentsSection } from "./agents-section";
 import { AGENTS_DEFAULTS, NOTIFICATIONS_DEFAULTS, type DefaultSetting } from "./defaults";
 import { useRestoreDefaults } from "./restore-defaults";
 import { useSaveSettings } from "./use-save-settings";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-}));
 
 function RestoreHarness({
   defaults = Object.values(AGENTS_DEFAULTS),
@@ -53,11 +50,11 @@ const updateSettings = vi.fn(async (patch: SettingsPatch) => {
   return stored;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   stored = DEFAULT_SETTINGS;
   updateSettings.mockClear();
   useServerSettings.setState({ settings: stored });
-  render(
+  await renderInRouter(
     <QueryClientProvider client={new QueryClient()}>
       <ApiProvider
         api={
@@ -93,7 +90,7 @@ describe("AgentsSection", () => {
 
   it("displays an unset default from Codex alone without saving or asking for Claude setup", async () => {
     cleanup();
-    render(
+    await renderInRouter(
       <QueryClientProvider client={new QueryClient()}>
         <ApiProvider
           api={

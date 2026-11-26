@@ -6,8 +6,7 @@ import {
   type OrchestratorCharter,
 } from "@gram/contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
@@ -16,10 +15,7 @@ import { useServerSettings } from "@/settings-sync/store";
 import { themeStore } from "@/theme/store";
 
 import { RosterEditor } from "./roster-editor";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
-}));
+import { renderInRouter } from "@/panels/test-utils";
 
 const efforts = ["low", "medium", "high", "xhigh"] as const;
 // Synthetic lists shaped like each CLI's: Claude's aliases with the ids they run, Codex's ids.
@@ -79,7 +75,7 @@ describe("RosterEditor with entries that follow a tier", () => {
         { tier: "lead", agent: "claude" },
       ],
     };
-    const { rerender } = render(view(current));
+    const { rerender } = await renderInRouter(view(current));
     await waitFor(() =>
       // Wait for this older account's catalogue, rather than the recommendation shown before discovery.
       expect(screen.getAllByTestId("worker-model")[0]!.textContent).toContain("gpt-6.1-sol"),
@@ -136,7 +132,7 @@ describe("RosterEditor with entries that follow a tier", () => {
       orchestratorModel: { tier: "top" },
       workerModels: [{ tier: "top" }, { tier: "huge" }, { tier: "scoped", default: true }],
     };
-    render(view(current));
+    await renderInRouter(view(current));
     await waitFor(() => expect(screen.getAllByTestId("worker-model-warning")).toHaveLength(3));
     const [orchestrator, top, huge] = screen.getAllByTestId("worker-model-warning");
     expect(orchestrator!.textContent).toContain("Nothing here fills the Top tier: Claude Code");
@@ -154,7 +150,7 @@ describe("RosterEditor with entries that follow a tier", () => {
       },
     });
     current = { maxConcurrentWorkers: 1 };
-    render(view(current));
+    await renderInRouter(view(current));
     const warning = await screen.findByTestId("worker-model-warning");
     expect(warning.textContent).toContain(
       "Your default model is unavailable: nothing here fills the Top tier",
@@ -178,7 +174,7 @@ describe("RosterEditor with the recommended setup on", () => {
         { agent: "codex", model: "gpt-6.1-sol", variant: "high", useFor: "Synthetic reviews" },
       ],
     };
-    const { rerender } = render(view(current));
+    const { rerender } = await renderInRouter(view(current));
     await waitFor(() => expect(screen.getAllByTestId("slot-follow")).toHaveLength(1));
     const orchestrator = screen.getByTestId("orchestrator-model");
     const glyph = within(orchestrator).getByTestId("slot-glyph");
@@ -219,7 +215,7 @@ describe("RosterEditor with the recommended setup on", () => {
       maxConcurrentWorkers: 1,
       orchestratorModel: { agent: "claude", model: "opus", variant: "xhigh" },
     };
-    render(view(current));
+    await renderInRouter(view(current));
     const orchestrator = screen.getByTestId("orchestrator-model");
     expect(within(orchestrator).getByTestId("slot-glyph").getAttribute("aria-label")).toBe(
       "Your choice · updates leave it alone",
@@ -234,7 +230,7 @@ describe("RosterEditor with the recommended setup on", () => {
       orchestratorModel: { agent: "claude", model: "opus" },
       workerModels: [{ tier: "scoped" }, { agent: "claude", model: "sonnet" }],
     };
-    render(view(current));
+    await renderInRouter(view(current));
     await waitFor(() =>
       expect(screen.getAllByTestId("worker-model")[0]!.dataset["agent"]).toBe("codex"),
     );

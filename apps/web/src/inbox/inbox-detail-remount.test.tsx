@@ -1,21 +1,15 @@
 // @vitest-environment happy-dom
 import type { ThreadId, WorkspaceId } from "@gram/contracts";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
-import { type ReactNode, useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import { memoryAskOf } from "@/orchestration/ask-model";
 import type { NeedsYouItem } from "@/orchestration/needs-you-items";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 
 import { InboxDetail } from "./inbox-detail";
-
-vi.mock("@tanstack/react-router", () => ({
-  Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
-  useNavigate: () => vi.fn(),
-  useParams: () => ({}),
-}));
 
 afterEach(cleanup);
 
@@ -42,7 +36,7 @@ const question = (text: string): NeedsYouItem => {
 };
 
 describe("the Inbox's ask", () => {
-  it("starts afresh when another request comes where the one shown was, under the same key", () => {
+  it("starts afresh when another request comes where the one shown was, under the same key", async () => {
     const first = question("Ship the form first?");
     const other = question("Delete the old forms?");
     expect(other.key).toBe(first.key);
@@ -55,7 +49,7 @@ describe("the Inbox's ask", () => {
         </>
       );
     }
-    renderWithApi(<Shown />, createMockApi());
+    await renderInRouter(<Shown />, { api: createMockApi() });
     fireEvent.click(screen.getByTestId("inbox-read-full"));
     expect(screen.getByTestId("inbox-ask").dataset["full"]).toBe("true");
     // Read in full, a key in the moment after the swap would answer what the person never read.

@@ -11,14 +11,12 @@ import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react
 import { afterEach, expect, it, vi } from "vitest";
 import { createMockApi } from "@/api/mock";
 import { runShortcut } from "@/keyboard/registry";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useDraftStore } from "@/stores/drafts";
 import { useThreadsStore } from "@/stores/threads";
 import { useDiffCommentsStore } from "@/stores/diff-comments";
 import { Composer } from "@/composer/composer";
-const navigate = vi.hoisted(() => vi.fn());
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 const A = "t-independent110-a" as ThreadId,
   B = "t-independent110-b" as ThreadId;
 const summary = (id: ThreadId, createdAt: number) =>
@@ -53,8 +51,7 @@ const paste = async (name: string, ready = true) => {
     );
 };
 
-const fixture = (saved: readonly DraftStash[] = []) => {
-  navigate.mockClear();
+const fixture = async (saved: readonly DraftStash[] = []) => {
   sessionStorage.setItem("gram.mock.agents", "");
   sessionStorage.setItem("gram.mock.sessionExpired", "0");
   sessionStorage.setItem("gram.mock.agentRuntimes", JSON.stringify({ agents: [] }));
@@ -80,10 +77,12 @@ const fixture = (saved: readonly DraftStash[] = []) => {
   const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
   const steer = vi.spyOn(api, "steer").mockResolvedValue(undefined);
   const stashDraft = vi.spyOn(api, "stashDraft");
-  let view = renderWithApi(<Composer threadId={A} focused />, api);
-  const switchTo = (id: ThreadId) => {
+  const mount = (id: ThreadId) =>
+    renderInRouter(<Composer threadId={id} focused />, { api, path: `/t/${id}` });
+  let view = await mount(A);
+  const switchTo = async (id: ThreadId) => {
     view.unmount();
-    view = renderWithApi(<Composer threadId={id} focused />, api);
+    view = await mount(id);
   };
   const snapshot = (at: number, includeA = true) =>
     act(() =>
@@ -92,7 +91,8 @@ const fixture = (saved: readonly DraftStash[] = []) => {
         threads: [...(includeA ? [summary(A, at)] : []), summary(B, 10)],
       }),
     );
-  return { api, upload, send, steer, stashDraft, paste, switchTo, snapshot };
+  const router = () => view.router;
+  return { api, upload, send, steer, stashDraft, paste, switchTo, snapshot, router };
 };
 afterEach(async () => {
   cleanup();
@@ -103,7 +103,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 it("repair oracle: pending stash success conserves newer text and exact file ref", async () => {
-  const s = fixture(),
+  const s = await fixture(),
     p = Promise.withResolvers<DraftStash>();
   s.stashDraft.mockReturnValue(p.promise);
   type("Old A");
@@ -120,19 +120,19 @@ it("repair oracle: pending stash success conserves newer text and exact file ref
   ]);
 });
 it("repair oracle: unsent exact ref survives a separated remount", async () => {
-  const s = fixture();
+  const s = await fixture();
   type("Keep");
   await s.paste("keep.txt");
-  s.switchTo(B);
+  await s.switchTo(B);
   await act(async () => {});
-  s.switchTo(A);
+  await s.switchTo(A);
   expect(field().value).toBe("Keep");
   expect(screen.getAllByTestId("attachment-chip").map((c) => c.getAttribute("title"))).toEqual([
     `/invented/${A}/keep.txt`,
   ]);
 });
 it("repair oracle: late failed send recovers original refs across remount plus newer uploading file", async () => {
-  const s = fixture(),
+  const s = await fixture(),
     p = Promise.withResolvers<Awaited<ReturnType<typeof s.send>>>(),
     u = Promise.withResolvers<Attachment>();
   s.send.mockReturnValueOnce(p.promise);
@@ -140,14 +140,14 @@ it("repair oracle: late failed send recovers original refs across remount plus n
   await s.paste("old.txt");
   fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
   await waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
-  s.switchTo(B);
-  s.switchTo(A);
+  await s.switchTo(B);
+  await s.switchTo(A);
   type("New B");
   s.upload.mockReturnValueOnce(u.promise);
   await s.paste("new.txt", false);
-  s.switchTo(B);
+  await s.switchTo(B);
   await act(async () => p.reject(new Error("invented refusal")));
-  s.switchTo(A);
+  await s.switchTo(A);
   expect(field().value).toBe("Sent A\n\nNew B");
   expect(screen.getAllByTestId("attachment-chip")).toHaveLength(2);
   expect(screen.getByRole("button", { name: "Steer" }).hasAttribute("disabled")).toBe(true);
@@ -159,16 +159,16 @@ it("repair oracle: late failed send recovers original refs across remount plus n
   ).toBe(true);
 });
 it("countercontrol: same-lifetime snapshot conserves files and pending rollback", async () => {
-  const s = fixture(),
+  const s = await fixture(),
     p = Promise.withResolvers<Awaited<ReturnType<typeof s.send>>>();
   s.send.mockReturnValueOnce(p.promise);
   type("Old");
   await s.paste("old.txt");
   fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
   await waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
-  s.switchTo(B);
+  await s.switchTo(B);
   s.snapshot(10);
-  s.switchTo(A);
+  await s.switchTo(A);
   type("New");
   await s.paste("new.txt");
   await act(async () => p.reject(new Error("invented refusal")));
@@ -178,7 +178,7 @@ it("countercontrol: same-lifetime snapshot conserves files and pending rollback"
 it.each(["send", "steer", "stash"] as const)(
   "generation oracle: missed close/reopen snapshot fences late %s rollback",
   async (operation) => {
-    const s = fixture(),
+    const s = await fixture(),
       p = Promise.withResolvers<never>();
     s[operation === "stash" ? "stashDraft" : operation].mockReturnValueOnce(p.promise);
     type("Old lifetime");
@@ -191,11 +191,11 @@ it.each(["send", "steer", "stash"] as const)(
     await waitFor(() =>
       expect(s[operation === "stash" ? "stashDraft" : operation]).toHaveBeenCalledTimes(1),
     );
-    s.switchTo(B);
+    await s.switchTo(B);
     type("Other unchanged");
     await s.paste("other.txt");
     s.snapshot(20);
-    s.switchTo(A);
+    await s.switchTo(A);
     type("Reopened lifetime");
     await s.paste("new.txt");
     await act(async () => p.reject(new Error("invented old-generation refusal")));
@@ -203,32 +203,32 @@ it.each(["send", "steer", "stash"] as const)(
     expect(screen.getAllByTestId("attachment-chip").map((c) => c.getAttribute("title"))).toEqual([
       `/invented/${A}/new.txt`,
     ]);
-    s.switchTo(B);
+    await s.switchTo(B);
     expect(field().value).toBe("Other unchanged");
     expect(screen.getAllByTestId("attachment-chip")).toHaveLength(1);
   },
 );
 it("generation oracle: missed close/reopen snapshot drops old unsent uploads before late settlement", async () => {
-  const s = fixture(),
+  const s = await fixture(),
     p = Promise.withResolvers<Attachment>();
   s.upload.mockReturnValueOnce(p.promise);
   await s.paste("old.txt", false);
   await waitFor(() => expect(s.upload).toHaveBeenCalledTimes(1));
-  s.switchTo(B);
+  await s.switchTo(B);
   s.snapshot(20);
   await act(async () => p.resolve({ path: "/invented/old-upload.txt", name: "old.txt" }));
-  s.switchTo(A);
+  await s.switchTo(A);
   expect(screen.queryByTestId("attachment-chip")).toBeNull();
 });
 it("countercontrol: removal snapshot fences rollback without affecting another thread", async () => {
-  const s = fixture(),
+  const s = await fixture(),
     p = Promise.withResolvers<Awaited<ReturnType<typeof s.send>>>();
   s.send.mockReturnValueOnce(p.promise);
   type("Old");
   await s.paste("old.txt");
   fireEvent.click(screen.getByRole("button", { name: "Steer" }), { altKey: true });
   await waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
-  s.switchTo(B);
+  await s.switchTo(B);
   type("Other");
   await s.paste("other.txt");
   s.snapshot(20, false);
@@ -239,7 +239,7 @@ it("countercontrol: removal snapshot fences rollback without affecting another t
 });
 
 it("generation claim oracle: an old stash cannot block the reopened lifetime after a reconnect snapshot", async () => {
-  const s = fixture(),
+  const s = await fixture(),
     old = Promise.withResolvers<DraftStash>(),
     next = Promise.withResolvers<DraftStash>();
   s.stashDraft.mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise);
@@ -247,9 +247,9 @@ it("generation claim oracle: an old stash cannot block the reopened lifetime aft
   await s.paste("old.txt");
   stash();
   expect(s.stashDraft).toHaveBeenCalledTimes(1);
-  s.switchTo(B);
+  await s.switchTo(B);
   s.snapshot(20);
-  s.switchTo(A);
+  await s.switchTo(A);
   type("New");
   await s.paste("new.txt");
   stash();
@@ -267,7 +267,7 @@ it("generation claim oracle: an old stash cannot block the reopened lifetime aft
 it.each(["send", "steer", "stash"] as const)(
   "a still-mounted same-ID composer fences old %s rollback and remains usable in the new lifetime",
   async (operation) => {
-    const s = fixture();
+    const s = await fixture();
     const pending = Promise.withResolvers<never>();
     const rpc = s[operation === "stash" ? "stashDraft" : operation];
     rpc.mockReturnValueOnce(pending.promise);
@@ -300,7 +300,7 @@ it.each(["send", "steer", "stash"] as const)(
 it.each([10, 20])(
   "late successful send-new-draft navigates only in its own lifetime (createdAt %i)",
   async (createdAt) => {
-    const s = fixture();
+    const s = await fixture();
     const pending = Promise.withResolvers<Awaited<ReturnType<typeof s.send>>>();
     s.send.mockReturnValueOnce(pending.promise);
     type("Old lifetime");
@@ -311,14 +311,14 @@ it.each([10, 20])(
     type("Keep current draft");
     await s.paste("new.txt");
     await act(async () => pending.resolve({ queued: true }));
-    expect(navigate).toHaveBeenCalledTimes(createdAt === 10 ? 1 : 0);
+    expect(s.router().state.location.pathname).toBe(createdAt === 10 ? "/new" : `/t/${A}`);
     expect(field().value).toBe("Keep current draft");
     expect(screen.getAllByTestId("attachment-chip")).toHaveLength(1);
   },
 );
 
 it("a late rewind cannot send into the reopened lifetime or cancel its new edit", async () => {
-  const s = fixture();
+  const s = await fixture();
   const pending = Promise.withResolvers<void>();
   const rewind = vi.spyOn(s.api, "rewind").mockReturnValueOnce(pending.promise);
   act(() =>
@@ -350,7 +350,7 @@ it.each(["before take", "after take"] as const)(
       attachments: [{ path: "/invented/saved-old.txt", name: "saved-old.txt" }],
       createdAt: 1,
     };
-    const s = fixture([saved]);
+    const s = await fixture([saved]);
     const stashing = Promise.withResolvers<DraftStash>();
     const taking = Promise.withResolvers<DraftStash>();
     s.stashDraft.mockReturnValueOnce(stashing.promise);

@@ -4,19 +4,16 @@ import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useDraftStore } from "@/stores/drafts";
 import { useThreadsStore } from "@/stores/threads";
 
 import { Composer } from "./composer";
 
-const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
-
 const THREAD = "t-send-recovery" as ThreadId;
 const OTHER = "t-other-draft" as ThreadId;
-const setup = () => {
+const setup = async () => {
   // Offline discovery/auth are explicitly unavailable; only controlled RPCs accept input.
   sessionStorage.setItem("gram.mock.sessionExpired", "0");
   sessionStorage.setItem("gram.mock.agentRuntimes", JSON.stringify({ agents: [] }));
@@ -49,7 +46,10 @@ const setup = () => {
   }));
   const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
   const steer = vi.spyOn(api, "steer").mockResolvedValue(undefined);
-  renderWithApi(<Composer threadId={THREAD} focused />, api);
+  const { router } = await renderInRouter(<Composer threadId={THREAD} focused />, {
+    api,
+    path: `/t/${THREAD}`,
+  });
   const textarea = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   const paste = async (name: string) => {
     fireEvent.paste(textarea, {
@@ -69,7 +69,7 @@ const setup = () => {
       ).toBe(true),
     );
   };
-  return { api, send, steer, upload, textarea, paste };
+  return { api, send, steer, upload, textarea, paste, router };
 };
 // While the turn takes input the button steers; ⌥-click queues.
 const queue = () =>
@@ -83,12 +83,11 @@ afterEach(() => {
   useDraftStore.setState({ text: {}, edits: {} });
   useThreadsStore.setState({ byId: {} });
   vi.restoreAllMocks();
-  navigate.mockClear();
 });
 
 describe("failed send draft recovery", () => {
   it("restores original attachment references alongside a newer draft, then retries once", async () => {
-    const { send, upload, textarea, paste } = setup();
+    const { send, upload, textarea, paste } = await setup();
     const pending = Promise.withResolvers<{ queued: boolean }>();
     send.mockReturnValueOnce(pending.promise);
     fireEvent.change(textarea, { target: { value: "First direction" } });
@@ -122,7 +121,7 @@ describe("failed send draft recovery", () => {
   });
 
   it("restores an attachment-only draft when rewind fails without sending", async () => {
-    const { api, send, textarea, paste } = setup();
+    const { api, send, textarea, paste } = await setup();
     useDraftStore
       .getState()
       .startEdit(THREAD, "", { messageId: "old-message" as never, files: false });
@@ -142,7 +141,7 @@ describe("failed send draft recovery", () => {
   });
 
   it("returns steer attachments exactly once through the same recovery path", async () => {
-    const { steer, paste } = setup();
+    const { steer, paste } = await setup();
     steer.mockRejectedValueOnce(new Error("synthetic steer refusal"));
     await paste("steer.txt");
     fireEvent.click(screen.getByRole("button", { name: "Steer" }));
@@ -152,7 +151,7 @@ describe("failed send draft recovery", () => {
   });
 
   it("stays in the thread after Send and start a new draft fails, then navigates on success", async () => {
-    const { send, textarea, paste } = setup();
+    const { send, textarea, paste, router } = await setup();
     send.mockRejectedValueOnce(new Error("synthetic send refusal"));
     fireEvent.change(textarea, { target: { value: "Keep this draft" } });
     await paste("keep.txt");
@@ -160,11 +159,11 @@ describe("failed send draft recovery", () => {
     await waitFor(() =>
       expect(screen.getByText(/Couldn't send: synthetic send refusal/)).toBeTruthy(),
     );
-    expect(navigate).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe(`/t/${THREAD}`);
     expect(textarea.value).toBe("Keep this draft");
     expect(screen.getByRole("button", { name: "Remove keep.txt" })).toBeTruthy();
     newDraft();
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/new" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/new"));
     expect(send).toHaveBeenCalledTimes(2);
     expect(send.mock.calls[1]![1].attachments).toEqual(send.mock.calls[0]![1].attachments);
   });

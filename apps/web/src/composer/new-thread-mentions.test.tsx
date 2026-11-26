@@ -5,12 +5,10 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 
 import { NewThreadDraft } from "./new-thread-draft";
-
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
 
 afterEach(() => {
   cleanup();
@@ -18,11 +16,11 @@ afterEach(() => {
 });
 
 /** The draft over the mock, with `folder` typed as the project path. */
-const setup = (folder: string) => {
+const setup = async (folder: string) => {
   useServerSettings.setState({ settings: DEFAULT_SETTINGS });
   const api = createMockApi({ speed: 0, autoplay: false });
   const fsFiles = vi.spyOn(api, "fsFiles");
-  renderWithApi(<NewThreadDraft />, api);
+  await renderInRouter(<NewThreadDraft />, { api });
   // The path field is under More options, folded once a folder resolves.
   fireEvent.click(screen.getByTestId("new-more-options"));
   const path = screen.getByRole("combobox", { name: "Project path" });
@@ -42,13 +40,13 @@ const offered = () =>
   within(screen.getByRole("listbox", { name: "Files" }))
     .getAllByRole("option")
     .map((option) => option.getAttribute("aria-label"));
-const listedPaths = (fsFiles: ReturnType<typeof setup>["fsFiles"]) =>
+const listedPaths = (fsFiles: Awaited<ReturnType<typeof setup>>["fsFiles"]) =>
   fsFiles.mock.calls.map(([target]) => ("path" in target ? target.path : undefined));
 
 describe("New thread draft @ mentions", () => {
   it("waits for saved preferences before initializing a cold draft", async () => {
     const api = createMockApi({ speed: 0, autoplay: false });
-    renderWithApi(<NewThreadDraft />, api);
+    await renderInRouter(<NewThreadDraft />, { api });
     expect(screen.getByRole("status").textContent).toContain("Loading agent preferences");
     expect(screen.queryByRole("form", { name: "New thread" })).toBeNull();
     act(() => {
@@ -84,7 +82,7 @@ describe("New thread draft @ mentions", () => {
   });
 
   it("offers the project folder's files and inserts the chosen one", async () => {
-    const { fsFiles, prompt, user } = setup("/Users/dev/code/web");
+    const { fsFiles, prompt, user } = await setup("/Users/dev/code/web");
     await folderChecked();
     await user.click(prompt);
     await user.type(prompt, "start with @sr");
@@ -100,7 +98,7 @@ describe("New thread draft @ mentions", () => {
   });
 
   it("lists a chosen existing worktree rather than the project folder", async () => {
-    const { fsFiles, prompt, user } = setup("/Users/dev/code/api");
+    const { fsFiles, prompt, user } = await setup("/Users/dev/code/api");
     await folderChecked();
     await user.click(screen.getByRole("radio", { name: "Existing worktree" }));
     const worktrees = await screen.findByRole("radiogroup", { name: "Existing worktrees" });
@@ -116,7 +114,7 @@ describe("New thread draft @ mentions", () => {
   });
 
   it("offers nothing while no folder is chosen", async () => {
-    const { fsFiles, prompt, user } = setup("");
+    const { fsFiles, prompt, user } = await setup("");
     await user.click(prompt);
     await user.type(prompt, "@src");
     // Past the folder check's debounce and the projects query, which is when an untyped field used

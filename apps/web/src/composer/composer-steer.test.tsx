@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createMockApi } from "@/api/mock";
 import { MOCK_SESSION_EXPIRED_KEY } from "@/api/mock-overrides";
-import { renderWithApi } from "@/panels/test-utils";
+import { renderInRouter } from "@/panels/test-utils";
 import { useDiffCommentsStore, type DiffComment } from "@/stores/diff-comments";
 import { useServerSettings } from "@/settings-sync/store";
 import { useDraftStore } from "@/stores/drafts";
@@ -14,11 +14,9 @@ import { useThreadsStore } from "@/stores/threads";
 
 import { Composer } from "./composer";
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => {} }));
-
 const THREAD = "t-steer" as ThreadId;
 
-const setup = ({
+const setup = async ({
   steers = true,
   interrupts = true,
   status = "running",
@@ -44,7 +42,10 @@ const setup = ({
   });
   const api = createMockApi({ speed: 0, autoplay: false, agents: ["claude"], persist: false });
   const steer = vi.spyOn(api, "steer").mockResolvedValue(undefined);
-  const view = renderWithApi(<Composer threadId={THREAD} focused />, api);
+  const view = await renderInRouter(<Composer threadId={THREAD} focused />, {
+    api,
+    path: `/t/${THREAD}`,
+  });
   const textarea = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
   return { api, steer, textarea, unmount: view.unmount };
 };
@@ -86,7 +87,7 @@ describe("Composer hint lifetime", () => {
 
   it("keeps a replacement hint for its full duration, then expires it once", async () => {
     const { expired } = observeExpiry();
-    const { steer, textarea } = setup();
+    const { steer, textarea } = await setup();
     fireEvent.change(textarea, { target: { value: "first direction" } });
     await act(async () => steerNow());
     expect(screen.getByText("Steering…")).toBeTruthy();
@@ -119,7 +120,7 @@ describe("Composer hint lifetime", () => {
 
   it("cancels pending hint expiry when the composer unmounts", async () => {
     const { expired, timers } = observeExpiry();
-    const { textarea, unmount } = setup();
+    const { textarea, unmount } = await setup();
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     await act(async () => steerNow());
     expect(screen.getByText("Steering…")).toBeTruthy();
@@ -133,7 +134,7 @@ describe("Composer hint lifetime", () => {
 
   it("creates no hint timer when an in-flight steer finishes after unmount", async () => {
     const { expired, timers } = observeExpiry();
-    const { steer, textarea, unmount } = setup();
+    const { steer, textarea, unmount } = await setup();
     const inFlight = Promise.withResolvers<void>();
     steer.mockReturnValueOnce(inFlight.promise);
     fireEvent.change(textarea, { target: { value: "use vitest" } });
@@ -152,7 +153,7 @@ describe("Composer hint lifetime", () => {
 
 describe("Composer steer", () => {
   it("sends the draft into the running turn and clears the composer", async () => {
-    const { steer, textarea } = setup();
+    const { steer, textarea } = await setup();
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     steerNow();
     await waitFor(() => expect(steer).toHaveBeenCalledWith(THREAD, { text: "use vitest" }));
@@ -161,7 +162,7 @@ describe("Composer steer", () => {
   });
 
   it("gives the draft back when the steer is rejected", async () => {
-    const { steer, textarea } = setup();
+    const { steer, textarea } = await setup();
     steer.mockRejectedValueOnce(new Error("nothing to steer"));
     fireEvent.change(textarea, { target: { value: "too late" } });
     steerNow();
@@ -170,7 +171,7 @@ describe("Composer steer", () => {
   });
 
   it("waits for a dropped connection with the draft still in the box, saying so, then steers", async () => {
-    const { api, steer, textarea } = setup();
+    const { api, steer, textarea } = await setup();
     // The mock's monitor is the full control the feeds report through.
     const connection = api.connection;
     const feed = Symbol("feed");
@@ -198,7 +199,7 @@ describe("Composer steer", () => {
   });
 
   it("sends nothing by itself once the draft changed while it waited, nor after the composer went", async () => {
-    const { api, steer, textarea } = setup();
+    const { api, steer, textarea } = await setup();
     const connection = api.connection;
     const feed = Symbol("feed");
     connection.opened(feed);
@@ -217,7 +218,7 @@ describe("Composer steer", () => {
     steerNow();
     await waitFor(() => expect(screen.getByText(/Waiting for the connection/)).toBeTruthy());
     cleanup();
-    renderWithApi(<Composer threadId={THREAD} focused />, api);
+    await renderInRouter(<Composer threadId={THREAD} focused />, { api, path: `/t/${THREAD}` });
     // The ended wait lets go of the thread a tick later, long before a person presses again.
     await new Promise((resolve) => setTimeout(resolve, 0));
     steerNow();
@@ -229,7 +230,7 @@ describe("Composer steer", () => {
   });
 
   it("sends nothing by itself when a file pasted while it waited is still uploading", async () => {
-    const { api, steer, textarea } = setup();
+    const { api, steer, textarea } = await setup();
     vi.spyOn(api, "uploadAttachment").mockReturnValue(new Promise(() => {}));
     const connection = api.connection;
     const feed = Symbol("feed");
@@ -248,8 +249,8 @@ describe("Composer steer", () => {
     expect(screen.getByText("shot.txt")).toBeTruthy();
   });
 
-  it("keeps Stop beside one delivery button, which sends once there is a draft", () => {
-    const { textarea } = setup();
+  it("keeps Stop beside one delivery button, which sends once there is a draft", async () => {
+    const { textarea } = await setup();
     fireEvent.change(textarea, { target: { value: "" } });
     expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
     // Nothing typed: the face says the way in and puts the caret in the field, sending nothing.
@@ -264,8 +265,8 @@ describe("Composer steer", () => {
     expect(screen.getByTestId("running-edge")).toBeTruthy();
   });
 
-  it("stops the turn from the empty button, but not on a double click's second click", () => {
-    const { api, textarea } = setup();
+  it("stops the turn from the empty button, but not on a double click's second click", async () => {
+    const { api, textarea } = await setup();
     const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
     fireEvent.change(textarea, { target: { value: "" } });
     const stop = screen.getByRole("button", { name: "Stop" });
@@ -277,8 +278,8 @@ describe("Composer steer", () => {
 
   it.each(["needsApproval", "needsInput"] as const)(
     "steps Stop back to an outline, with no turning ring, while the turn waits on you (%s)",
-    (status) => {
-      const { api, textarea } = setup({ status });
+    async (status) => {
+      const { api, textarea } = await setup({ status });
       const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
       fireEvent.change(textarea, { target: { value: "" } });
       const stop = screen.getByRole("button", { name: "Stop" });
@@ -291,8 +292,8 @@ describe("Composer steer", () => {
     },
   );
 
-  it("keeps Stop the solid pill, its ring turning, while the turn runs", () => {
-    const { textarea } = setup();
+  it("keeps Stop the solid pill, its ring turning, while the turn runs", async () => {
+    const { textarea } = await setup();
     fireEvent.change(textarea, { target: { value: "" } });
     const stop = screen.getByRole("button", { name: "Stop" });
     expect(stop.hasAttribute("data-waiting")).toBe(false);
@@ -300,8 +301,8 @@ describe("Composer steer", () => {
     expect(screen.getByTestId("stop-ring")).toBeTruthy();
   });
 
-  it("turns to Queue while ⌥ is down and to Interrupt while ⌘ is, and back to Steer", () => {
-    const { textarea } = setup();
+  it("turns to Queue while ⌥ is down and to Interrupt while ⌘ is, and back to Steer", async () => {
+    const { textarea } = await setup();
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     fireEvent.keyDown(window, { key: "Alt", altKey: true });
     expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
@@ -314,7 +315,7 @@ describe("Composer steer", () => {
 
   it("steers on Enter, queues on ⌥Enter and interrupts on ⌘. with a draft", async () => {
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
-    const { api, steer, textarea } = setup();
+    const { api, steer, textarea } = await setup();
     const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
     const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
     fireEvent.change(textarea, { target: { value: "skip e2e" } });
@@ -332,8 +333,8 @@ describe("Composer steer", () => {
     expect(interrupt).not.toHaveBeenCalled();
   });
 
-  it("shows the way in before anything is typed, and says it in the empty field", () => {
-    const { textarea } = setup();
+  it("shows the way in before anything is typed, and says it in the empty field", async () => {
+    const { textarea } = await setup();
     fireEvent.change(textarea, { target: { value: "" } });
     expect(screen.getByTestId("delivery-button").textContent).toContain("Steer");
     expect(textarea.placeholder).toMatch(/^Steer the agent…/);
@@ -341,7 +342,7 @@ describe("Composer steer", () => {
   });
 
   it("sends the way picked on the chip, for that message only", async () => {
-    const { api, steer, textarea } = setup();
+    const { api, steer, textarea } = await setup();
     const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
     fireEvent.click(screen.getByTestId("delivery-menu"));
     const items = await screen.findAllByRole("menuitemradio");
@@ -376,7 +377,7 @@ describe("Composer steer", () => {
     "steers into a turn waiting on a card, saying when the agent reads it (%s)",
     async (status) => {
       useServerSettings.setState({ settings: DEFAULT_SETTINGS });
-      const { steer, textarea } = setup({ status });
+      const { steer, textarea } = await setup({ status });
       expect(screen.getByTestId("delivery-button").textContent).toContain("Steer");
       fireEvent.click(screen.getByTestId("delivery-menu"));
       const items = await screen.findAllByRole("menuitemradio");
@@ -404,7 +405,7 @@ describe("Composer steer", () => {
   );
 
   it("interrupts at a card on an agent with no interrupting steer, as a stop then the message", async () => {
-    const { steer, textarea } = setup({ status: "needsApproval", interrupts: false });
+    const { steer, textarea } = await setup({ status: "needsApproval", interrupts: false });
     fireEvent.click(screen.getByTestId("delivery-menu"));
     const interrupt = await screen.findByTestId("delivery-interrupt");
     expect(interrupt.hasAttribute("data-disabled")).toBe(false);
@@ -419,7 +420,7 @@ describe("Composer steer", () => {
   });
 
   it("steers an interrupt into an agent that can't stop for a message, and says so", async () => {
-    const { steer, textarea } = setup({ interrupts: false });
+    const { steer, textarea } = await setup({ interrupts: false });
     fireEvent.change(textarea, { target: { value: "wrong branch" } });
     fireEvent.keyDown(textarea, { key: ".", code: "Period", ctrlKey: true });
     await waitFor(() => expect(steer).toHaveBeenCalledWith(THREAD, { text: "wrong branch" }));
@@ -427,7 +428,7 @@ describe("Composer steer", () => {
   });
 
   it("queues rather than steers for an agent that takes no input mid-turn", async () => {
-    const { textarea, steer, api } = setup({ steers: false });
+    const { textarea, steer, api } = await setup({ steers: false });
     const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     fireEvent.keyDown(window, { key: "Meta", metaKey: true });
@@ -447,7 +448,7 @@ describe("Composer steer", () => {
 
   it("sends rather than steers into a turn whose folder is gone, keeping the draft with why", async () => {
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
-    const { api, steer, textarea } = setup({ missing: true });
+    const { api, steer, textarea } = await setup({ missing: true });
     // As the server refuses any send to a thread whose folder is gone, mid-turn too.
     const send = vi
       .spyOn(api, "send")
@@ -463,7 +464,7 @@ describe("Composer steer", () => {
   });
 
   it("keeps Stop in the right-click menu while a draft has the button", async () => {
-    const { api, textarea } = setup();
+    const { api, textarea } = await setup();
     const interrupt = vi.spyOn(api, "interrupt").mockResolvedValue(undefined);
     fireEvent.change(textarea, { target: { value: "use vitest" } });
     fireEvent.contextMenu(screen.getByTestId("send-menu-trigger"));
@@ -489,7 +490,7 @@ describe("Composer diff comments", () => {
 
   it("shows a chip per comment and sends them ahead of the text", async () => {
     useDiffCommentsStore.getState().add(THREAD, comment);
-    const { steer, textarea } = setup();
+    const { steer, textarea } = await setup();
     expect(screen.getByTestId("diff-comment-chip").textContent).toContain("src/retry.ts:13-14");
     fireEvent.change(textarea, { target: { value: "then rerun" } });
     steerNow();
@@ -507,7 +508,7 @@ describe("Composer diff comments", () => {
 
   it("sends comments alone, and gives them back apart from the text when rejected", async () => {
     useDiffCommentsStore.getState().add(THREAD, comment);
-    const { steer, textarea } = setup();
+    const { steer, textarea } = await setup();
     steer.mockRejectedValueOnce(new Error("nothing to steer"));
     // Comments alone are enough to send.
     steerNow();
@@ -518,7 +519,7 @@ describe("Composer diff comments", () => {
 
   it("gives the text and comments back when a send is rejected", async () => {
     useDiffCommentsStore.getState().add(THREAD, comment);
-    const { api, textarea } = setup();
+    const { api, textarea } = await setup();
     const send = vi.spyOn(api, "send").mockRejectedValueOnce(new Error("offline"));
     fireEvent.change(textarea, { target: { value: "then rerun" } });
     fireEvent.click(screen.getByRole("button", { name: /^(Send|Queue|Steer)$/ }), { altKey: true });
@@ -528,7 +529,7 @@ describe("Composer diff comments", () => {
   });
 
   it("keeps what was typed while a rejected send was in flight", async () => {
-    const { api, textarea } = setup();
+    const { api, textarea } = await setup();
     const inFlight = Promise.withResolvers<never>();
     vi.spyOn(api, "send").mockReturnValueOnce(inFlight.promise);
     fireEvent.change(textarea, { target: { value: "first" } });
@@ -540,7 +541,7 @@ describe("Composer diff comments", () => {
   });
 
   it("gives a slash command Gram failed at back the same way", async () => {
-    const { api, textarea } = setup();
+    const { api, textarea } = await setup();
     const inFlight = Promise.withResolvers<never>();
     const rename = vi.spyOn(api, "rename").mockReturnValueOnce(inFlight.promise);
     fireEvent.change(textarea, { target: { value: "/rename Retry without sleeps" } });
@@ -552,9 +553,9 @@ describe("Composer diff comments", () => {
     await waitFor(() => expect(textarea.value).toBe("/rename Retry without sleeps\n\nsecond"));
   });
 
-  it("drops a comment from its chip", () => {
+  it("drops a comment from its chip", async () => {
     useDiffCommentsStore.getState().add(THREAD, comment);
-    setup();
+    await setup();
     fireEvent.click(
       screen.getByRole("button", { name: "Remove the comment on src/retry.ts:13-14" }),
     );
@@ -579,7 +580,7 @@ describe("Composer suggestions on open", () => {
       turnId: "turn-1" as never,
       replies: ["Push it"],
     });
-    renderWithApi(<Composer threadId={THREAD} focused />, api);
+    await renderInRouter(<Composer threadId={THREAD} focused />, { api, path: `/t/${THREAD}` });
     await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(useSuggestionsStore.getState().byThread[THREAD]).toBeDefined());
     useSuggestionsStore.getState().reset();
@@ -602,7 +603,7 @@ describe("Composer suggestions on open", () => {
 describe("Composer suggestion ghost", () => {
   const GHOSTED = "t-ghost" as ThreadId;
   const REPLY = "Check whether CI is passing.";
-  const setupGhost = () => {
+  const setupGhost = async () => {
     useServerSettings.setState({ settings: DEFAULT_SETTINGS });
     useThreadsStore.setState({
       byId: {
@@ -620,7 +621,7 @@ describe("Composer suggestion ghost", () => {
     });
     // A turn still open on the server: the message waits in its queue and no new turn starts.
     const send = vi.spyOn(api, "send").mockResolvedValue({ queued: true });
-    renderWithApi(<Composer threadId={GHOSTED} focused />, api);
+    await renderInRouter(<Composer threadId={GHOSTED} focused />, { api, path: `/t/${GHOSTED}` });
     const textarea = screen.getByRole<HTMLTextAreaElement>("combobox", { name: "Message" });
     fireEvent.focus(textarea);
     return { send, textarea };
@@ -631,7 +632,7 @@ describe("Composer suggestion ghost", () => {
   });
 
   it("is replaced by typing, and Enter sends only what was typed", async () => {
-    const { send, textarea } = setupGhost();
+    const { send, textarea } = await setupGhost();
     await waitFor(() => expect(screen.getByTestId("composer-ghost").textContent).toContain(REPLY));
     fireEvent.change(textarea, { target: { value: "merge it" } });
     expect(screen.queryByTestId("composer-ghost")).toBeNull();
@@ -641,7 +642,7 @@ describe("Composer suggestion ghost", () => {
   });
 
   it("is sent once: what was sent doesn't come back into the box while the message waits", async () => {
-    const { send, textarea } = setupGhost();
+    const { send, textarea } = await setupGhost();
     await waitFor(() => expect(screen.getByTestId("composer-ghost")).toBeTruthy());
     fireEvent.keyDown(textarea, { key: "ArrowRight" });
     expect(textarea.value).toBe(REPLY);
