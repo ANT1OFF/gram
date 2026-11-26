@@ -230,7 +230,7 @@ holding a slot runs Vitest with its share of the cores (`GRAM_CHECK_WORKERS` or
 holder died is reclaimed. Stop a check with Ctrl-C or `bun run check:cancel` from its own
 checkout, never with a `pkill -f` pattern, which also kills other worktrees' runs. `killall`
 and `kill` on `pgrep` matches are out too; kill only the exact PIDs your own command started.
-On CI (`CI` set) there is no slot and Vitest keeps three workers.
+On CI (`CI` set) there is no slot and Vitest takes a worker per core.
 
 The root `test` script, for focused runs, caps Vitest at three workers. `bun run typecheck` keeps
 no cache, so every run checks every project from source. It starts one thread per core; on a
