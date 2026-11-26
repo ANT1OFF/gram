@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { afterAll } from "vitest";
 import { ServerConfig } from "../config.ts";
 import { gitPlatformTest } from "../git/platform.ts";
-import { hasGit, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
+import { eventually, hasGit, makeRepo, removeDir, tempDir } from "../git/test-repo.ts";
 import { GitTurnHooksLive } from "../git/turn-hooks.ts";
 import { ThreadStore } from "../persistence/thread-store.ts";
 import { threadHandlers } from "../rpc/handlers/threads.ts";
@@ -157,10 +157,13 @@ describe.skipIf(!hasGit)("thread.createFromProfile in repositories", () => {
         expect(existsSync(join(checkout.path, ".claude/skills/ship-it/SKILL.md"))).toBe(true);
         expect(git(checkout.path, "status", "--porcelain")).toBe("");
 
-        const session = fake.sessions.find((s) => s.options.threadId === thread.id);
-        expect(session?.options.cwd).toBe(checkout.path);
-        expect(session?.options.instructions).toBe("Fix what is asked, and open a pull request.");
-        expect(session?.options.mcpAllowlist).toEqual([]);
+        const session = yield* eventually(
+          "the profile thread's session",
+          Effect.sync(() => fake.sessions.find((s) => s.options.threadId === thread.id)),
+        );
+        expect(session.options.cwd).toBe(checkout.path);
+        expect(session.options.instructions).toBe("Fix what is asked, and open a pull request.");
+        expect(session.options.mcpAllowlist).toEqual([]);
       }),
     ),
   );
@@ -218,8 +221,11 @@ describe.skipIf(!hasGit)("thread.createFromProfile in repositories", () => {
         expect(thread.additionalDirectories).toEqual([docs?.path]);
         // The files are laid in the first only.
         expect(existsSync(join(docs!.path, "AGENTS.md"))).toBe(false);
-        const session = fake.sessions.find((s) => s.options.threadId === thread.id);
-        expect(session?.options.additionalDirectories).toEqual([docs?.path]);
+        const session = yield* eventually(
+          "the profile thread's session",
+          Effect.sync(() => fake.sessions.find((s) => s.options.threadId === thread.id)),
+        );
+        expect(session.options.additionalDirectories).toEqual([docs?.path]);
       }),
     ),
   );

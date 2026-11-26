@@ -1,10 +1,15 @@
-import type {
-  ConversationRef,
-  SendResult,
-  TurnId,
-  UserInput,
-  QueuedInput,
-  GramUIMessage,
+import type { ThreadStoreShape } from "../persistence/thread-store.ts";
+import * as Option from "effect/Option";
+import {
+  fromOwnOrchestrator,
+  fenceThreadMessage,
+  type ThreadId,
+  type ConversationRef,
+  type SendResult,
+  type TurnId,
+  type UserInput,
+  type QueuedInput,
+  type GramUIMessage,
 } from "@gram/contracts";
 import * as Effect from "effect/Effect";
 import { basename } from "node:path";
@@ -161,4 +166,37 @@ export const conversationHeader = (conversation: ConversationRef, owned: boolean
   return owned
     ? `[From ${where}. Answer there with the \`reply\` tool, naming this conversation; what you write in this chat isn't posted there.]`
     : `[From ${where}, which another thread answers. Don't reply there; pass on what matters with \`send_message\`.]`;
+};
+
+export const inputForAgent = (
+  store: Pick<ThreadStoreShape, "getThread">,
+  threadId: ThreadId,
+  stored: UserInput,
+): Effect.Effect<UserInput> => {
+  const { author: _, conversation, ...rest } = stored;
+  if (conversation !== undefined) {
+    return store.getThread(threadId).pipe(
+      Effect.option,
+      Effect.map((thread) => ({
+        ...rest,
+        text: `${conversationHeader(
+          conversation,
+          (Option.getOrUndefined(thread)?.conversations ?? []).some(
+            (each) => each.id === conversation.id,
+          ),
+        )}\n${rest.text}`,
+      })),
+    );
+  }
+  const input = rest;
+  const origin = input.origin;
+  if (origin === undefined) return Effect.succeed(input);
+  return store.getThread(threadId).pipe(
+    Effect.option,
+    Effect.map((thread) =>
+      fromOwnOrchestrator(origin, Option.getOrUndefined(thread)?.spawnedBy)
+        ? input
+        : { ...input, text: fenceThreadMessage(origin, input.text) },
+    ),
+  );
 };

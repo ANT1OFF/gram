@@ -275,6 +275,9 @@ export interface Runtime {
    * mustn't make the thread idle, or the queue would drain into the session being replaced.
    */
   reopening: boolean;
+  activeWorktreeHook?: boolean | undefined;
+  resumedWorktreeNotice?: QueueItemId | undefined;
+  worktreeHookNote?: string | undefined;
   switchSource?: AgentSession | undefined;
   /**
    * Set while a switch's old session stops, outside the lock: what it did meanwhile (asked a

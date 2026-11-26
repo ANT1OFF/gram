@@ -707,13 +707,17 @@ layer(server({ embedding: true, embed, dataDir: join(tmp, "data") }), {
           expect.objectContaining({ kind: "worktree", branch: answered.branch }),
         ]);
         expect(thread.additionalDirectories).toEqual([thread.extraCheckouts![0]!.path]);
-        yield* eventually(
+        const opened = yield* eventually(
           "the first message sent to the agent",
-          control.latest(thread.id).pipe(
-            Effect.map((session) => session.sent.some((input) => input.text === start.text)),
-            Effect.orElseSucceed(() => false),
+          Effect.sync(() =>
+            control.sessions.find(
+              (session) =>
+                session.options.threadId === thread.id &&
+                session.sent.some((input) => input.text === start.text),
+            ),
           ),
         );
+        yield* opened.completeTurn();
         expect(yield* store.listActorEvents()).toContainEqual(
           expect.objectContaining({
             action: "thread.create",

@@ -197,6 +197,7 @@ export const makeServerApprovals = ({
     Effect.gen(function* () {
       if ((yield* store.listRequests(rt.threadId)).length > 0) return;
       if (rt.turn !== undefined) return yield* setStatus(rt, "running");
+      if (rt.activeWorktreeHook === true) return;
       if (rt.status === "needsApproval") {
         if (rt.session !== undefined && !rt.closing && !rt.reserved) return yield* becomeIdle(rt);
         yield* setStatus(rt, rt.session === undefined ? "cold" : "idle");
