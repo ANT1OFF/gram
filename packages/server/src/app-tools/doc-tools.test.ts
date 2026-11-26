@@ -21,6 +21,8 @@ const ORCHESTRATOR = "t-orch" as ThreadId;
 const WORKER = "t-worker" as ThreadId;
 const SOLO = "t-solo" as ThreadId;
 const GONE_ORCHESTRATOR_WORKER = "t-orphan" as ThreadId;
+const BUILDER = "t-builder" as ThreadId;
+const REVIEWER = "t-reviewer" as ThreadId;
 
 const THREADS: Record<string, Partial<Thread>> = {
   [ORCHESTRATOR]: {
@@ -42,6 +44,19 @@ const THREADS: Record<string, Partial<Thread>> = {
     spawnedBy: { threadId: "t-gone" as ThreadId, feature: "x" },
   },
   [SOLO]: { id: SOLO, title: "Solo" },
+  [BUILDER]: {
+    id: BUILDER,
+    title: "docs-archive",
+    workspaceId: WS,
+    spawnedBy: { threadId: ORCHESTRATOR, feature: "docs-archive" },
+    boundPr: { repo: "acme/widgets", number: 42, monitor: false },
+  },
+  [REVIEWER]: {
+    id: REVIEWER,
+    title: "Review #42",
+    workspaceId: WS,
+    spawnedBy: { threadId: ORCHESTRATOR, feature: "review" },
+  },
 };
 
 const setup = Effect.gen(function* () {
@@ -314,6 +329,15 @@ describe("read_doc listings", () => {
         matched: 52,
         more: 2,
       });
+      // A word is matched in the title, never in an id's random tail; a whole id finds its doc.
+      for (const word of ["a", "b", "c", "d", "e", "f"]) {
+        expect((yield* read.run({ query: `review 3${word}` })) as object).toMatchObject({
+          matched: 0,
+        });
+      }
+      expect((yield* read.run({ query: ids[7]! })) as object).toMatchObject({
+        docs: [{ id: ids[7] }],
+      });
 
       const archived = (yield* read.run({ archived: true })) as {
         docs: Array<{ id: string; archivedAt?: string; archivedReason?: string }>;
@@ -395,6 +419,74 @@ describe("archive_doc and delete_doc", () => {
       yield* tools(ORCHESTRATOR).archive.run({ id });
       expect(yield* tools(ORCHESTRATOR).remove.run({ id })).toEqual({ id, deleted: true });
       expect(yield* docs.counts(WS)).toEqual({ active: 0, archived: 0 });
+    }).pipe(Effect.scoped),
+  );
+});
+
+describe("publish_doc for a PR", () => {
+  it.effect(
+    "binds a doc to the author's PR, and hands a reviewer's round that doc to fold into",
+    () =>
+      Effect.gen(function* () {
+        const { chunks, tools } = yield* setup;
+        const first = (yield* tools(BUILDER).publish.run({
+          title: "Design notes",
+          content: "Round 1.",
+        })) as { id: string; pr?: string };
+        expect(first.pr).toBe("acme/widgets#42");
+        const cards = chunks.length;
+
+        const round = (yield* tools(REVIEWER).publish.run({
+          title: "Review of #42",
+          content: "Round 2.",
+          pr: { repo: "acme/widgets", number: 42 },
+        })) as { id: string; revision: number; existing?: boolean; published?: boolean };
+        expect(round).toMatchObject({
+          id: first.id,
+          revision: 1,
+          existing: true,
+          published: false,
+        });
+        // Nothing was published, so no card either.
+        expect(chunks).toHaveLength(cards);
+
+        expect(
+          yield* tools(REVIEWER).publish.run({
+            id: first.id,
+            revision: 1,
+            content: "## Round 2\n\nRound 2.\n\n## Round 1\n\nRound 1.",
+          }),
+        ).toMatchObject({ id: first.id, revision: 2, updated: true });
+        expect(yield* tools(ORCHESTRATOR).read.run({})).toMatchObject({
+          docs: [{ id: first.id, author: "docs-archive", pr: "acme/widgets#42" }],
+        });
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("binds none with `pr: null`, and refuses `pr` on an update", () =>
+    Effect.gen(function* () {
+      const { tools } = yield* setup;
+      const plain = (yield* tools(BUILDER).publish.run({
+        title: "Unrelated notes",
+        content: "x",
+        pr: null,
+      })) as { id: string; pr?: string };
+      expect(plain.pr).toBeUndefined();
+      // Not a PR's doc, so another worker may not update it.
+      expect(
+        yield* Effect.flip(
+          tools(REVIEWER).publish.run({ id: plain.id, revision: 1, content: "y" }),
+        ),
+      ).toBeInstanceOf(AppToolError);
+      const moved = yield* Effect.flip(
+        tools(BUILDER).publish.run({
+          id: plain.id,
+          revision: 1,
+          content: "y",
+          pr: { repo: "acme/widgets", number: 7 },
+        }),
+      );
+      expect(moved).toBeInstanceOf(AppToolError);
     }).pipe(Effect.scoped),
   );
 });

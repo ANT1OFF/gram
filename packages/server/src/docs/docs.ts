@@ -1,6 +1,7 @@
 import {
   type Doc,
   type DocArchiveReason,
+  type DocPr,
   DOC_HISTORY_KEEP,
   DOC_ID_PATTERN,
   DOC_MAX_BYTES,
@@ -13,6 +14,7 @@ import {
   DOCS_PER_WORKSPACE_MAX,
   docTitle,
   errnoCode,
+  sameDocPr,
   FsError,
   InvalidState,
   NotFound,
@@ -66,6 +68,11 @@ export interface PublishDocInput {
   readonly content: string;
   /** For an update: the revision the agent last published or read, which must still be current. */
   readonly revision?: number | undefined;
+  /**
+   * For a new doc: the PR it is about. When the workspace already has an active doc for that PR,
+   * nothing is written and that doc comes back (`existing`), for the round to be folded into it.
+   */
+  readonly pr?: DocPr | undefined;
 }
 
 /**
@@ -74,10 +81,9 @@ export interface PublishDocInput {
  */
 export type DocActor = DocAuthor | "user";
 
-export interface PublishedDoc {
-  readonly meta: DocMeta;
-  readonly action: "published" | "updated";
-}
+export type PublishedDoc =
+  | { readonly meta: DocMeta; readonly action: "published" | "updated" }
+  | { readonly meta: DocMeta; readonly action: "existing" };
 
 /** How many docs a workspace holds, from the folders' names alone. */
 export interface DocCounts {
@@ -511,6 +517,12 @@ export const makeDocs = (
           const title = docTitle(input.title ?? "");
           if (title === "") return yield* refuse("A new doc needs a title");
           const existing = yield* listIn(at, input.workspaceId);
+          const pr = input.pr;
+          const forPr =
+            pr === undefined
+              ? undefined
+              : existing.find((doc) => doc.pr !== undefined && sameDocPr(doc.pr, pr));
+          if (forPr !== undefined) return { meta: forPr, action: "existing" as const };
           if (existing.length >= activeMax) {
             return yield* refuse(
               `This workspace keeps at most ${activeMax} active docs. Archive one you're done ` +
@@ -536,6 +548,7 @@ export const makeDocs = (
             revision: 1,
             bytes,
             excerpt: docExcerpt(content),
+            ...(pr === undefined ? {} : { pr }),
           };
           yield* commit(at, meta, content);
           return { meta, action: "published" as const };
@@ -550,7 +563,11 @@ export const makeDocs = (
           );
         }
         const { content: _previousContent, ...current } = previous;
-        if (current.authorThreadId !== input.author.threadId && !input.author.orchestrator) {
+        if (
+          current.pr === undefined &&
+          current.authorThreadId !== input.author.threadId &&
+          !input.author.orchestrator
+        ) {
           return yield* refuse(
             `${current.title} was published by ${current.authorTitle}: only that thread or the ` +
               "workspace's orchestrator may update it. Publish a doc of your own instead.",
