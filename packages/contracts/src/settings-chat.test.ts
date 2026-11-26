@@ -631,6 +631,15 @@ describe("project local check planning", () => {
       ).toBe(true);
     }
   });
+  it("shows the repository setup value when replacing an unreadable local check", () => {
+    const setup = { source: "repository" };
+    const result = plan([{ op: "set", key: "project.localCheck.setup", value: setup }], {
+      ...world,
+      project: { ...project, localCheckUnavailable: "unreadable" },
+    });
+    expect(result.ok && result.plan.notes.join("\n")).toContain(JSON.stringify(setup));
+  });
+
   it("binds an approved source-selection manifest and rejects malformed pins", () => {
     const preparation = { manifest: "/tmp/selection.json", sha256: "a".repeat(64) };
     const accepted = plan(

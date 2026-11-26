@@ -1142,11 +1142,13 @@ export const planSettingsChanges = (
     delete nextProject.localCheckUnavailable;
     next = { ...world, project: nextProject };
     if (world.project?.localCheckUnavailable !== undefined) {
+      const { setup } = decoded.success;
+      const setupText = typeof setup === "object" ? JSON.stringify(setup) : (setup ?? "unset");
       notes.push(
         "The unreadable stored local-check configuration will be replaced in full; its private contents are not shown.",
       );
       notes.push(
-        `Complete destination: command=${decoded.success.command ?? "unset"}; setup=${decoded.success.setup ?? "unset"}; effective timeoutMs=${decoded.success.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS}.`,
+        `Complete destination: command=${decoded.success.command ?? "unset"}; setup=${setupText}; effective timeoutMs=${decoded.success.timeoutMs ?? DEFAULT_LOCAL_CHECK_TIMEOUT_MS}.`,
       );
     }
     notes.push(

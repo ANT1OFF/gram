@@ -30,6 +30,8 @@ export interface LocalCheckRun {
   readonly preparation?: NonNullable<ProjectLocalCheck["preparation"]>;
   readonly projectId?: string;
   readonly setup?: string;
+  readonly repositorySetup?: true;
+  readonly setupRunnerVersion?: number;
   readonly timeoutMs?: number;
   /** Only `unavailable/v1`, for a stored recipe that can't be read; it never runs. */
   readonly profile?: string;
@@ -98,6 +100,8 @@ export interface CheckEnvironment {
   readonly base: Readonly<Record<string, string | undefined>>;
   /** The login-shell PATH; empty keeps `base`'s. */
   readonly pathValue: string;
+  /** The setup hook's sanitized output, which precedes the command's output in this run's log. */
+  readonly setupOutput?: string;
   /** Grace for stopping remaining command processes; tests may shorten it. */
   readonly killGraceMs?: number | undefined;
   /** Keeps the check's source when its stopped processes couldn't be shown gone. */
@@ -304,6 +308,7 @@ export const spawnCheck = (
       graceMs,
       environment.retain,
       environment.durable,
+      environment.setupOutput,
     );
   });
 
@@ -372,6 +377,7 @@ const spawnCommand = (
   graceMs: number,
   retain?: () => void,
   durable?: DurableCheck,
+  setupOutput?: string,
 ) =>
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
@@ -381,6 +387,7 @@ const spawnCommand = (
         const fd = openSync(log, "w");
         const child = (() => {
           try {
+            if (setupOutput !== undefined) writeFileSync(fd, setupOutput);
             return spawn(
               "/bin/sh",
               [

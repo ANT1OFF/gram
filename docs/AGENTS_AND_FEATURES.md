@@ -1006,13 +1006,13 @@ approve the before → after card every time, including in Full Auto:
 | Key                            | Value                                                                                                                               |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `project.localCheck.command`   | Shell command to check the merged source, for example `make test`; unset, blank or `null` disables it.                              |
-| `project.localCheck.setup`     | Optional setup command, for example `make deps`; `null` clears it. Setup must succeed before the check runs.                        |
+| `project.localCheck.setup`     | Optional setup. Use a shell command such as `make deps` or `{ "source": "repository" }` for the committed hook. `null` clears it.   |
 | `project.localCheck.timeoutMs` | Whole milliseconds for setup and check together, from 1 to 86,400,000; default 5,400,000 (90 minutes). `null` restores the default. |
 
 Omit `projectId` to select the thread's project, or name a project in the thread's
 workspace by id or name. A proposal changes one project, one workspace, or app
 settings separately. Workers can read the settings but cannot propose them. There
-is no settings UI field yet. Commands are single lines of at most 16,384 characters;
+is no settings UI field yet. Shell commands are single lines of at most 16,384 characters;
 control and invisible formatting characters are refused. Keep longer or multiline
 workflows in a repository script.
 
@@ -1025,6 +1025,15 @@ carry to the check. Both share one timeout, and their output is kept in the same
 needed. A failed command, timeout or merge conflict blocks local qualification.
 Changing the command, setup or timeout invalidates previous passes. Head/base pins,
 GitHub restrictions, review policy, holds, ownership and pauses still apply.
+
+When setup uses `{ "source": "repository" }`, Gram resolves the same
+[worktree setup hook](#worktree-setup-and-resume-hooks) from the exact merged tree. Gram
+asks for hook consent on that machine and runs the approved hook with the earlier of
+its 20-minute cap or the check deadline. The hook must pass before the check command
+starts. For a selected-source check, the hook must be in the approved selection. A missing,
+refused or failed hook leaves the check unqualified. A passing result records the hook fingerprint. Existing shell setup values keep their behavior.
+An unset value leaves the check without setup. Worker setup results and hosted caches
+cannot stand in for a check's setup.
 
 The complete stored configuration is pinned through the write/audit transaction;
 a stale approval writes neither. An unreadable stored gate remains unavailable

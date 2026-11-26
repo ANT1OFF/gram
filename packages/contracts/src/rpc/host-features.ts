@@ -29,5 +29,6 @@ export const HostFeature = Schema.Literals([
   "app-tools-tunnel",
   "loopback-tunnels",
   "worktree-hooks",
+  "repository-check-setup",
 ]);
 export type HostFeature = typeof HostFeature.Type;

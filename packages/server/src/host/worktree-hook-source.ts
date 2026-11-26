@@ -49,6 +49,7 @@ export const resolveWorktreeHook = (
   checkout: string,
   kind: WorktreeHookKind,
   expectedRevision?: string,
+  sourceAllowed?: (entry: { path: string; mode: string; oid: string }) => boolean,
 ): Effect.Effect<WorktreeHookLookup, never, Proc> =>
   Effect.gen(function* () {
     const options = {
@@ -91,6 +92,8 @@ export const resolveWorktreeHook = (
       const oid = blob?.[3];
       if (blob?.[1] !== "100755" || blob[2] !== "blob" || oid === undefined || !OID.test(oid))
         return invalid(`${path} must be a committed executable file.`);
+      if (sourceAllowed?.({ path, mode: blob[1], oid }) === false)
+        return invalid(`${path} is outside the selected check source.`);
       const script = yield* gitText(["cat-file", "blob", oid]);
       if (script === undefined || Buffer.byteLength(script) > MAX_SCRIPT_BYTES)
         return invalid(`${path} is unreadable or exceeds 64 KiB.`);

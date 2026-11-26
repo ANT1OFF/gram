@@ -24,4 +24,5 @@ export const HOST_FEATURES: ReadonlyArray<HostFeature> = [
   "stop-going",
   "loopback-tunnels",
   "worktree-hooks",
+  "repository-check-setup",
 ];

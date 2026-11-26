@@ -77,12 +77,13 @@ const matchingReuse = (target: PreparedSetupTarget, result: ReusableSetup, now: 
   target.revision === result.revision &&
   target.inputKey === result.inputKey;
 
-const noPolicy = "The host provider has disabled worktree hooks for this environment.";
+export const HOST_WORKTREE_HOOKS_DISABLED =
+  "The host provider has disabled worktree hooks for this environment.";
 const skipped = (): WorktreeHookOutcome => ({
   status: "skipped",
   durationMs: 0,
   log: "",
-  reason: noPolicy,
+  reason: HOST_WORKTREE_HOOKS_DISABLED,
 });
 const failed = (reason: string): WorktreeHookOutcome => ({
   status: "failed",
@@ -109,7 +110,7 @@ export const worktreeHooksOn = (options: {
     inspect: (req) =>
       Effect.gen(function* () {
         if (options.hosted?.enabled === false)
-          return { status: "skipped" as const, reason: noPolicy };
+          return { status: "skipped" as const, reason: HOST_WORKTREE_HOOKS_DISABLED };
         const checkout = yield* checkoutOf(req.checkout);
         const found = yield* lookup(checkout, req);
         if (found.status !== "found") return found;

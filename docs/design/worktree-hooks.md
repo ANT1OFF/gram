@@ -45,3 +45,21 @@ Gram defines the response and accepts a matching, unexpired result from a truste
 adapter after it has applied the outputs to the target checkout. A missing or stale result
 leaves normal setup available. Provider builds and artifact storage are a separate integration.
 Resume continues to run on worker activation.
+
+## Local merge checks
+
+The optional `project.localCheck.setup` value `{ "source": "repository" }` resolves the
+same executable hook inside the merge check's isolated checkout. Legacy shell setup
+commands keep their original runner and a cleared value means the check has no setup.
+The check still qualifies the exact PR head, base and merged tree. Repository setup adds
+its runner version to the check identity. A pass records the approved fingerprint and the
+executed runner version. A restart preserves that version and only the current version qualifies.
+For a selected-source check, the hook's path, executable mode and Git blob must be in the
+approved selection. An omitted preferred hook fails before its bytes are read.
+
+On a joined machine the host first returns the hook preview from its isolated merge.
+The control plane gets consent and sends the approved revision and fingerprint back.
+The host rebuilds and revalidates the same merge before running the hook. An older host
+must be updated to accept the repository setup option. Provisioned machines qualify via CI
+and GitHub rules. The host also enforces its hosted hook policy on check requests. Gram never treats a hosted
+prepared artifact or worker setup result as merge qualification.
