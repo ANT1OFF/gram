@@ -71,6 +71,7 @@ import {
   WaitItem,
   type WakeConditionFired,
   type WakeConditionSeen,
+  withoutHelperSteps,
   withoutPersonalSettings,
   WorkerReport,
   WorkspaceId,
@@ -99,7 +100,13 @@ import {
   rememberPrivateIn,
 } from "./private-readers.ts";
 import { isLockWait, SearchCatchUp } from "../search/catch-up.ts";
-import { resolvedWait, waitRowsOf, type WaitResolution, type WaitRows } from "./wait-resolution.ts";
+import {
+  isStaleSuggestion,
+  resolvedWait,
+  waitRowsOf,
+  type WaitResolution,
+  type WaitRows,
+} from "./wait-resolution.ts";
 import * as UpdateSeal from "./update-seal.ts";
 import * as WalCheckpointer from "./wal-checkpointer.ts";
 import { captureReadWorker, layer as readWorkerLayer, withReadWorker } from "./read-worker.ts";
@@ -1450,7 +1457,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                 ),
           ),
           Effect.flatMap((item) =>
-            item === undefined
+            item === undefined || isStaleSuggestion(item)
               ? Effect.fail(new NotFound({ entity: "wait", id }))
               : Effect.succeed(item),
           ),
@@ -1491,7 +1498,9 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
             plan:
               plan === undefined
                 ? undefined
-                : yield* readableRow(unreadable, "thread_plans.plan", threadId, plan),
+                : withoutHelperSteps(
+                    yield* readableRow(unreadable, "thread_plans.plan", threadId, plan),
+                  ),
             turnPlan:
               turnPlan === undefined
                 ? undefined
@@ -3367,6 +3376,7 @@ export class ThreadStore extends Context.Service<ThreadStore, ThreadStoreShape>(
                   (r) => decodeStored(WaitItem, r.item),
                 ),
               ),
+              Effect.map((items) => items.filter((item) => !isStaleSuggestion(item))),
             ),
           ),
         markWaitsTold: (threadId, items, at) =>

@@ -57,7 +57,6 @@ const HELPER_STATUS_KEY = ["helper-status"] as const;
 
 const KIND_LABELS: Readonly<Record<HelperKind, string>> = {
   title: "Titles",
-  plan: "Plans",
   recap: "Recaps",
   suggest: "Suggestions",
   wait: "Waiting on you",
@@ -76,11 +75,6 @@ const FEATURES: ReadonlyArray<{
     description: "Names threads from their opening exchange.",
   },
   {
-    kind: "plan",
-    label: "Thread plans",
-    description: "Keeps a short plan from conversation and pull request context.",
-  },
-  {
     kind: "recap",
     label: "Where you left off",
     description: "A short recap when you return to an idle thread.",
@@ -93,7 +87,7 @@ const FEATURES: ReadonlyArray<{
   {
     kind: "wait",
     label: "Waiting on you",
-    description: "Suggests follow-up tasks for you to review and keep.",
+    description: "Marks an item done when you say you sent, merged or did it.",
   },
   {
     kind: "notice",
@@ -145,7 +139,7 @@ const SUGGEST_RATE_TITLE =
   "Used means at least one word of a suggestion went into the composer, sent or not.";
 
 const usageByKind = (status: HelperStatus) =>
-  (["title", "plan", "recap", "suggest", "wait", "notice", "stuck"] as const).flatMap((kind) => {
+  (["title", "recap", "suggest", "wait", "notice", "stuck"] as const).flatMap((kind) => {
     const lines = status.lines.filter((line) => line.kind === kind);
     if (lines.length === 0) return [];
     const calls = lines.reduce((sum, line) => sum + line.calls, 0);

@@ -143,15 +143,10 @@ export interface ThreadsApi {
   addDirectory(threadId: ThreadId, path: string): Promise<string>;
   /**
    * The user's edit of the thread's plan: every step, in order. Changed and new steps become the
-   * user's and are locked against the helper. Resolves to the saved plan, `null` when the edit
+   * user's, which the agent's `set_plan` keeps. Resolves to the saved plan, `null` when the edit
    * emptied it; the change also arrives as `thread.plan`.
    */
   setPlan(threadId: ThreadId, plan: PlanEdit): Promise<ThreadPlan | null>;
-  /**
-   * Has the helper bring the plan up to date now; `rebuild` re-derives every step nobody locked.
-   * Resolves to the plan as it then is, unchanged when the helper is off or out of budget.
-   */
-  refreshPlan(threadId: ThreadId, rebuild?: boolean): Promise<ThreadPlan | null>;
   pin(threadId: ThreadId, pinned: boolean): Promise<void>;
   park(threadId: ThreadId, parked: boolean): Promise<void>;
   /** Marks the thread done (`completedReason: "user"`), or reopens it; it stays until reopened. */

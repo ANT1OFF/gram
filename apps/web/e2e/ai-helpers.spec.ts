@@ -24,7 +24,9 @@ test("fresh helpers prefer local Haiku with independent destination consent", as
   await page.getByRole("combobox", { name: "Helper context to Claude Code / Anthropic" }).click();
   await page.getByRole("option", { name: "Opening message (titles)", exact: true }).click();
   await expect(page.getByRole("switch", { name: "Thread titles", exact: true })).toBeEnabled();
-  await expect(page.getByRole("switch", { name: "Thread plans", exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("switch", { name: "Where you left off", exact: true }),
+  ).toBeDisabled();
   await expect(
     page.getByRole("combobox", { name: "Helper context to Codex / OpenAI" }),
   ).toContainText("No context (off)");

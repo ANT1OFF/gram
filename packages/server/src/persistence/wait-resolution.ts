@@ -66,10 +66,20 @@ export const resolvedWait = (
 export type WaitRows = "open" | "all" | "deleted";
 
 /**
+ * An older build's helper suggestion (`WaitItem.suggested`), never kept: no read answers it, so it
+ * lists nowhere, counts nowhere and can't be resolved.
+ */
+export const isStaleSuggestion = (item: Pick<WaitItem, "suggested">): boolean =>
+  item.suggested === true;
+
+/**
  * `items` as a read of `which` answers them: deleted ones (`WaitItem.deletedAt`) only for
- * `deleted`, and never otherwise.
+ * `deleted`, and never otherwise; an older build's suggestions never (`isStaleSuggestion`).
  */
 export const waitRowsOf =
   (which: WaitRows) =>
   (items: ReadonlyArray<WaitItem>): ReadonlyArray<WaitItem> =>
-    items.filter((item) => (item.deletedAt !== undefined) === (which === "deleted"));
+    items.filter(
+      (item) =>
+        !isStaleSuggestion(item) && (item.deletedAt !== undefined) === (which === "deleted"),
+    );

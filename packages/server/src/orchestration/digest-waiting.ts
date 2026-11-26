@@ -44,9 +44,9 @@ export interface DigestWaitingThread {
  * the orchestrator last took, the titles the user marked done, what they dismissed without doing
  * it, and what a worker withdrew itself (`orchestrator`, the digest's own thread, withdrew its own
  * and its workers' knowingly). `undefined` when there is nothing to say. `threads` holds each
- * thread's items, open and resolved, oldest first. A helper's suggestion isn't the user's until
- * kept, so it is neither open nor done when dismissed or lapsed; what the helper resolved from the
- * user's own words counts as done by them.
+ * thread's items, open and resolved, oldest first. An older build's helper suggestion was never
+ * the user's, so it is neither open nor done; what the helper resolved from the user's own words
+ * counts as done by them.
  */
 export const digestWaiting = (input: {
   readonly variant: DigestVariant;

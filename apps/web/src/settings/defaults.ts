@@ -305,11 +305,6 @@ export const AI_HELPERS_DEFAULTS = defaults({
     read: (s) => s.helpers?.title !== false,
     reset: { helpers: { title: null } },
   },
-  plan: {
-    label: "Thread plans",
-    read: (s) => s.helpers?.plan !== false,
-    reset: { helpers: { plan: null } },
-  },
   recap: {
     label: "Where you left off",
     read: (s) => s.helpers?.recap !== false,

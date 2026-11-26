@@ -22,7 +22,6 @@ import {
   Locate,
   MessageCircleQuestion,
   PenLine,
-  Plus,
   Reply,
   Scale,
   ShieldQuestion,
@@ -51,6 +50,7 @@ import { useThreadsStore } from "@/stores/threads";
 import { DismissForm, Ended } from "./waiting-ended";
 import {
   copyTextOf,
+  keptWaits,
   noteShown,
   primaryAction,
   recentlyResolved,
@@ -132,7 +132,6 @@ function Row({
   now,
   onDone,
   onDismiss,
-  onKeep,
   elsewhere = false,
   defaultExpanded = false,
 }: {
@@ -142,7 +141,6 @@ function Row({
   now: number;
   onDone: (item: WaitItem) => void;
   onDismiss?: ((item: WaitItem, note: string | undefined) => void) | undefined;
-  onKeep?: ((item: WaitItem) => void) | undefined;
   elsewhere?: boolean;
   defaultExpanded?: boolean;
 }) {
@@ -153,10 +151,9 @@ function Row({
   const [dismissing, setDismissing] = useState(false);
   const rowRef = useRef<HTMLLIElement>(null);
   const kind = KIND[view.kind];
-  const suggested = view.suggested === true;
-  const primary = suggested ? undefined : primaryAction(view.kind);
-  const KindIcon = suggested ? Sparkles : kind.icon;
-  const kindLabel = suggested ? `Suggested by the helper: ${kind.label}` : kind.label;
+  const primary = primaryAction(view.kind);
+  const KindIcon = kind.icon;
+  const kindLabel = kind.label;
   const link = waitLinkOf(item);
   const host = link?.host;
   const messageId = item.messageId;
@@ -192,11 +189,7 @@ function Row({
       ref={rowRef}
       data-testid="waiting-item"
       data-kind={view.kind}
-      data-suggested={suggested}
-      className={cn(
-        "group/item flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent/60",
-        suggested && "border border-dashed border-border",
-      )}
+      className="group/item flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent/60"
     >
       <Hint label={kindLabel} render={<span className="mt-0.5 flex shrink-0" />}>
         <KindIcon aria-hidden className="size-icon-row text-status-needs-mark" />
@@ -227,11 +220,6 @@ function Row({
             >
               {view.title}
             </span>
-            {suggested && (
-              <span className="shrink-0 rounded-sm border border-dashed border-border px-1 text-meta text-muted-foreground">
-                suggested
-              </span>
-            )}
             <span className="ml-auto shrink-0 self-start text-meta text-muted-foreground tabular-nums">
               {formatRelative(view.createdAt, now)}
             </span>
@@ -298,14 +286,6 @@ function Row({
             testId="waiting-answer"
           />
         )}
-        {suggested && onKeep !== undefined && (
-          <Action
-            icon={Plus}
-            label="Keep it in Waiting on you"
-            onClick={() => onKeep(item)}
-            testId="waiting-keep"
-          />
-        )}
         <Action
           icon={Locate}
           label={messageId === undefined ? "Not in the transcript" : "Jump to the message"}
@@ -316,27 +296,16 @@ function Row({
           }}
           testId="waiting-jump"
         />
-        {suggested ? (
+        {onDismiss !== undefined && (
           <Action
             icon={X}
-            label="Dismiss the suggestion"
-            onClick={() => onDone(item)}
+            label="Dismiss: it no longer makes sense"
+            disabled={dismissing}
+            onClick={() => setDismissing(true)}
             testId="waiting-dismiss"
           />
-        ) : (
-          <>
-            {onDismiss !== undefined && (
-              <Action
-                icon={X}
-                label="Dismiss: it no longer makes sense"
-                disabled={dismissing}
-                onClick={() => setDismissing(true)}
-                testId="waiting-dismiss"
-              />
-            )}
-            <Action icon={Check} label="Done" onClick={() => onDone(item)} testId="waiting-done" />
-          </>
         )}
+        <Action icon={Check} label="Done" onClick={() => onDone(item)} testId="waiting-done" />
       </span>
     </li>
   );
@@ -424,9 +393,8 @@ function ResolvedLine({
  * on the user for, on one line with a light attention tint, folded until clicked. Opened, each item
  * has its kind, title, preview and age, with Copy, Open or Answer by kind, Jump to and Done; a row's
  * text expands it in place. Done offers Undo for a while, and the agent hears of it with the next
- * message; the last day's resolved items can be reopened from the Resolved line. A helper's
- * suggestion is dashed, uncounted, with Keep and Dismiss; what the helper resolved has an Undo of
- * its own for ten minutes. Absent while nothing waits.
+ * message; the last day's resolved items can be reopened from the Resolved line. What the helper
+ * resolved has an Undo of its own for ten minutes. Absent while nothing waits.
  */
 export function WaitingTray({ threadId }: { threadId: ThreadId }) {
   const api = useApi();
@@ -461,7 +429,7 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
   ) {
     return null;
   }
-  const items = summary.waits ?? [];
+  const items = keptWaits(summary);
   const openIds = new Set(items.map((item) => item.id));
   const done = (item: WaitItem) => {
     setUndoable((rows) => [
@@ -484,12 +452,10 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
       report("undo")(error);
     });
   };
-  const keep = (item: WaitItem) => void api.keepWait(threadId, item.id).catch(report("keep"));
   const reopen = (item: WaitItem) =>
     void api.resolveWait(threadId, item.id, true).catch(report("reopen"));
   const undone = undoable.filter((item) => !openIds.has(item.id));
-  const names = trayNames(views.filter((view) => view.suggested !== true));
-  const suggestions = views.length - count;
+  const names = trayNames(views);
 
   return (
     <div
@@ -513,11 +479,6 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
         </span>
         {names.length > 0 && (
           <span className="min-w-0 truncate @max-sm:hidden">· {names.join(" · ")}</span>
-        )}
-        {suggestions > 0 && (
-          <span className="flex shrink-0 items-center gap-1 @max-sm:hidden">
-            · <Sparkles aria-hidden className="size-icon-row" /> {suggestions} suggested
-          </span>
         )}
         {byHelper.length > 0 && (
           <span className="shrink-0 @max-sm:hidden">
@@ -547,7 +508,6 @@ export function WaitingTray({ threadId }: { threadId: ThreadId }) {
                 now={now}
                 onDone={done}
                 onDismiss={dismiss}
-                onKeep={keep}
               />
             ))}
             {undone.map((item) => (

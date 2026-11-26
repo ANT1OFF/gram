@@ -1387,7 +1387,7 @@ Source: [idle compaction](../packages/server/src/orchestration/idle-compact.ts),
 
 ## AI helpers and context consent
 
-Helpers generate titles, plans, recaps and suggestions independently of coding
+Helpers generate titles, recaps and suggested replies independently of coding
 threads. New settings choose local Automatic. Opening-message and
 conversation consent are separate for Claude/Anthropic and Codex/OpenAI and start
 off. Existing gateway consent grants no local permission. Automatic prefers

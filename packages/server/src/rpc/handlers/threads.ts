@@ -46,7 +46,6 @@ import { forkHostRefusal } from "../../runtime/history-plans.ts";
 import { Orchestration } from "../../orchestration/service.ts";
 import { ThreadStore } from "../../persistence/thread-store.ts";
 import { resumeAfterMachineLost } from "../../runtime/machine-lost.ts";
-import { PlanKeeper } from "../../plans/keeper.ts";
 import { ThreadPlans } from "../../plans/service.ts";
 import { ThreadPorts } from "../../ports/service.ts";
 import { endCheckpointId } from "../../git/turn-hooks.ts";
@@ -100,7 +99,6 @@ export const threadHandlers = Effect.gen(function* () {
   const runtimes = yield* ThreadRuntimes;
   const store = yield* ThreadStore;
   const plans = yield* ThreadPlans;
-  const keeper = Option.getOrUndefined(yield* Effect.serviceOption(PlanKeeper));
   const hub = yield* EventHub;
   const checkouts = yield* CheckoutService;
   const hosts = Option.getOrUndefined(yield* Effect.serviceOption(WorkerHosts));
@@ -523,13 +521,6 @@ export const threadHandlers = Effect.gen(function* () {
       store.getThread(threadId).pipe(
         Effect.andThen(plans.edit(threadId, plan)),
         Effect.map((saved) => saved ?? null),
-      ),
-    "thread.refreshPlan": ({ threadId, rebuild }) =>
-      store.getThread(threadId).pipe(
-        Effect.andThen(
-          keeper === undefined ? plans.get(threadId) : keeper.refresh(threadId, { rebuild }),
-        ),
-        Effect.map((plan) => plan ?? null),
       ),
     "thread.listWaits": ({ threadId, state }) =>
       Effect.gen(function* () {

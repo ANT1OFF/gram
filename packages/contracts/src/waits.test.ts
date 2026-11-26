@@ -50,7 +50,7 @@ const item = (id: string, patch: Partial<WaitItem> = {}): WaitItem => ({
 });
 
 describe("waits", () => {
-  it("round-trips a helper's suggestion and what it resolved, and never counts a suggestion", () => {
+  it("round-trips an older build's suggestion and what the helper resolved, and never counts a suggestion", () => {
     const suggestion: WaitItem = {
       ...draft,
       id: "w-3" as WaitId,
@@ -65,9 +65,7 @@ describe("waits", () => {
       revision: 2,
     };
     expectRoundTrip(WaitItem, suggestion);
-    expectRoundTrip(WaitView, waitViewOf(threadId, suggestion));
-    expect(waitViewOf(threadId, suggestion).suggested).toBe(true);
-    expect(waitViewOf(threadId, draft).suggested).toBeUndefined();
+    expectRoundTrip(WaitView, waitViewOf(threadId, draft));
     expectRoundTrip(ServerEvent, {
       type: "thread.waits",
       threadId,

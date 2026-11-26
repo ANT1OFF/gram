@@ -13,8 +13,7 @@ import {
 
 /**
  * How each writer changes a thread's plan, as pure functions the server and
- * the mock API share: the user wins over the agent, and both over the helper. A plan with no goal
- * and no steps is no plan.
+ * the mock API share: the user wins over the agent. A plan with no goal and no steps is no plan.
  */
 
 /** What the plan's writers need beyond their input: the clock and fresh step ids. */
@@ -65,7 +64,7 @@ const stepPr = (number: number, followed: ReadonlyArray<BoundPr>): PlanStepPr =>
 
 /**
  * The agent's `set_plan`: its goal unless the user wrote one, and its steps in place of the old
- * ones, each locked against the helper. A step the user edited stays the user's, where the agent
+ * ones. A step the user edited stays the user's, where the agent
  * listed it and where it didn't; one from the orchestrator's brief keeps its wording and place, and
  * takes the status and PR the agent gives it. A step keeps its id when the agent repeats its text.
  */
@@ -168,6 +167,26 @@ export const applyUserEdit = (
 };
 
 /**
+ * `plan` without what an older build's helper model wrote into it: its steps (`source: "helper"`)
+ * and its goal. The same plan when the helper wrote none of it; `undefined` when no step is left,
+ * so a thread whose plan was the helper's shows none.
+ */
+export const withoutHelperSteps = (plan: ThreadPlan | undefined): ThreadPlan | undefined => {
+  if (plan === undefined) return undefined;
+  const steps = plan.steps.filter((step) => step.source !== "helper");
+  const helperGoal = plan.goalBy === "helper";
+  if (steps.length === plan.steps.length && !helperGoal) return plan;
+  if (steps.length === 0 && steps.length !== plan.steps.length) return undefined;
+  const { goalBy, ...rest } = plan;
+  return settle({
+    ...rest,
+    goal: helperGoal ? "" : plan.goal,
+    ...(goalBy === undefined || helperGoal ? {} : { goalBy }),
+    steps,
+  });
+};
+
+/**
  * The goal the agent keeps itself (Codex's `thread/goal`), unless the user wrote one. Cleared, it
  * takes the agent's goal away and leaves anybody else's.
  */
@@ -195,8 +214,7 @@ export const applyAgentGoal = (
 
 /**
  * An orchestrator's checklist from a worker's brief, at the head of the worker's plan: every step
- * locked and the orchestrator's, like the user's, so neither the agent nor the helper rewrites its
- * words. A step the worker already listed with the same text becomes the brief's, keeping how it
+ * locked and the orchestrator's, like the user's, so the agent doesn't rewrite its words. A step the worker already listed with the same text becomes the brief's, keeping how it
  * stands, so a `set_plan` that raced the seed loses nothing. The user's steps are never dropped.
  */
 export const seedOrchestratorPlan = (

@@ -17,7 +17,7 @@ const step = (id: string, text: string, status: PlanStep["status"]): PlanStep =>
 const PLAN: Omit<ThreadPlan, "updatedAt"> = {
   goal: "Mail trigger endpoint across api, web and docs",
   basis: "spec",
-  updatedBy: "helper",
+  updatedBy: "agent",
   steps: [
     step("s1", "Endpoint and schema in api", "done"),
     step("s2", "Client in web", "done"),

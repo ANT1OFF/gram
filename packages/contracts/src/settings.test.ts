@@ -854,8 +854,8 @@ describe("helpers", () => {
     expect(helperSource(next)).toBe("claude");
     expect(helperLocalFallback(next)).toBe("none");
     expect(helperLocalContextAllowed(next, "claude", "title")).toBe(true);
-    expect(helperLocalContextAllowed(next, "claude", "plan")).toBe(false);
-    expect(helperLocalContextAllowed(next, "codex", "plan")).toBe(true);
+    expect(helperLocalContextAllowed(next, "claude", "recap")).toBe(false);
+    expect(helperLocalContextAllowed(next, "codex", "recap")).toBe(true);
     const changed = applySettingsPatch(next, {
       helpers: { source: "codex", localFallback: "automatic", codexContext: "off" },
     });
@@ -877,18 +877,18 @@ describe("helpers", () => {
     expect(helperDailyBudgetUsd(DEFAULT_SETTINGS)).toBe(2);
     expect(helperHourlyCalls(DEFAULT_SETTINGS)).toBe(400);
     const patch = Schema.decodeUnknownSync(SettingsPatch)({
-      helpers: { plan: false, dailyBudgetUsd: 0.5 },
+      helpers: { stuck: false, dailyBudgetUsd: 0.5 },
     });
     expectRoundTrip(SettingsPatch, patch);
     const next = applySettingsPatch(DEFAULT_SETTINGS, patch);
     expectRoundTrip(Settings, next);
-    expect(helperOn(next, "plan")).toBe(false);
+    expect(helperOn(next, "stuck")).toBe(false);
     expect(helperOn(next, "recap")).toBe(true);
     expect(helperDailyBudgetUsd(next)).toBe(0.5);
     const off = applySettingsPatch(next, {
-      helpers: { enabled: false, plan: null, dailyBudgetUsd: null },
+      helpers: { enabled: false, stuck: null, dailyBudgetUsd: null },
     });
-    expect(helperOn({ ...off, helpers: { plan: true } }, "plan")).toBe(true);
+    expect(helperOn({ ...off, helpers: { stuck: true } }, "stuck")).toBe(true);
     expect(helperOn(off, "title")).toBe(false);
     expect(helperDailyBudgetUsd(off)).toBe(2);
     expect(helperOn(DEFAULT_SETTINGS, "wait")).toBe(true);

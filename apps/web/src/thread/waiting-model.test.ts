@@ -28,6 +28,9 @@ import {
   waitLinkOf,
 } from "./waiting-model";
 
+const resolved = (at: number) =>
+  item(`w-${at}`, "draft", "Sent", { resolvedAt: at, resolvedBy: "helper" });
+
 const item = (id: string, kind: WaitItem["kind"], title: string, extra: Partial<WaitItem> = {}) =>
   ({
     id: id as WaitId,
@@ -65,11 +68,10 @@ describe("the tray's rows", () => {
     expect(views[0]?.preview).toBe("Ask her for a date");
   });
 
-  it("counts and breaks them down in words, leaving suggestions out", () => {
+  it("counts and breaks them down in words", () => {
     expect(waitCount(views)).toBe(4);
     expect(waitBreakdown(views)).toBe("4 waiting on you: 2 drafts, 1 review, 1 step to take");
-    expect(waitBreakdown([{ ...views[0]!, suggested: true }])).toBe("0 waiting on you");
-    expect(waitCount([{ ...views[0]!, suggested: true }])).toBe(0);
+    expect(waitBreakdown([])).toBe("0 waiting on you");
   });
 
   it("names each on the collapsed line up to its colon, and reads them all aloud", () => {
@@ -84,20 +86,7 @@ describe("the tray's rows", () => {
     );
   });
 
-  it("lists a helper's suggestion as one, names it apart, and keeps Undo for ten minutes", () => {
-    const suggested = trayViews(
-      summary([
-        item("w-1", "draft", "Release note"),
-        item("w-5", "review", "Design doc", { source: "helper", suggested: true }),
-      ]),
-    );
-    expect(suggested.map((v) => v.suggested)).toEqual([undefined, true]);
-    expect(waitCount(suggested)).toBe(1);
-    expect(trayLabel(suggested)).toBe(
-      "1 waiting on you: 1 draft. Release note Suggested: Design doc",
-    );
-    const resolved = (at: number) =>
-      item(`w-${at}`, "draft", "Sent", { resolvedAt: at, resolvedBy: "helper" });
+  it("keeps Undo for ten minutes on what the helper resolved", () => {
     const now = 20 * 60_000;
     expect(
       undoableHelperResolves(
@@ -247,15 +236,14 @@ describe("one view across sources and threads", () => {
     expect(views[3]?.threadId).toBe("t-orch");
   });
 
-  it("leaves a helper's suggestions to their own thread's tray", () => {
+  it("lists none of the helper suggestions an older server still sends", () => {
     const suggestion = item("w-4", "draft", "Suggested", { source: "helper", suggested: true });
     const kept = item("w-1", "draft", "Note");
     const views = waitingViews([thread("t-1", [kept, suggestion])]);
     expect(views.map((view) => view.key)).toEqual(["w:t-1:w-1"]);
     expect(keptWaits({ waits: [kept, suggestion] })).toEqual([kept]);
-    expect(trayViews(thread("t-1", [kept, suggestion])).map((view) => view.suggested)).toEqual([
-      undefined,
-      true,
+    expect(trayViews(thread("t-1", [kept, suggestion])).map((view) => view.key)).toEqual([
+      "w:t-1:w-1",
     ]);
   });
 

@@ -20,8 +20,6 @@ export interface WaitsApi {
    * next message, as of Done.
    */
   dismissWait(threadId: ThreadId, id: WaitId, note?: string): Promise<WaitItem>;
-  /** Keeps a helper's suggestion as an item of the thread's own, counted from then on. */
-  keepWait(threadId: ThreadId, id: WaitId): Promise<WaitItem>;
   /**
    * "Add to Waiting on you" on a message: a `draft` unless `kind` says otherwise, titled from the
    * message's first line unless `title` names it, anchored there. Resolves to the item added.

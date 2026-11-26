@@ -107,9 +107,7 @@ test("Dismiss takes an item off as dismissed, not done, with why, and its chip s
   await expect(chip).toHaveAttribute("data-state", "open");
 });
 
-test("a helper's suggestion waits dashed and uncounted until kept, and its resolves can be undone", async ({
-  page,
-}) => {
+test("what the helper resolves from what the user wrote can be undone", async ({ page }) => {
   await page.goto("/t/t-deps");
   const tray = page.getByTestId("waiting-tray");
   const needsYou = page.getByTestId("overview-needs-you");
@@ -119,24 +117,14 @@ test("a helper's suggestion waits dashed and uncounted until kept, and its resol
 
   const id = await page.evaluate(
     () =>
-      window.gramMock!.simulateHelperSuggestion("t-deps" as never, {
+      window.gramMock!.simulateWaitOnUser("t-deps" as never, {
         kind: "draft",
         title: "Teams message to Kari",
         copy: "Hi Kari, the bump is in.",
       }).id,
   );
-  await expect(tray.getByTestId("waiting-count")).toContainText("0 waiting on you");
-  await expect(tray).toContainText("1 suggested");
-  await expect(needsYou).toHaveAttribute("data-count", "0");
-
-  await tray.getByRole("button", { name: /^0 waiting on you/ }).click();
-  const item = tray.getByTestId("waiting-item");
-  await expect(item).toHaveAttribute("data-suggested", "true");
-  await expect(item).toContainText("suggested");
-  await expect(item.getByTestId("waiting-done")).toHaveCount(0);
-  await item.getByTestId("waiting-keep").click();
   await expect(needsYou).toHaveAttribute("data-count", "1");
-  await expect(item).toHaveAttribute("data-suggested", "false");
+  await tray.getByRole("button", { name: /^1 waiting on you/ }).click();
 
   // The user said they sent it: the helper resolves it, with an Undo of its own.
   await page.evaluate(
@@ -150,18 +138,6 @@ test("a helper's suggestion waits dashed and uncounted until kept, and its resol
   await resolved.getByTestId("waiting-helper-undo").click();
   await expect(needsYou).toHaveAttribute("data-count", "1");
   await expect(resolved).toHaveCount(0);
-
-  // A second suggestion, dismissed, goes without counting.
-  await page.evaluate(() =>
-    window.gramMock!.simulateHelperSuggestion("t-deps" as never, {
-      kind: "action",
-      title: "Run harbor --version",
-      copy: "harbor --version",
-    }),
-  );
-  await tray.locator("[data-suggested=true]").getByTestId("waiting-dismiss").click();
-  await expect(tray.locator("[data-suggested=true]")).toHaveCount(0);
-  await expect(needsYou).toHaveAttribute("data-count", "1");
 });
 
 test("what the user adds by hand waits too, and their next message tells the agent", async ({
@@ -290,8 +266,6 @@ test("one Waiting on you across threads: Needs you counts it, the Board groups a
       copy: "Adds the mail trigger.",
     });
     mock.simulateWaitOnUser("t-deps" as never, { kind: "review", title: "example/api#431" });
-    // A helper's suggestion waits in its own thread's tray only, until it is kept.
-    mock.simulateHelperSuggestion(board.inReview, { kind: "draft", title: "Suggested note" });
     // No copy text: Copy reads it from the reply, in a thread no pane has open.
     mock.simulateWaitOnUser(board.working, {
       kind: "draft",
@@ -301,12 +275,11 @@ test("one Waiting on you across threads: Needs you counts it, the Board groups a
     return board;
   }, seeded);
 
-  // One count at the top of the overview: the asks and failures, and the four kept items, not the
-  // helper's suggestion.
+  // One count at the top of the overview: the asks and failures, and the four items.
   await expect(needsYou).toHaveAttribute("data-count", String(before + 4));
 
   // The Board's chip counts the workspace's share and opens the Inbox: the orchestrator's own,
-  // its questions and each worker's, the helper's suggestion not among them.
+  // its questions and each worker's.
   await openOrchestrator(page, made.orchestratorThreadId);
   await page.keyboard.press("ControlOrMeta+Shift+D");
   await expect(page).toHaveURL(new RegExp(`/t/${made.orchestratorThreadId}$`));
@@ -321,7 +294,6 @@ test("one Waiting on you across threads: Needs you counts it, the Board groups a
     "data-thread-id",
     made.orchestratorThreadId,
   );
-  await expect(items.filter({ hasText: "Suggested note" })).toHaveCount(0);
   const reviewing = waits.filter({ hasText: "PR description" });
   await expect(reviewing).toHaveAttribute("data-thread-id", made.inReview);
 

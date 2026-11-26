@@ -6,7 +6,7 @@ import { DecisionHook } from "../embedding/decision-hook.ts";
 import { GitHubRelayLive } from "../embedding/github-relay.ts";
 import { type AnswerNote, EventSink } from "../embedding/event-sink.ts";
 import { UsageLimitPoller } from "../usage/limit-poller.ts";
-import { PlanKeeperLive } from "../plans/keeper.ts";
+import { PlanPrFactsLive } from "../plans/pr-facts.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { GramRpcs, RequestId } from "@gram/contracts";
 import * as Context from "effect/Context";
@@ -907,7 +907,7 @@ export const ServerCore = Layer.unwrap(
         ),
         Layer.provideMerge(
           Layer.mergeAll(
-            PlanKeeperLive,
+            PlanPrFactsLive,
             wakeConditionsLayer(
               Layer.mergeAll(
                 BranchHeadsLive,

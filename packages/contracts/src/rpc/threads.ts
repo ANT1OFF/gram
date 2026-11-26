@@ -323,11 +323,6 @@ export const ThreadRpcs = RpcGroup.make(
     success: Schema.NullOr(ThreadPlan),
     error: errors(ThreadNotFound),
   }),
-  Rpc.make("thread.refreshPlan", {
-    payload: { ...threadRef, rebuild: Schema.optionalKey(Schema.Boolean) },
-    success: Schema.NullOr(ThreadPlan),
-    error: errors(ThreadNotFound),
-  }),
   Rpc.make("thread.resolveWait", {
     payload: {
       ...threadRef,
@@ -339,11 +334,6 @@ export const ThreadRpcs = RpcGroup.make(
       /** Why, with `dismiss`; plain text. */
       note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(WAIT_BODY_MAX))),
     },
-    success: WaitItem,
-    error: errors(ThreadNotFound, NotFound, InvalidState),
-  }),
-  Rpc.make("thread.keepWait", {
-    payload: { ...threadRef, id: WaitId },
     success: WaitItem,
     error: errors(ThreadNotFound, NotFound, InvalidState),
   }),

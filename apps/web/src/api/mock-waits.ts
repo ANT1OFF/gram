@@ -3,7 +3,6 @@ import {
   HELPER_RESOLVE_UNDO_MS,
   MAX_OPEN_WAITS,
   waitData,
-  waitIsKept,
   waitIsOpen,
   waitNoteText,
   waitTitleOf,
@@ -52,15 +51,10 @@ export function createWaitsMock(world: MockWorld) {
     world.setWaits(
       threadId,
       all.filter(waitIsOpen),
-      all
-        .filter(
-          (item) =>
-            item.resolvedBy === "helper" && item.suggested !== true && item.resolvedAt! >= since,
-        )
-        .toReversed(),
+      all.filter((item) => item.resolvedBy === "helper" && item.resolvedAt! >= since).toReversed(),
     );
   };
-  const kept = (threadId: ThreadId) => (items.get(threadId) ?? []).filter(waitIsKept).length;
+  const kept = (threadId: ThreadId) => (items.get(threadId) ?? []).filter(waitIsOpen).length;
   const update = (threadId: ThreadId, id: WaitId, f: (item: WaitItem) => WaitItem) => {
     const all = items.get(threadId) ?? [];
     const index = all.findIndex((item) => item.id === id);
@@ -106,12 +100,12 @@ export function createWaitsMock(world: MockWorld) {
         ? { ...before, resolvedAt: Date.now(), resolvedBy: "user", ...dismissed }
         : before;
     if (after === before) return before;
-    if (undo && before.suggested !== true && kept(threadId) >= MAX_OPEN_WAITS) {
+    if (undo && kept(threadId) >= MAX_OPEN_WAITS) {
       throw tooMany();
     }
     items.set(threadId, all.with(index, after));
     publish(threadId);
-    if (after.messageId !== undefined && after.suggested !== true) {
+    if (after.messageId !== undefined) {
       world.putDataPart(threadId, chip(after), after.messageId);
     }
     return after;
@@ -122,21 +116,6 @@ export function createWaitsMock(world: MockWorld) {
       settle(threadId, id, undo === true ? "undo" : "done"),
     dismissWait: (threadId: ThreadId, id: WaitId, note?: string) =>
       settle(threadId, id, { dismiss: note }),
-    keepWait: async (threadId: ThreadId, id: WaitId) => {
-      world.summary(threadId);
-      await world.delay(30);
-      const before = (items.get(threadId) ?? []).find((item) => item.id === id);
-      if (before?.suggested !== true || !waitIsOpen(before)) {
-        throw new Error(`NotFound: no open suggestion ${id}`);
-      }
-      if (kept(threadId) >= MAX_OPEN_WAITS) throw tooMany();
-      const after = update(threadId, id, (item) => {
-        const { suggested: _, ...rest } = item;
-        return rest;
-      });
-      if (after.messageId !== undefined) world.putDataPart(threadId, chip(after), after.messageId);
-      return after;
-    },
     addWait: async (
       threadId: ThreadId,
       messageId: MessageId,
@@ -174,23 +153,6 @@ export function createWaitsMock(world: MockWorld) {
   return {
     api,
     controls: {
-      /** Dev and e2e hook: the helper suggests an item from the thread's last reply. */
-      simulateHelperSuggestion: (threadId: ThreadId, input: MockWaitInput): WaitItem => {
-        const item: WaitItem = {
-          id: `w-${world.ids()}` as WaitId,
-          kind: input.kind,
-          title: input.title,
-          ...(input.body === undefined ? {} : { body: input.body }),
-          ...(input.copy === undefined ? {} : { copy: input.copy }),
-          ...(input.link === undefined ? {} : { link: input.link }),
-          source: "helper",
-          createdAt: Date.now(),
-          suggested: true,
-        };
-        items.set(threadId, [...(items.get(threadId) ?? []), item]);
-        publish(threadId);
-        return item;
-      },
       /** Dev and e2e hook: the helper read the user's "sent" as resolving `id`. */
       simulateHelperResolve: (threadId: ThreadId, id: WaitId): WaitItem => {
         const after = update(threadId, id, (item) => ({
@@ -228,10 +190,10 @@ export function createWaitsMock(world: MockWorld) {
     },
     /**
      * The fenced note the thread's next message carries, as the server's `draftNote` makes it,
-     * heard at once. The helper's suggestions are left out until kept.
+     * heard at once.
      */
     takeNote(threadId: ThreadId): string | undefined {
-      const all = (items.get(threadId) ?? []).filter((item) => item.suggested !== true);
+      const all = items.get(threadId) ?? [];
       const news = all.filter((item) => heard.get(item.id) !== stateOf(item));
       const note = waitNoteText(news, all.filter(waitIsOpen));
       if (note === undefined) return undefined;

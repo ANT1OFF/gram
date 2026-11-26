@@ -27,7 +27,7 @@ const changes: ReadonlyArray<{
   { name: "revoked destination consent", patch: { claudeContext: "off" } },
   { name: "reduced conversation consent", patch: { claudeContext: "opening" } },
   { name: "disabled all helpers", patch: { enabled: false } },
-  { name: "disabled the feature", patch: { plan: false } },
+  { name: "disabled the feature", patch: { notice: false } },
   { name: "changed local source", patch: { source: "codex" } },
   { name: "selected gateway source", patch: { source: "gateway" } },
   { name: "changed saved effort", patch: { claudeEffort: "low" } },
@@ -143,7 +143,7 @@ describe("authorization at local helper prompt delivery", () => {
           });
           const fiber = yield* Effect.forkScoped(
             scheduler.schedule({
-              kind: change.kind ?? "plan",
+              kind: change.kind ?? "notice",
               threadId: THREAD,
               lane: "interactive",
               basis: "initial",

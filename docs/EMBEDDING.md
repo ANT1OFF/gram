@@ -868,14 +868,14 @@ Most settings are one value for the server. A few are a person's own view of the
 
 With sign-in through a fronting proxy, an item of Waiting on you names the person it waits on (`person` on the item, and on its `wait_items` row), where the server knew one when it was added:
 
-- one the agent adds (`wait_on_user`) or the helper suggests waits on whoever typed the thread's latest message;
+- one the agent adds (`wait_on_user`) waits on whoever typed the thread's latest message;
 - one a person adds from a message waits on that person;
 - an item added when no signed-in person had written in the thread (a worker an orchestrator started, a thread only a wake has written to), and every item from before items named anyone, waits on anyone.
 
 An item keeps who it waits on when it is updated, kept, resolved or reopened.
 
 - A signed-in person is sent, and `thread.listWaits` answers them, their own items and the ones for anyone: in `threads.snapshot`, in `thread.waits` and in what the helper resolved lately. So the tray, the sidebar count and the board hold nobody else's.
-- This is what a person's list shows, not a permission. The chip an item draws in the transcript is the thread's, and everyone who reads the thread sees it; `thread.resolveWait` and `thread.keepWait` take an item's id from anyone who may write.
+- This is what a person's list shows, not a permission. The chip an item draws in the transcript is the thread's, and everyone who reads the thread sees it; `thread.resolveWait` takes an item's id from anyone who may write.
 - The agent's side is the thread's: `list_waits`, the note it gets with the next message and the limit of open items count every item, whoever each waits on.
 - Where nobody signs in that way, which is the desktop app, no item names a person and nothing differs from before.
 
