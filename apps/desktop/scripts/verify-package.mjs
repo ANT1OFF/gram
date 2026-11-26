@@ -25,6 +25,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { ASAR_ENTRIES } from "./asar-entries.mjs";
 
 /** A file's SHA-256, in hex. */
 const sha = (file) => createHash("sha256").update(fs.readFileSync(file)).digest("hex");
@@ -81,26 +82,6 @@ const APP_ID = "io.github.ant1off.gram";
 const PRODUCT = "Gram";
 /** The @parcel/watcher addon package the Linux package carries (electron-builder.yml). */
 const WATCHER_LINUX = "@parcel/watcher-linux-x64-glibc";
-const ASAR_ENTRIES = [
-  "package.json",
-  // The package's main: the app, or a file the app ships (gram-host, the native probe).
-  "out/main/entry.js",
-  "out/main/index.js",
-  "out/server/server.js",
-  "out/server/proc-worker.js",
-  // This machine's worker host, when it runs as its own process.
-  "out/server/gram-host.js",
-  // The release checks' native probe, the one script besides gram-host the binary runs.
-  "out/server/native-probe.js",
-  // The terminal emulator the server replays scrollback through; read from beside the bundle.
-  "out/server/ghostty-vt.wasm",
-  "out/preload/index.js",
-  // Pinned pages' clipboard guard, their only preload.
-  "out/page-guard/page-guard.js",
-  // A hosted site window's one call, its only preload.
-  "out/hosted-site/hosted-site.js",
-  "out/speech/speech.js",
-];
 
 const { values } = parseArgs({
   options: {

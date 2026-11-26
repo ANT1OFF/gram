@@ -550,6 +550,19 @@ wait markers, monitor and dream reports, handoffs, and the strip of running suba
 turn shows one "Working" line with its time, in place of a compaction's or a start's steps. It is one switch for every thread, kept across
 launches, and it only changes the view: the trace and the side panels still show the work.
 
+### Playbooks
+
+Two playbooks hold the examples and recovery recipes that the tool descriptions leave
+out. They are [Deliver a pull request](orchestration/playbooks/deliver-a-pull-request.md)
+and [Coordinate workers and wakes](orchestration/playbooks/coordinate-workers-and-wakes.md).
+An agent reads one with the `read_playbook` tool. Each role is offered only its own:
+every thread gets the pull request playbook, and orchestrators and workers also get the
+coordination one. The role prompts say when to read each, and Codex's prompts name
+`read_playbook` among the tools to search for. The tools keep their own purpose, rules,
+effects and approvals. The files are reviewed here and ship with the release, beside the
+server bundle. Native Skills over MCP waits for client support in the Agent SDK and
+Codex.
+
 Workers may add `evidence: { headSha, gate, pr?, nextStep }` to `report`. These
 bounded, worker-authored claims appear in full before the prose excerpt and in
 compact ledger rows; they do not qualify a server merge gate. The SHA accepts

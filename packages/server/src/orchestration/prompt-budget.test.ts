@@ -103,11 +103,18 @@ const ROLES: ReadonlyArray<Role> = ["orchestrator", "worker", "plain"];
  * description was cut to two sentences first. The prompts are measured as a hosted session gets
  * them from here on (`workerMachines`, `ownMachine`, `sharedMachine`), which they weren't before:
  * the lines on machines are the longest variant; measured then at 67,962 and 43,560.
+ * All three moved on 2026-11-26 for `read_playbook` (two on-demand playbooks, in
+ * docs/orchestration/playbooks/, that hold the examples and recovery recipes the tools left out).
+ * `spawn_worker`, `list_workers`, `merge_when_ready`, `schedule_wake` and `local_check` lost theirs, and the
+ * prompts gained a line on when to read each. The orchestrator's came down, to 67,828. The
+ * worker's and the plain thread's were raised on purpose: the new tool costs them more than the
+ * PR tools' recipes saved, since what stays in those is their contract and approvals. Measured
+ * then at 44,135 and 23,935.
  */
 const BUDGET: Readonly<Record<Role, number>> = {
-  orchestrator: 67_980,
-  worker: 43_580,
-  plain: 23_650,
+  orchestrator: 67_850,
+  worker: 44_150,
+  plain: 23_950,
 };
 
 const AUTONOMIES: ReadonlyArray<Autonomy> = ["supervised", "publish", "full"];

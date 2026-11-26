@@ -67,6 +67,7 @@ import { cloneIdentityOf } from "../host/repos.ts";
 import { MachineOwnersForTests, type WorkerHost, WorkerHosts } from "../host/worker-host.ts";
 import { OrchestratorAppToolsLive } from "./tools.ts";
 import { TranscriptSearchAppToolsLive } from "./transcript-search-tool.ts";
+import { PlaybookAppToolsLive } from "../playbooks/tools.ts";
 import { PrDependenciesLive } from "../wakes/pr-dependencies.ts";
 import { ThreadWakesLive } from "../wakes/thread-wakes.ts";
 import type { CiState } from "../wakes/ci-stuck.ts";
@@ -549,6 +550,7 @@ export const serverLayer = (
       Layer.provide(fakeVerifyStatus(world)),
     ),
     TranscriptSearchAppToolsLive,
+    PlaybookAppToolsLive,
     RoutineAppToolsLive,
     PrAppToolsLive.pipe(
       Layer.provideMerge(MergeWhenReadyLive.pipe(Layer.provide(fakeGh(world)))),
