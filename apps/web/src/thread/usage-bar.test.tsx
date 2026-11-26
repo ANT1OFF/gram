@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- happy-dom can't draw NumberFlow's digits */
 import {
   DEFAULT_SETTINGS,
   type ThreadId,

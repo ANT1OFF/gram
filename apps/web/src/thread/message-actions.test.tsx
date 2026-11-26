@@ -13,9 +13,10 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
-import type { Api } from "@/api/types";
+import type { Api, ApiThreadFeedEvent } from "@/api/types";
 import { renderInRouter } from "@/panels/test-utils";
 import { useDraftStore } from "@/stores/drafts";
+import { feedLoaded, useThreadFeed } from "@/stores/feeds";
 import { useThreadsStore } from "@/stores/threads";
 
 import { MessageActions } from "./message-actions";
@@ -77,7 +78,19 @@ const user: GramUIMessage = {
   parts: [{ type: "text", text: "Fix the retry test" }],
 };
 
-vi.mock("@/stores/feeds", () => ({ feedMessages: () => [user, assistant] }));
+/** The thread's transcript feed, serving `user` then `assistant`. */
+async function* threadFeed(_id: ThreadId, signal: AbortSignal) {
+  yield { type: "subscribed" } as ApiThreadFeedEvent;
+  yield { type: "messages", messages: [user, assistant] } as ApiThreadFeedEvent;
+  yield { type: "caughtUp" } as ApiThreadFeedEvent;
+  await new Promise((resolve) => signal.addEventListener("abort", resolve));
+}
+
+/** Holds the thread's feed open, as its mounted transcript does. */
+function Transcript() {
+  useThreadFeed(T, (s) => s.messages.length);
+  return null;
+}
 
 const renderActions = (message: GramUIMessage, rewind: Api["rewind"]) =>
   renderInRouter(
@@ -127,10 +140,12 @@ describe("MessageActions copy", () => {
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     await renderInRouter(
-      <ApiProvider api={{} as Api}>
+      <ApiProvider api={{ threadFeed } as unknown as Api}>
+        <Transcript />
         <MessageActions threadId={T} message={assistant} turnEnd />
       </ApiProvider>,
     );
+    await waitFor(() => expect(feedLoaded(T)).toBe(true));
 
     expect(screen.queryByTestId("turn-copy")).toBeNull();
     fireEvent.click(screen.getByTestId("message-more"));

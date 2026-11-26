@@ -1,25 +1,30 @@
 // @vitest-environment happy-dom
 import type { FileEdit, ThreadId } from "@gram/contracts";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { useFilesStore } from "@/panels/files/files-store";
+import { renderWithApi } from "@/panels/test-utils";
+import { useThreadsStore } from "@/stores/threads";
 
 import { editDiffFile, FileEditCard } from "./file-edit-card";
+import { FileRefsProvider } from "./file-ref-link";
 import type { AnyToolPart } from "./parts";
 
-const shown = vi.hoisted(() => [] as unknown[][]);
-vi.mock("@/panels/files/files-store", () => ({
-  showFileAt: (...args: unknown[]) => shown.push(args),
-}));
-const scope = vi.hoisted(() => ({
-  current: undefined as { threadId: ThreadId; roots: string[] } | undefined,
-}));
-vi.mock("./file-ref-link", () => ({ useFileRefsScope: () => scope.current }));
+const T = "t1" as ThreadId;
 
 beforeEach(() => {
-  shown.length = 0;
-  scope.current = { threadId: "t1" as ThreadId, roots: ["/repo"] };
+  useThreadsStore.setState({ byId: { [T]: { thread: { checkout: { path: "/repo" } } } as never } });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useThreadsStore.setState({ byId: {} });
+  useFilesStore.setState({ byThread: {} });
+});
+
+/** Renders `ui` in thread `t1`'s transcript, whose checkout is `/repo`. */
+const render = (ui: React.ReactNode) =>
+  renderWithApi(<FileRefsProvider threadId={T}>{ui}</FileRefsProvider>, {});
 
 const part = (
   type: string,
@@ -77,7 +82,9 @@ describe("FileEditCard", () => {
     const name = screen.getByRole("button", { name: "a.ts" });
     expect(name.getAttribute("title")).toBe("/repo/src/a.ts");
     fireEvent.click(name);
-    expect(shown).toEqual([["t1", ["/repo"], "/repo/src/a.ts"]]);
+    const files = useFilesStore.getState().byThread[T];
+    expect(files?.selected).toBe("/repo/src/a.ts");
+    expect(files?.expanded).toEqual(["/repo/src"]);
     // The name opens the file without opening the diff.
     expect(screen.queryByTestId("patch")).toBeNull();
   });

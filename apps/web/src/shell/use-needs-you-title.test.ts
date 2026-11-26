@@ -1,20 +1,25 @@
 // @vitest-environment happy-dom
 import type { ProjectId, ThreadId, ThreadStatus, ThreadSummary } from "@gram/contracts";
-import { act, cleanup, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { EMPTY_SHELL, useEmbedShell } from "@/embed/store";
 import { resetDerivedAsks, useDerivedAsks } from "@/orchestration/needs-you-store";
+import { renderInRouter } from "@/panels/test-utils";
 import { awaited } from "@/sidebar/asking-test-fixtures";
 import { useAttentionStore } from "@/sidebar/attention";
 import { useThreadsStore } from "@/stores/threads";
 
 import { titleFor, useNeedsYouTitle } from "./use-needs-you-title";
 
-const at = vi.hoisted(() => ({ page: undefined as string | undefined }));
-
-// The page's name as the title bar has it, which the embed slots' own tests cover.
-vi.mock("@/embed/slots", () => ({ useEmbedDocumentName: () => at.page }));
+// The window's title, kept by the hook on a page of a real router.
+function Title() {
+  useNeedsYouTitle();
+  return null;
+}
+const titled = (path = "/") =>
+  renderInRouter(createElement(Title), { path, routes: ["/govern/policies"] });
 
 const summary = (id: string, status: ThreadStatus, parked = false): ThreadSummary => ({
   status,
@@ -56,7 +61,6 @@ afterEach(() => {
   useThreadsStore.setState({ byId: {} });
   useAttentionStore.setState({ loaded: false, acknowledged: {} });
   useEmbedShell.setState(EMPTY_SHELL);
-  at.page = undefined;
 });
 
 // An embedding app's tab title, and one that fails.
@@ -81,11 +85,11 @@ describe("titleFor", () => {
 });
 
 describe("useNeedsYouTitle", () => {
-  it("follows the needs-you count, ignoring parked threads, and clears at zero", () => {
+  it("follows the needs-you count, ignoring parked threads, and clears at zero", async () => {
     useThreadsStore.setState({
       byId: byId(summary("a", "needsApproval"), summary("b", "running")),
     });
-    renderHook(() => useNeedsYouTitle());
+    await titled();
     expect(document.title).toBe("(1) Gram");
 
     act(() =>
@@ -103,7 +107,7 @@ describe("useNeedsYouTitle", () => {
     expect(document.title).toBe("Gram");
   });
 
-  it("counts PR attention once acknowledgements load, and drops it once seen", () => {
+  it("counts PR attention once acknowledgements load, and drops it once seen", async () => {
     const failing = {
       ...summary("a", "idle"),
       git: {
@@ -123,7 +127,7 @@ describe("useNeedsYouTitle", () => {
       },
     } as ThreadSummary;
     useThreadsStore.setState({ byId: byId(failing) });
-    renderHook(() => useNeedsYouTitle());
+    await titled();
     expect(document.title).toBe("Gram");
 
     act(() => useAttentionStore.getState().hydrate([]));
@@ -135,19 +139,18 @@ describe("useNeedsYouTitle", () => {
 });
 
 describe("useNeedsYouTitle in an app in front of Gram", () => {
-  it("follows the page, the count and a replaced title", () => {
+  it("follows the page, the count and a replaced title", async () => {
     useEmbedShell.setState({
       document: { title: ({ name, needsYou }) => `${needsYou}:${name ?? "-"}` },
+      titles: { "/govern/policies": "Policies" },
     });
-    at.page = "Policies";
-    const { rerender } = renderHook(() => useNeedsYouTitle());
+    const { router } = await titled("/govern/policies");
     expect(document.title).toBe("0:Policies");
 
     act(() => useThreadsStore.setState({ byId: byId(summary("a", "needsApproval")) }));
     expect(document.title).toBe("1:Policies");
 
-    at.page = undefined;
-    rerender();
+    await act(() => router.navigate({ to: "/" }));
     expect(document.title).toBe("1:-");
 
     act(() => useEmbedShell.setState({ document: {} }));

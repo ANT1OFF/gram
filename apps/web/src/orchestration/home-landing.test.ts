@@ -1,23 +1,35 @@
 // @vitest-environment happy-dom
 import { DEFAULT_SETTINGS, type ThreadSummary, type WorkspaceState } from "@gram/contracts";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { act, cleanup, screen } from "@testing-library/react";
-import { createElement } from "react";
+import { createElement, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Api } from "@/api/types";
 import { renderInRouter } from "@/panels/test-utils";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
 
-let query: { workspaces: readonly WorkspaceState[]; settled: boolean; error: unknown } = {
-  workspaces: [],
-  settled: false,
-  error: null,
+import {
+  LANDING_WAIT_MS,
+  resetLaunchForTests,
+  useForgoLandingAway,
+  useLandOnOrchestrator,
+} from "./home";
+
+/** What the server lists; `undefined` while it hasn't answered, and its calls wait. */
+let listed: readonly WorkspaceState[] | undefined;
+let unanswered: (() => void)[] = [];
+const api: Partial<Api> = {
+  listWorkspaces: () =>
+    new Promise((resolve) => {
+      const give = () => resolve(listed!);
+      if (listed === undefined) unanswered.push(give);
+      else give();
+    }),
 };
-
-vi.mock("./use-orchestration", () => ({ useWorkspacesQuery: () => query }));
-
-const { LANDING_WAIT_MS, resetLaunchForTests, useForgoLandingAway, useLandOnOrchestrator } =
-  await import("./home");
+/** The page's query client, to tell it the workspaces changed, as a server event does. */
+let client: QueryClient;
 
 const workspace = (id: string, orchestratorThreadId?: string) =>
   ({
@@ -33,7 +45,8 @@ const summary = (id: string, lastActivityAt: number) =>
 
 beforeEach(() => {
   vi.useFakeTimers();
-  query = { workspaces: [], settled: false, error: null };
+  listed = undefined;
+  unanswered = [];
   resetLaunchForTests("/");
   localStorage.clear();
   useThreadsStore.setState({ ready: true, byId: { "t-a": summary("t-a", 1) } });
@@ -48,6 +61,10 @@ afterEach(() => {
 
 /** The home page, saying what the hook told it: hold itself back, or show. */
 function Landing() {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    client = queryClient;
+  }, [queryClient]);
   return createElement("output", {
     "data-testid": "landing",
     "data-holds": String(useLandOnOrchestrator()),
@@ -57,10 +74,20 @@ function Landing() {
 /** Whether the page holds itself back. */
 const holds = () => screen.getByTestId("landing").dataset["holds"] === "true";
 
-/** The home page, holding the hook; `rerender()` renders it again, as a new query result does. */
+/** The home page, holding the hook, with the server's answer so far heard; `rerender()` renders
+ * it again. */
 const landing = async () => {
-  const shown = await renderInRouter(createElement(Landing));
+  const shown = await renderInRouter(createElement(Landing), { api });
+  await settle();
   return { ...shown, rerender: () => shown.rerender(createElement(Landing)) };
+};
+
+/** The server lists `workspaces` from now on, and the page hears that they changed. */
+const serve = async (workspaces: readonly WorkspaceState[]) => {
+  listed = workspaces;
+  for (const give of unanswered.splice(0)) give();
+  await act(() => client.invalidateQueries({ queryKey: ["workspaces"] }));
+  await settle();
 };
 
 /** A page that only settles the launch when it isn't the home page. */
@@ -93,47 +120,41 @@ const stayedHome = async (shown: Shown) => {
 describe("useLandOnOrchestrator", () => {
   it("holds the home page until the workspaces are known, then lands on the orchestrator", async () => {
     const shown = await landing();
-    const { rerender } = shown;
     expect(holds()).toBe(true);
     await stayedHome(shown);
 
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
-    rerender();
+    await serve([workspace("w-a", "t-a")]);
     // On its way there, the home page stays empty.
     expect(holds()).toBe(true);
     await landedOn(shown, "t-a");
   });
 
   it("shows the home page with no workspace, and stays put when one turns up later", async () => {
-    query = { workspaces: [], settled: true, error: null };
+    listed = [];
     const shown = await landing();
-    const { rerender } = shown;
     expect(holds()).toBe(false);
 
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
-    rerender();
+    await serve([workspace("w-a", "t-a")]);
     expect(holds()).toBe(false);
     await stayedHome(shown);
   });
 
   it("gives up after a while when the server doesn't answer, and never lands after", async () => {
     const shown = await landing();
-    const { rerender } = shown;
     expect(holds()).toBe(true);
     act(() => {
       vi.advanceTimersByTime(LANDING_WAIT_MS);
     });
     expect(holds()).toBe(false);
 
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
-    rerender();
+    await serve([workspace("w-a", "t-a")]);
     expect(holds()).toBe(false);
     await stayedHome(shown);
   });
 
   it("doesn't land once the user went elsewhere before the workspaces came", async () => {
     await renderInRouter(createElement(ForgoLandingAway), { path: "/settings/general" });
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
+    listed = [workspace("w-a", "t-a")];
     const shown = await landing();
     expect(holds()).toBe(false);
     await stayedHome(shown);
@@ -145,7 +166,7 @@ describe("useLandOnOrchestrator", () => {
     });
     localStorage.setItem("gram.lastThread", "t-b");
     useThreadsStore.setState({ ready: false, byId: {} });
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
+    listed = [workspace("w-a", "t-a")];
     const shown = await landing();
     const { rerender } = shown;
     expect(holds()).toBe(true);
@@ -164,7 +185,7 @@ describe("useLandOnOrchestrator", () => {
       settings: { ...DEFAULT_SETTINGS, layout: { openAtLaunch: "thread" } },
     });
     localStorage.setItem("gram.lastThread", "t-gone");
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
+    listed = [workspace("w-a", "t-a")];
     await landedOn(await landing(), "t-a");
   });
 
@@ -175,13 +196,13 @@ describe("useLandOnOrchestrator", () => {
       ready: true,
       byId: { "t-a": summary("t-a", 1), "t-b": summary("t-b", 9) },
     });
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
+    listed = [workspace("w-a", "t-a")];
     await landedOn(await landing(), "t-a");
   });
 
   it("doesn't land a launch that opened anywhere but home", async () => {
     resetLaunchForTests("/t/t-b");
-    query = { workspaces: [workspace("w-a", "t-a")], settled: true, error: null };
+    listed = [workspace("w-a", "t-a")];
     const shown = await landing();
     expect(holds()).toBe(false);
     await stayedHome(shown);

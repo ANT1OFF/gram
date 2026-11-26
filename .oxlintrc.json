@@ -119,14 +119,6 @@
       }
     },
     {
-      "files": ["apps/web/**"],
-      "rules": {
-        // Mid-migration: the web app's router mocks move to a real router in the changes that
-        // follow.
-        "anti-slop/no-module-mocking": "off"
-      }
-    },
-    {
       "files": ["apps/web/src/**"],
       "rules": {
         // The web app's mock backend stands in for the server, so a value of a contract's tagged

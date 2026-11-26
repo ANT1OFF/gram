@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- holds the streamdown chunk, as a slow link would */
 import type { GramUIMessage, ThreadId } from "@gram/contracts";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,11 +20,6 @@ vi.mock("@/components/ai-elements/markdown", async (importOriginal) => {
   await markdownGate.opened;
   return importOriginal();
 });
-
-// NumberFlow's custom element doesn't upgrade in happy-dom, so an animated ticker throws on update.
-vi.mock("@/motion/number-ticker", () => ({
-  NumberTicker: ({ value }: { value: number }) => <span>{value}</span>,
-}));
 
 const THREAD = "t-docs" as ThreadId;
 

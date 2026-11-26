@@ -12,8 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiProvider } from "@/api/context";
 import type { Api } from "@/api/types";
-import { playChime } from "@/desktop/chime";
-import type * as ChimeModule from "@/desktop/chime";
+import { CHIME_SOUNDS } from "@/desktop/chime";
 import { useSeedReviewBotRepos } from "@/reviews/review-requests";
 import { useServerSettings } from "@/settings-sync/store";
 import { useThreadsStore } from "@/stores/threads";
@@ -21,10 +20,32 @@ import { themeStore } from "@/theme/store";
 
 import { NotificationsSection } from "./notifications-section";
 
-vi.mock("@/desktop/chime", async (importOriginal) => ({
-  ...(await importOriginal<typeof ChimeModule>()),
-  playChime: vi.fn(),
-}));
+/** The frequencies of the notes started on the window's Web Audio, in order. */
+const played: number[] = [];
+
+class FakeAudioContext {
+  currentTime = 0;
+  destination = {};
+  createOscillator() {
+    const oscillator = {
+      type: "sine",
+      frequency: { value: 0 },
+      connect: (node: unknown) => node,
+      start: () => void played.push(oscillator.frequency.value),
+      stop: () => {},
+    };
+    return oscillator;
+  }
+  createGain() {
+    return {
+      gain: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+      connect: (node: unknown) => node,
+    };
+  }
+}
+
+const notesOf = (sound: keyof typeof CHIME_SOUNDS) =>
+  CHIME_SOUNDS[sound].notes.map((note) => note.frequency);
 
 let stored: Settings;
 const updateSettings = vi.fn(async (patch: SettingsPatch) => {
@@ -53,6 +74,8 @@ const listReviewRequests = vi.fn(async () => ({
 }));
 
 beforeEach(() => {
+  vi.stubGlobal("AudioContext", FakeAudioContext);
+  played.length = 0;
   stored = DEFAULT_SETTINGS;
   updateSettings.mockClear();
   refreshReviewRequests.mockClear();
@@ -71,6 +94,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   useServerSettings.setState({ settings: undefined });
   useThreadsStore.setState({ ready: false, byId: {} });
   themeStore.setState({ motion: themeStore.getInitialState().motion });
@@ -305,7 +329,7 @@ describe("NotificationsSection", () => {
     await waitFor(() => expect(radio("Marimba").getAttribute("aria-checked")).toBe("true"));
     updateSettings.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Preview Marimba" }));
-    expect(playChime).toHaveBeenCalledWith("marimba");
+    expect(played).toEqual(notesOf("marimba"));
     expect(updateSettings).not.toHaveBeenCalled();
   });
 
@@ -336,6 +360,6 @@ describe("NotificationsSection", () => {
     });
     expect(screen.getByTestId("sound-motion-off").textContent).toContain("Preview still plays");
     fireEvent.click(screen.getByRole("button", { name: "Preview Chime" }));
-    expect(playChime).toHaveBeenCalledWith("chime");
+    expect(played).toEqual(notesOf("chime"));
   });
 });

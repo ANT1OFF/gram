@@ -3,8 +3,6 @@ import type { AppUpdateState } from "@gram/contracts";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/settings/use-diagnostics", () => ({ useFeature: () => true }));
-
 import { renderInRouter } from "@/panels/test-utils";
 
 import { useUpdateStore } from "./store";

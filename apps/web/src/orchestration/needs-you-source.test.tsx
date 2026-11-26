@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+/* oxlint-disable anti-slop/no-module-mocking -- counts asksOf's passes; the real one still runs */
 import {
   DEFAULT_SETTINGS,
   type PendingRequest,

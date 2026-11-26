@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 import type { FeatureStation, ThreadId } from "@gram/contracts";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { Api } from "@/api/types";
 import type { RailRow, RailTone, RailWorker } from "@/orchestration/rail-model";
+import { renderWithApi } from "@/panels/test-utils";
 
 import { GridLine } from "./board-grid";
 
@@ -11,27 +13,14 @@ import { GridLine } from "./board-grid";
 // station its card gives it, with its tone; the needs mark said once, on the line or its group's
 // band; the helper's sentence when there is one; and a worker's click handed to the Board.
 
-const summary = vi.hoisted(() => ({ text: undefined as string | undefined }));
-vi.mock("@/orchestration/use-feature-cards", () => ({ useFeatureSummary: () => summary.text }));
-vi.mock("@/orchestration/use-orchestration", () => ({
-  useOrchestratorLedger: () => ({ data: undefined }),
-}));
-vi.mock("@/orchestration/overview-pr-chips", () => ({
-  useWorkerPrChips: () => [],
-  shownPrNumbers: () => [],
-  WorkerPrChips: () => null,
-}));
-vi.mock("@/orchestration/feature-sheet", () => ({
-  FeatureMenu: () => null,
-  PausedBadge: () => null,
-}));
-vi.mock("@/orchestration/held-brief", () => ({ HeldBriefChip: () => null }));
-vi.mock("@/thread/machine-marker", () => ({
-  MachineMarker: () => null,
-  ThreadMachineMarker: () => null,
-  useThreadHost: () => undefined,
-  useThreadSent: () => undefined,
-}));
+/** An api whose ledger for the workspace never comes in, and with no helper's sentence to add. */
+const api = {
+  orchestratorLedger: () => new Promise<never>(() => {}),
+  watchLedger: () => ({
+    [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => {}) }),
+  }),
+  featureSummary: async () => null,
+} satisfies Partial<Api>;
 
 const worker = (id: string, tone: RailTone): RailWorker =>
   ({
@@ -47,6 +36,7 @@ const row = (
   feature: string,
   cells: Partial<Record<FeatureStation, RailWorker[]>>,
   needs = false,
+  summary?: string,
 ): RailRow =>
   ({
     feature,
@@ -56,7 +46,13 @@ const row = (
     needs,
     reach: 1,
     projects: ["api"],
-    card: { workspaceId: "w", workers: [] },
+    card: {
+      workspaceId: "w",
+      feature,
+      version: 1,
+      workers: [],
+      ...(summary === undefined ? {} : { summary: { version: 1, text: summary } }),
+    },
     cells: {
       briefed: cells.briefed ?? [],
       working: cells.working ?? [],
@@ -71,7 +67,7 @@ const draw = (
   line: RailRow,
   { needsMark = true, onOpen = () => {} }: { needsMark?: boolean; onOpen?: () => void } = {},
 ) =>
-  render(
+  renderWithApi(
     <GridLine
       row={line}
       stage={undefined}
@@ -80,6 +76,7 @@ const draw = (
       asking={new Set<ThreadId>()}
       onOpen={onOpen}
     />,
+    api,
   );
 
 const workers = () =>
@@ -87,10 +84,7 @@ const workers = () =>
     .getAllByTestId("rail-worker")
     .map((each) => [each.dataset["threadId"], each.dataset["station"], each.dataset["tone"]]);
 
-afterEach(() => {
-  cleanup();
-  summary.text = undefined;
-});
+afterEach(cleanup);
 
 describe("a Board grid line", () => {
   it("puts each worker on its card's station, in the stations' order, with its tone", () => {
@@ -125,13 +119,13 @@ describe("a Board grid line", () => {
   });
 
   it("carries the helper's sentence when it has one, and is complete without", () => {
-    const line = row("mail", { working: [worker("a", "working")] });
-    const { unmount } = draw(line);
+    const cells = { working: [worker("a", "working")] };
+    const { unmount } = draw(row("mail", cells));
     expect(screen.queryByTestId("rail-summary")).toBeNull();
     unmount();
-    summary.text = "Endpoint in review; three branches ready to push.";
-    draw(line);
-    expect(screen.getByTestId("rail-summary").textContent).toBe(summary.text);
+    const summary = "Endpoint in review; three branches ready to push.";
+    draw(row("mail", cells, false, summary));
+    expect(screen.getByTestId("rail-summary").textContent).toBe(summary);
   });
 
   it("hands a worker's click to the Board with its thread", () => {
