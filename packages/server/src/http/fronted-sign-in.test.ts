@@ -1339,8 +1339,8 @@ describe("sign-in through a fronting proxy", () => {
                 checkout:
                   branch === undefined ? { kind: "current" } : { kind: "newWorktree", branch },
               });
-              yield* waitFor(
-                "the session",
+              yield* waitReal(
+                "the fronted thread session",
                 runtimes.session(created.id).pipe(
                   Effect.as(true),
                   Effect.orElseSucceed(() => false),
