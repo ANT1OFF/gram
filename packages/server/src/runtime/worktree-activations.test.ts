@@ -230,7 +230,6 @@ describe.skipIf(process.platform === "win32")("worktree hook activation", () => 
                 kind: "approval",
                 decision: "allow",
                 scope: "once",
-                uiVerified: true,
                 resolution: {
                   threadId,
                   requestId: RequestId.make("fixture-approval"),
