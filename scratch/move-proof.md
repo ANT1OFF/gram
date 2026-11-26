@@ -1,0 +1,15 @@
+2026-11-26T22:51:32Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=1
+2026-11-26T22:54:42Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=2
+2026-11-26T22:57:45Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=3
+2026-11-26T23:00:48Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=4
+2026-11-26T23:03:50Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=5
+2026-11-26T23:06:53Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=6
+2026-11-26T23:09:56Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=7
+2026-11-26T23:12:59Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=8
+2026-11-26T23:16:02Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=9
+2026-11-26T23:19:05Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=10
+2026-11-26T23:22:07Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=11
+2026-11-26T23:25:11Z sbx-dqyaq5kb2d2vyb4ansej-g1 lines=12
+2026-11-26T23:28:15Z sbx-dqyaq5kb2d2vyb4ansej-g2 lines=13
+2026-11-26T23:28:18Z sbx-dqyaq5kb2d2vyb4ansej-g2 MOVE DETECTED: hostname g1 -> g2; file survived with 12 lines before the line at 23:28:15Z (13 now), all intact; lines=14
+2026-11-26T23:31:17Z sbx-dqyaq5kb2d2vyb4ansej-g2 lines=15
